@@ -1,1 +1,0 @@
-ALTER TABLE `orders` MODIFY COLUMN `userId` int;

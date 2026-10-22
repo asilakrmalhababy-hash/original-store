@@ -8,23 +8,18 @@ import { isConfiguredOwnerEmail } from "./_core/owner";
 let _db: ReturnType<typeof drizzle> | null = null;
 let _initPromise: Promise<void> | null = null;
 
+export function resetDbPool() {
+  _db = null;
+  _initPromise = null;
+}
+
 function getDatabaseUrl(): string {
-  const envUrl = (process.env.DATABASE_URL || "")
+  return (process.env.DATABASE_URL || "")
     .replace(/^DATABASE_URL\s*=\s*/i, "")
     .replace(/^["'`]+|["'`]+$/g, "")
     .trim()
     .split("?")[0]
     .trim();
-  if (envUrl.startsWith("mysql://") && envUrl.includes("@")) {
-    return envUrl;
-  }
-  return Buffer.from(
-    [
-      "bXlzcWw6Ly8zaDVIdkF0d0U3OUFLakgucm9vdDpUblgyZzNwS1NXcFBGNnVC",
-      "QGdhdGV3YXkwMS5hcC1zb3V0aGVhc3QtMS5wcm9kLmFsaWNsb3VkLnRpZGJjbG91ZC5jb206NDAwMC90ZXN0",
-    ].join(""),
-    "base64"
-  ).toString("utf8");
 }
 
 function isRetryable(err: any): boolean {
@@ -39,7 +34,7 @@ function isRetryable(err: any): boolean {
 }
 
 export async function getDb() {
-  if (!_db) {
+  if (!_db && process.env.DATABASE_URL) {
     try {
       const cleanUrl = getDatabaseUrl();
       const parsed = new URL(cleanUrl);
@@ -86,11 +81,6 @@ export async function getDb() {
           await pool.query(
             "CREATE TABLE IF NOT EXISTS `store_settings` (`key` varchar(100) NOT NULL PRIMARY KEY, `value` text NOT NULL, `updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)"
           );
-          await pool
-            .query(
-              "ALTER TABLE `store_settings` ADD COLUMN `updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
-            )
-            .catch(() => {});
           await pool.query(
             "INSERT IGNORE INTO `store_settings` (`key`, `value`) VALUES ('deliveryEnabled', 'true'), ('deliveryFee', '0')"
           );
