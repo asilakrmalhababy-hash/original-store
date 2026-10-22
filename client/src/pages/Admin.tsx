@@ -34,7 +34,7 @@ function ImageField({ value, onChange, kind, aspect, title }: { value: string; o
 
 function AdminLoginGate({ reason, onLogout }: { reason: "login" | "forbidden" | "suspended"; onLogout?: () => void | Promise<void> }) {
   const message = reason === "login"
-    ? "سجّل الدخول بحساب Manus المرتبط بمالك المتجر. لا تُمنح صلاحية الإدارة لمجرد تسجيل الدخول."
+    ? "أدخل كلمة مرور الإدارة للمتابعة إلى لوحة التحكم."
     : reason === "suspended"
       ? "تم إيقاف هذا الحساب. تواصل مع مالك المتجر."
       : "تم تسجيل دخولك، لكن هذا الحساب غير مربوط حاليًا بصلاحية المالك. إذا كنت مالك المتجر، اربط بريد حساب Manus من إعداد المالك المحمي، ثم سجّل الخروج والدخول مجددًا. لا تُمنح الإدارة لأول مستخدم تلقائيًا.";
@@ -49,7 +49,7 @@ function Overview() {
   return <div className="admin-content"><div className="admin-page-heading"><div><span className="eyebrow">لوحة المالك</span><h1>أهلاً بك في أوريجنال</h1><p>ابدأ بإعداد متجرك، وأضف محتواه عندما تكون جاهزًا.</p></div><span className="admin-heading-mark"><Leaf size={27} /></span></div><div className="admin-stat-grid">{[
     { label: "المنتجات", value: data.products, icon: Package }, { label: "الأقسام", value: data.categories, icon: Box }, { label: "كل الطلبات", value: data.orders, icon: ClipboardList }, { label: "العملاء", value: data.customers, icon: Users }, { label: "طلبات قيد المتابعة", value: data.openOrders, icon: Truck }, { label: "قيمة الطلبات غير الملغاة", value: data.orderValue, display: money(data.orderValue), icon: BadgePercent },
   ].map(item => { const Icon = item.icon; return <div className="admin-stat" key={item.label}><span><Icon size={18} /></span><small>{item.label}</small><strong>{"display" in item ? item.display : item.value.toLocaleString("en-US")}</strong><em>من بيانات المتجر</em></div>; })}</div>
-    <div className="admin-welcome-panel"><div className="welcome-ornament"><span>O</span><i /></div><div><span className="eyebrow">الخطوة الأولى</span><h2>متجرك يبدأ من اختياراتك</h2><p>لا توجد بيانات تجريبية هنا. أضف قسمًا ثم منتجاتك وصورك وأسعارك الحقيقية من لوحة الإدارة.</p><Link href="/admin/products" className="button button-primary">إضافة أول منتج<ArrowLeft size={16} /></Link></div></div>
+    <div className="admin-welcome-panel"><div className="welcome-ornament"><span>O</span><i /></div><div><span className="eyebrow">الخطوة الأولى</span><h2>متجرك يبدأ من اختياراتك</h2><p>تحكم بمنتجاتك وأقسامك وطلبات العملاء بسهولة.</p><Link href="/admin/products" className="button button-primary">إضافة أول منتج<ArrowLeft size={16} /></Link></div></div>
     <div className="admin-section-heading"><div><h2>آخر الطلبات</h2><p>تظهر الطلبات هنا بعد أن يرسلها العملاء.</p></div><Link href="/admin/orders" className="small-button">إدارة الطلبات<ArrowLeft size={15} /></Link></div>
     {!data.recentOrders.length ? <div className="admin-empty"><ClipboardList size={22} /><strong>لا توجد طلبات بعد</strong><span>تأكد من إعداد التوصيل قبل فتح الطلبات.</span></div> : <div className="admin-order-table">{data.recentOrders.map(order => <div className="admin-order-row" key={order.id}><span className="order-number">{order.orderNumber}</span><span>{order.recipientName}</span><span>{new Date(order.createdAt).toLocaleDateString("ar-YE")}</span><b>{money(order.total)}</b><span className={`status-pill status-${order.status}`}>{labels[order.status]}</span></div>)}</div>}
   </div>;
@@ -170,7 +170,7 @@ function UsersPanel() {
   const query = trpc.commerce.admin.customers.list.useQuery(undefined, { retry: 1 });
   return <div className="admin-content">
     <AdminHeading eyebrow="مجتمع المتجر" title="سجل العملاء" text="تُجمع أرقام العملاء من الطلبات التي أتموها. لا يحتاج العميل إلى إنشاء حساب؛ اتصل به لتأكيد الطلب والتوصيل." icon={Users} />
-    <div className="privacy-note"><ShieldCheck size={17} /><span>هذه القائمة للمالك فقط. لا تعرض بيانات حساب Manus للزبائن؛ تظهر بيانات التواصل التي أدخلوها عند الطلب.</span></div>
+    <div className="privacy-note"><ShieldCheck size={17} /><span></span></div>
     {query.isLoading ? <AdminLoading /> : query.error ? <AdminError message={query.error.message} retry={() => void query.refetch()} /> : !query.data?.length ? <AdminEmpty title="لا يوجد عملاء بعد" text="ستظهر أرقام العملاء هنا بعد استلام أول طلب." /> : <div className="user-list">{query.data.map(customer => <article className="user-row" key={customer.phone}>
       <span className="user-avatar"><CircleUserRound size={20} /></span>
       <div className="user-main"><strong dir="ltr">{customer.phone}</strong><small>آخر طلب: {new Date(customer.lastOrderAt).toLocaleString("ar-YE")}</small></div>
