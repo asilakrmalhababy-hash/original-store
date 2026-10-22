@@ -263,10 +263,14 @@ function slugify(value: string) {
 }
 
 async function readSettings(db: NonNullable<Awaited<ReturnType<typeof getDb>>>) {
-  const rows = await db.select().from(storeSettings);
-  const settings: Record<string, string> = {};
-  for (const row of rows) settings[row.key] = row.value;
-  return settings;
+  try {
+    const rows = await db.select().from(storeSettings);
+    const settings: Record<string, string> = { deliveryEnabled: "true", deliveryFee: "0" };
+    for (const row of rows) settings[row.key] = row.value;
+    return settings;
+  } catch {
+    return { deliveryEnabled: "true", deliveryFee: "0" };
+  }
 }
 
 function deliveryFeeForCity(settings: Record<string, string>, city: string): number | null {
