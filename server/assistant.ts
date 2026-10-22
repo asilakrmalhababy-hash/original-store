@@ -11,6 +11,7 @@ export const assistantModelOutputSchema = z.object({
   steps: z.array(z.string().trim().min(1).max(500)).max(20),
   missingIngredients: z.array(z.string().trim().min(1).max(120)).max(30),
   cartAction: z.enum(["none", "add", "remove"]),
+  suggestedQuestions: z.array(z.string().trim().min(1).max(120)).max(6).optional(),
   cartItems: z.array(z.object({
     productId: z.number().int().positive(),
     // Zero means remove the entire line. Additions always require a positive amount.
@@ -40,6 +41,7 @@ export type PreparedAssistantResponse = {
   ingredients: AssistantProductLine[];
   missingIngredients: string[];
   cartAction: { type: "add" | "remove"; items: AssistantProductLine[] } | null;
+  suggestedQuestions?: string[];
 };
 
 export const assistantResponseJsonSchema = {
@@ -125,6 +127,7 @@ export function parseAssistantModelContent(content: unknown): AssistantModelOutp
               ? raw.missingIngredients.filter((s: any) => typeof s === "string" && s.trim()).map((s: string) => s.trim().slice(0, 120)).slice(0, 30)
               : [],
             cartAction: raw.cartAction === "add" || raw.cartAction === "remove" ? raw.cartAction : "none",
+            suggestedQuestions: Array.isArray(raw.suggestedQuestions) ? raw.suggestedQuestions.filter((s: any) => typeof s === "string" && s.trim()).map((s: string) => s.trim().slice(0, 100)).slice(0, 4) : [],
             cartItems: Array.isArray(raw.cartItems)
               ? raw.cartItems
                   .filter((i: any) => i && Number.isInteger(Number(i.productId)) && Number(i.productId) > 0)
@@ -382,5 +385,6 @@ export function prepareAssistantResponse(
     ingredients,
     missingIngredients: hasRecipe ? missingIngredients : [],
     cartAction,
+    suggestedQuestions: output.suggestedQuestions ?? [],
   };
 }

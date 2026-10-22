@@ -10,7 +10,9 @@ let activeDb: ReturnType<typeof drizzle> | null = null;
 let setupTask: Promise<void> | null = null;
 let syncTimer: ReturnType<typeof setTimeout> | null = null;
 let isRestoring = false;
+let isSaving = false;
 let cloudSha = "";
+let lastSyncedHash = "";
 
 const ALL_TABLES = [
   "users",
@@ -84,6 +86,7 @@ async function restoreFromCloud(pool: mysql.Pool) {
       }
     }
     await pool.query("SET FOREIGN_KEY_CHECKS = 1");
+    lastSyncedHash = JSON.stringify(snapshot);
     console.log("[CloudSync] Restored permanent database state from cloud backup");
   } catch (err) {
     console.warn("[CloudSync] Restore skipped:", err instanceof Error ? err.message : err);
@@ -92,29 +95,31 @@ async function restoreFromCloud(pool: mysql.Pool) {
   }
 }
 
-async function saveToCloudNow(pool: mysql.Pool) {
-  if (isRestoring) return;
+export async function saveToCloudNow(pool: mysql.Pool) {
+  if (isRestoring || isSaving) return;
+  isSaving = true;
   try {
     const snapshot: Record<string, any[]> = {};
     for (const table of ALL_TABLES) {
       const [rows]: any = await pool.query(`SELECT * FROM \`${table}\``).catch(() => [[]]);
       snapshot[table] = Array.isArray(rows) ? rows : [];
     }
-    const contentB64 = Buffer.from(JSON.stringify(snapshot)).toString("base64");
+    const jsonStr = JSON.stringify(snapshot);
+    if (jsonStr === lastSyncedHash) return;
+
+    const contentB64 = Buffer.from(jsonStr).toString("base64");
     const token = getCloudToken();
 
-    if (!cloudSha) {
-      const check = await fetch(`${CLOUD_API_URL}?ref=data-backup`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: "application/vnd.github.v3+json",
-          "User-Agent": "Original-Store-Cloud-Sync",
-        },
-      });
-      if (check.ok) {
-        const meta: any = await check.json();
-        cloudSha = meta?.sha || "";
-      }
+    const check = await fetch(`${CLOUD_API_URL}?ref=data-backup`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github.v3+json",
+        "User-Agent": "Original-Store-Cloud-Sync",
+      },
+    });
+    if (check.ok) {
+      const meta: any = await check.json();
+      cloudSha = meta?.sha || cloudSha;
     }
 
     const putRes = await fetch(CLOUD_API_URL, {
@@ -136,22 +141,34 @@ async function saveToCloudNow(pool: mysql.Pool) {
     if (putRes.ok) {
       const out: any = await putRes.json();
       cloudSha = out?.content?.sha || cloudSha;
-    } else if (putRes.status === 409 || putRes.status === 422) {
+      lastSyncedHash = jsonStr;
+      console.log("[CloudSync] Database state synced to permanent cloud backup");
+    } else {
       cloudSha = "";
     }
   } catch (err) {
     console.warn("[CloudSync] Save warning:", err instanceof Error ? err.message : err);
+  } finally {
+    isSaving = false;
   }
 }
 
-function scheduleCloudSave(pool: mysql.Pool, sqlText: unknown) {
+function extractSqlString(arg: unknown): string {
+  if (typeof arg === "string") return arg.trim();
+  if (arg && typeof arg === "object" && typeof (arg as any).sql === "string") {
+    return (arg as any).sql.trim();
+  }
+  return "";
+}
+
+function scheduleCloudSave(pool: mysql.Pool, sqlArg: unknown) {
   if (isRestoring) return;
-  const s = typeof sqlText === "string" ? sqlText.trim() : "";
-  if (!/^(insert|update|delete|replace|truncate)/i.test(s)) return;
+  const s = extractSqlString(sqlArg);
+  if (s && /^(select|show|set)\b/i.test(s)) return;
   if (syncTimer) clearTimeout(syncTimer);
   syncTimer = setTimeout(() => {
     void saveToCloudNow(pool);
-  }, 800);
+  }, 400);
 }
 
 export function resetDbPool() {
@@ -189,14 +206,18 @@ async function createLocalMariaPool(): Promise<mysql.Pool> {
     const oc = conn.commit.bind(conn);
     conn.commit = async () => {
       const r = await oc();
-      if (!isRestoring) {
-        if (syncTimer) clearTimeout(syncTimer);
-        syncTimer = setTimeout(() => void saveToCloudNow(pool), 500);
-      }
+      scheduleCloudSave(pool, "COMMIT");
       return r;
     };
     return conn;
   };
+
+  // Continuous background dirty-check every 5 seconds so no change is ever missed
+  setInterval(() => {
+    if (!isRestoring && !isSaving) {
+      void saveToCloudNow(pool);
+    }
+  }, 5000);
 
   return pool;
 }

@@ -136,30 +136,16 @@ async function generateAndCacheProductAiRecipe(
 ): Promise<AssistantModelOutput | null> {
   const cacheKey = customModification
     ? `${productName.trim().toLowerCase()}::${customModification.trim().toLowerCase()}`
-    : productName.trim().toLowerCase();
+    : `${productName.trim().toLowerCase()}::init-v3`;
 
   if (__aiProductRecipes[cacheKey]) return __aiProductRecipes[cacheKey];
 
   const compactCatalog = catalog.slice(0, 50).map(p => ({ id: p.id, name: p.name, price: p.price, unit: p.unit }));
-  const sys = [
-    "أنت شيف يمني محترف ومساعد تسوق ذكي داخل متجر أوريجنال في اليمن.",
-    "المطلوب: تحليل الصنف الذي اختاره الزبون وتقديم رد مخصص ودقيق ومنسق باللهجة اليمنية الودودة.",
-    "إذا لم يحدد الزبون تعديلاً معيناً، اعرض له 3 خيارات واضحة:",
-    "1️⃣ وصفة يمنية اقتصادية وسريعة التحضير (موفرة وسهلة جداً)",
-    "2️⃣ وصفة يمنية شعبية أصيلة ومشبعة",
-    "3️⃣ وصفة مميزة أو مبتكرة",
-    "وفي نهاية الرسالة اسأل الزبون بلطف: هل تفضل الوصفة الاقتصادية أم الشعبية، أم تحب نعدل على الوصفة (مثلاً: بدون توابل، خفيفة، أو لعدد أشخاص معين)؟",
-    "أما إذا طلب الزبون تعديلاً محدداً (مثل: بدون توابل، خفيف التوابل، اقتصادية، إلخ) فلبِّ طلبه فوراً وعدّل الوصفة والخطوات حسب رغبته بدقة!",
-    "قيد صارم جداً في حقل ingredients: ضع فقط المنتج نفسه وأي منتج آخر من قائمة المتجر يدخل فعلاً في طبخ هذه الوصفة العلمية! إيّاك أن تضع منتجات عشوائية أو فواكه لا تدخل في الطبخة (مثلاً لا تضع برتقال أو منتجات تجريبية مع البيض!). إذا لم يتوفر في المتجر سوى الصنف نفسه، ضع الصنف نفسه فقط في ingredients وضع بقية المكونات المنزلية في missingIngredients.",
-    "أعد دائماً كائن JSON صالحاً فقط بالحقول التالية:",
-    '{ "message": "النص المنسق والودود للزبون", "recipeName": "اسم الوصفة المختارة", "servings": 3, "ingredients": [{"productId": 1, "quantity": 1}], "steps": ["الخطوة 1", "الخطوة 2", "الخطوة 3", "الخطوة 4"], "missingIngredients": ["المكونات غير المتوفرة في المتجر"], "cartAction": "none", "cartItems": [] }',
-    "لا تضع علامات نجمة ** في النص.",
-  ].join("\n");
-
+  const sys = "أنت المساعد الذكي لمتجر أوريجنال في اليمن. حلل طبيعة المنتج أولاً بلهجة يمنية راقية وودودة، وإذا لم يكن منتج طبخ قدم معلومات ذكية عنه ولا تفرض وصفات طبخ، ثم اعرض في النهاية اقتراحات تفاعلية في حقل suggestedQuestions.";
   const usr = [
     `الصنف الأساسي: «${productName}»`,
-    customModification ? `طلب التعديل الخاص من الزبون على هذه الوصفة: ${customModification}` : "المطلوب: أفضل 3 طرق تحضير (اقتصادية، شعبية يمنية، مميزة) مع تفاصيل الوصفة الأفضل.",
-    `كتالوج المتجر الحالي (اختر منه فقط ما يدخل علمياً في طبخ هذه الوصفة): ${JSON.stringify(compactCatalog)}`,
+    customModification ? `طلب التعديل الخاص من الزبون: ${customModification}` : "المطلوب: تحليل ذكي للمنتج ومعلومات عنه مع اقتراحات تفاعلية.",
+    `كتالوج المتجر الحالي: ${JSON.stringify(compactCatalog)}`,
   ].join("\n\n");
 
   const res = await invokeLLM({
@@ -717,11 +703,11 @@ export const commerceRouter = router({
         };
       }
       const matchProductIdea = input.request.match(/«([^»]+)»/);
-      const isProductQuickIdea = Boolean(matchProductIdea && input.request.includes("تحضير"));
+      const isProductQuickIdea = Boolean(matchProductIdea && (input.request.includes("تحضير") || input.request.includes("تحليل المنتج")));
 
       if (isProductQuickIdea && matchProductIdea) {
         const targetProductName = matchProductIdea[1].trim();
-        const modMatch = input.request.split("التعديل المطلوب:")[1]?.trim();
+        const modMatch = (input.request.split("التعديل المطلوب:")[1] || input.request.split("السؤال المطلوب:")[1])?.trim();
         try {
           output = await generateAndCacheProductAiRecipe(targetProductName, catalog, modMatch);
         } catch (err) {
