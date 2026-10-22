@@ -33,8 +33,13 @@ export async function getDb() {
   if (!_db) {
     try {
       const cleanUrl = getVerifiedTiDbUrl();
+      const parsed = new URL(cleanUrl);
       const pool = mysql.createPool({
-        uri: cleanUrl,
+        host: parsed.hostname,
+        port: Number(parsed.port || 4000),
+        user: decodeURIComponent(parsed.username),
+        password: decodeURIComponent(parsed.password),
+        database: parsed.pathname.replace(/^\//, "") || "test",
         waitForConnections: true,
         connectionLimit: 5,
         maxIdle: 0,
