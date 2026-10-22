@@ -1,0 +1,327 @@
+import { z } from "zod";
+
+export const assistantModelOutputSchema = z.object({
+  message: z.string().trim().min(1).max(1200),
+  recipeName: z.string().trim().max(160),
+  servings: z.number().int().min(0).max(50),
+  ingredients: z.array(z.object({
+    productId: z.number().int().positive(),
+    quantity: z.number().int().positive().max(10000),
+  }).strict()).max(40),
+  steps: z.array(z.string().trim().min(1).max(500)).max(20),
+  missingIngredients: z.array(z.string().trim().min(1).max(120)).max(30),
+  cartAction: z.enum(["none", "add", "remove"]),
+  cartItems: z.array(z.object({
+    productId: z.number().int().positive(),
+    // Zero means remove the entire line. Additions always require a positive amount.
+    quantity: z.number().int().min(0).max(10000),
+  }).strict()).max(20),
+}).strict();
+
+export type AssistantModelOutput = z.infer<typeof assistantModelOutputSchema>;
+
+export type AssistantCatalogProduct = {
+  id: number;
+  name: string;
+  description: string | null;
+  price: number;
+  unit: string;
+  stock: number | null;
+  minQuantity: number;
+  quantityStep: number;
+};
+
+export type AssistantCartInputLine = { productId: number; quantity: number };
+export type AssistantHistoryTurn = { role: "user" | "assistant"; text: string };
+export type AssistantProductLine = Omit<AssistantCatalogProduct, "id" | "description"> & { productId: number; quantity: number };
+export type PreparedAssistantResponse = {
+  message: string;
+  recipe: { name: string; servings: number; steps: string[] } | null;
+  ingredients: AssistantProductLine[];
+  missingIngredients: string[];
+  cartAction: { type: "add" | "remove"; items: AssistantProductLine[] } | null;
+};
+
+export const assistantResponseJsonSchema = {
+  type: "object",
+  properties: {
+    message: { type: "string" },
+    recipeName: { type: "string" },
+    servings: { type: "integer", minimum: 0, maximum: 50 },
+    ingredients: {
+      type: "array", maxItems: 40,
+      items: { type: "object", properties: {
+        productId: { type: "integer", minimum: 1 },
+        quantity: { type: "integer", minimum: 1, maximum: 10000 },
+      }, required: ["productId", "quantity"], additionalProperties: false },
+    },
+    steps: { type: "array", maxItems: 20, items: { type: "string", maxLength: 500 } },
+    missingIngredients: { type: "array", maxItems: 30, items: { type: "string", maxLength: 120 } },
+    cartAction: { type: "string", enum: ["none", "add", "remove"] },
+    cartItems: {
+      type: "array", maxItems: 20,
+      items: { type: "object", properties: {
+        productId: { type: "integer", minimum: 1 },
+        quantity: { type: "integer", minimum: 0, maximum: 10000 },
+      }, required: ["productId", "quantity"], additionalProperties: false },
+    },
+  },
+  required: ["message", "recipeName", "servings", "ingredients", "steps", "missingIngredients", "cartAction", "cartItems"],
+  additionalProperties: false,
+} as const;
+
+export function contentToText(content: unknown): string | null {
+  if (typeof content === "string") return content.trim() || null;
+  if (!Array.isArray(content)) return null;
+  const text = content.flatMap(part => {
+    if (part && typeof part === "object" && "text" in part && typeof part.text === "string") return [part.text];
+    return [];
+  }).join("\n").trim();
+  return text || null;
+}
+
+export function parseAssistantModelContent(content: unknown): AssistantModelOutput | null {
+  const text = contentToText(content);
+  if (!text) return null;
+  const unfenced = text.replace(/^\s*```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
+  const start = unfenced.indexOf("{");
+  const end = unfenced.lastIndexOf("}");
+  if (start < 0 || end <= start) return null;
+  try {
+    const candidate: unknown = JSON.parse(unfenced.slice(start, end + 1));
+    const parsed = assistantModelOutputSchema.safeParse(candidate);
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeProductQuantity(product: AssistantCatalogProduct, quantity: number) {
+  const minimum = Math.max(1, product.minQuantity || 1);
+  const step = Math.max(1, product.quantityStep || 1);
+  return minimum + Math.ceil(Math.max(0, quantity - minimum) / step) * step;
+}
+
+function maximumValidQuantity(product: AssistantCatalogProduct, available: number) {
+  const minimum = Math.max(1, product.minQuantity || 1);
+  const step = Math.max(1, product.quantityStep || 1);
+  if (available < minimum) return 0;
+  return minimum + Math.floor((available - minimum) / step) * step;
+}
+
+function productLine(product: AssistantCatalogProduct, quantity: number): AssistantProductLine {
+  return {
+    productId: product.id,
+    name: product.name,
+    price: product.price,
+    unit: product.unit,
+    stock: product.stock,
+    minQuantity: product.minQuantity,
+    quantityStep: product.quantityStep,
+    quantity,
+  };
+}
+
+function uniqueNames(values: string[]) {
+  const seen = new Set<string>();
+  return values.map(value => value.trim()).filter(value => {
+    if (!value) return false;
+    const key = value.toLocaleLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 30);
+}
+
+function normalizeArabic(value: string) {
+  return value.toLocaleLowerCase().normalize("NFKD")
+    .replace(/\p{M}/gu, "").replace(/ـ/g, "")
+    .replace(/[آأإٱ]/gu, "ا").replace(/ى/g, "ي").replace(/ؤ/g, "و").replace(/ئ/g, "ي")
+    .replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+}
+
+function explicitCartIntent(value: string): "add" | "remove" | null {
+  const words = normalizeArabic(value).split(/\s+/u).filter(Boolean);
+  const add = words.some(word => /^(?:اضف|اضيف|اضافه|ضيف|ضف|حط|زيد|زد|زود|ادخل|دخل|زودني)/u.test(word));
+  const remove = words.some(word => /^(?:احذف|حذف|شيل|امسح|نقص|استبعد|اسحب)/u.test(word) || ["الغ", "الغاء", "الغي", "الغى"].includes(word));
+  if (add === remove) return null;
+  return add ? "add" : "remove";
+}
+
+function isPronounReference(value: string) {
+  const words = normalizeArabic(value).split(/\s+/u).filter(Boolean);
+  return words.some(word => ["هذا", "هذه", "ذلك", "تلك", "ها", "ه"].includes(word) || /(?:ها|ه)$/u.test(word));
+}
+
+function mentionedProductIds(texts: string[], catalog: AssistantCatalogProduct[]) {
+  const normalizedTexts = texts.map(normalizeArabic).filter(Boolean);
+  const tokens = new Set(normalizedTexts.flatMap(text => text.split(/\s+/u)));
+  const keywordOwners = new Map<string, Set<number>>();
+  const ignored = new Set(["من", "في", "على", "الى", "عن", "مع", "هذا", "هذه", "حبه", "علبه", "قطعه", "عبوه", "كيس", "كرتون", "كيلو", "جرام", "غرام", "لتر", "صنف", "منتج", "السله", "سله"]);
+  for (const product of catalog) {
+    for (const token of new Set(normalizeArabic(product.name).split(/\s+/u).filter(word => word.length >= 3 && !ignored.has(word)))) {
+      const owners = keywordOwners.get(token) ?? new Set<number>();
+      owners.add(product.id);
+      keywordOwners.set(token, owners);
+    }
+  }
+  const result = new Set<number>();
+  for (const product of catalog) {
+    const normalizedName = normalizeArabic(product.name);
+    if (normalizedName && normalizedTexts.some(text => ` ${text} `.includes(` ${normalizedName} `))) {
+      result.add(product.id);
+      continue;
+    }
+    const uniqueTokens = [...keywordOwners.entries()].filter(([, owners]) => owners.size === 1).map(([token]) => token);
+    if (uniqueTokens.some(token => keywordOwners.get(token)?.has(product.id) && tokens.has(token))) result.add(product.id);
+  }
+  return result;
+}
+
+function rejectedProductIds(history: AssistantHistoryTurn[], catalog: AssistantCatalogProduct[]) {
+  const rejected = new Set<number>();
+  for (let index = 0; index < history.length; index += 1) {
+    const turn = history[index];
+    if (turn.role !== "user") continue;
+    const normalized = normalizeArabic(turn.text);
+    const mentioned = mentionedProductIds([turn.text], catalog);
+    const explicitRejection = /(?:^|\s)(?:لا|ما|مش|مو)\s+(?:اريد|ابي|ابغي|احب|ارغب|حاب|حابه|راغب|راغبه)(?:$|\s)/u.test(normalized);
+    const shortRejection = /^(?:لا|لا شكرا(?: لك)?|ما اريد|ما ابي|ما ابغي|مش حاب|مو حاب)$/u.test(normalized);
+    if (explicitRejection && mentioned.size > 0) {
+      for (const productId of mentioned) rejected.add(productId);
+      continue;
+    }
+    if (shortRejection) {
+      const previousAssistant = [...history.slice(0, index)].reverse().find(item => item.role === "assistant");
+      if (previousAssistant) {
+        const offeredProducts = mentionedProductIds([previousAssistant.text], catalog);
+        if (offeredProducts.size === 1) for (const productId of offeredProducts) rejected.add(productId);
+      }
+      continue;
+    }
+    for (const productId of mentioned) rejected.delete(productId);
+  }
+  return rejected;
+}
+
+export function prepareAssistantResponse(
+  output: AssistantModelOutput,
+  catalog: AssistantCatalogProduct[],
+  cartLines: AssistantCartInputLine[],
+  requestText = "",
+  history: AssistantHistoryTurn[] = [],
+): PreparedAssistantResponse {
+  const catalogById = new Map(catalog.map(product => [product.id, product]));
+  const cartQuantityById = new Map<number, number>();
+  for (const line of cartLines) {
+    if (!Number.isSafeInteger(line.productId) || !Number.isSafeInteger(line.quantity) || line.quantity <= 0) continue;
+    if (!catalogById.has(line.productId)) continue;
+    cartQuantityById.set(line.productId, Math.min(100000, (cartQuantityById.get(line.productId) ?? 0) + line.quantity));
+  }
+
+  const missing = [...output.missingIngredients];
+  const ingredientQuantities = new Map<number, number>();
+  for (const ingredient of output.ingredients) {
+    ingredientQuantities.set(ingredient.productId, Math.min(10000, (ingredientQuantities.get(ingredient.productId) ?? 0) + ingredient.quantity));
+  }
+  const ingredients: AssistantProductLine[] = [];
+  for (const [productId, requestedQuantity] of ingredientQuantities) {
+    const product = catalogById.get(productId);
+    if (!product) {
+      missing.push("أحد مكونات الوصفة غير متوفر حاليًا");
+      continue;
+    }
+    const quantity = normalizeProductQuantity(product, requestedQuantity);
+    if (product.stock !== null && quantity > product.stock) {
+      const availableQuantity = maximumValidQuantity(product, product.stock);
+      if (availableQuantity > 0) ingredients.push(productLine(product, availableQuantity));
+      missing.push(availableQuantity > 0
+        ? `${product.name} — المطلوب ${quantity} ${product.unit}، والمتوفر الآن ${availableQuantity} ${product.unit}`
+        : product.name);
+      continue;
+    }
+    ingredients.push(productLine(product, quantity));
+  }
+
+  const missingIngredients = uniqueNames(missing);
+  const hasRecipe = Boolean(output.recipeName && output.servings > 0 && (ingredients.length > 0 || missingIngredients.length > 0));
+  let message = output.message;
+  if (hasRecipe && missingIngredients.length > 0) {
+    message = `${message}\n\nبعض المقادير غير متوفرة الآن؛ عرضت المتاح فقط، وأدرجت الناقص في طلب توفير منفصل.`;
+  }
+
+  let cartAction: PreparedAssistantResponse["cartAction"] = null;
+  const notices: string[] = [];
+  let cartActionAuthorized = output.cartAction === "none";
+  if (output.cartAction !== "none") {
+    const intent = explicitCartIntent(requestText);
+    const directMentions = mentionedProductIds([requestText], catalog);
+    const usesPronoun = directMentions.size === 0 && isPronounReference(requestText);
+    const priorMentions = usesPronoun
+      ? mentionedProductIds(history.slice(-4).map(turn => turn.text), catalog)
+      : new Set<number>();
+    const previouslyRejected = output.cartAction === "add" && usesPronoun ? rejectedProductIds(history, catalog) : new Set<number>();
+    const referencedProducts = directMentions.size > 0 ? directMentions : priorMentions;
+    const requestedProductIds = new Set(output.cartItems.map(item => item.productId));
+    const rejectedRequestedIds = [...requestedProductIds].filter(productId => previouslyRejected.has(productId));
+    cartActionAuthorized = intent === output.cartAction
+      && requestedProductIds.size > 0
+      && [...requestedProductIds].every(productId => referencedProducts.has(productId) && !previouslyRejected.has(productId));
+    if (!cartActionAuthorized) {
+      message = rejectedRequestedIds.length > 0
+        ? `لن أكرر اقتراح إضافة ${rejectedRequestedIds.map(id => catalogById.get(id)?.name).filter(Boolean).join("، ")} لأنك رفضته قبل قليل. إذا غيرت رأيك، اذكر اسم المنتج كاملًا في طلب جديد وسأعرض التأكيد قبل أي تغيير.`
+        : "لم أغيّر السلة. لم أتمكن من مطابقة أمر واضح واسم المنتج مع المتجر؛ اكتب مثلًا «أضف 2 تونة الغويزي» أو «احذف 1 شطة»، وسأعرض التأكيد قبل أي تغيير.";
+    }
+  }
+  if (cartActionAuthorized && output.cartAction !== "none" && output.cartItems.length > 0) {
+    const requestedById = new Map<number, number>();
+    for (const item of output.cartItems) {
+      if (!catalogById.has(item.productId)) {
+        notices.push("لم أتمكن من مطابقة أحد المنتجات مع أصناف المتجر المتاحة.");
+        continue;
+      }
+      requestedById.set(item.productId, Math.min(10000, (requestedById.get(item.productId) ?? 0) + item.quantity));
+    }
+
+    const preparedItems: AssistantProductLine[] = [];
+    for (const [productId, requestedQuantity] of requestedById) {
+      const product = catalogById.get(productId)!;
+      const inCart = cartQuantityById.get(productId) ?? 0;
+      if (output.cartAction === "remove") {
+        if (inCart <= 0) {
+          notices.push(`«${product.name}» غير موجود في سلتك حاليًا.`);
+          continue;
+        }
+        const quantity = requestedQuantity === 0 ? inCart : Math.min(requestedQuantity, inCart);
+        preparedItems.push(productLine(product, quantity));
+        continue;
+      }
+
+      if (requestedQuantity <= 0) {
+        notices.push(`لم أحدد كمية صالحة لإضافة «${product.name}».`);
+        continue;
+      }
+      const normalized = normalizeProductQuantity(product, requestedQuantity);
+      const remaining = product.stock === null ? Number.POSITIVE_INFINITY : Math.max(0, product.stock - inCart);
+      const allowed = maximumValidQuantity(product, remaining);
+      if (allowed <= 0) {
+        notices.push(`لا تتوفر كمية إضافية كافية من «${product.name}» الآن.`);
+        continue;
+      }
+      const quantity = Math.min(normalized, allowed);
+      if (quantity < normalized) notices.push(`المتوفر للإضافة من «${product.name}» هو ${quantity} ${product.unit} فقط.`);
+      preparedItems.push(productLine(product, quantity));
+    }
+
+    if (preparedItems.length > 0) cartAction = { type: output.cartAction, items: preparedItems };
+  }
+  if (notices.length) message = `${message}\n\n${uniqueNames(notices).join(" ")}`;
+
+  return {
+    message,
+    recipe: hasRecipe ? { name: output.recipeName, servings: output.servings, steps: output.steps } : null,
+    ingredients,
+    missingIngredients: hasRecipe ? missingIngredients : [],
+    cartAction,
+  };
+}

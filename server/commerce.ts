@@ -263,7 +263,7 @@ function slugify(value: string) {
 }
 
 async function readSettings(db: NonNullable<Awaited<ReturnType<typeof getDb>>>) {
-  const rows = await db.select().from(storeSettings);
+  const rows = await db.select({ key: storeSettings.key, value: storeSettings.value }).from(storeSettings).catch(err => { console.error("[store_settings error]:", err); return []; });
   const settings: Record<string, string> = {};
   for (const row of rows) settings[row.key] = row.value;
   return settings;

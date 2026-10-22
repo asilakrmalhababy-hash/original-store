@@ -6,9 +6,18 @@ import { ENV } from "./_core/env";
 import { isConfiguredOwnerEmail } from "./_core/owner";
 
 let _db: ReturnType<typeof drizzle> | null = null;
-let _initDone = false;
+let _initPromise: Promise<void> | null = null;
 
-function getVerifiedTiDbUrl(): string {
+function getDatabaseUrl(): string {
+  const envUrl = (process.env.DATABASE_URL || "")
+    .replace(/^DATABASE_URL\s*=\s*/i, "")
+    .replace(/^["'`]+|["'`]+$/g, "")
+    .trim()
+    .split("?")[0]
+    .trim();
+  if (envUrl.startsWith("mysql://") && envUrl.includes("@")) {
+    return envUrl;
+  }
   return Buffer.from(
     [
       "bXlzcWw6Ly8zaDVIdkF0d0U3OUFLakgucm9vdDpUblgyZzNwS1NXcFBGNnVC",
@@ -32,7 +41,7 @@ function isRetryable(err: any): boolean {
 export async function getDb() {
   if (!_db) {
     try {
-      const cleanUrl = getVerifiedTiDbUrl();
+      const cleanUrl = getDatabaseUrl();
       const parsed = new URL(cleanUrl);
       const pool = mysql.createPool({
         host: parsed.hostname,
@@ -72,24 +81,33 @@ export async function getDb() {
 
       _db = drizzle(pool);
 
-      if (!_initDone) {
-        _initDone = true;
-        pool
-          .query(
+      _initPromise = (async () => {
+        try {
+          await pool.query(
             "CREATE TABLE IF NOT EXISTS `store_settings` (`key` varchar(100) NOT NULL PRIMARY KEY, `value` text NOT NULL, `updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)"
-          )
-          .then(() =>
-            pool.query(
-              "INSERT IGNORE INTO `store_settings` (`key`, `value`) VALUES ('deliveryEnabled', 'true'), ('deliveryFee', '0')"
+          );
+          await pool
+            .query(
+              "ALTER TABLE `store_settings` ADD COLUMN `updatedAt` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
             )
-          )
-          .catch(() => {});
-      }
+            .catch(() => {});
+          await pool.query(
+            "INSERT IGNORE INTO `store_settings` (`key`, `value`) VALUES ('deliveryEnabled', 'true'), ('deliveryFee', '0')"
+          );
+        } catch (initErr) {
+          console.error("[Database Init Error]:", initErr);
+        }
+      })();
     } catch (error) {
-      console.warn("[Database] Failed to connect:", error);
+      console.error("[Database] Failed to connect:", error);
       _db = null;
     }
   }
+
+  if (_initPromise) {
+    await _initPromise;
+  }
+
   return _db;
 }
 
