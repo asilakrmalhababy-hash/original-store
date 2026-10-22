@@ -268,7 +268,8 @@ async function readSettings(db: NonNullable<Awaited<ReturnType<typeof getDb>>>) 
     const settings: Record<string, string> = { deliveryEnabled: "true", deliveryFee: "0" };
     for (const row of rows) settings[row.key] = row.value;
     return settings;
-  } catch {
+  } catch (err) {
+    console.warn("[Settings] Fallback:", err instanceof Error ? err.message : err);
     return { deliveryEnabled: "true", deliveryFee: "0" };
   }
 }
