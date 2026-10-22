@@ -1,3 +1,16 @@
+
+const INSTANT_CATALOG_KEY = "original-instant-catalog-v3";
+function getInstantLocalCatalog(): HomeData {
+  try {
+    const raw = localStorage.getItem(INSTANT_CATALOG_KEY);
+    if (raw) {
+      const p = JSON.parse(raw);
+      if (p && Array.isArray(p.products)) return p;
+    }
+  } catch {}
+  return { categories: [], products: [], banners: [], offers: [], settings: {} };
+}
+
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Link, useLocation, useSearch } from "wouter";
 import {
@@ -344,7 +357,7 @@ function CategoryStrip({ data, onSelect }: { data: HomeData["categories"]; onSel
 function HomePage({ data, onOpen, onAiRecipe }: { data: HomeData; onOpen: (id: number) => void; onAiRecipe?: (p: PublicProduct) => void }) {
   const [, navigate] = useLocation();
   const [sort, setSort] = useState<"featured" | "price-asc" | "price-desc">("featured");
-  const { data: products, isLoading: productsLoading } = trpc.commerce.catalog.listProducts.useQuery({ sort, limit: 24 }, { retry: 1, staleTime: 120_000, enabled: sort !== "featured", initialData: sort === "featured" && data.products.length ? data.products : undefined });
+  const { data: products, isLoading: productsLoading } = trpc.commerce.catalog.listProducts.useQuery({ sort, limit: 24 }, { retry: 1, staleTime: 3000, refetchInterval: 3500, refetchOnWindowFocus: true });
   const featured = products ?? data.products;
   const changeCategory = (id: number) => { navigate(`/products?category=${id}`); };
   return <main className="page-shell">
@@ -1014,8 +1027,21 @@ export default function Home() {
   const [activeAiProduct, setActiveAiProduct] = useState<PublicProduct | null>(null);
   useGuestPushSubscriptionSync();
   const [location, navigate] = useLocation();
-  const home = trpc.commerce.catalog.home.useQuery(undefined, { retry: 1, staleTime: 120_000, refetchOnWindowFocus: false });
-  const data = (home.data ?? { categories: [], products: [], banners: [], offers: [], settings: {} }) as HomeData;
+  const [instantStoreData, setInstantStoreData] = useState<HomeData>(getInstantLocalCatalog);
+  const home = trpc.commerce.catalog.home.useQuery(undefined, {
+    retry: 1,
+    staleTime: 3000,
+    refetchInterval: 3500,
+    refetchOnWindowFocus: true,
+    placeholderData: instantStoreData.products?.length ? instantStoreData : undefined,
+  });
+  useEffect(() => {
+    if (home.data && Array.isArray(home.data.products)) {
+      setInstantStoreData(home.data as HomeData);
+      try { localStorage.setItem(INSTANT_CATALOG_KEY, JSON.stringify(home.data)); } catch {}
+    }
+  }, [home.data]);
+  const data = ((home.data && home.data.products ? home.data : instantStoreData) ?? { categories: [], products: [], banners: [], offers: [], settings: {} }) as HomeData;
   const openProduct = (id: number) => navigate(`/product/${id}`);
   const currentNav = location.startsWith("/categories") ? "/categories" : location.startsWith("/products") ? "/products" : location.startsWith("/assistant") ? "/assistant" : location.startsWith("/account") ? "/account" : "/";
   const productPath = location.startsWith("/product/");

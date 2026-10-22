@@ -1,3 +1,11 @@
+
+let __cachedLiveHomeData: any = null;
+let __lastLiveHomeDataTime = 0;
+function clearLiveHomeCache() {
+  __cachedLiveHomeData = null;
+  __lastLiveHomeDataTime = 0;
+}
+
 import fs from "node:fs";
 import { createHash } from "node:crypto";
 import { and, asc, desc, eq, gt, inArray, like, or, sql } from "drizzle-orm";
@@ -796,7 +804,7 @@ export const commerceRouter = router({
         const db = await database();
         return db.select().from(products).orderBy(desc(products.updatedAt)).limit(500);
       })),
-      create: adminProcedure.input(productInput).mutation(async ({ input }) => {
+      create: adminProcedure.use(async ({ next }) => { clearLiveHomeCache(); return next(); }).input(productInput).mutation(async ({ input }) => {
         const db = await database();
         const result = await db.insert(products).values({ ...input, slug: slugify(input.name), description: input.description ?? null, imageUrl: input.imageUrl ?? null, categoryId: input.categoryId ?? null, stock: input.stock ?? null });
         void (async () => {
@@ -807,12 +815,12 @@ export const commerceRouter = router({
         })();
         clearCatalogCache(); return { id: Number(result[0].insertId) };
       }),
-      update: adminProcedure.input(z.object({ id: safeId, values: productInput.partial() })).mutation(async ({ input }) => {
+      update: adminProcedure.use(async ({ next }) => { clearLiveHomeCache(); return next(); }).input(z.object({ id: safeId, values: productInput.partial() })).mutation(async ({ input }) => {
         const db = await database();
         await db.update(products).set({ ...input.values }).where(eq(products.id, input.id));
         clearCatalogCache(); return { success: true };
       }),
-      archive: adminProcedure.input(z.object({ id: safeId })).mutation(async ({ input }) => {
+      archive: adminProcedure.use(async ({ next }) => { clearLiveHomeCache(); return next(); }).input(z.object({ id: safeId })).mutation(async ({ input }) => {
         const db = await database();
         await db.update(products).set({ isPublished: false, isAvailable: false }).where(eq(products.id, input.id));
         clearCatalogCache(); return { success: true };
@@ -832,17 +840,17 @@ export const commerceRouter = router({
         const db = await database();
         return db.select().from(categories).orderBy(asc(categories.sortOrder), asc(categories.id));
       })),
-      create: adminProcedure.input(categoryInput).mutation(async ({ input }) => {
+      create: adminProcedure.use(async ({ next }) => { clearLiveHomeCache(); return next(); }).input(categoryInput).mutation(async ({ input }) => {
         const db = await database();
         const result = await db.insert(categories).values({ ...input, slug: slugify(input.name), description: input.description ?? null, imageUrl: input.imageUrl ?? null });
         clearCatalogCache(); return { id: Number(result[0].insertId) };
       }),
-      update: adminProcedure.input(z.object({ id: safeId, values: categoryInput.partial() })).mutation(async ({ input }) => {
+      update: adminProcedure.use(async ({ next }) => { clearLiveHomeCache(); return next(); }).input(z.object({ id: safeId, values: categoryInput.partial() })).mutation(async ({ input }) => {
         const db = await database();
         await db.update(categories).set(input.values).where(eq(categories.id, input.id));
         clearCatalogCache(); return { success: true };
       }),
-      archive: adminProcedure.input(z.object({ id: safeId })).mutation(async ({ input }) => {
+      archive: adminProcedure.use(async ({ next }) => { clearLiveHomeCache(); return next(); }).input(z.object({ id: safeId })).mutation(async ({ input }) => {
         const db = await database();
         await db.update(categories).set({ isActive: false }).where(eq(categories.id, input.id));
         clearCatalogCache(); return { success: true };
@@ -853,12 +861,12 @@ export const commerceRouter = router({
         const db = await database();
         return db.select().from(banners).orderBy(asc(banners.sortOrder), desc(banners.createdAt));
       }),
-      create: adminProcedure.input(z.object({ title: z.string().trim().min(1).max(160), body: z.string().trim().max(1000).optional(), imageUrl: z.string().max(2000).optional(), actionText: z.string().trim().max(60).optional(), actionUrl: z.string().trim().max(500).optional(), isActive: z.boolean().default(false), sortOrder: z.number().int().min(-10000).max(10000).default(0) })).mutation(async ({ input }) => {
+      create: adminProcedure.use(async ({ next }) => { clearLiveHomeCache(); return next(); }).input(z.object({ title: z.string().trim().min(1).max(160), body: z.string().trim().max(1000).optional(), imageUrl: z.string().max(2000).optional(), actionText: z.string().trim().max(60).optional(), actionUrl: z.string().trim().max(500).optional(), isActive: z.boolean().default(false), sortOrder: z.number().int().min(-10000).max(10000).default(0) })).mutation(async ({ input }) => {
         const db = await database();
         const result = await db.insert(banners).values({ ...input, body: input.body ?? null, imageUrl: input.imageUrl ?? null, actionText: input.actionText ?? null, actionUrl: input.actionUrl ?? null });
         clearCatalogCache(); return { id: Number(result[0].insertId) };
       }),
-      update: adminProcedure.input(z.object({ id: safeId, values: z.object({ title: z.string().trim().min(1).max(160).optional(), body: z.string().max(1000).nullable().optional(), imageUrl: z.string().max(2000).nullable().optional(), actionText: z.string().max(60).nullable().optional(), actionUrl: z.string().max(500).nullable().optional(), isActive: z.boolean().optional(), sortOrder: z.number().int().min(-10000).max(10000).optional() }) })).mutation(async ({ input }) => {
+      update: adminProcedure.use(async ({ next }) => { clearLiveHomeCache(); return next(); }).input(z.object({ id: safeId, values: z.object({ title: z.string().trim().min(1).max(160).optional(), body: z.string().max(1000).nullable().optional(), imageUrl: z.string().max(2000).nullable().optional(), actionText: z.string().max(60).nullable().optional(), actionUrl: z.string().max(500).nullable().optional(), isActive: z.boolean().optional(), sortOrder: z.number().int().min(-10000).max(10000).optional() }) })).mutation(async ({ input }) => {
         const db = await database();
         await db.update(banners).set(input.values).where(eq(banners.id, input.id));
         clearCatalogCache(); return { success: true };
@@ -874,7 +882,7 @@ export const commerceRouter = router({
         const db = await database();
         return db.select().from(offers).orderBy(desc(offers.createdAt));
       }),
-      create: adminProcedure.input(z.object({
+      create: adminProcedure.use(async ({ next }) => { clearLiveHomeCache(); return next(); }).input(z.object({
         title: z.string().trim().min(1).max(160),
         description: z.string().trim().max(1000).nullable().optional(),
         code: z.string().trim().min(1).max(40),
@@ -905,7 +913,7 @@ export const commerceRouter = router({
         clearCatalogCache();
         return { id: Number(result[0].insertId || 1) };
       }),
-      update: adminProcedure.input(z.object({
+      update: adminProcedure.use(async ({ next }) => { clearLiveHomeCache(); return next(); }).input(z.object({
         id: safeId,
         values: z.object({
           title: z.string().trim().min(1).max(160).optional(),
