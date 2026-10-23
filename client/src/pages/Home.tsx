@@ -147,46 +147,75 @@ function GradualText({ text, animate = true }: { text: string; animate?: boolean
   return <span>{words.slice(0, count).join("")}</span>;
 }
 
+function splitCleanReplyAndChips(rawText: string, fallbackChips?: string[]) {
+  const raw = String(rawText || "");
+  let chips: string[] = [];
+  const match = raw.match(/\[\[SUGGESTIONS:([\s\S]*?)\]\]/i);
+  if (match) {
+    chips = match[1].split("|").map(s => s.replace(/^[\s"'•✨*-]+|[\s"']+$/g, "").trim()).filter(Boolean).slice(0, 3);
+  } else if (Array.isArray(fallbackChips) && fallbackChips.length > 0) {
+    chips = fallbackChips.map(s => String(s || "").trim()).filter(Boolean).slice(0, 3);
+  }
+  const cleanText = raw.replace(/\[\[SUGGESTIONS:[\s\S]*?\]\]/gi, "").trim();
+  return { cleanText, chips };
+}
+
 function AiRecipeModal({ product, onClose }: { product: PublicProduct; onClose: () => void }) {
-  const { add } = useStore();
+  const { add, cart, setQuantity } = useStore();
   const [, navigate] = useLocation();
   const [customInput, setCustomInput] = useState("");
-  const [activeMod, setActiveMod] = useState("");
+  const [modalHistory, setModalHistory] = useState<Array<{ role: "user" | "assistant"; text: string }>>([]);
   const recipeMutation = trpc.commerce.assistant.recipe.useMutation();
 
-  const askForProduct = (modification = "") => {
-    setActiveMod(modification);
-    const baseReq = `تحضير وتحليل «${product.name}»`;
-    recipeMutation.mutate({
-      request: modification ? `${baseReq} التعديل المطلوب: ${modification}` : baseReq,
-    });
+  const sendProductQuery = (userQuestion = "") => {
+    const trimmed = userQuestion.trim();
+    const requestPayload = trimmed
+      ? "[سياق_منتج:" + product.name + "] " + trimmed
+      : "[تحليل_منتج] «" + product.name + "»";
+    const nextHist = trimmed ? [...modalHistory, { role: "user" as const, text: trimmed }] : modalHistory;
+    if (trimmed) setModalHistory(nextHist);
+
+    recipeMutation.mutate(
+      {
+        request: requestPayload,
+        history: nextHist.slice(-10),
+        cart: cart.map(line => ({ productId: line.id, quantity: line.quantity })),
+      },
+      {
+        onSuccess: res => {
+          const parsed = splitCleanReplyAndChips(res.message, (res as any).suggestedQuestions);
+          setModalHistory(prev => [...prev, { role: "assistant", text: parsed.cleanText }]);
+          if (res.cartAction && Array.isArray(res.cartAction.items) && res.cartAction.items.length > 0) {
+            for (const item of res.cartAction.items) {
+              if (res.cartAction.type === "add") {
+                add({ id: item.productId, name: item.name, price: item.price, unit: item.unit, stock: item.stock, minQuantity: item.minQuantity, quantityStep: item.quantityStep }, item.quantity);
+              } else {
+                const cur = cart.find(c => c.id === item.productId);
+                if (cur) setQuantity(item.productId, Math.max(0, cur.quantity - item.quantity));
+              }
+            }
+            toast.success(res.cartAction.type === "add" ? "تمت الإضافة إلى السلة 🛒" : "تم التحديث في السلة");
+          }
+        }
+      }
+    );
   };
 
   useEffect(() => {
-    askForProduct("");
+    setModalHistory([]);
+    sendProductQuery("");
   }, [product.id]);
 
   const data = recipeMutation.data;
   const isPending = recipeMutation.isPending;
-  const parsedMsg = useMemo(() => parseAssistantMessageAndSuggestions(data?.message), [data?.message]);
+  const parsed = data ? splitCleanReplyAndChips(data.message, (data as any).suggestedQuestions) : { cleanText: "", chips: [] };
 
   const continueInAssistantChat = () => {
     try {
       const existingRaw = localStorage.getItem("original-assistant-history-v2");
       const existing = existingRaw ? JSON.parse(existingRaw) : [];
       const historyArr = Array.isArray(existing) ? existing : [];
-      const userTurn = {
-        role: "user",
-        text: activeMod ? `سؤال عن «${product.name}»: ${activeMod}` : `حدثني عن «${product.name}»`,
-      };
-      const assistantTurn = data
-        ? {
-            role: "assistant",
-            text: parsedMsg.cleanText,
-            contextText: `نتحدث عن منتج ${product.name}`,
-          }
-        : null;
-      const nextHistory = [...historyArr, userTurn, ...(assistantTurn ? [assistantTurn] : [])].slice(-32);
+      const nextHistory = [...historyArr, ...modalHistory].slice(-32);
       localStorage.setItem("original-assistant-history-v2", JSON.stringify(nextHistory));
     } catch {}
     onClose();
@@ -195,143 +224,108 @@ function AiRecipeModal({ product, onClose }: { product: PublicProduct; onClose: 
 
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <section className="checkout-modal" role="dialog" aria-modal="true" style={{ maxWidth: "540px" }}>
-        <div className="modal-heading">
+      <section className="checkout-modal" role="dialog" aria-modal="true" style={{ maxWidth: "480px", borderRadius: "22px", padding: "18px" }}>
+        <div className="modal-heading" style={{ marginBottom: "12px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <span style={{ width: "36px", height: "36px", borderRadius: "12px", background: "#edf3e9", color: "#174b36", display: "grid", placeItems: "center" }}>
-              <Sparkles size={20} />
+            <span style={{ width: "36px", height: "36px", borderRadius: "12px", background: "#174b36", color: "#fff", display: "grid", placeItems: "center" }}>
+              <Sparkles size={18} />
             </span>
             <div>
-              <span className="eyebrow">مساعد أوريجنال الذكي</span>
-              <h2 style={{ fontSize: "16px" }}>{product.name}</h2>
+              <span className="eyebrow" style={{ fontSize: "11px" }}>مساعد أوريجنال الذكي</span>
+              <h2 style={{ fontSize: "15px", fontWeight: 700, margin: 0 }}>{product.name}</h2>
             </div>
           </div>
-          <button type="button" className="icon-button" onClick={onClose}><X size={19} /></button>
+          <button type="button" className="icon-button" onClick={onClose}><X size={18} /></button>
         </div>
 
-        <div style={{ maxHeight: "72vh", overflowY: "auto", padding: "10px 4px", fontSize: "13px", lineHeight: "1.85" }}>
+        <div style={{ maxHeight: "68vh", overflowY: "auto", padding: "4px 2px" }}>
           {isPending ? (
-            <div style={{ padding: "16px 4px" }}>
+            <div style={{ padding: "18px 12px" }}>
               <AiThinkingStatus />
             </div>
           ) : recipeMutation.error ? (
             <div style={{ padding: "16px 10px", textAlign: "center", color: "#9c3b37" }}>
-              <p>اضغط لإعادة المحاولة</p>
-              <button className="button button-outline" onClick={() => askForProduct(activeMod)}>إعادة المحاولة</button>
+              <p style={{ fontSize: "13px", marginBottom: "8px" }}>الشبكة مشغولة لحظياً، اضغط إعادة المحاولة.</p>
+              <button className="button button-outline" onClick={() => sendProductQuery(customInput)}>إعادة المحاولة</button>
             </div>
-          ) : data ? (
+          ) : parsed.cleanText ? (
             <div>
-              <div style={{ background: "#f5f8f3", border: "1px solid #dce8d8", borderRadius: "16px", padding: "14px 16px", marginBottom: "12px", whiteSpace: "pre-line", color: "#1d3528", fontSize: "13px" }}>
-                <GradualText text={data.message} animate={true} />
+              <div style={{
+                background: "#f8faf8",
+                border: "1px solid #e2ece4",
+                borderRadius: "16px",
+                padding: "14px 16px",
+                marginBottom: "12px",
+                whiteSpace: "pre-line",
+                color: "#1e293b",
+                fontSize: "13.5px",
+                lineHeight: "1.8"
+              }}>
+                {parsed.cleanText}
               </div>
 
-              {data.recipe && (
-                <div className="recipe-card" style={{ width: "100%", marginBottom: "12px" }}>
-                  <span className="eyebrow">طريقة التحضير بالتفصيل</span>
-                  <h3 style={{ fontSize: "15px", margin: "4px 0" }}>{data.recipe.name}</h3>
-                  <small style={{ color: "#687d6e", display: "block", marginBottom: "8px" }}>تكفي {data.recipe.servings} أشخاص</small>
-                  {data.recipe.steps.length > 0 && (
-                    <ol style={{ paddingInlineStart: "20px", margin: "8px 0" }}>
-                      {data.recipe.steps.map((step, idx) => (
-                        <li key={idx} style={{ marginBottom: "6px" }}>{step}</li>
-                      ))}
-                    </ol>
-                  )}
+              {parsed.chips.length > 0 && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "7px", marginBottom: "14px" }}>
+                  {parsed.chips.map((chip, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      disabled={isPending}
+                      onClick={() => sendProductQuery(chip)}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "5px",
+                        width: "auto",
+                        padding: "6px 13px",
+                        borderRadius: "999px",
+                        background: "#f2f8f4",
+                        border: "1px solid #c8dfd0",
+                        color: "#174b36",
+                        fontSize: "11.5px",
+                        fontWeight: 600,
+                        cursor: "pointer"
+                      }}
+                    >
+                      <Sparkles size={12} />
+                      <span>{chip}</span>
+                    </button>
+                  ))}
                 </div>
               )}
-
-              {data.ingredients && data.ingredients.length > 0 && (
-                <div style={{ background: "#edf3e9", borderRadius: "14px", padding: "12px", marginBottom: "12px" }}>
-                  <strong style={{ fontSize: "12px", color: "#174b36", display: "block", marginBottom: "8px" }}>
-                    الأصناف المتوفرة في المتجر:
-                  </strong>
-                  <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                    {data.ingredients.map(ing => (
-                      <div key={ing.productId} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "12px", background: "#fff", padding: "7px 10px", borderRadius: "8px" }}>
-                        <span>{ing.name} ({ing.quantity} {ing.unit})</span>
-                        <strong style={{ color: "#174b36" }}>{formatPrice(ing.price * ing.quantity)}</strong>
-                      </div>
-                    ))}
-                  </div>
-                  <button
-                    type="button"
-                    className="button button-primary full-button"
-                    style={{ marginTop: "10px" }}
-                    onClick={() => {
-                      let count = 0;
-                      data.ingredients.forEach(ing => {
-                        add({ id: ing.productId, name: ing.name, price: ing.price, unit: ing.unit, stock: ing.stock, minQuantity: ing.minQuantity, quantityStep: ing.quantityStep }, ing.quantity);
-                        count++;
-                      });
-                      toast.success(`تمت إضافة ${count} صنف إلى سلتك!`);
-                    }}
-                  >
-                    <ShoppingCart size={16} /> إضافة للسلة
-                  </button>
-                </div>
-              )}
-
-              {parsedMsg.suggestions.length > 0 && (
-                <div style={{ marginBottom: "14px" }}>
-                  <small style={{ display: "block", color: "#526b5c", fontWeight: 700, marginBottom: "7px", fontSize: "11px" }}>
-                    اقتراحات مبنية على الإجابة:
-                  </small>
-                  <div style={{ display: "flex", gap: "7px", flexWrap: "wrap" }}>
-                    {parsedMsg.suggestions.map(sug => (
-                      <button
-                        key={sug}
-                        type="button"
-                        disabled={isPending}
-                        onClick={() => askForProduct(sug)}
-                        style={{
-                          padding: "8px 13px",
-                          borderRadius: "12px",
-                          border: activeMod === sug ? "1.5px solid #174b36" : "1px solid #c5d6c7",
-                          background: activeMod === sug ? "#174b36" : "#ffffff",
-                          color: activeMod === sug ? "#ffffff" : "#174b36",
-                          fontSize: "12px",
-                          fontWeight: 700,
-                          cursor: "pointer",
-                          boxShadow: "0 3px 10px rgba(23, 75, 54, 0.08)",
-                        }}
-                      >
-                        <Sparkles size={13} style={{ display: "inline", marginLeft: "5px", verticalAlign: "-2px" }} />
-                        {sug}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <form
-                onSubmit={e => {
-                  e.preventDefault();
-                  if (!customInput.trim() || isPending) return;
-                  askForProduct(customInput.trim());
-                  setCustomInput("");
-                }}
-                style={{ display: "flex", gap: "6px", marginBottom: "10px" }}
-              >
-                <input
-                  value={customInput}
-                  onChange={e => setCustomInput(e.target.value)}
-                  placeholder="اسأل أي سؤال عن هذا المنتج..."
-                  style={{ flex: 1, minHeight: "38px", padding: "0 12px", borderRadius: "11px", border: "1px solid #cdd9cb", fontSize: "12px" }}
-                />
-                <button type="submit" className="button button-primary" disabled={!customInput.trim() || isPending} style={{ minHeight: "38px", padding: "0 14px" }}>
-                  إرسال
-                </button>
-              </form>
-
-              <button
-                type="button"
-                className="button button-outline full-button"
-                onClick={continueInAssistantChat}
-              >
-                <Sparkles size={16} /> متابعة الحوار في صفحة المساعد الذكي
-              </button>
             </div>
           ) : null}
+
+          <form
+            onSubmit={e => {
+              e.preventDefault();
+              if (!customInput.trim() || isPending) return;
+              const q = customInput.trim();
+              setCustomInput("");
+              sendProductQuery(q);
+            }}
+            style={{ display: "flex", gap: "8px", marginBottom: "10px" }}
+          >
+            <input
+              value={customInput}
+              onChange={e => setCustomInput(e.target.value)}
+              placeholder="اسأل أي سؤال (عن هذا المنتج أو غيره)..."
+              disabled={isPending}
+              style={{ flex: 1, minHeight: "40px", padding: "0 14px", borderRadius: "999px", border: "1px solid #cbd8ce", fontSize: "12.5px", background: "#fff" }}
+            />
+            <button type="submit" className="button button-primary" disabled={!customInput.trim() || isPending} style={{ minHeight: "40px", padding: "0 18px", borderRadius: "999px", fontSize: "12.5px" }}>
+              إرسال
+            </button>
+          </form>
+
+          <button
+            type="button"
+            className="button button-outline full-button"
+            onClick={continueInAssistantChat}
+            style={{ borderRadius: "999px", minHeight: "38px", fontSize: "12px" }}
+          >
+            <Sparkles size={14} /> متابعة الحوار في صفحة المساعد الذكي
+          </button>
         </div>
       </section>
     </div>
