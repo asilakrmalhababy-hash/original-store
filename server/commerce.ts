@@ -703,6 +703,52 @@ export const commerceRouter = router({
         };
       }
       const matchProductIdea = input.request.match(/«([^»]+)»/);
+      const normalizedRequest = trimmedReq
+        .toLocaleLowerCase()
+        .normalize("NFKD")
+        .replace(/\p{M}/gu, "")
+        .replace(/ـ/g, "")
+        .replace(/[آأإٱ]/gu, "ا")
+        .replace(/ى/g, "ي")
+        .replace(/[^\p{L}\p{N}]+/gu, " ")
+        .trim();
+
+      const asksForRecipe = /(?:وصفه|طبخه|اطبخ|نطبخ|طريقة التحضير|كيف احضر|كيف اسوي|كيف اعمل|مكونات|وجبه)/u.test(normalizedRequest);
+
+      const productQuery = normalizedRequest
+        .replace(/^(?:هل|عندكم|هل عندكم|يوجد|موجود|متوفر|متوفرين|ابي|ابغى|اريد|أريد|ابحث عن|عندكم صنف)\s+/u, "")
+        .replace(/\s+(?:موجود|متوفر|عندكم|لو سمحت|من فضلك)$/u, "")
+        .trim();
+
+      const normalizeProductName = (value: string) => value
+        .toLocaleLowerCase()
+        .normalize("NFKD")
+        .replace(/\p{M}/gu, "")
+        .replace(/ـ/g, "")
+        .replace(/[آأإٱ]/gu, "ا")
+        .replace(/ى/g, "ي")
+        .replace(/[^\p{L}\p{N}]+/gu, " ")
+        .trim();
+
+      const exactProductMatches = catalog.filter(product =>
+        normalizeProductName(product.name) === productQuery
+      );
+
+      if (!output && !asksForRecipe && exactProductMatches.length > 0) {
+        const productList = exactProductMatches.slice(0, 5);
+        output = {
+          message: productList.length === 1
+            ? `نعم، هذا المنتج موجود عندنا 😊\n${productList[0].name}\nالسعر: ${productList[0].price} لكل ${productList[0].unit}.\nتحب أساعدك تضيفه إلى السلة؟`
+            : `لقيت هذه المنتجات المطابقة في متجرنا 😊\n${productList.map(product => `${product.name} — ${product.price} لكل ${product.unit}`).join("\n")}\nأي منتج تقصد؟`,
+          recipeName: "",
+          servings: 0,
+          ingredients: [],
+          steps: [],
+          missingIngredients: [],
+          cartAction: "none",
+          cartItems: [],
+        };
+      }
       const isProductQuickIdea = Boolean(matchProductIdea && (input.request.includes("تحضير") || input.request.includes("تحليل المنتج")));
 
       if (isProductQuickIdea && matchProductIdea) {
