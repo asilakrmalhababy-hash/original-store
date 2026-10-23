@@ -40,200 +40,292 @@ const contentToText = (content: Message["content"]): string => {
   return "";
 };
 
-function extractCompactPayload(rawUserPrompt: string) {
-  let parsed: any = null;
-  const firstBrace = rawUserPrompt.indexOf("{");
-  const lastBrace = rawUserPrompt.lastIndexOf("}");
-  if (firstBrace !== -1 && lastBrace > firstBrace) {
-    try { parsed = JSON.parse(rawUserPrompt.slice(firstBrace, lastBrace + 1)); } catch {}
+function smartExtract(rawUserPrompt: string) {
+  const text = String(rawUserPrompt || "").trim();
+  let fullJson: any = null;
+  if (text.startsWith("{") && text.endsWith("}")) {
+    try { fullJson = JSON.parse(text); } catch {}
+  }
+  if (!fullJson) {
+    const idx1 = text.indexOf('{"userMessage"');
+    const idx2 = text.indexOf('{"selectedProduct"');
+    const startIdx = idx1 !== -1 ? idx1 : idx2;
+    if (startIdx !== -1) {
+      const endIdx = text.lastIndexOf("}");
+      if (endIdx > startIdx) {
+        try { fullJson = JSON.parse(text.slice(startIdx, endIdx + 1)); } catch {}
+      }
+    }
   }
 
-  const isRecipeModal = rawUserPrompt.includes('"recipes"') || rawUserPrompt.includes("selectedProduct");
-
-  if (isRecipeModal && parsed?.selectedProduct) {
-    const p = parsed.selectedProduct;
-    const cat = String(p.category || "");
-    const name = String(p.name || "");
-    const catalog = Array.isArray(parsed.availableProducts)
-      ? parsed.availableProducts.slice(0, 20).map((x: any) => `#${x.id}:${x.name}(${x.price})`).join(", ")
-      : "";
-    return {
-      isRecipeModal: true,
-      selectedProduct: p,
-      systemPrompt: `أنت مساعد متجر أوريجنال الذكي بلهجة يمنية راقية ولطيفة.
-حلل المنتج بحسب طبيعته الحقيقية:
-- إذا كان يستهلك مباشرة (شوكولاتة، عصير، بسكويت، سناك، مشروب، منظفات) قدم معلومات ذكية ومفيدة عنه (سعراته، مميزاته، أفضل طريقة لتقديمه أو تناوله، وفكرة سريعة للاستخدام) ولا تجبره على 3 وصفات طبخ.
-- إذا كان مكون طبخ (فول، تونة، أرز، دجاج، بهارات) قدم وصفات حقيقية دقيقة ولذيذة لتحضيره.
-أرجع JSON فقط بهذا الشكل:
-{"overview":"تحليل ذكي وممتع للمنتج","SuggestionButtons":["سؤال مقترح 1","سؤال مقترح 2"],"recipes":[{"title":"عنوان البطاقة 1","summary":"ملخص سريع","servings":"معلومة","prepTime":"جاهز","ingredients":[{"name":"اسم الصنف","amount":"حسب الرغبة","productId":null,"availableInStore":true}],"steps":["خطوة أو معلومة 1","خطوة أو معلومة 2"],"tips":["نصيحة مفيدة"],"missingIngredients":[]}]}`,
-      userPrompt: `المنتج: ${name} | القسم: ${cat} | السعر: ${p.price || 0} ر.ي | أصناف المتجر: ${catalog}`
-    };
+  let catalogList: any[] = [];
+  if (Array.isArray(fullJson?.catalog)) catalogList = fullJson.catalog;
+  else if (Array.isArray(fullJson?.availableProducts)) catalogList = fullJson.availableProducts;
+  else {
+    const arrMatches = text.match(/\[\s*\{[\s\S]*?\}\s*\]/g) || [];
+    for (const m of arrMatches) {
+      try {
+        const arr = JSON.parse(m);
+        if (Array.isArray(arr) && arr.length > 0 && (arr[0].name || arr[0].price !== undefined)) {
+          catalogList = arr;
+          break;
+        }
+      } catch {}
+    }
   }
 
-  const userMsg = parsed?.userMessage || rawUserPrompt.slice(0, 500);
-  const history = Array.isArray(parsed?.conversationHistory)
-    ? parsed.conversationHistory.slice(-3).map((h: any) => `${h.role === "assistant" ? "المساعد" : "العميل"}: ${String(h.content || "").replace(/\[\[SUGGESTIONS:[\s\S]*?\]\]/g, "").slice(0, 120)}`).join("\n")
-    : "";
-  const catalog = Array.isArray(parsed?.catalog)
-    ? parsed.catalog.slice(0, 25).map((x: any) => `#${x.id}:${x.name}(${x.price}ر.ي)`).join(", ")
-    : "";
+  const isRecipeModal = Boolean(fullJson?.selectedProduct) || text.includes('"selectedProduct"') || text.includes('"recipes"');
+  let selectedProduct = fullJson?.selectedProduct || null;
+  if (!selectedProduct && isRecipeModal) {
+    const spMatch = text.match(/"selectedProduct"\s*:\s*(\{[\s\S]*?\})/);
+    if (spMatch) {
+      try { selectedProduct = JSON.parse(spMatch[1]); } catch {}
+    }
+  }
 
-  return {
-    isRecipeModal: false,
-    selectedProduct: null,
-    systemPrompt: `أنت مساعد متجر "أوريجنال" الذكي في اليمن. تتحدث بلهجة يمنية/عربية راقية وودودة وتجيب بذكاء حقيقي على أي استفسار.
-- إذا سأل العميل عن منتج يؤكل مباشرة (مثل شوكولاتة أو عصير) أعطه معلومات ممتعة عنه وسعراته وطرق تقديمه، وفي ختام ردك اعرض عليه إمكانية تحضير حلى منه أو حساب سعراته.
-- إذا طلب وصفة طعام (مثل فول، كبسة، حلى) اشرحها له بدقة ووضوح خطوة بخطوة.
-أرجع JSON فقط بهذا الشكل:
-{"intent":"general_qna","confidence":0.95,"message":"ردك الذكي والواقعي هنا","suggestions":["سؤال مقترح 1 يخص كلامك","سؤال مقترح 2 يخص كلامك"],"matchedProducts":[{"productId":1,"reason":"سبب الترشيح","Quantity":1}],"recipe":null,"budgetPlan":null,"followUpQuestions":[]}`,
-    userPrompt: `سياق سابق:\n${history}\n\nمنتجات المتجر:\n${catalog}\n\nرسالة العميل: "${userMsg}"`
-  };
+  let userMsg = "";
+  if (typeof fullJson?.userMessage === "string") userMsg = fullJson.userMessage.trim();
+  else if (typeof fullJson?.request === "string") userMsg = fullJson.request.trim();
+  else {
+    const umMatch = text.match(/"(?:userMessage|request|query)"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+    if (umMatch) {
+      try { userMsg = JSON.parse('"' + umMatch[1] + '"'); } catch { userMsg = umMatch[1]; }
+    }
+    if (!userMsg) {
+      const arMatch = text.match(/(?:رسالة العميل الحالية|رسالة العميل الآن|رسالة العميل|سؤال العميل|طلب العميل)\s*[:：]\s*([\s\S]+)$/i);
+      if (arMatch) userMsg = arMatch[1].trim();
+    }
+    if (!userMsg) {
+      const withoutArrays = text.replace(/\[\s*\{[\s\S]*?\}\s*\]/g, "").trim();
+      const lines = withoutArrays.split(/\n+/).map((l) => l.trim()).filter(Boolean);
+      userMsg = lines.slice(-2).join(" ") || text.slice(-300);
+    }
+  }
+
+  let historyStr = "";
+  if (Array.isArray(fullJson?.conversationHistory)) {
+    historyStr = fullJson.conversationHistory
+      .slice(-4)
+      .map((h: any) => `${h.role === "assistant" ? "المساعد" : "العميل"}: ${String(h.content || h.text || "").replace(/\[\[SUGGESTIONS:[\s\S]*?\]\]/g, "").slice(0, 140)}`)
+      .join("\n");
+  } else {
+    const hMatch = text.match(/سجل المحادثة[^:]*[:：]\s*([\s\S]*?)(?:\n\n(?:رسالة العميل|طلب العميل)|$)/);
+    if (hMatch) historyStr = hMatch[1].trim().slice(-400);
+  }
+
+  const catalogCompact = catalogList
+    .slice(0, 30)
+    .map((x: any) => `#${x.id}:${x.name}(${x.price}ر.ي)`)
+    .join("، ");
+
+  const systemPrompt = `أنت المساعد الذكي لمتجر "أوريجنال" في اليمن. تتحدث بلهجة يمنية/عربية راقية وودودة وذكية جداً.
+قواعد مهمة جداً:
+1. لا تكتب كود JSON ولا تكتب أقواس برمجية {} نهائياً! اكتب ردك كنص عربي طبيعي ومرتب مباشرة للزبون.
+2. أجب مباشرة وبذكاء على سؤال الزبون الحالي ولا تكرر الترحيب إذا كان قد بدأ المحادثة.
+3. افهم طبيعة كل منتج بمنطق سليم:
+   - المعلبات والبقوليات المالحة (مثل بزاليا، فول، فاصوليا، تونة، معجون طماطم، أرز) هي مكونات طبخ مالحة؛ تحدث عن فوائدها وأطباق طبخ حقيقية تناسبها (مثل كشنة، إيدام، أرز مع البزاليا) ولا تقترح منها عصيراً أو حلى أبداً!
+   - المنتجات الجاهزة كالألبان (زبادي) والشوكولاتة والعصائر والبسكويت؛ تحدث عن قيمتها الغذائية وسعراتها وطعمها وطرق تقديمها اللذيذة.
+4. في نهاية ردك في سطر مستقل، اكتب سؤالين مقترحين قصيرين مبنيين على إجابتك بهذا الشكل الدقيق:
+[[SUGGESTIONS:سؤال مقترح 1|سؤال مقترح 2]]`;
+
+  const userPrompt = isRecipeModal && selectedProduct
+    ? `المنتج المطلوب تحليله: ${selectedProduct.name} (السعر: ${selectedProduct.price || 0} ريال يمني، القسم: ${selectedProduct.category || "عام"}).\nمنتجات المتجر المتوفرة: ${catalogCompact}\nحلل هذا المنتج بذكاء بحسب طبيعته الحقيقية وقدم معلومات مفيدة عنه للزبون مع سؤالين مقترحين في النهاية.`
+    : `${historyStr ? `سياق المحادثة السابق:\n${historyStr}\n\n` : ""}المنتجات المتوفرة حالياً في المتجر:\n${catalogCompact || "متجر أوريجنال"}\n\nسؤال الزبون الآن: "${userMsg}"`;
+
+  return { isRecipeModal, selectedProduct, userMsg, catalogList, systemPrompt, userPrompt };
 }
 
-function finalizeOutput(rawText: string, isRecipeModal: boolean, selectedProduct: any): string {
-  const cleaned = rawText.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "").trim();
-  const first = cleaned.indexOf("{");
-  const last = cleaned.lastIndexOf("}");
-  if (first !== -1 && last > first) {
-    try {
-      const obj = JSON.parse(cleaned.slice(first, last + 1));
-      if (isRecipeModal && Array.isArray(obj.recipes)) return JSON.stringify(obj);
-      if (!isRecipeModal && typeof obj.message === "string") {
-        const sList = Array.isArray(obj.suggestions) && obj.suggestions.length > 0
-          ? obj.suggestions
-          : Array.isArray(obj.followUpQuestions) ? obj.followUpQuestions : [];
-        const cleanS = sList.map((s: any) => String(s || "").trim()).filter(Boolean).slice(0, 3);
-        const baseMsg = obj.message.replace(/\[\[SUGGESTIONS:[\s\S]*?\]\]/g, "").trim();
-        obj.message = cleanS.length > 0 ? `${baseMsg}\n[[SUGGESTIONS:${cleanS.join("|")}]]` : baseMsg;
-        obj.followUpQuestions = cleanS;
-        obj.matchedProducts = Array.isArray(obj.matchedProducts)
-          ? obj.matchedProducts.map((m: any) => ({
-              productId: Number(m.productId) || 1,
-              reason: String(m.reason || "مناسب لطلبك"),
-              suggestedQuantity: Number(m.suggestedQuantity || m.Quantity) || 1,
-            }))
-          : [];
-        return JSON.stringify(obj);
-      }
-    } catch {}
+function cleanModelReply(rawText: string) {
+  let t = String(rawText || "").trim();
+  if (!t || t.length < 6 || /user\s*safety/i.test(t) || /^(safe|unsafe)\b/i.test(t) || /^<!doctype/i.test(t)) {
+    throw new Error("Rejected invalid or safety classifier output");
   }
 
-  const plain = cleaned.replace(/\[\[SUGGESTIONS:[\s\S]*?\]\]/g, "").trim();
-  if (isRecipeModal) {
-    const pName = selectedProduct?.name || "المنتج";
+  let suggestions: string[] = [];
+  const sugMatch = t.match(/\[\[SUGGESTIONS:([\s\S]*?)\]\]/i);
+  if (sugMatch) {
+    suggestions = sugMatch[1]
+      .split("|")
+      .map((s) => s.replace(/^[\s"'•-]+|[\s"']+$/g, "").trim())
+      .filter(Boolean)
+      .slice(0, 3);
+    t = t.replace(/\[\[SUGGESTIONS:[\s\S]*?\]\]/gi, "").trim();
+  }
+
+  if (t.includes('"suggestions"') || t.includes('"SuggestionButtons"') || t.includes('"followUpQuestions"')) {
+    const sMatch = t.match(/"(?:suggestions|SuggestionButtons|followUpQuestions)"\s*:\s*\[([\s\S]*?)\]/);
+    if (sMatch && suggestions.length === 0) {
+      suggestions = (sMatch[1].match(/"((?:[^"\\]|\\.)*)"/g) || [])
+        .map((x) => x.slice(1, -1).trim())
+        .filter(Boolean)
+        .slice(0, 3);
+    }
+  }
+
+  if (t.includes('"message"') || t.includes('"intent"') || t.includes('"overview"')) {
+    const mMatch = t.match(/"(?:message|overview)"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+    if (mMatch) {
+      t = mMatch[1];
+    } else {
+      t = t
+        .replace(/^[\s\S]*?"(?:message|overview)"\s*:\s*"/i, "")
+        .replace(/",\s*"(?:suggestions|matchedProducts|recipe|budgetPlan|followUpQuestions|recipes)"[\s\S]*$/i, "")
+        .replace(/\}[\s\S]*$/, "");
+    }
+  }
+
+  t = t
+    .replace(/\\n/g, "\n")
+    .replace(/\\"/g, '"')
+    .replace(/^```(?:json|text)?/i, "")
+    .replace(/```$/i, "")
+    .trim();
+
+  if (!t || t.length < 5) throw new Error("Empty after cleaning");
+  if (suggestions.length === 0) {
+    suggestions = ["أعطني وصفة أو طريقة استخدام", "كم السعرات الحرارية فيه؟"];
+  }
+  return { text: t, suggestions };
+}
+
+function buildFinalJson(rawReply: string, ctx: ReturnType<typeof smartExtract>): string {
+  const { text, suggestions } = cleanModelReply(rawReply);
+
+  if (ctx.isRecipeModal) {
+    const pName = ctx.selectedProduct?.name || "المنتج";
+    const lines = text.split(/\n+/).map((s) => s.trim()).filter(Boolean);
     return JSON.stringify({
-      overview: plain.slice(0, 240) || `معلومات وتحليل ذكي حول ${pName}`,
-      recipes: [{
-        title: `دليل ومعلومات ${pName}`,
-        summary: plain.slice(0, 180),
-        servings: "معلومة",
-        prepTime: "جاهز",
-        ingredients: [{ name: pName, amount: "حسب الرغبة", productId: selectedProduct?.id ?? null, availableInStore: true }],
-        steps: plain.split(/\n+/).map((s) => s.trim()).filter(Boolean).slice(0, 5),
-        tips: ["متوفر في متجر أوريجنال بجودة عالية"],
-        missingIngredients: []
-      }]
+      overview: text,
+      recipes: [
+        {
+          title: `معلومات وطرق استخدام ${pName}`,
+          summary: lines[0] || text.slice(0, 160),
+          servings: "حسب الرغبة",
+          prepTime: "سريع",
+          ingredients: [
+            {
+              name: pName,
+              amount: "متوفر في المتجر",
+              productId: ctx.selectedProduct?.id ?? null,
+              availableInStore: true
+            }
+          ],
+          steps: lines.slice(1, 6).length > 0 ? lines.slice(1, 6) : [text],
+          tips: suggestions,
+          missingIngredients: []
+        }
+      ]
     });
   }
+
+  const combinedSearch = `${ctx.userMsg} ${text}`;
+  const matchedProducts = ctx.catalogList
+    .filter((p: any) => p?.name && combinedSearch.includes(String(p.name).split(/\s+/)[0]))
+    .slice(0, 3)
+    .map((p: any) => ({
+      productId: Number(p.id),
+      reason: "متوفر في متجر أوريجنال",
+      suggestedQuantity: 1
+    }));
+
+  const finalMessage = `${text}\n[[SUGGESTIONS:${suggestions.join("|")}]]`;
 
   return JSON.stringify({
     intent: "general_qna",
     confidence: 0.95,
-    message: `${plain}\n[[SUGGESTIONS:أعطني تفاصيل أكثر|ما المنتجات المتوفرة لديكم؟]]`,
-    matchedProducts: [],
+    message: finalMessage,
+    matchedProducts,
     recipe: null,
     budgetPlan: null,
-    followUpQuestions: ["أعطني تفاصيل أكثر", "ما المنتجات المتوفرة لديكم؟"]
+    followUpQuestions: suggestions
   });
 }
 
-async function callLiveAI(systemPrompt: string, userPrompt: string): Promise<string> {
+async function fetchOpenRouterModel(model: string, systemPrompt: string, userPrompt: string, signal: AbortSignal): Promise<string> {
   const orEndpoint = `${P}openrouter.ai/api/v1/chat/completions`;
   const refHeader = ["HT", "TP-Referer"].join("");
-  const openRouterModels = [
-    "openrouter/free",
-    "meta-llama/llama-3.3-70b-instruct:free",
-    "google/gemini-2.0-flash-exp:free",
-    "qwen/qwen-2.5-72b-instruct:free",
-    "deepseek/deepseek-chat-v3-0324:free"
-  ];
+  const res = await fetch(orEndpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${OPENROUTER_KEY}`,
+      [refHeader]: `${P}original-store-xmyf.onrender.com`,
+      "X-Title": "Original Store"
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt }
+      ],
+      temperature: 0.55,
+      max_tokens: 450
+    }),
+    signal
+  });
+  if (!res.ok) throw new Error(`OR ${model} HTTP ${res.status}`);
+  const data = await res.json();
+  const content = data?.choices?.[0]?.message?.content;
+  cleanModelReply(content);
+  return content;
+}
 
-  for (const model of openRouterModels) {
-    try {
-      const controller = new AbortController();
-      const t = setTimeout(() => controller.abort(), 14000);
-      const res = await fetch(orEndpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${OPENROUTER_KEY}`,
-          [refHeader]: `${P}original-store-xmyf.onrender.com`,
-          "X-Title": "Original Store"
-        },
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userPrompt }
-          ],
-          temperature: 0.6
-        }),
-        signal: controller.signal
-      });
-      clearTimeout(t);
-      if (res.ok) {
-        const data = await res.json();
-        const text = data?.choices?.[0]?.message?.content;
-        if (typeof text === "string" && text.trim()) return text.trim();
-      } else {
-        const errBody = (await res.text()).slice(0, 160);
-        console.warn(`[OpenRouter ${model}]: Status ${res.status} - ${errBody}`);
-      }
-    } catch (e: any) {
-      console.warn(`[OpenRouter ${model} err]:`, e?.message || e);
-    }
-  }
-
+async function fetchPollinationsFast(model: string, systemPrompt: string, userPrompt: string, signal: AbortSignal): Promise<string> {
   const plPostUrl = `${P}text.pollinations.ai/openai`;
-  for (const pModel of ["openai-fast", "openai"]) {
-    try {
-      const controller = new AbortController();
-      const t = setTimeout(() => controller.abort(), 11000);
-      const res = await fetch(plPostUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Referer": `${P}pollinations.ai/` },
-        body: JSON.stringify({
-          model: pModel,
-          seed: Math.floor(Math.random() * 1000000),
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userPrompt }
-          ],
-          temperature: 0.6
-        }),
-        signal: controller.signal
-      });
-      clearTimeout(t);
-      if (res.ok) {
-        const data = await res.json();
-        const text = data?.choices?.[0]?.message?.content;
-        if (typeof text === "string" && text.trim()) return text.trim();
-      }
-    } catch {}
+  const res = await fetch(plPostUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Referer": `${P}pollinations.ai/` },
+    body: JSON.stringify({
+      model,
+      seed: Math.floor(Math.random() * 1000000),
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt }
+      ],
+      temperature: 0.55
+    }),
+    signal
+  });
+  if (!res.ok) throw new Error(`PL ${model} HTTP ${res.status}`);
+  const data = await res.json();
+  const content = data?.choices?.[0]?.message?.content;
+  cleanModelReply(content);
+  return content;
+}
+
+async function callLiveAI(systemPrompt: string, userPrompt: string): Promise<string> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 11000);
+  try {
+    const winner = await Promise.any([
+      fetchOpenRouterModel("google/gemini-2.0-flash-exp:free", systemPrompt, userPrompt, controller.signal),
+      fetchOpenRouterModel("meta-llama/llama-3.3-70b-instruct:free", systemPrompt, userPrompt, controller.signal),
+      fetchOpenRouterModel("deepseek/deepseek-chat-v3-0324:free", systemPrompt, userPrompt, controller.signal),
+      fetchPollinationsFast("openai-fast", systemPrompt, userPrompt, controller.signal)
+    ]);
+    clearTimeout(timer);
+    controller.abort();
+    return winner;
+  } catch {
+    clearTimeout(timer);
   }
 
+  // Fallback GET if all parallel POSTs were busy
+  const controller2 = new AbortController();
+  const timer2 = setTimeout(() => controller2.abort(), 10000);
   try {
-    const controller = new AbortController();
-    const t = setTimeout(() => controller.abort(), 11000);
     const shortQ = `${systemPrompt}\n\n${userPrompt}`.slice(0, 900);
     const plGetUrl = `${P}text.pollinations.ai/${encodeURIComponent(shortQ)}?model=openai&seed=${Math.floor(Math.random() * 99999)}`;
-    const res = await fetch(plGetUrl, { method: "GET", signal: controller.signal });
-    clearTimeout(t);
+    const res = await fetch(plGetUrl, { method: "GET", signal: controller2.signal });
+    clearTimeout(timer2);
     if (res.ok) {
       const text = (await res.text()).trim();
-      if (text) return text;
+      cleanModelReply(text);
+      return text;
     }
-  } catch {}
+  } catch {
+    clearTimeout(timer2);
+  }
 
   throw new Error("All AI endpoints busy");
 }
@@ -241,15 +333,15 @@ async function callLiveAI(systemPrompt: string, userPrompt: string): Promise<str
 export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   const userMessages = params.messages.filter((m) => m.role !== "system");
   const rawUserPrompt = userMessages.map((m) => contentToText(m.content)).filter(Boolean).join("\n\n");
-  const compact = extractCompactPayload(rawUserPrompt);
-  const rawReply = await callLiveAI(compact.systemPrompt, compact.userPrompt);
-  const finalJson = finalizeOutput(rawReply, compact.isRecipeModal, compact.selectedProduct);
+  const ctx = smartExtract(rawUserPrompt);
+  const rawReply = await callLiveAI(ctx.systemPrompt, ctx.userPrompt);
+  const finalJson = buildFinalJson(rawReply, ctx);
 
   return {
     id: `ai-${Date.now()}`,
     created: Math.floor(Date.now() / 1000),
-    model: "openrouter-live",
+    model: "fast-parallel-live",
     choices: [{ index: 0, message: { role: "assistant", content: finalJson }, finish_reason: "stop" }],
-    usage: { prompt_tokens: 150, completion_tokens: 200, total_tokens: 350 }
+    usage: { prompt_tokens: 120, completion_tokens: 180, total_tokens: 300 }
   };
 }
