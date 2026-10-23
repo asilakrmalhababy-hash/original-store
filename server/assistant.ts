@@ -90,7 +90,8 @@ export function parseAssistantModelContent(content: unknown): AssistantModelOutp
   const end = unfenced.lastIndexOf("}");
   if (start >= 0 && end > start) {
     try {
-      const raw: any = JSON.parse(unfenced.slice(start, end + 1));
+      const sliceStr = unfenced.slice(start, end + 1).replace(/"(?:[^"\\]|\\.)*"/gs, m => m.replace(/\r?\n/g, "\\n"));
+      const raw: any = JSON.parse(sliceStr);
       if (raw && typeof raw === "object") {
         let msg = "";
         for (const k of ["message", "reply", "response", "answer", "text", "content", "greeting", "description", "summary"]) {
