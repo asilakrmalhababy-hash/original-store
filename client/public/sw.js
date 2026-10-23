@@ -1,4 +1,4 @@
-const CACHE = "original-shell-v11";
+const CACHE = "original-shell-v12";
 const STATE_CACHE = "original-sw-state-v1";
 const STATE_KEY = "https://sw.local/state";
 const APP_MANIFEST = "/api/app-manifest.webmanifest";
