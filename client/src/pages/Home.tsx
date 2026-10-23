@@ -782,7 +782,7 @@ function useGuestPushSubscriptionSync() {
         void showCustomerPhoneNotification(
           `تحديث الطلب ${order.orderNumber} 🔔`,
           `${statusLabel}${latestNote ? " · " + latestNote : ""}`,
-          `original-order-status-${order.id}-${order.status}`
+          `original-order-status-${order.orderNumber}-${order.status}`
         );
       }
       if (prev !== sig) { map[order.orderNumber] = sig; changed = true; }
@@ -1030,7 +1030,6 @@ export default function Home() {
     staleTime: 3000,
     refetchInterval: 3500,
     refetchOnWindowFocus: true,
-    placeholderData: instantStoreData.products?.length ? instantStoreData : undefined,
   });
   useEffect(() => {
     if (home.data && Array.isArray(home.data.products)) {

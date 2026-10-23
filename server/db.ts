@@ -96,7 +96,7 @@ async function restoreFromCloud(pool: mysql.Pool) {
 }
 
 export async function saveToCloudNow(pool: mysql.Pool) {
-  if (isRestoring || isSaving) return;
+  if (process.env.ENABLE_GITHUB_DB_SYNC !== "true" || isRestoring || isSaving) return;
   isSaving = true;
   try {
     const snapshot: Record<string, any[]> = {};
@@ -177,11 +177,23 @@ export function resetDbPool() {
 }
 
 async function createLocalMariaPool(): Promise<mysql.Pool> {
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) {
+    throw new Error("DATABASE_URL is required");
+  }
+
+  const dbUrl = new URL(databaseUrl);
+  if (dbUrl.protocol !== "mysql:") {
+    throw new Error("DATABASE_URL must use mysql://");
+  }
+
   const pool = mysql.createPool({
-    host: "127.0.0.1",
-    port: 3306,
-    user: "root",
-    database: "test",
+    host: dbUrl.hostname,
+    port: Number(dbUrl.port || 3306),
+    user: decodeURIComponent(dbUrl.username),
+    password: decodeURIComponent(dbUrl.password),
+    database: decodeURIComponent(dbUrl.pathname.replace(/^\//, "")),
+    ssl: { rejectUnauthorized: true },
     waitForConnections: true,
     connectionLimit: 5,
   });
@@ -258,7 +270,7 @@ async function initializeSchemaAndRestore(pool: mysql.Pool) {
     UNIQUE KEY customer_push_order_endpoint_uq (orderId, endpointHash)
   )`).catch(() => {});
 
-  await restoreFromCloud(pool);
+  // Temporarily disabled to protect existing TiDB data.
 
   isRestoring = true;
   await pool.query(
@@ -279,7 +291,7 @@ export async function getDb() {
     setupTask = (async () => {
       const pool = await createLocalMariaPool();
       await initializeSchemaAndRestore(pool);
-      activeDb = drizzle(pool);
+      activeDb = drizzle(pool) as unknown as ReturnType<typeof drizzle>;
     })();
   }
   if (setupTask) {
