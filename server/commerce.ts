@@ -690,18 +690,7 @@ export const commerceRouter = router({
       const messages = [{ role: "system" as const, content: systemPrompt }, { role: "user" as const, content: userPrompt }];
       let output: AssistantModelOutput | null = null;
       const trimmedReq = input.request.trim();
-      if (/^(?:اهلا|أهلا|اهلا وسهلا|أهلا وسهلا|أهلاً وسهلاً|مرحبا|مرحباً|السلام|السلام عليكم|صباح الخير|مساء الخير|هلا|حياك|هاي|hey|hi|hello)$/iu.test(trimmedReq)) {
-        output = {
-          message: "يا هلا ومسهلا بك يا غالي في متجر أوريجنال! نورتنا. آمرني، إيش تحب نجهز لك اليوم من مقاضي البيت أو نقترح لك طبخة يمنية شهية وسريعة؟",
-          recipeName: "",
-          servings: 0,
-          ingredients: [],
-          steps: [],
-          missingIngredients: [],
-          cartAction: "none",
-          cartItems: [],
-        };
-      }
+      
       const matchProductIdea = input.request.match(/«([^»]+)»/);
       const normalizedRequest = trimmedReq
         .toLocaleLowerCase()

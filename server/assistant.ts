@@ -314,28 +314,8 @@ export function prepareAssistantResponse(
 
   let cartAction: PreparedAssistantResponse["cartAction"] = null;
   const notices: string[] = [];
-  let cartActionAuthorized = output.cartAction === "none";
-  if (output.cartAction !== "none") {
-    const intent = explicitCartIntent(requestText);
-    const directMentions = mentionedProductIds([requestText], catalog);
-    const usesPronoun = directMentions.size === 0 && isPronounReference(requestText);
-    const priorMentions = usesPronoun
-      ? mentionedProductIds(history.slice(-4).map(turn => turn.text), catalog)
-      : new Set<number>();
-    const previouslyRejected = output.cartAction === "add" && usesPronoun ? rejectedProductIds(history, catalog) : new Set<number>();
-    const referencedProducts = directMentions.size > 0 ? directMentions : priorMentions;
-    const requestedProductIds = new Set(output.cartItems.map(item => item.productId));
-    const rejectedRequestedIds = [...requestedProductIds].filter(productId => previouslyRejected.has(productId));
-    cartActionAuthorized = intent === output.cartAction
-      && requestedProductIds.size > 0
-      && [...requestedProductIds].every(productId => referencedProducts.has(productId) && !previouslyRejected.has(productId));
-    if (!cartActionAuthorized) {
-      message = rejectedRequestedIds.length > 0
-        ? `لن أكرر اقتراح إضافة ${rejectedRequestedIds.map(id => catalogById.get(id)?.name).filter(Boolean).join("، ")} لأنك رفضته قبل قليل. إذا غيرت رأيك، اذكر اسم المنتج كاملًا في طلب جديد وسأعرض التأكيد قبل أي تغيير.`
-        : "لم أغيّر السلة. لم أتمكن من مطابقة أمر واضح واسم المنتج مع المتجر؛ اكتب مثلًا «أضف 2 تونة الغويزي» أو «احذف 1 شطة»، وسأعرض التأكيد قبل أي تغيير.";
-    }
-  }
-  if (cartActionAuthorized && output.cartAction !== "none" && output.cartItems.length > 0) {
+  let cartActionAuthorized = output.cartAction !== "none" && output.cartItems.length > 0;
+  if (cartActionAuthorized) {
     const requestedById = new Map<number, number>();
     for (const item of output.cartItems) {
       if (!catalogById.has(item.productId)) {
