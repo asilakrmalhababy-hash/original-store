@@ -136,31 +136,16 @@ async function generateAndCacheProductAiRecipe(
 ): Promise<AssistantModelOutput | null> {
   const cacheKey = customModification
     ? `${productName.trim().toLowerCase()}::${customModification.trim().toLowerCase()}`
-    : `${productName.trim().toLowerCase()}::live-v4`;
+    : `${productName.trim().toLowerCase()}::init-v3`;
 
   if (__aiProductRecipes[cacheKey]) return __aiProductRecipes[cacheKey];
 
-  const compactCatalog = catalog.slice(0, 40).map(p => ({ id: p.id, name: p.name, price: p.price, unit: p.unit }));
-  const sys = [
-    "أنت المساعد الذكي الخبير لمتجر أوريجنال في اليمن. تحدث بلهجة يمنية طبيعية، ودودة، وراقية جداً.",
-    "مهمتك تحليل الصنف الذي ضغط عليه الزبون بذكاء حقيقي حسب طبيعته الفعلية:",
-    "1. إذا لم يطلب الزبون سؤالاً محدداً بعد (تحليل أولي للمنتج):",
-    "   - حلل طبيعة المنتج أولاً: هل هو (شوكولاتة/حلى/بسكويت/سناك جاهز للأكل) أم (عصير/مشروب) أم (منظفات/عناية منزلية) أم (مكون طبخ مثل أرز/تونة/فاصوليا/دجاج/بهارات)؟",
-    "   - إياك أن تعطي وصفات طبخ لمنتج جاهز للأكل مثل الشوكولاتة أو البسكويت أو العصير أو المنظفات في التحليل الأولي! بل اشرح للزبون معلومات حقيقية ومفيدة وجذابة عن هذا المنتج نفسه (طعمه، جودته، فوائده، أو استخدامه).",
-    "   - في السطر الأخير من message، اعرض على الزبون اقتراحين ذكيين مناسبين لطبيعة المنتج (مثلاً للشوكولاتة: بس هذي الشوكولاتة تقدر تحضر منها حلى حلو إذا تريد أقول لك، أو إذا تريد أشرح لك كمية السعرات اللي ممكن تحصلها من هذي الشوكولاتة). وفي هذه الحالة اجعل recipeName فارغاً "" و steps فارغة [].",
-    "   - ضع السؤالين المقترحين كأزرار قصيرة وواضحة في مصفوفة suggestedQuestions (مثال للشوكولاتة: ["كيف أحضر حلى حلو؟", "كم كمية السعرات؟"]، ومثال لمنتج طبخ: ["كيف أحضر طبخة يمنية شعبية به؟", "كم كمية السعرات؟"]).",
-    "2. أما إذا ضغط الزبون على سؤال محدد (مثل: كيف أحضر حلى حلو؟ أو كم كمية السعرات؟ أو وصفة طبخة):",
-    "   - أجب على سؤاله بدقة وتفصيل حقيقي! إذا طلب وصفة أو حلى، اكتب اسم الوصفة في recipeName والخطوات في steps والمقادير المطابقة فعلياً من الكتالوج في ingredients، وضع أسئلة متابعة جديدة ذكية في suggestedQuestions.",
-    "أعد دائماً كائن JSON صالحاً فقط بالحقول التالية بدون علامات نجمة **:",
-    "{ "message": "...", "recipeName": "", "servings": 0, "ingredients": [], "steps": [], "missingIngredients": [], "cartAction": "none", "cartItems": [], "suggestedQuestions": ["السؤال 1", "السؤال 2"] }"
-  ].join("\n");
-
+  const compactCatalog = catalog.slice(0, 50).map(p => ({ id: p.id, name: p.name, price: p.price, unit: p.unit }));
+  const sys = "أنت المساعد الذكي لمتجر أوريجنال في اليمن. حلل طبيعة المنتج أولاً بلهجة يمنية راقية وودودة، وإذا لم يكن منتج طبخ قدم معلومات ذكية عنه ولا تفرض وصفات طبخ، ثم اعرض في النهاية اقتراحات تفاعلية في حقل suggestedQuestions.";
   const usr = [
-    `الصنف الذي ضغط عليه الزبون: «${productName}»`,
-    customModification
-      ? `السؤال أو الطلب المحدد من الزبون حول هذا الصنف: ${customModification}`
-      : "المطلوب الآن: التحليل الأولي الذكي لهذا الصنف (معلومات عنه بدون فرض وصفة طبخ، مع اقتراح الأسئلة في نهاية الرسالة وفي حقل suggestedQuestions).",
-    `كتالوج المتجر المتاح: ${JSON.stringify(compactCatalog)}`,
+    `الصنف الأساسي: «${productName}»`,
+    customModification ? `طلب التعديل الخاص من الزبون: ${customModification}` : "المطلوب: تحليل ذكي للمنتج ومعلومات عنه مع اقتراحات تفاعلية.",
+    `كتالوج المتجر الحالي: ${JSON.stringify(compactCatalog)}`,
   ].join("\n\n");
 
   const res = await invokeLLM({
@@ -705,7 +690,18 @@ export const commerceRouter = router({
       const messages = [{ role: "system" as const, content: systemPrompt }, { role: "user" as const, content: userPrompt }];
       let output: AssistantModelOutput | null = null;
       const trimmedReq = input.request.trim();
-      // All greetings and messages are handled live by the AI model
+      if (/^(?:اهلا|أهلا|اهلا وسهلا|أهلا وسهلا|أهلاً وسهلاً|مرحبا|مرحباً|السلام|السلام عليكم|صباح الخير|مساء الخير|هلا|حياك|هاي|hey|hi|hello)$/iu.test(trimmedReq)) {
+        output = {
+          message: "يا هلا ومسهلا بك يا غالي في متجر أوريجنال! نورتنا. آمرني، إيش تحب نجهز لك اليوم من مقاضي البيت أو نقترح لك طبخة يمنية شهية وسريعة؟",
+          recipeName: "",
+          servings: 0,
+          ingredients: [],
+          steps: [],
+          missingIngredients: [],
+          cartAction: "none",
+          cartItems: [],
+        };
+      }
       const matchProductIdea = input.request.match(/«([^»]+)»/);
       const normalizedRequest = trimmedReq
         .toLocaleLowerCase()
@@ -771,7 +767,7 @@ export const commerceRouter = router({
             messages: [
               {
                 role: "system",
-                content: systemPrompt + '\n\nمهم جدًا: حلل رسالة العميل بدقة ورد عليه برد خاص ومنسق بلهجة يمنية ودودة. إذا سأل عن وجبات، اعرض خيارات اقتصادية وسهلة التحضير وخيارات يمنية شعبية، واسأله إن كان يريد تعديل المقادير أو التوابل. في ingredients لا تضع إلا الأصناف التي تدخل فعليًا في الوصفة. أعد دائمًا كائن JSON صالحًا بالحقول: message, recipeName, servings, ingredients, steps, missingIngredients, cartAction, cartItems, suggestedQuestions (مصفوفة فيها سؤالان أو 3 أسئلة مقترحة قصيرة تابعة لإجابتك ليضغط عليها الزبون).',
+                content: systemPrompt + '\n\nمهم جدًا: حلل رسالة العميل بدقة ورد عليه برد خاص ومنسق بلهجة يمنية ودودة. إذا سأل عن وجبات، اعرض خيارات اقتصادية وسهلة التحضير وخيارات يمنية شعبية، واسأله إن كان يريد تعديل المقادير أو التوابل. في ingredients لا تضع إلا الأصناف التي تدخل فعليًا في الوصفة. أعد دائمًا كائن JSON صالحًا بالحقول: message, recipeName, servings, ingredients, steps, missingIngredients, cartAction, cartItems.',
               },
               { role: "user", content: userPrompt },
             ],

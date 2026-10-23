@@ -52,53 +52,14 @@ function repairAndValidateLlmJson(raw: string): string | null {
   return null;
 }
 
-async function callGoogleGeminiLive(apiKey: string, fullPrompt: string): Promise<string | null> {
-  const cleanKey = apiKey.replace(/^["'`]+|["'`]+$/g, "").trim();
-  if (!cleanKey) return null;
-
-  const isVertex = cleanKey.startsWith("AQ.");
-  const urls = isVertex
-    ? [
-        `https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(cleanKey)}`,
-        `https://aiplatform.googleapis.com/v1beta1/publishers/google/models/gemini-1.5-flash:generateContent?key=${encodeURIComponent(cleanKey)}`,
-      ]
-    : [
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(cleanKey)}`,
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${encodeURIComponent(cleanKey)}`,
-      ];
-
-  for (const url of urls) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 9000);
-    try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": cleanKey,
-        },
-        body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text: fullPrompt }] }],
-          generationConfig: {
-            temperature: 0.6,
-            maxOutputTokens: 1200,
-            responseMimeType: "application/json",
-          },
-        }),
-        signal: controller.signal,
-      });
-      clearTimeout(timer);
-      if (!res.ok) continue;
-      const data: any = await res.json();
-      const text = (data?.candidates?.[0]?.content?.parts?.map((p: any) => p.text || "").join("") || "").trim();
-      const valid = repairAndValidateLlmJson(text);
-      if (valid) return valid;
-    } catch {
-      clearTimeout(timer);
-    }
-  }
-  return null;
-}
+const YEMENI_SMART_GUIDANCE = [
+  "تعليمات هامة جداً لتحليل المنتجات والرد:",
+  "- تحدث بلهجة يمنية طبيعية، ودودة، وراقية.",
+  "- حلل طبيعة الصنف الذي يسأل عنه الزبون بذكاء حقيقي قبل الرد:",
+  "  1) إذا كان الصنف شوكولاتة أو حلى أو بسكويت أو عصير أو مشروب أو سناك جاهز للأكل أو منظفات (ولم يطلب الزبون وصفة محددة بعد): لا تعطه وصفات طبخ! بل اشرح له معلومات حقيقية وجذابة عن هذا المنتج نفسه (طعمه، جودته، فوائده، أو استخدامه)، وفي آخر جملة من message اعرض عليه اقتراحين مناسبين لطبيعة المنتج (مثلاً للشوكولاتة: بس هذي الشوكولاتة تقدر تحضر منها حلى حلو إذا تريد أقول لك، أو إذا تريد أشرح لك كمية السعرات اللي ممكن تحصلها من هذي الشوكولاتة)، واجعل recipeName فارغاً و steps فارغة، وضع السؤالين القصيرين في مصفوفة suggestedQuestions مثل [\"كيف أحضر حلى حلو؟\", \"كم كمية السعرات؟\"].",
+  "  2) أما إذا سأل الزبون سؤالاً محدداً (مثل: كيف أحضر حلى حلو؟ أو كم كمية السعرات؟ أو طلب طبخة): فأجب على سؤاله بدقة وتفصيل حقيقي من تحليلك، وضع أسئلة متابعة جديدة في suggestedQuestions.",
+  "- أعد دائماً كائن JSON صالحاً فقط بالحقول: message, recipeName, servings, ingredients, steps, missingIngredients, cartAction, cartItems, suggestedQuestions."
+].join("\n");
 
 async function callSingleLiveModel(
   model: string,
@@ -167,7 +128,7 @@ async function callDirectPollinationsRoot(
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const raw = await res.text();
     const valid = repairAndValidateLlmJson(raw);
-    if (!valid) throw new Error("Invalid JSON from root endpoint");
+    if (!valid) throw new Error("Invalid JSON from root");
     return valid;
   } catch (err) {
     clearTimeout(timer);
@@ -176,12 +137,15 @@ async function callDirectPollinationsRoot(
 }
 
 export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
-  const normalizedMessages = params.messages.map(m => ({
-    role: m.role === "assistant" ? "assistant" : m.role === "system" ? "system" : "user",
-    content: extractText(m.content),
-  }));
+  const normalizedMessages = params.messages.map((m, idx) => {
+    const role = m.role === "assistant" ? "assistant" : m.role === "system" ? "system" : "user";
+    const text = extractText(m.content);
+    if (role === "system" && idx === 0) {
+      return { role, content: `${text}\n\n${YEMENI_SMART_GUIDANCE}` };
+    }
+    return { role, content: text };
+  });
 
-  // 1. Race the fastest live models in parallel so the fastest real AI wins immediately
   try {
     const fastestLiveResponse = await Promise.any([
       callSingleLiveModel("openai-fast", normalizedMessages, 12000),
@@ -196,24 +160,6 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     };
   } catch {}
 
-  // 2. Try Google Gemini live if key is configured
-  const apiKey = (process.env.GEMINI_API_KEY || process.env.MANUS_API_KEY || ENV.forgeApiKey || "").trim();
-  if (apiKey) {
-    const fullPrompt = normalizedMessages
-      .map(m => (m.role === "system" ? `تعليمات النظام:\n${m.content}` : m.content))
-      .join("\n\n");
-    const geminiLive = await callGoogleGeminiLive(apiKey, fullPrompt);
-    if (geminiLive) {
-      return {
-        id: "gemini-live-" + Date.now(),
-        created: Date.now(),
-        model: "gemini-2.0-flash",
-        choices: [{ index: 0, message: { role: "assistant", content: geminiLive }, finish_reason: "stop" }],
-      };
-    }
-  }
-
-  // 3. Final live retry with mistral model
   const mistralLive = await callSingleLiveModel("mistral", normalizedMessages, 15000);
   return {
     id: "mistral-live-" + Date.now(),
