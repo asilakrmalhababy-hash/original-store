@@ -137,8 +137,8 @@ function smartExtract(rawUserPrompt: string) {
 
 function cleanModelReply(rawText: string) {
   let t = String(rawText || "").trim();
-  if (!t || t.length < 6 || /user\s*safety/i.test(t) || /^(safe|unsafe)\b/i.test(t) || /^<!doctype/i.test(t)) {
-    throw new Error("Rejected invalid or safety classifier output");
+  if (!t || t.length < 4 || /user\s*safety/i.test(t) || /^(safe|unsafe)\b/i.test(t) || /^<!doctype/i.test(t)) {
+    throw new Error("Rejected safety classifier or empty output");
   }
 
   let suggestions: string[] = [];
@@ -181,7 +181,7 @@ function cleanModelReply(rawText: string) {
     .replace(/```$/i, "")
     .trim();
 
-  if (!t || t.length < 5) throw new Error("Empty after cleaning");
+  if (!t || t.length < 4) throw new Error("Empty after cleaning");
   if (suggestions.length === 0) {
     suggestions = ["أعطني وصفة أو طريقة استخدام", "كم السعرات الحرارية فيه؟"];
   }
@@ -241,90 +241,87 @@ function buildFinalJson(rawReply: string, ctx: ReturnType<typeof smartExtract>):
   });
 }
 
-async function fetchOpenRouterModel(model: string, systemPrompt: string, userPrompt: string, signal: AbortSignal): Promise<string> {
+async function callLiveAI(systemPrompt: string, userPrompt: string): Promise<string> {
   const orEndpoint = `${P}openrouter.ai/api/v1/chat/completions`;
   const refHeader = ["HT", "TP-Referer"].join("");
-  const res = await fetch(orEndpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${OPENROUTER_KEY}`,
-      [refHeader]: `${P}original-store-xmyf.onrender.com`,
-      "X-Title": "Original Store"
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt }
-      ],
-      temperature: 0.55,
-      max_tokens: 450
-    }),
-    signal
-  });
-  if (!res.ok) throw new Error(`OR ${model} HTTP ${res.status}`);
-  const data = await res.json();
-  const content = data?.choices?.[0]?.message?.content;
-  cleanModelReply(content);
-  return content;
-}
 
-async function fetchPollinationsFast(model: string, systemPrompt: string, userPrompt: string, signal: AbortSignal): Promise<string> {
-  const plPostUrl = `${P}text.pollinations.ai/openai`;
-  const res = await fetch(plPostUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "Referer": `${P}pollinations.ai/` },
-    body: JSON.stringify({
-      model,
-      seed: Math.floor(Math.random() * 1000000),
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt }
-      ],
-      temperature: 0.55
-    }),
-    signal
-  });
-  if (!res.ok) throw new Error(`PL ${model} HTTP ${res.status}`);
-  const data = await res.json();
-  const content = data?.choices?.[0]?.message?.content;
-  cleanModelReply(content);
-  return content;
-}
+  // Try openrouter/free up to 3 times (if it lands on llama-guard "User Safety: safe", it retries immediately)
+  const openRouterModels = [
+    "openrouter/free",
+    "openrouter/free",
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "qwen/qwen-2.5-72b-instruct:free"
+  ];
 
-async function callLiveAI(systemPrompt: string, userPrompt: string): Promise<string> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 11000);
-  try {
-    const winner = await Promise.any([
-      fetchOpenRouterModel("google/gemini-2.0-flash-exp:free", systemPrompt, userPrompt, controller.signal),
-      fetchOpenRouterModel("meta-llama/llama-3.3-70b-instruct:free", systemPrompt, userPrompt, controller.signal),
-      fetchOpenRouterModel("deepseek/deepseek-chat-v3-0324:free", systemPrompt, userPrompt, controller.signal),
-      fetchPollinationsFast("openai-fast", systemPrompt, userPrompt, controller.signal)
-    ]);
-    clearTimeout(timer);
-    controller.abort();
-    return winner;
-  } catch {
-    clearTimeout(timer);
+  for (const model of openRouterModels) {
+    try {
+      const controller = new AbortController();
+      const t = setTimeout(() => controller.abort(), 14000);
+      const res = await fetch(orEndpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${OPENROUTER_KEY}`,
+          [refHeader]: `${P}original-store-xmyf.onrender.com`,
+          "X-Title": "Original Store"
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt }
+          ],
+          temperature: 0.6
+        }),
+        signal: controller.signal
+      });
+      clearTimeout(t);
+      if (res.ok) {
+        const data = await res.json();
+        const text = data?.choices?.[0]?.message?.content;
+        if (typeof text === "string" && text.trim()) {
+          // Validate it is not "User Safety: safe"
+          cleanModelReply(text);
+          return text.trim();
+        }
+      } else {
+        const errBody = (await res.text()).slice(0, 160);
+        console.warn(`[OpenRouter ${model}]: Status ${res.status} - ${errBody}`);
+      }
+    } catch (e: any) {
+      console.warn(`[OpenRouter ${model} retry]:`, e?.message || e);
+    }
   }
 
-  // Fallback GET if all parallel POSTs were busy
-  const controller2 = new AbortController();
-  const timer2 = setTimeout(() => controller2.abort(), 10000);
-  try {
-    const shortQ = `${systemPrompt}\n\n${userPrompt}`.slice(0, 900);
-    const plGetUrl = `${P}text.pollinations.ai/${encodeURIComponent(shortQ)}?model=openai&seed=${Math.floor(Math.random() * 99999)}`;
-    const res = await fetch(plGetUrl, { method: "GET", signal: controller2.signal });
-    clearTimeout(timer2);
-    if (res.ok) {
-      const text = (await res.text()).trim();
-      cleanModelReply(text);
-      return text;
-    }
-  } catch {
-    clearTimeout(timer2);
+  const plPostUrl = `${P}text.pollinations.ai/openai`;
+  for (const pModel of ["openai-fast", "openai"]) {
+    try {
+      const controller = new AbortController();
+      const t = setTimeout(() => controller.abort(), 11000);
+      const res = await fetch(plPostUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Referer": `${P}pollinations.ai/` },
+        body: JSON.stringify({
+          model: pModel,
+          seed: Math.floor(Math.random() * 1000000),
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt }
+          ],
+          temperature: 0.6
+        }),
+        signal: controller.signal
+      });
+      clearTimeout(t);
+      if (res.ok) {
+        const data = await res.json();
+        const text = data?.choices?.[0]?.message?.content;
+        if (typeof text === "string" && text.trim()) {
+          cleanModelReply(text);
+          return text.trim();
+        }
+      }
+    } catch {}
   }
 
   throw new Error("All AI endpoints busy");
@@ -340,7 +337,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   return {
     id: `ai-${Date.now()}`,
     created: Math.floor(Date.now() / 1000),
-    model: "fast-parallel-live",
+    model: "openrouter-free-clean",
     choices: [{ index: 0, message: { role: "assistant", content: finalJson }, finish_reason: "stop" }],
     usage: { prompt_tokens: 120, completion_tokens: 180, total_tokens: 300 }
   };
