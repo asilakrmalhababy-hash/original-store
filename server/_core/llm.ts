@@ -156,32 +156,25 @@ async function callPollinationsLive(messages: Array<{ role: string; content: str
 }
 
 export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
-  const rawKey = (process.env.GEMINI_API_KEY || process.env.MANUS_API_KEY || ENV.forgeApiKey || "").trim();
-  const apiKey = rawKey || getDefaultGeminiKey();
-
   const normalizedMessages = params.messages.map((m, idx) => {
     const role = m.role === "assistant" ? "assistant" : m.role === "system" ? "system" : "user";
     const text = extractText(m.content);
     if (role === "system" && idx === 0) {
-      return { role, content: `${text}\n\n${YEMENI_SMART_GUIDANCE}` };
+      return { role, content: `${text}\\n\\n${YEMENI_SMART_GUIDANCE}` };
     }
     return { role, content: text };
   });
 
-  const fullPrompt = normalizedMessages
-    .map(m => (m.role === "system" ? `تعليمات النظام:\n${m.content}` : m.content))
-    .join("\n\n");
-
-  // Race Google Gemini 3.8 Flash and Pollinations Live OpenAI in parallel — fastest real response wins!
-  const liveContent = await Promise.any([
-    callGemini38Flash(apiKey, fullPrompt),
-    callPollinationsLive(normalizedMessages),
-  ]);
+  const liveContent = await callPollinationsLive(normalizedMessages);
 
   return {
     id: "live-ai-" + Date.now(),
-    created: Date.now(),
-    model: "gemini-3.8-flash",
-    choices: [{ index: 0, message: { role: "assistant", content: liveContent }, finish_reason: "stop" }],
+    created: Math.floor(Date.now() / 1000),
+    model: "pollinations-openai",
+    choices: [{
+      index: 0,
+      message: { role: "assistant", content: liveContent },
+      finish_reason: "stop"
+    }]
   };
 }
