@@ -740,7 +740,15 @@ export const commerceRouter = router({
       }
       const isProductQuickIdea = Boolean(matchProductIdea && (input.request.includes("تحضير") || input.request.includes("تحليل المنتج")));
 
-      
+      if (isProductQuickIdea && matchProductIdea) {
+        const targetProductName = matchProductIdea[1].trim();
+        const modMatch = (input.request.split("التعديل المطلوب:")[1] || input.request.split("السؤال المطلوب:")[1])?.trim();
+        try {
+          output = await generateAndCacheProductAiRecipe(targetProductName, catalog, modMatch);
+        } catch (err) {
+          console.error("[AI Product Recipe Error]", err);
+        }
+      }
 
       if (!output) {
         try {
