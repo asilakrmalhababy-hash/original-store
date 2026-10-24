@@ -70,10 +70,38 @@ function parseArabicQty(segment: string): number {
   return 1;
 }
 
-function extractCartCommand(userMsg: string, catalog: any[], fallbackProduct?: any): { cartAction: "none" | "add" | "remove"; cartItems: Array<{ productId: number; quantity: number }> } {
+function findBestProductInText(searchText: string, catalog: any[], ignoreWords: Set<string>) {
+  const tokens = normalizeAr(searchText)
+    .split(/\s+/)
+    .map((w) => w.replace(/^و/, ""))
+    .filter((w) => w.length >= 2 && !ignoreWords.has(w) && !/^\d+$/.test(w));
+  if (tokens.length === 0) return null;
+
+  let bestProduct: any = null;
+  let bestScore = 0;
+  for (const prod of catalog) {
+    const pNorm = normalizeAr(prod.name);
+    const pTokens = pNorm.split(/\s+/).filter((w) => w.length >= 2 && !ignoreWords.has(w) && !/^\d+$/.test(w));
+    let matchedCount = 0;
+    for (const ct of tokens) {
+      if (pTokens.some((pt) => pt === ct || pt.includes(ct) || ct.includes(pt))) {
+        matchedCount += 1;
+      }
+    }
+    if (matchedCount === 0) continue;
+    const score = matchedCount * 2 + matchedCount / Math.max(1, pTokens.length);
+    if (score > bestScore) {
+      bestScore = score;
+      bestProduct = prod;
+    }
+  }
+  return bestScore >= 2 ? bestProduct : null;
+}
+
+function extractCartCommand(userMsg: string, catalog: any[], fallbackProduct?: any, historyStr?: string): { cartAction: "none" | "add" | "remove"; cartItems: Array<{ productId: number; quantity: number }> } {
   const normMsg = normalizeAr(userMsg);
   const words = normMsg.split(/\s+/);
-  const addVerbs = new Set(["اضف", "اضيف", "ضيف", "ضف", "حط", "زيد", "زد", "زود", "هات", "اضفها", "اضفه", "ضيفه", "ضيفها"]);
+  const addVerbs = new Set(["اضف", "اضيف", "ضيف", "ضف", "حط", "زيد", "زد", "زود", "هات", "اضفها", "اضفه", "ضيفه", "ضيفها", "اشتريه", "اشتريها", "اشتري", "اطلبه", "اطلبها", "اطلب"]);
   const remVerbs = new Set(["احذف", "حذف", "شيل", "امسح", "نقص", "الغي", "الغاء", "فرغ", "ازل", "ازاله", "احذفه", "شيله"]);
 
   const isAdd = words.some((w) => addVerbs.has(w) || addVerbs.has(w.replace(/^و/, ""))) || normMsg.includes("للسله") || normMsg.includes("الي السله");
@@ -84,46 +112,31 @@ function extractCartCommand(userMsg: string, catalog: any[], fallbackProduct?: a
   const qtySplitRegex = /\s+(?=(?:و)?(?:واحد|اثنين|ثنتين|ثلاث|اربع|خمس|ست|سبع|ثمان|تسع|عشر|\d+|حبه|حبتين|علبه)\s)/g;
   const clauses = normMsg.split(qtySplitRegex).map((s) => s.trim()).filter(Boolean);
 
-  const ignoreWords = new Set(["من", "في", "على", "الى", "الي", "السله", "سله", "للسله", "حبه", "حبتين", "علبه", "مل", "كجم", "كيلو", "جرام", "واحد", "واحده", "اثنين", "ثنتين", "ثلاث", "ثلاثه", "اربعه", "اربع", "خمسه", "خمس", "اضف", "ضيف", "ضف", "احذف", "شيل", "لي", "ابي", "ابغي", "اريد", "منه", "منها", "هذا", "هذه", "المنتج", "الان"]);
+  const ignoreWords = new Set(["من", "في", "على", "الى", "الي", "السله", "سله", "للسله", "حبه", "حبتين", "علبه", "مل", "كجم", "كيلو", "جرام", "واحد", "واحده", "اثنين", "ثنتين", "ثلاث", "ثلاثه", "اربعه", "اربع", "خمسه", "خمس", "اضف", "ضيف", "ضف", "اضفه", "اضفها", "اشتريه", "اشتريها", "اطلبه", "اطلبها", "فورا", "الان", "احذف", "شيل", "لي", "ابي", "ابغي", "اريد", "منه", "منها", "هذا", "هذه", "المنتج"]);
 
   const matchedMap = new Map<number, number>();
 
   for (const clause of clauses) {
     const qty = parseArabicQty(clause);
-    const clauseTokens = clause
-      .split(/\s+/)
-      .map((w) => w.replace(/^و/, ""))
-      .filter((w) => w.length >= 2 && !ignoreWords.has(w) && !/^\d+$/.test(w));
-
-    let bestProduct: any = null;
-    let bestScore = 0;
-
-    if (clauseTokens.length > 0) {
-      for (const prod of catalog) {
-        const pNorm = normalizeAr(prod.name);
-        const pTokens = pNorm.split(/\s+/).filter((w) => w.length >= 2 && !ignoreWords.has(w) && !/^\d+$/.test(w));
-        let matchedCount = 0;
-        for (const ct of clauseTokens) {
-          if (pTokens.some((pt) => pt === ct || pt.includes(ct) || ct.includes(pt))) {
-            matchedCount += 1;
-          }
-        }
-        if (matchedCount === 0) continue;
-        const score = matchedCount * 2 + matchedCount / Math.max(1, pTokens.length);
-        if (score > bestScore) {
-          bestScore = score;
-          bestProduct = prod;
-        }
-      }
-    }
-
-    if (bestProduct && bestScore >= 2) {
+    const bestProduct = findBestProductInText(clause, catalog, ignoreWords);
+    if (bestProduct) {
       matchedMap.set(Number(bestProduct.id), (matchedMap.get(Number(bestProduct.id)) || 0) + qty);
     }
   }
 
-  if (matchedMap.size === 0 && fallbackProduct?.id) {
-    matchedMap.set(Number(fallbackProduct.id), parseArabicQty(userMsg));
+  if (matchedMap.size === 0) {
+    if (fallbackProduct?.id) {
+      matchedMap.set(Number(fallbackProduct.id), parseArabicQty(userMsg));
+    } else if (historyStr) {
+      const recentLines = String(historyStr).split(/\n+/).slice(-4).reverse();
+      for (const line of recentLines) {
+        const fromHist = findBestProductInText(line, catalog, ignoreWords);
+        if (fromHist) {
+          matchedMap.set(Number(fromHist.id), parseArabicQty(userMsg));
+          break;
+        }
+      }
+    }
   }
 
   const cartItems = [...matchedMap.entries()].map(([productId, quantity]) => ({ productId, quantity }));
@@ -157,7 +170,7 @@ function smartExtract(rawUserPrompt: string) {
   let historyStr = "";
   const hMatch = text.match(/سجل المحادثة[^:]*[:：]\s*([\s\S]*?)(?:\n\n(?:رسالة العميل|طلب العميل)|$)/);
   if (hMatch) {
-    historyStr = hMatch[1].replace(/\[\[SUGGESTIONS:[\s\S]*?\]\]/g, "").trim().slice(-320);
+    historyStr = hMatch[1].replace(/\[\[SUGGESTIONS:[\s\S]*?\]\]/g, "").trim().slice(-400);
   }
 
   const initModalMatch = userMsg.match(/^\[تحليل_منتج\]\s*«([^»]+)»/);
@@ -193,7 +206,7 @@ function smartExtract(rawUserPrompt: string) {
     .map((x: any) => `${x.name}(${x.price}ر.ي)`)
     .join("، ");
 
-  const cartCmd = extractCartCommand(cleanQuestion, catalogList, activeProduct);
+  const cartCmd = extractCartCommand(cleanQuestion, catalogList, activeProduct, historyStr);
   const cartSummary = cartCmd.cartItems
     .map((ci) => {
       const p = catalogList.find((x: any) => Number(x.id) === ci.productId);
@@ -203,8 +216,8 @@ function smartExtract(rawUserPrompt: string) {
     .join(" + ");
 
   const systemPrompt = `أنت مساعد متجر "أوريجنال" باليمن. تحدث بلهجة يمنية بيضاء راقية ومختصرة جداً (سطرين فقط).
-- ممنوع الإطالة أو كتابة JSON أو حروف إنجليزية أو كلمات غير يمنية (مثل بدك/شنو).
-- لا تعرض منتجات عند السلام أو السؤال عن الحال فقط؛ وأقنع الزبون بذكاء إذا سأل عن منتج أو وصفة.
+- ممنوع الإطالة أو تكرار نفس الإجابة السابقة أو كتابة JSON أو حروف إنجليزية.
+- أجب مباشرة على آخر سؤال للزبون؛ ولا تعرض منتجات عند السلام فقط.
 - في آخر سطر اكتب زرين قصيرين جداً (كلمتين أو 3 كلمات فقط للزر) بهذا الشكل:
 [[SUGGESTIONS:أضفه للسلة|كم السعرات؟]]`;
 
@@ -212,7 +225,7 @@ function smartExtract(rawUserPrompt: string) {
   if (isInitialProductView && activeProduct) {
     userPrompt = `المنتج: ${activeProduct.name} (${activeProduct.price || ""} ر.ي). قدم سطرين جذابين عن مميزاته وسعره، ثم سطر [[SUGGESTIONS:أضفه للسلة|كم السعرات؟]]`;
   } else {
-    userPrompt = `${historyStr ? `سابقاً:\n${historyStr}\n` : ""}${activeProduct ? `(المنتج الحالي: ${activeProduct.name})\n` : ""}المنتجات: ${catalogCompact}\nسؤال الزبون: "${cleanQuestion}"`;
+    userPrompt = `${historyStr ? `سابقاً:\n${historyStr}\n` : ""}${activeProduct ? `(المنتج الحالي: ${activeProduct.name})\n` : ""}المنتجات: ${catalogCompact}\nسؤال الزبون الجديد (أجب عليه مباشرة ولا تكرر الرد السابق): "${cleanQuestion}"`;
   }
 
   return { userMsg: cleanQuestion, catalogList, cartCmd, cartSummary, systemPrompt, userPrompt };
@@ -303,7 +316,6 @@ async function callLiveAI(systemPrompt: string, userPrompt: string): Promise<str
   const orEndpoint = `${P}openrouter.ai/api/v1/chat/completions`;
   const refHeader = ["HT", "TP-Referer"].join("");
 
-  // 1) Single-trip High-Throughput OpenRouter call with fast non-reasoning models array
   try {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 9500);
@@ -341,7 +353,6 @@ async function callLiveAI(systemPrompt: string, userPrompt: string): Promise<str
     }
   } catch {}
 
-  // 2) Immediate fallback to openrouter/free if models array wasn't accepted
   for (let i = 0; i < 2; i++) {
     try {
       const ctrl = new AbortController();
@@ -384,10 +395,9 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   const rawUserPrompt = userMessages.map((m) => contentToText(m.content)).filter(Boolean).join("\n\n");
   const ctx = smartExtract(rawUserPrompt);
 
-  // Instant 0.01s response for cart additions/removals so the customer never waits!
   if (ctx.cartCmd.cartAction !== "none" && ctx.cartSummary) {
     const instantText = ctx.cartCmd.cartAction === "add"
-      ? `أبشر يا غالي! أضفت لك (${ctx.cartSummary}) إلى السلة مباشرة 🛒\n[[SUGGESTIONS:إتمام الطلب|إضافة صنف آخر]]`
+      ? `أبشر يا غالي! أضفت لك (${ctx.cartSummary}) إلى السلة مباشرة 🛒\n[[SUGGESTIONS:إتمام الطلب|منتجات أخرى]]`
       : `تم تحديث السلة وحذف (${ctx.cartSummary}) بنجاح.\n[[SUGGESTIONS:عرض المنتجات|إتمام الطلب]]`;
     const finalJson = buildFinalJson(instantText, ctx);
     return {

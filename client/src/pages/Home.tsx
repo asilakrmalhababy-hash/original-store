@@ -332,7 +332,7 @@ function CategoryStrip({ data, onSelect }: { data: HomeData["categories"]; onSel
 function HomePage({ data, onOpen, onAiRecipe }: { data: HomeData; onOpen: (id: number) => void; onAiRecipe?: (p: PublicProduct) => void }) {
   const [, navigate] = useLocation();
   const [sort, setSort] = useState<"featured" | "price-asc" | "price-desc">("featured");
-  const { data: products, isLoading: productsLoading } = trpc.commerce.catalog.listProducts.useQuery({ sort, limit: 24 }, { retry: 1, staleTime: 3000, refetchInterval: location.startsWith("/assistant") ? false : 8000, refetchOnWindowFocus: true });
+  const { data: products, isLoading: productsLoading } = trpc.commerce.catalog.listProducts.useQuery({ sort, limit: 24 }, { retry: 1, staleTime: 3000, refetchInterval: 5000, refetchOnWindowFocus: true });
   const featured = products ?? data.products;
   const changeCategory = (id: number) => { navigate(`/products?category=${id}`); };
   return <main className="page-shell">
@@ -860,7 +860,7 @@ function AssistantPage() {
   const mutation = trpc.commerce.assistant.recipe.useMutation();
 
   useEffect(() => {
-    const saved = messages.slice(-24).map(m => ({ role: m.role, text: m.text }));
+    const saved = messages.slice(-24).map(m => ({ role: m.role, text: m.text || (m as any).content || "" }));
     try { localStorage.setItem(ASSISTANT_HISTORY_KEY, JSON.stringify(saved)); } catch {}
   }, [messages]);
 
@@ -897,7 +897,7 @@ function AssistantPage() {
   const sendText = (rawRequest: string) => {
     const request = rawRequest.trim();
     if (mutation.isPending || !request) return;
-    const history = messages.slice(-10).map(m => ({ role: m.role, text: splitCleanReplyAndChips(m.text).cleanText }));
+    const history = messages.slice(-10).map(m => ({ role: m.role, text: splitCleanReplyAndChips(m.text || (m as any).content || "").cleanText }));
     setMessages(curr => [...curr, { role: "user" as const, text: request }].slice(-24));
     setInput("");
     mutation.mutate(
@@ -939,14 +939,15 @@ function AssistantPage() {
         </div>
         <div className="chat-messages" ref={messagesRef} style={{ padding: "12px", gap: "10px" }}>
           {messages.map((message, index) => {
+            const msgText = message.text || (message as any).content || "";
             if (message.role === "user") {
               return (
                 <div key={index} className="chat-message from-user" style={{ fontSize: "12.5px", padding: "8px 13px", borderRadius: "14px" }}>
-                  <p style={{ margin: 0 }}>{message.text}</p>
+                  <p style={{ margin: 0 }}>{msgText}</p>
                 </div>
               );
             }
-            const parsed = splitCleanReplyAndChips(message.text, (message as any).suggestedQuestions || (message as any).suggestions);
+            const parsed = splitCleanReplyAndChips(msgText, (message as any).suggestedQuestions || (message as any).suggestions);
             return (
               <div key={index} className="chat-message from-assistant" style={{ fontSize: "12.5px", lineHeight: "1.65", padding: "10px 13px", borderRadius: "14px" }}>
                 <p style={{ margin: 0, whiteSpace: "pre-line" }}>{parsed.cleanText}</p>
