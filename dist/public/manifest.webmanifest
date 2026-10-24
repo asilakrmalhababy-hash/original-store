@@ -1,0 +1,19 @@
+{
+  "id": "/",
+  "name": "ORIGINAL – أوريجنال",
+  "short_name": "أوريجنال",
+  "description": "متجر أوريجنال للاحتياجات اليومية",
+  "lang": "ar",
+  "dir": "rtl",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "portrait-primary",
+  "background_color": "#f8f8f2",
+  "theme_color": "#174b36",
+  "icons": [
+    { "src": "/app-icon-192-v2.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/app-icon-512-v2.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

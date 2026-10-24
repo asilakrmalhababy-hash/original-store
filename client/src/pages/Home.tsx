@@ -258,6 +258,21 @@ function AiRecipeModal({ product, onClose }: { product: PublicProduct; onClose: 
               <div style={{ whiteSpace: "pre-line", color: "#1e293b", fontSize: "12.5px", lineHeight: "1.65" }}>
                 {parsed.cleanText}
               </div>
+              {data?.recipe && (
+                <div className="recipe-card" style={{ marginTop: "8px", padding: "9px 11px", borderRadius: "10px", background: "#fff", border: "1px solid #dce8df" }}>
+                  <strong style={{ fontSize: "12.5px", color: "#174b36", display: "block" }}>{data.recipe.name} <small style={{ fontWeight: 500, color: "#64748b" }}>(تكفي {data.recipe.servings})</small></strong>
+                  {data.recipe.steps?.length > 0 && (
+                    <ol style={{ margin: "6px 0", paddingInlineStart: "18px", fontSize: "11.5px", lineHeight: "1.6" }}>
+                      {data.recipe.steps.map((st: string, sIdx: number) => <li key={sIdx}>{st}</li>)}
+                    </ol>
+                  )}
+                  {data.ingredients?.length > 0 && (
+                    <button type="button" onClick={() => { data.ingredients.forEach((ing: any) => add({ id: ing.productId, name: ing.name, price: ing.price, unit: ing.unit, stock: ing.stock, minQuantity: ing.minQuantity, quantityStep: ing.quantityStep }, ing.quantity)); toast.success("أُضيفت مقادير الوصفة للسلة 🛒"); }} style={{ ...tinyChipStyle, background: "#174b36", color: "#fff", marginTop: "4px", padding: "4px 10px" }}>
+                      إضافة مقادير الوصفة للسلة
+                    </button>
+                  )}
+                </div>
+              )}
               {parsed.chips.length > 0 && (
                 <div style={{ display: "flex", flexWrap: "wrap", gap: "5px", marginTop: "8px" }}>
                   {parsed.chips.map((chip, idx) => (
@@ -908,6 +923,11 @@ function AssistantPage() {
   const sendText = (rawRequest: string) => {
     const request = rawRequest.trim();
     if (mutation.isPending || !request) return;
+    const lastMsg = messages.at(-1);
+    if ((request === "أضف المقادير للسلة" || request === "أضف مقادير الحلى للسلة") && lastMsg?.ingredients?.length) {
+      applyConfirmedChange("rec-chip-" + Date.now(), "add", lastMsg.ingredients);
+      return;
+    }
     if (["إتمام الطلب", "تأكيد الطلب", "استكمال الطلب", "عرض السلة", "مراجعة السلة"].includes(request)) {
       navigate("/cart");
       return;

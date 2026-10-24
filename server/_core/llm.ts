@@ -33,11 +33,30 @@ const P = ["ht", "tps", "://"].join("");
 const _encKey = "c2stb3ItdjEtNDI5Y2MzZWQzNTU3MTI0Njg4M2NhZDE2NmIxNmU2NGMzNDk1ZTQ3OTBjYTZjYzkxN2Q5NjhmMWNiYTIzZjJkOQ==";
 const DEFAULT_OR_KEY = Buffer.from(_encKey, "base64").toString("utf-8").trim();
 
-function getOpenRouterKeys(): string[] {
-  const multi = (process.env.OPENROUTER_API_KEYS || "").split(",").map((k) => k.trim()).filter(Boolean);
-  const single = (process.env.OPENROUTER_API_KEY || "").trim();
-  const all = [...multi, ...(single ? [single] : []), DEFAULT_OR_KEY];
-  return [...new Set(all)];
+const EXTRA_API_KEYS: string[] = [];
+
+function getAllApiKeys(): string[] {
+  const fromEnv = [
+    process.env.AI_API_KEYS || "",
+    process.env.OPENROUTER_API_KEYS || "",
+    process.env.OPENROUTER_API_KEY || "",
+    process.env.GROQ_API_KEY || "",
+    process.env.GEMINI_API_KEY || ""
+  ]
+    .join(",")
+    .split(",")
+    .map((k) => k.trim())
+    .filter(Boolean);
+  return [...new Set([...EXTRA_API_KEYS, ...fromEnv, DEFAULT_OR_KEY])];
+}
+
+const modelCooldownUntil = new Map<string, number>();
+function isTargetHealthy(id: string): boolean {
+  const until = modelCooldownUntil.get(id) || 0;
+  return Date.now() >= until;
+}
+function markTargetCooldown(id: string, ms = 45_000) {
+  modelCooldownUntil.set(id, Date.now() + ms);
 }
 
 const contentToText = (content: Message["content"]): string => {
@@ -179,19 +198,6 @@ function smartExtract(rawUserPrompt: string) {
   try { if (favMatch) favList = JSON.parse(favMatch[1]); } catch {}
   try { if (cartMatch) currentCart = JSON.parse(cartMatch[1]); } catch {}
 
-  if (catalogList.length === 0) {
-    const arrMatches = text.match(/\[\s*\{[\s\S]*?\}\s*\]/g) || [];
-    for (const m of arrMatches) {
-      try {
-        const arr = JSON.parse(m);
-        if (Array.isArray(arr) && arr.length > 0 && (arr[0].name || arr[0].price !== undefined)) {
-          catalogList = arr;
-          break;
-        }
-      } catch {}
-    }
-  }
-
   let userMsg = "";
   const arMatch = text.match(/(?:رسالة العميل الحالية|رسالة العميل الآن|رسالة العميل|سؤال العميل|طلب العميل)\s*[:：]\s*([\s\S]+)$/i);
   if (arMatch) {
@@ -205,12 +211,11 @@ function smartExtract(rawUserPrompt: string) {
   let historyStr = "";
   const hMatch = text.match(/سجل المحادثة[^:]*[:：]\s*([\s\S]*?)(?:\n\n(?:رسالة العميل|طلب العميل)|$)/);
   if (hMatch) {
-    historyStr = hMatch[1].replace(/\[\[SUGGESTIONS:[\s\S]*?\]\]/g, "").trim().slice(-700);
+    historyStr = hMatch[1].replace(/\[\[SUGGESTIONS:[\s\S]*?\]\]/g, "").trim().slice(-800);
   }
 
   const initModalMatch = userMsg.match(/^\[تحليل_منتج\]\s*«([^»]+)»/);
   const followModalMatch = userMsg.match(/^\[سياق_منتج:([^\]]+)\]\s*([\s\S]+)$/);
-  const legacyModalMatch = userMsg.match(/^ما هي أفضل 3 طرق لتحضير «([^»]+)»[\s\S]*?(?:التعديل المطلوب:\s*([\s\S]+))?$/);
 
   let activeProduct: any = null;
   let isInitialProductView = false;
@@ -225,20 +230,11 @@ function smartExtract(rawUserPrompt: string) {
     activeProduct = catalogList.find((x: any) => x.name === pName) || { name: pName };
     cleanQuestion = followModalMatch[2].trim();
     isInitialProductView = false;
-  } else if (legacyModalMatch) {
-    const pName = legacyModalMatch[1].trim();
-    activeProduct = catalogList.find((x: any) => x.name === pName) || { name: pName };
-    if (legacyModalMatch[2] && legacyModalMatch[2].trim()) {
-      cleanQuestion = legacyModalMatch[2].trim();
-      isInitialProductView = false;
-    } else {
-      isInitialProductView = true;
-    }
   }
 
   const catalogDetailed = catalogList
-    .slice(0, 40)
-    .map((x: any) => `#${x.id}: ${x.name} (${x.price} ر.ي / ${x.unit || "حبة"})`)
+    .slice(0, 45)
+    .map((x: any) => `#${x.id}: ${x.name} (${x.price} ر.ي / ${x.unit || "حبة"}${x.description ? ` - ${x.description}` : ""})`)
     .join(" | ");
 
   const cartContextStr = currentCart.length > 0
@@ -266,7 +262,7 @@ function smartExtract(rawUserPrompt: string) {
 
 قواعد الذكاء والتفاهم مع الزبون:
 1. افهم قصد الزبون بعمق وتابع سياق الحديث:
-   - لا تبدأ كل رسالة بكلمة "يا هلا!" إذا كانت المحادثة مستمرة، بل ادخل في الإجابة الذكية مباشرة.
+   - لا تكرر كلمة "يا هلا!" في كل رسالة إذا كانت المحادثة مستمرة، بل ادخل في الإجابة الذكية مباشرة.
    - إذا اقترحتَ عليه صنفاً (مثلاً عصير مانجو) فقال لك "غيره" أو "شي ثاني"، اقترح عليه صنفاً آخر من نفس الفئة (مثلاً عصير برتقال وجزر) ولا تقفز إلى قسم آخر إلا إذا انتهت خيارات نفس الفئة ووضحت له ذلك!
    - لديك اطلاع كامل على (سلة الزبون الحالية) و(مفضلات الزبون ❤️)؛ إذا سألك عما في سلته أو مفضلاته أو طلب نصيحة بناءً عليها، أجب بدقة من البيانات المرفقة.
 2. متى تقنع الزبون ومتى تقدم الوصفات:
@@ -285,7 +281,7 @@ function smartExtract(rawUserPrompt: string) {
 
   let userPrompt = "";
   if (isInitialProductView && activeProduct) {
-    userPrompt = `المنتج المختار: «${activeProduct.name}» (السعر: ${activeProduct.price || ""} ر.ي / ${activeProduct.unit || "حبة"}).\nبقية منتجات المتجر: ${catalogDetailed}\nحلل هذا المنتج بذكاء وخبرة: إذا كان يستهلك مباشرة (عصير، زبادي، شوكولاتة) تحدث عن طعمه وفوائده وأفكار سريعة لتقديمه، وإذا كان مكون طبخ (بزاليا، فول، تونة) قدم معه [الوصفة: ... | تكفي: 3] وخطواتها، ثم اختم بسطر [[SUGGESTIONS:...]].`;
+    userPrompt = `المنتج المختار: «${activeProduct.name}» (السعر: ${activeProduct.price || ""} ر.ي / ${activeProduct.unit || "حبة"}${activeProduct.description ? `، الوصف: ${activeProduct.description}` : ""}).\nبقية منتجات المتجر: ${catalogDetailed}\nحلل هذا المنتج بذكاء وخبرة: إذا كان يستهلك مباشرة (عصير، زبادي، شوكولاتة) تحدث في 3 نقاط قصيرة وجذابة عن طعمه وفوائده وأفكار تقديمه، وإذا كان مكون طبخ (بزاليا، فول، تونة) قدم معه [الوصفة: ... | تكفي: 3] وخطواتها، ثم اختم بسطر [[SUGGESTIONS:أضفه للسلة|...]].`;
   } else {
     userPrompt = [
       `منتجات المتجر المتوفرة حالياً (المصدر الوحيد للأسعار والأصناف): ${catalogDetailed || "لا توجد منتجات"}`,
@@ -423,38 +419,48 @@ function buildFinalJson(rawReply: string, ctx: ReturnType<typeof smartExtract>):
   });
 }
 
-async function callLiveAI(systemPrompt: string, userPrompt: string, catalogList: any[]): Promise<string> {
-  const orEndpoint = `${P}openrouter.ai/api/v1/chat/completions`;
-  const refHeader = ["HT", "TP-Referer"].join("");
-  const keys = getOpenRouterKeys();
+async function callSingleProvider(
+  key: string,
+  model: string,
+  systemPrompt: string,
+  userPrompt: string,
+  catalogList: any[]
+): Promise<string> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 8500);
+  try {
+    if (key.startsWith("AIza")) {
+      const gModel = model.includes("gemini") ? model : "gemini-2.5-flash";
+      const gUrl = `${P}generativelanguage.googleapis.com/v1beta/models/${gModel}:generateContent?key=${encodeURIComponent(key)}`;
+      const res = await fetch(gUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+          generationConfig: { temperature: 0.5 }
+        }),
+        signal: ctrl.signal
+      });
+      clearTimeout(timer);
+      if (!res.ok) throw new Error(`Gemini HTTP ${res.status}`);
+      const data = await res.json();
+      const text = data?.candidates?.[0]?.content?.parts?.map((p: any) => p.text || "").join("") || "";
+      parseRichAiResponse(text, catalogList);
+      return text.trim();
+    }
 
-  // Multi-model cascade across available keys so if one model is busy, the next answers seamlessly
-  const cascadeModels = [
-    "openrouter/free",
-    "meta-llama/llama-3.3-70b-instruct:free",
-    "google/gemma-3-27b-it:free",
-    "qwen/qwen-2.5-72b-instruct:free",
-    "openrouter/free"
-  ];
-
-  for (let i = 0; i < cascadeModels.length; i++) {
-    const model = cascadeModels[i];
-    const apiKey = keys[i % keys.length];
-    try {
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 8500);
-      const res = await fetch(orEndpoint, {
+    if (key.startsWith("gsk_")) {
+      const groqUrl = `${P}api.groq.com/openai/v1/chat/completions`;
+      const groqModel = model.startsWith("groq/") ? model.slice(5) : "llama-3.3-70b-versatile";
+      const res = await fetch(groqUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${apiKey}`,
-          [refHeader]: `${P}original-store-xmyf.onrender.com`,
-          "X-Title": "Original Store"
+          "Authorization": `Bearer ${key}`
         },
         body: JSON.stringify({
-          model,
-          provider: { sort: "throughput" },
-          reasoning: { effort: "none", exclude: true },
+          model: groqModel,
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: userPrompt }
@@ -464,16 +470,83 @@ async function callLiveAI(systemPrompt: string, userPrompt: string, catalogList:
         signal: ctrl.signal
       });
       clearTimeout(timer);
-      if (res.ok) {
-        const data = await res.json();
-        const text = data?.choices?.[0]?.message?.content || "";
-        parseRichAiResponse(text, catalogList);
-        return text.trim();
-      }
-    } catch {}
+      if (!res.ok) throw new Error(`Groq HTTP ${res.status}`);
+      const data = await res.json();
+      const text = data?.choices?.[0]?.message?.content || "";
+      parseRichAiResponse(text, catalogList);
+      return text.trim();
+    }
+
+    const orEndpoint = `${P}openrouter.ai/api/v1/chat/completions`;
+    const refHeader = ["HT", "TP-Referer"].join("");
+    const res = await fetch(orEndpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${key}`,
+        [refHeader]: `${P}original-store-xmyf.onrender.com`,
+        "X-Title": "Original Store"
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt }
+        ],
+        temperature: 0.5
+      }),
+      signal: ctrl.signal
+    });
+    clearTimeout(timer);
+    if (!res.ok) throw new Error(`OR ${model} HTTP ${res.status}`);
+    const data = await res.json();
+    const text = data?.choices?.[0]?.message?.content || "";
+    parseRichAiResponse(text, catalogList);
+    return text.trim();
+  } catch (err) {
+    clearTimeout(timer);
+    throw err;
+  }
+}
+
+async function callLiveAI(systemPrompt: string, userPrompt: string, catalogList: any[]): Promise<string> {
+  const allKeys = getAllApiKeys();
+  const groqOrGeminiKeys = allKeys.filter((k) => k.startsWith("gsk_") || k.startsWith("AIza"));
+  const openRouterKeys = allKeys.filter((k) => !k.startsWith("gsk_") && !k.startsWith("AIza"));
+
+  for (const key of groqOrGeminiKeys) {
+    const targetId = `fastkey:${key.slice(0, 10)}`;
+    if (!isTargetHealthy(targetId)) continue;
+    try {
+      return await callSingleProvider(key, "default", systemPrompt, userPrompt, catalogList);
+    } catch {
+      markTargetCooldown(targetId, 30_000);
+    }
   }
 
-  // Backup Stage: Pollinations GET & POST
+  const openRouterModels = [
+    "openrouter/free",
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "google/gemma-3-27b-it:free",
+    "qwen/qwen-2.5-72b-instruct:free",
+    "deepseek/deepseek-chat-v3-0324:free"
+  ];
+
+  const orderedModels = [
+    ...openRouterModels.filter((m) => isTargetHealthy(m)),
+    ...openRouterModels.filter((m) => !isTargetHealthy(m))
+  ];
+
+  for (let i = 0; i < orderedModels.length; i++) {
+    const model = orderedModels[i];
+    const key = openRouterKeys[i % Math.max(1, openRouterKeys.length)] || DEFAULT_OR_KEY;
+    try {
+      return await callSingleProvider(key, model, systemPrompt, userPrompt, catalogList);
+    } catch {
+      if (model !== "openrouter/free") markTargetCooldown(model, 45_000);
+    }
+  }
+
   try {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 8000);
@@ -516,7 +589,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   return {
     id: `ai-${Date.now()}`,
     created: Math.floor(Date.now() / 1000),
-    model: "smart-multi-cascade",
+    model: "luxury-multi-engine",
     choices: [{ index: 0, message: { role: "assistant", content: finalJson }, finish_reason: "stop" }],
     usage: { prompt_tokens: 120, completion_tokens: 140, total_tokens: 260 }
   };
