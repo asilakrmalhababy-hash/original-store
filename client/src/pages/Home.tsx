@@ -853,6 +853,7 @@ function assistantHistoryText(message: AssistantMessage) {
 
 function AssistantPage() {
   const { add, cart, setQuantity, favoriteIds } = useStore();
+  const [, navigate] = useLocation();
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<AssistantMessage[]>(readAssistantHistory);
   const messagesRef = useRef<HTMLDivElement>(null);
@@ -860,7 +861,7 @@ function AssistantPage() {
   const mutation = trpc.commerce.assistant.recipe.useMutation();
 
   useEffect(() => {
-    const saved = messages.slice(-24).map(m => ({ role: m.role, text: m.text || (m as any).content || "" }));
+    const saved = messages.slice(-24).map(m => ({ role: m.role, text: m.text || (m as any).content || "", ...(m.contextText ? { contextText: m.contextText } : {}) }));
     try { localStorage.setItem(ASSISTANT_HISTORY_KEY, JSON.stringify(saved)); } catch {}
   }, [messages]);
 
@@ -887,17 +888,35 @@ function AssistantPage() {
         add({ id: item.productId, name: item.name, price: item.price, unit: item.unit, stock: item.stock, minQuantity: item.minQuantity, quantityStep: item.quantityStep }, item.quantity);
         changed += 1;
       } else if (current) {
-        setQuantity(item.productId, Math.max(0, current.quantity - item.quantity));
+        const nextQty = item.quantity === 0 ? 0 : Math.max(0, current.quantity - item.quantity);
+        setQuantity(item.productId, nextQty);
         changed += 1;
       }
     }
-    if (changed) toast.success(type === "add" ? "تمت الإضافة للسلة 🛒" : "تم التحديث في السلة");
+    setMessages(curr => curr.map(m => m.recipeActionId === actionId ? { ...m, recipeAdded: true } : m));
+    if (changed) toast.success(type === "add" ? "تمت الإضافة للسلة 🛒" : "تم تحديث السلة");
+  };
+
+  const copyMissingRequest = async (message: AssistantMessage) => {
+    const missing = message.missingIngredients ?? [];
+    if (!message.recipe || !missing.length) return;
+    const { text: note } = buildMissingIngredientNote(message.recipe.name, message.recipe.servings, missing);
+    try {
+      await navigator.clipboard.writeText(note);
+      toast.success("نُسخت النواقص! الصقها في ملاحظة الطلب عند الدفع.");
+    } catch {
+      toast.error("تعذر النسخ تلقائياً.");
+    }
   };
 
   const sendText = (rawRequest: string) => {
     const request = rawRequest.trim();
     if (mutation.isPending || !request) return;
-    const history = messages.slice(-10).map(m => ({ role: m.role, text: splitCleanReplyAndChips(m.text || (m as any).content || "").cleanText }));
+    if (["إتمام الطلب", "تأكيد الطلب", "استكمال الطلب", "عرض السلة", "مراجعة السلة"].includes(request)) {
+      navigate("/cart");
+      return;
+    }
+    const history = messages.slice(-12).map(m => ({ role: m.role, text: splitCleanReplyAndChips(m.text || (m as any).content || "").cleanText }));
     setMessages(curr => [...curr, { role: "user" as const, text: request }].slice(-24));
     setInput("");
     mutation.mutate(
@@ -912,7 +931,9 @@ function AssistantPage() {
             text: result.message,
             recipe: result.recipe,
             ingredients: result.ingredients,
-            missingIngredients: result.missingIngredients
+            missingIngredients: result.missingIngredients,
+            recipeActionId: result.recipe && result.ingredients?.length ? "rec-" + Date.now() : undefined,
+            recipeAdded: false
           }].slice(-24));
         },
         onError: () => {
@@ -933,7 +954,7 @@ function AssistantPage() {
       <section className="chat-panel" style={{ borderRadius: "16px", boxShadow: "0 2px 10px rgba(0,0,0,0.04)" }}>
         <div className="chat-head" style={{ padding: "10px 14px" }}>
           <span className="chat-avatar" style={{ width: "30px", height: "30px" }}><Sparkles size={15} /></span>
-          <div><strong style={{ fontSize: "13.5px" }}>مساعد أوريجنال</strong><small style={{ fontSize: "10.5px" }}>سريع وذكي</small></div>
+          <div><strong style={{ fontSize: "13.5px" }}>مساعد أوريجنال الذكي</strong><small style={{ fontSize: "10.5px" }}>يفهم سلتك ومفضلتك ويقترح أشهى الوصفات</small></div>
           <span className="online-dot" />
           <button type="button" className="assistant-new-chat" style={{ fontSize: "11px", padding: "4px 10px" }} disabled={mutation.isPending} onClick={startNewConversation}>محادثة جديدة</button>
         </div>
@@ -951,6 +972,43 @@ function AssistantPage() {
             return (
               <div key={index} className="chat-message from-assistant" style={{ fontSize: "12.5px", lineHeight: "1.65", padding: "10px 13px", borderRadius: "14px" }}>
                 <p style={{ margin: 0, whiteSpace: "pre-line" }}>{parsed.cleanText}</p>
+                {message.recipe && (
+                  <div className="recipe-card" style={{ marginTop: "10px", padding: "10px", borderRadius: "12px" }}>
+                    <span className="eyebrow" style={{ fontSize: "10px" }}>اقتراح وصفة</span>
+                    <h3 style={{ fontSize: "13.5px", margin: "2px 0" }}>{message.recipe.name}</h3>
+                    <small style={{ fontSize: "11px" }}>تكفي {message.recipe.servings} أشخاص</small>
+                    {message.ingredients?.length ? (
+                      <div className="recipe-ingredients" style={{ marginTop: "8px" }}>
+                        {message.ingredients.map(item => (
+                          <div className="recipe-ingredient" key={item.productId} style={{ fontSize: "11.5px", padding: "4px 0" }}>
+                            <span>{item.name} <small>({item.quantity} {item.unit})</small></span>
+                            <strong>{formatPrice(item.price)}</strong>
+                          </div>
+                        ))}
+                        {message.recipeAdded ? (
+                          <div className="assistant-action-complete" style={{ fontSize: "11px", marginTop: "6px" }}><Check size={14} /> أُضيفت المقادير إلى السلة</div>
+                        ) : (
+                          <button type="button" onClick={() => message.recipeActionId && applyConfirmedChange(message.recipeActionId, "add", message.ingredients ?? [])} style={{ ...tinyChipStyle, background: "#174b36", color: "#fff", marginTop: "8px", padding: "5px 12px" }}>
+                            إضافة مقادير الوصفة للسلة
+                          </button>
+                        )}
+                      </div>
+                    ) : null}
+                    {message.missingIngredients?.length ? (
+                      <div className="missing-ingredients" style={{ marginTop: "8px", fontSize: "11px" }}>
+                        <strong>مقادير منزلية / غير متوفرة حالياً:</strong>
+                        <ul style={{ margin: "4px 0", paddingInlineStart: "18px" }}>{message.missingIngredients.map((item, i) => <li key={i}>{item}</li>)}</ul>
+                        <button type="button" onClick={() => void copyMissingRequest(message)} style={tinyChipStyle}>نسخ طلب توفير المقادير</button>
+                      </div>
+                    ) : null}
+                    {message.recipe.steps?.length > 0 && (
+                      <details className="recipe-steps" style={{ marginTop: "8px", fontSize: "11.5px" }} open>
+                        <summary style={{ cursor: "pointer", fontWeight: 700 }}>طريقة التحضير</summary>
+                        <ol style={{ margin: "6px 0", paddingInlineStart: "18px" }}>{message.recipe.steps.map((step, sIdx) => <li key={sIdx} style={{ marginBottom: "4px" }}>{step}</li>)}</ol>
+                      </details>
+                    )}
+                  </div>
+                )}
                 {parsed.chips.length > 0 && (
                   <div style={{ display: "flex", flexWrap: "wrap", gap: "5px", marginTop: "8px" }}>
                     {parsed.chips.map((chip, cIdx) => (
@@ -970,7 +1028,7 @@ function AssistantPage() {
           )}
         </div>
         <form className="chat-input" onSubmit={send} style={{ padding: "8px 10px" }}>
-          <input maxLength={1200} value={input} onChange={e => setInput(e.target.value)} placeholder="اكتب سؤالك أو طلبك..." aria-label="رسالة للمساعد" disabled={mutation.isPending} style={{ fontSize: "12.5px", minHeight: "38px" }} />
+          <input maxLength={1200} value={input} onChange={e => setInput(e.target.value)} placeholder="اسأل عن منتج، وصفة، أو تعديل في سلتك..." aria-label="رسالة للمساعد" disabled={mutation.isPending} style={{ fontSize: "12.5px", minHeight: "38px" }} />
           <button disabled={mutation.isPending || !input.trim()} aria-label="إرسال" style={{ width: "38px", height: "38px" }}><ArrowLeft size={16} /></button>
         </form>
       </section>
