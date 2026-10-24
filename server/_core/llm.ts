@@ -452,7 +452,7 @@ async function callSingleProvider(
 
     if (key.startsWith("gsk_")) {
       const groqUrl = `${P}api.groq.com/openai/v1/chat/completions`;
-      const groqModel = model.startsWith("groq/") ? model.slice(5) : "llama-3.3-70b-versatile";
+      const groqModel = model.startsWith("groq/") ? model.slice(5) : "qwen/qwen3.8-27b";
       const res = await fetch(groqUrl, {
         method: "POST",
         headers: {
