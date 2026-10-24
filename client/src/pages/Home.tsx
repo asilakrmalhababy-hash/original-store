@@ -510,11 +510,7 @@ function Checkout({ onClose, onSuccess, cart }: { onClose: () => void; onSuccess
   const quote = quoteSignature === signature ? quoteMutation.data : undefined;
   const mutation = trpc.commerce.orders.place.useMutation({
     onSuccess: result => {
-        // auto-cart-exec
-        if (result.cartAction && Array.isArray(result.cartAction.items) && result.cartAction.items.length > 0) {
-          const autoId = "auto-" + Date.now();
-          setTimeout(() => applyConfirmedChange(autoId, result.cartAction!.type, result.cartAction!.items), 25);
-        }
+
       const idempotencyKey = keyRef.current.key;
       customer.rememberOrder({ orderNumber: result.orderNumber, idempotencyKey, createdAt: new Date().toISOString() });
       clearPendingOrderIdempotencyKey(idempotencyKey);

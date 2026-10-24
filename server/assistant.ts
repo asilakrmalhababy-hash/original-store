@@ -355,7 +355,7 @@ export function prepareAssistantResponse(
       preparedItems.push(productLine(product, quantity));
     }
 
-    if (preparedItems.length > 0) cartAction = { type: output.cartAction, items: preparedItems };
+    if (preparedItems.length > 0 && (output.cartAction === "add" || output.cartAction === "remove")) cartAction = { type: output.cartAction, items: preparedItems };
   }
   if (notices.length) message = `${message}\n\n${uniqueNames(notices).join(" ")}`;
 
