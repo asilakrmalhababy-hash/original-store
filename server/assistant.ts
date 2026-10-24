@@ -175,7 +175,7 @@ export function prepareAssistantResponse(
   }
 
   const missingIngredients = uniqueNames(missing);
-  const hasRecipe = Boolean(output.recipeName && output.servings > 0 && (ingredients.length > 0 || missingIngredients.length > 0 || output.steps.length > 0));
+  const hasRecipe = Boolean(output.recipeName && (output.steps.length > 0 || ingredients.length > 0 || missingIngredients.length > 0));
   const message = output.message;
 
   let cartAction: PreparedAssistantResponse["cartAction"] = null;
