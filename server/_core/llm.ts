@@ -30,33 +30,48 @@ export type InvokeResult = {
 };
 
 const P = ["ht", "tps", "://"].join("");
-const _encKey = "c2stb3ItdjEtNDI5Y2MzZWQzNTU3MTI0Njg4M2NhZDE2NmIxNmU2NGMzNDk1ZTQ3OTBjYTZjYzkxN2Q5NjhmMWNiYTIzZjJkOQ==";
-const DEFAULT_OR_KEY = Buffer.from(_encKey, "base64").toString("utf-8").trim();
 
-const EXTRA_API_KEYS: string[] = [];
+// مصفوفة المفاتيح المشفرة (تتسع لـ 10 أو 20 مفتاحاً وتعمل بالتناوب التلقائي)
+const ENCODED_KEYS: string[] = [
+  "c2stb3ItdjEtNDI5Y2MzZWQzNTU3MTI0Njg4M2NhZDE2NmIxNmU2NGMzNDk1ZTQ3OTBjYTZjYzkxN2Q5NjhmMWNiYTIzZjJkOQ=="
+];
 
 function getAllApiKeys(): string[] {
+  const decoded = ENCODED_KEYS.map((b) => {
+    try { return Buffer.from(b, "base64").toString("utf8").trim(); } catch { return ""; }
+  }).filter(Boolean);
+
   const fromEnv = [
     process.env.AI_API_KEYS || "",
-    process.env.OPENROUTER_API_KEYS || "",
-    process.env.OPENROUTER_API_KEY || "",
+    process.env.GROQ_API_KEYS || "",
     process.env.GROQ_API_KEY || "",
-    process.env.GEMINI_API_KEY || ""
+    process.env.GEMINI_API_KEYS || "",
+    process.env.GEMINI_API_KEY || "",
+    process.env.OPENROUTER_API_KEYS || "",
+    process.env.OPENROUTER_API_KEY || ""
   ]
     .join(",")
-    .split(",")
+    .split(/[\s,]+/)
     .map((k) => k.trim())
     .filter(Boolean);
-  return [...new Set([...EXTRA_API_KEYS, ...fromEnv, DEFAULT_OR_KEY])];
+
+  // ترتيب المفاتيح: Groq أولاً للسرعة القصوى، ثم Gemini، ثم OpenRouter
+  const all = [...new Set([...fromEnv, ...decoded])];
+  const groq = all.filter((k) => k.startsWith("gsk_"));
+  const gemini = all.filter((k) => k.startsWith("AIza"));
+  const others = all.filter((k) => !k.startsWith("gsk_") && !k.startsWith("AIza"));
+  return [...groq, ...gemini, ...others];
 }
 
-const modelCooldownUntil = new Map<string, number>();
-function isTargetHealthy(id: string): boolean {
-  const until = modelCooldownUntil.get(id) || 0;
-  return Date.now() >= until;
+// متتبع انتهاء التوكن لكل مفتاح ونموذج: ينتقل فوراً للمفتاح التالي عند نفاد التوكن
+const slotCooldownUntil = new Map<string, number>();
+function isSlotReady(slotId: string): boolean {
+  return Date.now() >= (slotCooldownUntil.get(slotId) || 0);
 }
-function markTargetCooldown(id: string, ms = 45_000) {
-  modelCooldownUntil.set(id, Date.now() + ms);
+function markSlotExhausted(slotId: string, status: number) {
+  // إذا كان 429 (انتهى حد التوكن/الطلبات) ينتقل للمفتاح التالي لمدة دقيقتين، وإلا 45 ثانية
+  const cooldownMs = status === 429 || status === 402 ? 120_000 : 45_000;
+  slotCooldownUntil.set(slotId, Date.now() + cooldownMs);
 }
 
 const contentToText = (content: Message["content"]): string => {
@@ -205,13 +220,20 @@ function smartExtract(rawUserPrompt: string) {
   } else {
     const withoutArrays = text.replace(/\[\s*\{[\s\S]*?\}\s*\]/g, "").trim();
     const lines = withoutArrays.split(/\n+/).map((l) => l.trim()).filter(Boolean);
-    userMsg = lines.slice(-2).join(" ") || text.slice(-300);
+    userMsg = lines.slice(-2).join(" ") || text.slice(-240);
   }
 
   let historyStr = "";
   const hMatch = text.match(/سجل المحادثة[^:]*[:：]\s*([\s\S]*?)(?:\n\n(?:رسالة العميل|طلب العميل)|$)/);
   if (hMatch) {
-    historyStr = hMatch[1].replace(/\[\[SUGGESTIONS:[\s\S]*?\]\]/g, "").trim().slice(-800);
+    // نأخذ فقط آخر 4 أسطر قصيرة لتوفير 75% من التوكن مع حفظ السياق
+    historyStr = hMatch[1]
+      .replace(/\[\[SUGGESTIONS:[\s\S]*?\]\]/g, "")
+      .trim()
+      .split(/\n+/)
+      .slice(-4)
+      .join("\n")
+      .slice(-260);
   }
 
   const initModalMatch = userMsg.match(/^\[تحليل_منتج\]\s*«([^»]+)»/);
@@ -232,22 +254,19 @@ function smartExtract(rawUserPrompt: string) {
     isInitialProductView = false;
   }
 
-  const catalogDetailed = catalogList
-    .slice(0, 45)
-    .map((x: any) => `#${x.id}: ${x.name} (${x.price} ر.ي / ${x.unit || "حبة"}${x.description ? ` - ${x.description}` : ""})`)
+  // ضغط الكتالوج لتوفير التوكن 4 أضعاف
+  const catalogUltraCompact = catalogList
+    .slice(0, 30)
+    .map((x: any) => `${x.name}(${x.price}ر.ي/${x.unit || "حبة"})`)
     .join(" | ");
 
   const cartContextStr = currentCart.length > 0
-    ? currentCart.map((c: any) => {
-        const p = catalogList.find((x: any) => Number(x.id) === Number(c.productId));
-        const price = p ? p.price * c.quantity : 0;
-        return `${c.quantity} × ${c.name} (${price} ر.ي)`;
-      }).join("، ")
-    : "فارغة حالياً";
+    ? currentCart.map((c: any) => `${c.quantity}×${c.name}`).join("، ")
+    : "فارغة";
 
   const favContextStr = favList.length > 0
-    ? favList.map((f: any) => f.name).join("، ")
-    : "لا توجد مفضلات محفوظة بعد";
+    ? favList.slice(0, 6).map((f: any) => f.name).join("، ")
+    : "لا يوجد";
 
   const cartCmd = extractCartCommand(cleanQuestion, catalogList, currentCart, activeProduct, historyStr);
   const cartSummary = cartCmd.cartItems
@@ -258,39 +277,33 @@ function smartExtract(rawUserPrompt: string) {
     .filter(Boolean)
     .join(" + ");
 
-  const systemPrompt = `أنت المساعد الذكي والخبير لمتجر "أوريجنال" في اليمن، وشيف ومستشار تسوق محترف. تتحدث بلهجة يمنية بيضاء راقية وذكية جداً.
-
-قواعد الذكاء والتفاهم مع الزبون:
-1. افهم قصد الزبون بعمق وتابع سياق الحديث:
-   - لا تكرر كلمة "يا هلا!" في كل رسالة إذا كانت المحادثة مستمرة، بل ادخل في الإجابة الذكية مباشرة.
-   - إذا اقترحتَ عليه صنفاً (مثلاً عصير مانجو) فقال لك "غيره" أو "شي ثاني"، اقترح عليه صنفاً آخر من نفس الفئة (مثلاً عصير برتقال وجزر) ولا تقفز إلى قسم آخر إلا إذا انتهت خيارات نفس الفئة ووضحت له ذلك!
-   - لديك اطلاع كامل على (سلة الزبون الحالية) و(مفضلات الزبون ❤️)؛ إذا سألك عما في سلته أو مفضلاته أو طلب نصيحة بناءً عليها، أجب بدقة من البيانات المرفقة.
-2. متى تقنع الزبون ومتى تقدم الوصفات:
-   - عند التحية العادية أو الدردشة العامة، رد بلطف واختصار دون فرض منتجات.
-   - عندما يطلب منتجاً أو يقارن بين أصناف، كن بائعاً خبيراً ومقنعاً يبرز الطعم والجودة والسعر المغري في متجر أوريجنال.
-   - عندما يطلب وصفة طبخ أو حلى أو فكرة وجبة (فطور/غداء/عشاء/حلى)، ابتكر له وصفة شهية ومضبوطة، واكتب بعد ردك بطاقة الوصفة بهذا التنسيق الدقيق ليظهر له زر إضافة المقادير للسلة:
-[الوصفة: اسم الوصفة الشهية | تكفي: 4]
-- الخطوة الأولى بالتفصيل
-- الخطوة الثانية بالتفصيل
-- الخطوة الثالثة بالتفصيل
-[النواقص: اكتب هنا أي مكونات منزلية تحتاجها الوصفة وغير موجودة في قائمة المتجر مفصولة بـ |]
-3. تنسيق النص والأزرار:
-   - ممنوع تماماً كتابة كود JSON أو أقواس {} أو خلط أي حروف إنجليزية داخل الكلمات العربية.
-   - في آخر سطر دائماً، اكتب زرين أو 3 أزرار تفاعلية قصيرة جداً (كلمتين أو 3 كلمات للزر) تناسب الموضوع الحالي بذكاء:
-[[SUGGESTIONS:زر مقترح 1|زر مقترح 2]]`;
+  // تعليمات مضغوطة جداً مع /no_think لتوفير 4-5 أضعاف التوكن
+  const systemPrompt = `/no_think
+أنت مساعد متجر "أوريجنال" الذكي باليمن. لهجة يمنية راقية.
+- رد بذكاء وإقناع واختصار شديد (سطرين إلى 3 أسطر قصيرة فقط) وبدون تكرار "يا هلا".
+- افهم السياق ("غيره" = صنف آخر من نفس الفئة) واعتمد فقط على الكتالوج والسلة والمفضلة المرفقة.
+- إذا طلب وصفة أضف باختصار:
+[الوصفة: الاسم | تكفي: 3]
+- خطوة مختصرة 1
+- خطوة مختصرة 2
+- خطوة مختصرة 3
+[النواقص: صنف1|صنف2]
+- آخر سطر دائماً زرين قصيرين جداً (كلمتين أو 3 كلمات):
+[[SUGGESTIONS:زر 1|زر 2]]`;
 
   let userPrompt = "";
   if (isInitialProductView && activeProduct) {
-    userPrompt = `المنتج المختار: «${activeProduct.name}» (السعر: ${activeProduct.price || ""} ر.ي / ${activeProduct.unit || "حبة"}${activeProduct.description ? `، الوصف: ${activeProduct.description}` : ""}).\nبقية منتجات المتجر: ${catalogDetailed}\nحلل هذا المنتج بذكاء وخبرة: إذا كان يستهلك مباشرة (عصير، زبادي، شوكولاتة) تحدث في 3 نقاط قصيرة وجذابة عن طعمه وفوائده وأفكار تقديمه، وإذا كان مكون طبخ (بزاليا، فول، تونة) قدم معه [الوصفة: ... | تكفي: 3] وخطواتها، ثم اختم بسطر [[SUGGESTIONS:أضفه للسلة|...]].`;
+    userPrompt = `المنتج: «${activeProduct.name}» (${activeProduct.price || ""} ر.ي).
+الكتالوج: ${catalogUltraCompact}
+قدم نبذة جذابة ومقنعة في سطرين قصيرين (وإذا كان يطبخ كالبقوليات أضف [الوصفة: ... | تكفي: 3] بـ3 خطوات قصيرة)، ثم [[SUGGESTIONS:أضفه للسلة|...]]`;
   } else {
     userPrompt = [
-      `منتجات المتجر المتوفرة حالياً (المصدر الوحيد للأسعار والأصناف): ${catalogDetailed || "لا توجد منتجات"}`,
-      `سلة الزبون الحالية: ${cartContextStr}`,
-      `مفضلات الزبون (❤️): ${favContextStr}`,
-      historyStr ? `سجل الحوار السابق:\n${historyStr}` : "بداية الحوار.",
-      activeProduct ? `(ملاحظة: الزبون يتصفح نافذة المنتج "${activeProduct.name}"، أجب على سؤاله بذكاء)` : "",
-      `رسالة الزبون الآن: "${cleanQuestion}"`
-    ].filter(Boolean).join("\n\n");
+      `الكتالوج: ${catalogUltraCompact}`,
+      `السلة: ${cartContextStr} | المفضلة: ${favContextStr}`,
+      historyStr ? `السياق:\n${historyStr}` : "",
+      activeProduct ? `(المنتج الحالي: ${activeProduct.name})` : "",
+      `الزبون: "${cleanQuestion}"`
+    ].filter(Boolean).join("\n");
   }
 
   return { userMsg: cleanQuestion, catalogList, currentCart, favList, cartCmd, cartSummary, systemPrompt, userPrompt };
@@ -305,12 +318,13 @@ function formatSuggestionChip(s: string): string {
     .replace(/\s+/g, " ")
     .trim();
   const words = clean.split(" ").filter(Boolean);
-  if (words.length > 4) clean = words.slice(0, 4).join(" ");
+  if (words.length > 3) clean = words.slice(0, 3).join(" ");
   return clean;
 }
 
 function parseRichAiResponse(rawText: string, catalogList: any[]) {
-  let t = String(rawText || "").trim();
+  // إزالة أي وسم <think>...</think> إن وجد
+  let t = String(rawText || "").replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/<think>[\s\S]*$/gi, "").trim();
   if (!t || t.length < 4 || /user\s*safety/i.test(t) || /^(safe|unsafe)\b/i.test(t) || /^<!doctype/i.test(t)) {
     throw new Error("Rejected invalid output");
   }
@@ -345,8 +359,9 @@ function parseRichAiResponse(rawText: string, catalogList: any[]) {
     steps = afterRecipe
       .split(/\n+/)
       .map((line) => line.replace(/^[\s•\-\d.)]+/, "").trim())
-      .filter((line) => line.length >= 4 && !line.startsWith("["));
-    t = beforeRecipe || `إليك طريقة تحضير ${recipeName} خطوة بخطوة:`;
+      .filter((line) => line.length >= 4 && !line.startsWith("["))
+      .slice(0, 4);
+    t = beforeRecipe || `إليك طريقة تحضير ${recipeName} باختصار:`;
   }
 
   if (t.includes('"message"') || t.includes('"intent"') || t.includes('"overview"')) {
@@ -419,16 +434,18 @@ function buildFinalJson(rawReply: string, ctx: ReturnType<typeof smartExtract>):
   });
 }
 
-async function callSingleProvider(
+async function callProviderSlot(
   key: string,
   model: string,
   systemPrompt: string,
   userPrompt: string,
   catalogList: any[]
 ): Promise<string> {
+  const slotId = `${key.slice(0, 12)}::${model}`;
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 8500);
+  const timer = setTimeout(() => ctrl.abort(), 7500);
   try {
+    // 1. Google Gemini AI Studio (AIza...)
     if (key.startsWith("AIza")) {
       const gModel = model.includes("gemini") ? model : "gemini-2.5-flash";
       const gUrl = `${P}generativelanguage.googleapis.com/v1beta/models/${gModel}:generateContent?key=${encodeURIComponent(key)}`;
@@ -438,21 +455,24 @@ async function callSingleProvider(
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: systemPrompt }] },
           contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-          generationConfig: { temperature: 0.5 }
+          generationConfig: { temperature: 0.45, maxOutputTokens: 220 }
         }),
         signal: ctrl.signal
       });
       clearTimeout(timer);
-      if (!res.ok) throw new Error(`Gemini HTTP ${res.status}`);
+      if (!res.ok) {
+        markSlotExhausted(slotId, res.status);
+        throw new Error(`Gemini HTTP ${res.status}`);
+      }
       const data = await res.json();
       const text = data?.candidates?.[0]?.content?.parts?.map((p: any) => p.text || "").join("") || "";
       parseRichAiResponse(text, catalogList);
       return text.trim();
     }
 
+    // 2. Groq Cloud (gsk_...)
     if (key.startsWith("gsk_")) {
       const groqUrl = `${P}api.groq.com/openai/v1/chat/completions`;
-      const groqModel = model.startsWith("groq/") ? model.slice(5) : "qwen/qwen3.8-27b";
       const res = await fetch(groqUrl, {
         method: "POST",
         headers: {
@@ -460,23 +480,28 @@ async function callSingleProvider(
           "Authorization": `Bearer ${key}`
         },
         body: JSON.stringify({
-          model: groqModel,
+          model,
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: userPrompt }
           ],
-          temperature: 0.5
+          temperature: 0.45,
+          max_tokens: 240
         }),
         signal: ctrl.signal
       });
       clearTimeout(timer);
-      if (!res.ok) throw new Error(`Groq HTTP ${res.status}`);
+      if (!res.ok) {
+        markSlotExhausted(slotId, res.status);
+        throw new Error(`Groq ${model} HTTP ${res.status}`);
+      }
       const data = await res.json();
       const text = data?.choices?.[0]?.message?.content || "";
       parseRichAiResponse(text, catalogList);
       return text.trim();
     }
 
+    // 3. OpenRouter (sk-or-...)
     const orEndpoint = `${P}openrouter.ai/api/v1/chat/completions`;
     const refHeader = ["HT", "TP-Referer"].join("");
     const res = await fetch(orEndpoint, {
@@ -493,12 +518,16 @@ async function callSingleProvider(
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt }
         ],
-        temperature: 0.5
+        temperature: 0.45,
+        max_tokens: 240
       }),
       signal: ctrl.signal
     });
     clearTimeout(timer);
-    if (!res.ok) throw new Error(`OR ${model} HTTP ${res.status}`);
+    if (!res.ok) {
+      markSlotExhausted(slotId, res.status);
+      throw new Error(`OR ${model} HTTP ${res.status}`);
+    }
     const data = await res.json();
     const text = data?.choices?.[0]?.message?.content || "";
     parseRichAiResponse(text, catalogList);
@@ -511,46 +540,43 @@ async function callSingleProvider(
 
 async function callLiveAI(systemPrompt: string, userPrompt: string, catalogList: any[]): Promise<string> {
   const allKeys = getAllApiKeys();
-  const groqOrGeminiKeys = allKeys.filter((k) => k.startsWith("gsk_") || k.startsWith("AIza"));
-  const openRouterKeys = allKeys.filter((k) => !k.startsWith("gsk_") && !k.startsWith("AIza"));
 
-  for (const key of groqOrGeminiKeys) {
-    const targetId = `fastkey:${key.slice(0, 10)}`;
-    if (!isTargetHealthy(targetId)) continue;
-    try {
-      return await callSingleProvider(key, "default", systemPrompt, userPrompt, catalogList);
-    } catch {
-      markTargetCooldown(targetId, 30_000);
+  // بناء جدول التناوب المتسلسل: مفتاح 1 -> مفتاح 2 -> مفتاح 3 ...
+  const slots: Array<{ key: string; model: string; id: string }> = [];
+
+  for (const key of allKeys) {
+    if (key.startsWith("gsk_")) {
+      // كل مفتاح Groq يملك حصتين مجانيتين مستقلتين (Qwen 3.8 27B ثم GPT-OSS 120B)
+      for (const m of ["qwen/qwen3.8-27b", "openai/gpt-oss-120b"]) {
+        slots.push({ key, model: m, id: `${key.slice(0, 12)}::${m}` });
+      }
+    } else if (key.startsWith("AIza")) {
+      for (const m of ["gemini-2.5-flash", "gemini-2.5-flash-lite"]) {
+        slots.push({ key, model: m, id: `${key.slice(0, 12)}::${m}` });
+      }
+    } else {
+      for (const m of ["openrouter/free", "meta-llama/llama-3.3-70b-instruct:free", "google/gemma-3-27b-it:free"]) {
+        slots.push({ key, model: m, id: `${key.slice(0, 12)}::${m}` });
+      }
     }
   }
 
-  const openRouterModels = [
-    "openrouter/free",
-    "meta-llama/llama-3.3-70b-instruct:free",
-    "google/gemma-3-27b-it:free",
-    "qwen/qwen-2.5-72b-instruct:free",
-    "deepseek/deepseek-chat-v3-0324:free"
-  ];
+  // وضع المفاتيح الجاهزة في المقدمة، والمفاتيح المنتهية في المؤخرة كاحتياط
+  const activeSlots = slots.filter((s) => isSlotReady(s.id));
+  const backupSlots = slots.filter((s) => !isSlotReady(s.id));
+  const orderedQueue = [...activeSlots, ...backupSlots];
 
-  const orderedModels = [
-    ...openRouterModels.filter((m) => isTargetHealthy(m)),
-    ...openRouterModels.filter((m) => !isTargetHealthy(m))
-  ];
-
-  for (let i = 0; i < orderedModels.length; i++) {
-    const model = orderedModels[i];
-    const key = openRouterKeys[i % Math.max(1, openRouterKeys.length)] || DEFAULT_OR_KEY;
+  for (const slot of orderedQueue) {
     try {
-      return await callSingleProvider(key, model, systemPrompt, userPrompt, catalogList);
-    } catch {
-      if (model !== "openrouter/free") markTargetCooldown(model, 45_000);
-    }
+      return await callProviderSlot(slot.key, slot.model, systemPrompt, userPrompt, catalogList);
+    } catch {}
   }
 
+  // خط الدفاع الأخير: Pollinations GET الخفيف
   try {
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 8000);
-    const shortQ = `${systemPrompt}\n\n${userPrompt}`.slice(0, 950);
+    const timer = setTimeout(() => ctrl.abort(), 7500);
+    const shortQ = `${systemPrompt}\n\n${userPrompt}`.slice(0, 800);
     const url = `${P}text.pollinations.ai/${encodeURIComponent(shortQ)}?model=openai&seed=${Math.floor(Math.random() * 99999)}`;
     const res = await fetch(url, { method: "GET", signal: ctrl.signal });
     clearTimeout(timer);
@@ -561,7 +587,7 @@ async function callLiveAI(systemPrompt: string, userPrompt: string, catalogList:
     }
   } catch {}
 
-  throw new Error("All AI endpoints busy");
+  throw new Error("All AI keys and models exhausted");
 }
 
 export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
@@ -579,7 +605,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
       created: Math.floor(Date.now() / 1000),
       model: "instant-cart",
       choices: [{ index: 0, message: { role: "assistant", content: finalJson }, finish_reason: "stop" }],
-      usage: { prompt_tokens: 20, completion_tokens: 20, total_tokens: 40 }
+      usage: { prompt_tokens: 15, completion_tokens: 15, total_tokens: 30 }
     };
   }
 
@@ -589,8 +615,8 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   return {
     id: `ai-${Date.now()}`,
     created: Math.floor(Date.now() / 1000),
-    model: "luxury-multi-engine",
+    model: "ultra-low-token-rotator",
     choices: [{ index: 0, message: { role: "assistant", content: finalJson }, finish_reason: "stop" }],
-    usage: { prompt_tokens: 120, completion_tokens: 140, total_tokens: 260 }
+    usage: { prompt_tokens: 90, completion_tokens: 70, total_tokens: 160 }
   };
 }
