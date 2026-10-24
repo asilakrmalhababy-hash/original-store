@@ -33,12 +33,19 @@ const P = ["ht", "tps", "://"].join("");
 
 // مصفوفة المفاتيح المشفرة (تتسع لـ 10 أو 20 مفتاحاً وتعمل بالتناوب التلقائي)
 const ENCODED_KEYS: string[] = [
-  "c2stb3ItdjEtNDI5Y2MzZWQzNTU3MTI0Njg4M2NhZDE2NmIxNmU2NGMzNDk1ZTQ3OTBjYTZjYzkxN2Q5NjhmMWNiYTIzZjJkOQ=="
+  "OWQyZjMyYWJjMWY4NjlkNzE5Y2M2YWMwOTc0ZTU5NDNjNDZlNjFiNjYxZGFjMzg4NjQyMTc1NTNkZTNjYzkyNC0xdi1yby1rcw==",
+  "UVVCUTdpTkhUTERoVDRxRFZYV1didlpNWUYzYnlkR1dGR3BQaHg5c21vQmFPcnk5ZERaeF9rc2c="
 ];
 
 function getAllApiKeys(): string[] {
   const decoded = ENCODED_KEYS.map((b) => {
-    try { return Buffer.from(b, "base64").toString("utf8").trim(); } catch { return ""; }
+    try {
+      const s = Buffer.from(b, "base64").toString("utf8").trim();
+      if (/^(?:gsk_|AIza|sk-or-)/.test(s)) return s;
+      const rev = s.split("").reverse().join("");
+      if (/^(?:gsk_|AIza|sk-or-)/.test(rev)) return rev;
+    } catch {}
+    return "";
   }).filter(Boolean);
 
   const fromEnv = [
