@@ -687,16 +687,8 @@ export const commerceRouter = router({
     })).query(async ({ input, ctx }) => {
       const db = await getDb();
       await loadLiveChats(db);
-      let session = liveChatsMemory.get(input.sessionId);
-      if (!session || !session.messages.some(m => m.role === "owner")) {
-        const ipKey = "ip:" + (ctx.req.ip || "unknown-client");
-        const fallback = [...liveChatsMemory.values()]
-          .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-          .find(s => s.sessionId === input.sessionId || s.sessionId === ipKey || s.messages.some(m => m.role === "owner"));
-        if (fallback && (!session || fallback.messages.some(m => m.role === "owner"))) {
-          session = fallback;
-        }
-      }
+      // Security: only return messages from this exact customer's session.
+      const session = liveChatsMemory.get(input.sessionId);
       return {
         aiPaused: session?.aiPaused ?? false,
         ownerMessages: (session?.messages ?? []).filter(m => m.role === "owner"),

@@ -1137,7 +1137,7 @@ function AssistantPage() {
         </div>
         <div className="chat-messages" ref={messagesRef}>
           {displayedMessages.map((message, index) => (
-            <div key={index + "-" + message.role + "-" + (message.ownerMsgId || "")} className={"chat-message " + (message.role === "user" ? "from-user" : "from-assistant")} style={message.ownerMsgId ? { border: "1.5px solid #e0a800", background: "#fffdf5" } : undefined}>
+            <div key={index + "-" + message.role + "-" + (message.ownerMsgId || "")} className={"chat-message " + (message.role === "user" ? "from-user" : "from-assistant") + (message.ownerMsgId ? " from-owner" : "")}>
               <p style={{ whiteSpace: "pre-line" }}>{message.text}</p>
               {message.role === "assistant" && message.text.includes("770731619") && (
                 <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginTop: "8px" }}>
