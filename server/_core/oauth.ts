@@ -6,10 +6,23 @@ import { ENV } from "./env";
 import { sdk } from "./sdk";
 
 async function handleAdminPasswordLogin(req: Request, res: Response) {
-  const inputPwd = String(req.query.password || "").trim();
-  const expectedPwd = (process.env.ADMIN_PASSWORD || "123456").trim();
+  if (req.method !== "POST") {
+    res.status(405).set("Allow", "POST").json({ error: "طريقة الطلب غير مسموحة" });
+    return;
+  }
 
-  if (!inputPwd || (inputPwd !== expectedPwd && inputPwd !== "123456")) {
+  const inputPwd = typeof req.body?.password === "string"
+    ? req.body.password.trim()
+    : "";
+  const expectedPwd = process.env.ADMIN_PASSWORD?.trim() || "";
+
+  if (!expectedPwd) {
+    console.error("[Admin Login] ADMIN_PASSWORD is not configured");
+    res.status(503).json({ error: "تسجيل الدخول غير متاح حاليًا؛ راجع إعدادات الخادم." });
+    return;
+  }
+
+  if (!inputPwd || inputPwd !== expectedPwd) {
     if (req.headers.accept?.includes("application/json") && !req.query.redirect) {
       res.status(401).json({ error: "كلمة المرور غير صحيحة" });
       return;
@@ -53,8 +66,5 @@ async function handleAdminPasswordLogin(req: Request, res: Response) {
 }
 
 export function registerOAuthRoutes(app: Express) {
-  app.get("/api/admin-login", handleAdminPasswordLogin);
-  app.get("/api/oauth/local-login", handleAdminPasswordLogin);
-  app.get("/admin-login", handleAdminPasswordLogin);
-  app.get("/api/oauth/callback", handleAdminPasswordLogin);
+  app.post("/api/admin-login", handleAdminPasswordLogin);
 }
