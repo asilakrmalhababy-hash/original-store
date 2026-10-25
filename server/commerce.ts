@@ -655,11 +655,13 @@ export const commerceRouter = router({
       history: z.array(z.object({ role: z.enum(["user", "assistant"]), text: z.string().max(1800) })).max(20).optional(),
       cart: z.array(z.object({ productId: safeId, quantity: z.number().int().min(1).max(10000) })).max(100).optional(),
       favoriteProductIds: z.array(safeId).max(500).optional(),
+      customerName: z.string().max(160).optional(),
+      customerPhone: z.string().max(40).optional(),
     })).mutation(async ({ input, ctx }) => {
-      const clientKey = ctx.user ? `user:${ctx.user.id}` : `ip:${ctx.req.ip || "unknown-client"}`;
+      const clientKey = ctx.user ? "user:" + ctx.user.id : "ip:" + (ctx.req.ip || "unknown-client");
       enforceAssistantRateLimit(clientKey.slice(0, 120));
-      const db = await database();
-      const catalogRows = await db.select({ id: products.id, name: products.name, description: products.description, price: products.price, unit: products.unit, stock: products.stock, minQuantity: products.minQuantity, quantityStep: products.quantityStep }).from(products).where(and(eq(products.isPublished, true), eq(products.isAvailable, true))).limit(150);
+      const db = await getDb();
+      const catalogRows = db ? await db.select({ id: products.id, name: products.name, description: products.description, price: products.price, unit: products.unit, stock: products.stock, minQuantity: products.minQuantity, quantityStep: products.quantityStep }).from(products).where(and(eq(products.isPublished, true), eq(products.isAvailable, true))).limit(150).catch(() => []) : [];
       const catalog = catalogRows.filter(product => product.stock === null || product.stock > 0) as AssistantCatalogProduct[];
       const catalogById = new Map(catalog.map(product => [product.id, product]));
       const currentCart = (input.cart ?? []).flatMap(line => {
@@ -667,35 +669,102 @@ export const commerceRouter = router({
         return product ? [{ productId: product.id, quantity: line.quantity, name: product.name, unit: product.unit }] : [];
       });
       const favoriteIds = [...new Set(input.favoriteProductIds ?? [])].filter(id => catalogById.has(id)).slice(0, 100);
-      const customerFavorites = favoriteIds.map(id => ({ id, name: catalogById.get(id)!.name }));
-      const history = (input.history ?? []).slice(-14).map(turn =>
-        `${turn.role === "user" ? "العميل" : "المساعد"}: ${turn.text.trim().slice(0, 1000)}`
+      const customerFavorites = (favoriteIds.length && db)
+        ? await db.select({ id: products.id, name: products.name }).from(products)
+          .where(and(inArray(products.id, favoriteIds), eq(products.isPublished, true), eq(products.isAvailable, true)))
+          .limit(100)
+        : [];
+
+      const history = (input.history ?? []).slice(-8).map(turn =>
+        (turn.role === "user" ? "العميل" : "المساعد") + ": " + turn.text.trim().slice(0, 400),
       ).join("\n");
 
       const userPrompt = [
-        `المنتجات المتاحة: ${JSON.stringify(catalog.slice(0, 60).map(p => ({ id: p.id, name: p.name, description: p.description ? p.description.slice(0, 90) : null, price: p.price, unit: p.unit, stock: p.stock })))}`,
-        `مفضلات العميل: ${JSON.stringify(customerFavorites)}`,
-        `السلة الحالية: ${JSON.stringify(currentCart)}`,
-        history ? `سجل المحادثة السابق:\n${history}` : "بداية المحادثة.",
-        `رسالة العميل الحالية:\n${input.request}`
+        "المنتجات المتاحة (مصدر الحقيقة الوحيد): " + JSON.stringify(catalog.slice(0, 50).map(p => ({ id: p.id, name: p.name, price: p.price, unit: p.unit }))),
+        "مفضلات العميل: " + JSON.stringify(customerFavorites),
+        "السلة الحالية: " + JSON.stringify(currentCart),
+        history ? "سجل المحادثة السابق:\n" + history : "لا يوجد سياق سابق.",
+        "رسالة العميل الحالية:\n" + input.request,
       ].join("\n\n");
 
       let output: AssistantModelOutput | null = null;
       try {
         const response = await invokeLLM({
-          messages: [{ role: "user", content: userPrompt }],
+          messages: [
+            { role: "system", content: "أنت بائع يمني ذكي وأمين في متجر أوريجنال." },
+            { role: "user", content: userPrompt },
+          ],
           response_format: { type: "json_object" },
         });
-        output = parseAssistantModelContent(response.choices?.[0]?.message?.content);
+        const structuredContent = response.choices?.[0]?.message?.content;
+        output = parseAssistantModelContent(structuredContent);
       } catch (err) {
         console.error("[AI Assistant Error]", err);
       }
 
       if (!output) {
-        throw new TRPCError({ code: "SERVICE_UNAVAILABLE", message: "الشبكة مشغولة لحظياً، أعد الإرسال." });
+        throw new TRPCError({ code: "SERVICE_UNAVAILABLE", message: "يرجى التحقق من اتصال الإنترنت والمحاولة مرة أخرى." });
       }
 
-      return prepareAssistantResponse(output, catalog, input.cart ?? []);
+      const prepared = prepareAssistantResponse(output, catalog, input.cart ?? []);
+
+      const missingItems = output.missingIngredients ?? [];
+      if (missingItems.length > 0 && db) {
+        const requestedItemText = missingItems.join("، ").replace(/^طلب توفير:\s*/i, "").trim().slice(0, 180);
+        const customerNameClean = input.customerName?.trim() || "زبون عبر المساعد الذكي";
+        const customerPhoneClean = input.customerPhone?.trim() || "غير مسجل بالموقع";
+        void (async () => {
+          try {
+            const orderNumber = "REQ-" + Date.now().toString(36).toUpperCase().slice(-4) + "-" + nanoid(4).toUpperCase();
+            const inserted = await db.insert(orders).values({
+              orderNumber,
+              idempotencyKey: "req-" + nanoid(22),
+              userId: ctx.user?.id ?? null,
+              offerId: null,
+              recipientName: "🔔 طلب توفير (" + customerNameClean + ")",
+              phone: customerPhoneClean,
+              city: "طلب توفير خاص",
+              district: "المساعد الذكي",
+              addressDetails: "طلب الزبون توفير: " + requestedItemText,
+              customerNote: "رسالة الزبون: \"" + input.request + "\" | رقم الزبون: " + customerPhoneClean,
+              subtotal: 0,
+              deliveryFee: 0,
+              discount: 0,
+              total: 0,
+              status: "new",
+            });
+            const orderId = Number(inserted[0].insertId);
+            await db.insert(orderItems).values({
+              orderId,
+              productId: null,
+              productName: "🔔 مطلوب توفير: " + requestedItemText,
+              productImage: null,
+              unit: "طلب",
+              unitPrice: 0,
+              quantity: 1,
+              lineTotal: 0,
+            });
+            await db.insert(orderEvents).values({
+              orderId,
+              status: "new",
+              note: "طلب توفير تلقائي من المساعد الذكي — هاتف الزبون: " + customerPhoneClean,
+              changedByUserId: null,
+            });
+            const subscriptions = await db.select({ id: ownerPushSubscriptions.id, encryptedPayload: ownerPushSubscriptions.encryptedPayload })
+              .from(ownerPushSubscriptions);
+            await deliverPushRows(subscriptions, {
+              title: "🔔 طلب توفير منتج غير متوفر!",
+              body: "طلب (" + requestedItemText + ") · هاتف الزبون: " + customerPhoneClean,
+              url: "/admin/orders",
+              tag: "original-missing-item-" + orderId,
+            }, async id => { await db.delete(ownerPushSubscriptions).where(eq(ownerPushSubscriptions.id, id)); });
+          } catch (e) {
+            console.warn("[Missing Item Notify Error]", e);
+          }
+        })();
+      }
+
+      return prepared;
     }),
   }),
 

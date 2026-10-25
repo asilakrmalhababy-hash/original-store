@@ -936,7 +936,7 @@ function AssistantPage() {
     setMessages(curr => [...curr, { role: "user" as const, text: request }].slice(-24));
     setInput("");
     mutation.mutate(
-      { request, history, cart: cart.map(line => ({ productId: line.id, quantity: line.quantity })), favoriteProductIds: favoriteIds },
+      { request, history, cart: cart.map(line => ({ productId: line.id, quantity: line.quantity })), favoriteProductIds: favoriteIds, customerName: (() => { try { const d = JSON.parse(localStorage.getItem("original-customer-browser-v1") || "{}"); return d.name || d.addresses?.[0]?.recipientName || ""; } catch { return ""; } })(), customerPhone: (() => { try { const d = JSON.parse(localStorage.getItem("original-customer-browser-v1") || "{}"); return d.phone || d.addresses?.[0]?.phone || ""; } catch { return ""; } })() },
       {
         onSuccess: result => {
           if (result.cartAction && Array.isArray(result.cartAction.items) && result.cartAction.items.length > 0) {

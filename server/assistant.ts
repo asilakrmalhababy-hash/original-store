@@ -211,7 +211,7 @@ export function prepareAssistantResponse(
     message,
     recipe: hasRecipe ? { name: output.recipeName, servings: output.servings, steps: output.steps } : null,
     ingredients,
-    missingIngredients: hasRecipe ? missingIngredients : [],
+    missingIngredients,
     cartAction,
     suggestedQuestions: output.suggestedQuestions ?? [],
   };
