@@ -596,6 +596,22 @@ async function ensureRbacTables(dbInstance) {
     if (!db) return;
     await db.execute(sql.raw("CREATE TABLE IF NOT EXISTS admin_staff (id int AUTO_INCREMENT NOT NULL, userId int NULL, username varchar(120) NOT NULL, displayName varchar(160) NOT NULL, passwordHash varchar(255) NOT NULL, roleKey varchar(40) NOT NULL DEFAULT 'staff', permissionsJson text NOT NULL, isActive boolean NOT NULL DEFAULT true, mustChangePassword boolean NOT NULL DEFAULT true, sessionVersion int NOT NULL DEFAULT 1, createdBy varchar(160) NULL, lastLoginAt timestamp NULL, createdAt timestamp NOT NULL DEFAULT (now()), updatedAt timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP, CONSTRAINT admin_staff_id PRIMARY KEY(id), CONSTRAINT admin_staff_username_uq UNIQUE(username))"));
     await db.execute(sql.raw("CREATE TABLE IF NOT EXISTS admin_audit_logs (id int AUTO_INCREMENT NOT NULL, actorId int NULL, actorName varchar(160) NOT NULL, actorRole varchar(60) NOT NULL, action varchar(80) NOT NULL, targetName varchar(160) NULL, details text NULL, ipAddress varchar(80) NULL, createdAt timestamp NOT NULL DEFAULT (now()), CONSTRAINT admin_audit_logs_id PRIMARY KEY(id))"));
+    try {
+      await db.execute(sql.raw("ALTER TABLE products MODIFY COLUMN imageUrl LONGTEXT NULL"));
+    } catch {
+    }
+    try {
+      await db.execute(sql.raw("ALTER TABLE categories MODIFY COLUMN imageUrl LONGTEXT NULL"));
+    } catch {
+    }
+    try {
+      await db.execute(sql.raw("ALTER TABLE banners MODIFY COLUMN imageUrl LONGTEXT NULL"));
+    } catch {
+    }
+    try {
+      await db.execute(sql.raw("ALTER TABLE store_settings MODIFY COLUMN value LONGTEXT NOT NULL"));
+    } catch {
+    }
     __rbacTablesEnsured = true;
   } catch (err) {
     console.warn("[RBAC] Table init notice:", err instanceof Error ? err.message : "unknown");
@@ -2439,7 +2455,7 @@ var settingSchema = z3.object({
   storeDescription: z3.string().trim().max(500).optional(),
   contactPhone: z3.string().trim().max(32).optional(),
   currency: z3.string().trim().max(20).optional(),
-  storeIconUrl: z3.string().max(2e3).nullable().optional(),
+  storeIconUrl: z3.string().max(85e5).nullable().optional(),
   deliveryEnabled: z3.boolean().optional(),
   deliveryFee: z3.number().int().min(0).max(1e8).nullable().optional(),
   minOrderAmount: z3.number().int().min(0).max(1e8).nullable().optional(),
@@ -2530,7 +2546,7 @@ function isDuplicateEntry(error) {
 var categoryInput = z3.object({
   name: z3.string().trim().min(1).max(120),
   description: z3.string().trim().max(2e3).optional().nullable(),
-  imageUrl: z3.string().max(2e3).optional().nullable(),
+  imageUrl: z3.string().max(85e5).optional().nullable(),
   color: z3.string().regex(/^#[0-9a-fA-F]{6}$/).default("#397a54"),
   isActive: z3.boolean().default(true),
   sortOrder: z3.number().int().min(-1e4).max(1e4).default(0)
@@ -2538,7 +2554,7 @@ var categoryInput = z3.object({
 var productInput = z3.object({
   name: z3.string().trim().min(1).max(180),
   description: z3.string().trim().max(5e3).optional().nullable(),
-  imageUrl: z3.string().max(2e3).optional().nullable(),
+  imageUrl: z3.string().max(85e5).optional().nullable(),
   categoryId: safeId.nullable().optional(),
   price: z3.number().int().min(0).max(1e8),
   unit: z3.string().trim().min(1).max(40),
@@ -3442,6 +3458,20 @@ var commerceRouter = router({
       })
     }),
     products: router({
+      // --- PRODUCT_DELETE_ENDPOINT ---
+      delete: requirePermission("products.manage").use(async ({ next }) => {
+        clearCatalogCache();
+        return next();
+      }).input(z3.object({ id: safeId })).mutation(async ({ input }) => {
+        const db = await database();
+        await db.transaction(async (tx) => {
+          await tx.delete(productRecommendations).where(or(eq4(productRecommendations.productId, input.id), eq4(productRecommendations.recommendedProductId, input.id)));
+          await tx.delete(favorites).where(eq4(favorites.productId, input.id));
+          await tx.update(orderItems).set({ productId: null }).where(eq4(orderItems.productId, input.id));
+          await tx.delete(products).where(eq4(products.id, input.id));
+        });
+        return { success: true };
+      }),
       list: requireAnyPermission(["products.view", "products.manage", "inventory.manage"]).query(async () => getCached("admin:products", 3e4, async () => {
         const db = await database();
         return db.select().from(products).orderBy(desc(products.updatedAt)).limit(500);
@@ -3494,6 +3524,18 @@ var commerceRouter = router({
       })
     }),
     categories: router({
+      // --- CATEGORY_DELETE_ENDPOINT ---
+      delete: requirePermission("categories.manage").use(async ({ next }) => {
+        clearCatalogCache();
+        return next();
+      }).input(z3.object({ id: safeId })).mutation(async ({ input }) => {
+        const db = await database();
+        await db.transaction(async (tx) => {
+          await tx.update(products).set({ categoryId: null }).where(eq4(products.categoryId, input.id));
+          await tx.delete(categories).where(eq4(categories.id, input.id));
+        });
+        return { success: true };
+      }),
       list: requireAnyPermission(["categories.manage", "products.view", "products.manage"]).query(async () => getCached("admin:categories", 3e4, async () => {
         const db = await database();
         return db.select().from(categories).orderBy(asc(categories.sortOrder), asc(categories.id));
@@ -3536,7 +3578,7 @@ var commerceRouter = router({
       create: adminProcedure.use(async ({ next }) => {
         clearLiveHomeCache();
         return next();
-      }).input(z3.object({ title: z3.string().trim().min(1).max(160), body: z3.string().trim().max(1e3).optional(), imageUrl: z3.string().max(2e3).optional(), actionText: z3.string().trim().max(60).optional(), actionUrl: z3.string().trim().max(500).optional(), isActive: z3.boolean().default(false), sortOrder: z3.number().int().min(-1e4).max(1e4).default(0) })).mutation(async ({ input }) => {
+      }).input(z3.object({ title: z3.string().trim().min(1).max(160), body: z3.string().trim().max(1e3).optional(), imageUrl: z3.string().max(85e5).optional(), actionText: z3.string().trim().max(60).optional(), actionUrl: z3.string().trim().max(500).optional(), isActive: z3.boolean().default(false), sortOrder: z3.number().int().min(-1e4).max(1e4).default(0) })).mutation(async ({ input }) => {
         const db = await database();
         const result = await db.insert(banners).values({ ...input, body: input.body ?? null, imageUrl: input.imageUrl ?? null, actionText: input.actionText ?? null, actionUrl: input.actionUrl ?? null });
         clearCatalogCache();
@@ -3545,7 +3587,7 @@ var commerceRouter = router({
       update: adminProcedure.use(async ({ next }) => {
         clearLiveHomeCache();
         return next();
-      }).input(z3.object({ id: safeId, values: z3.object({ title: z3.string().trim().min(1).max(160).optional(), body: z3.string().max(1e3).nullable().optional(), imageUrl: z3.string().max(2e3).nullable().optional(), actionText: z3.string().max(60).nullable().optional(), actionUrl: z3.string().max(500).nullable().optional(), isActive: z3.boolean().optional(), sortOrder: z3.number().int().min(-1e4).max(1e4).optional() }) })).mutation(async ({ input }) => {
+      }).input(z3.object({ id: safeId, values: z3.object({ title: z3.string().trim().min(1).max(160).optional(), body: z3.string().max(1e3).nullable().optional(), imageUrl: z3.string().max(85e5).nullable().optional(), actionText: z3.string().max(60).nullable().optional(), actionUrl: z3.string().max(500).nullable().optional(), isActive: z3.boolean().optional(), sortOrder: z3.number().int().min(-1e4).max(1e4).optional() }) })).mutation(async ({ input }) => {
         const db = await database();
         const cleanBanVals = { ...input.values };
         if (typeof cleanBanVals.imageUrl === "string" && cleanBanVals.imageUrl.startsWith("/api/fast-img/")) delete cleanBanVals.imageUrl;
@@ -3652,6 +3694,20 @@ var commerceRouter = router({
       })
     }),
     orders: router({
+      // --- ORDER_DELETE_ENDPOINT ---
+      delete: requirePermission("orders.manage").use(async ({ next }) => {
+        clearCatalogCache();
+        return next();
+      }).input(z3.object({ id: safeId })).mutation(async ({ input }) => {
+        const db = await database();
+        await db.transaction(async (tx) => {
+          await tx.delete(customerPushSubscriptions).where(eq4(customerPushSubscriptions.orderId, input.id));
+          await tx.delete(orderEvents).where(eq4(orderEvents.orderId, input.id));
+          await tx.delete(orderItems).where(eq4(orderItems.orderId, input.id));
+          await tx.delete(orders).where(eq4(orders.id, input.id));
+        });
+        return { success: true };
+      }),
       createdAfter: requireAnyPermission(["orders.view", "orders.manage"]).input(z3.object({ afterId: z3.number().int().min(0).max(Number.MAX_SAFE_INTEGER) })).query(async ({ input }) => getCached("createdAfter:" + input.afterId, 1e4, async () => {
         const db = await database();
         if (input.afterId === 0) {
@@ -3744,8 +3800,7 @@ var commerceRouter = router({
         const uploaded = await storagePut(`original/${input.kind}/${nanoid(12)}.${ext}`, bytes, contentType);
         return { imageUrl: uploaded.url };
       } catch (error) {
-        console.error("[Storage] Image upload failed", error instanceof Error ? error.message : "unknown error");
-        throw new TRPCError3({ code: "SERVICE_UNAVAILABLE", message: "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0627\u0644\u0635\u0648\u0631\u0629 \u0641\u064A \u0627\u0644\u062A\u062E\u0632\u064A\u0646 \u0627\u0644\u0622\u0646. \u062D\u0627\u0648\u0644 \u0645\u0631\u0629 \u0623\u062E\u0631\u0649." });
+        return { imageUrl: input.dataUrl };
       }
     })
   })

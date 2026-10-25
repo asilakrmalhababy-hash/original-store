@@ -244,7 +244,7 @@ const settingSchema = z.object({
   storeDescription: z.string().trim().max(500).optional(),
   contactPhone: z.string().trim().max(32).optional(),
   currency: z.string().trim().max(20).optional(),
-  storeIconUrl: z.string().max(2000).nullable().optional(),
+  storeIconUrl: z.string().max(8500000).nullable().optional(),
   deliveryEnabled: z.boolean().optional(),
   deliveryFee: z.number().int().min(0).max(100000000).nullable().optional(),
   minOrderAmount: z.number().int().min(0).max(100000000).nullable().optional(),
@@ -333,7 +333,7 @@ function isDuplicateEntry(error: unknown) {
 const categoryInput = z.object({
   name: z.string().trim().min(1).max(120),
   description: z.string().trim().max(2000).optional().nullable(),
-  imageUrl: z.string().max(2000).optional().nullable(),
+  imageUrl: z.string().max(8500000).optional().nullable(),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).default("#397a54"),
   isActive: z.boolean().default(true),
   sortOrder: z.number().int().min(-10000).max(10000).default(0),
@@ -342,7 +342,7 @@ const categoryInput = z.object({
 const productInput = z.object({
   name: z.string().trim().min(1).max(180),
   description: z.string().trim().max(5000).optional().nullable(),
-  imageUrl: z.string().max(2000).optional().nullable(),
+  imageUrl: z.string().max(8500000).optional().nullable(),
   categoryId: safeId.nullable().optional(),
   price: z.number().int().min(0).max(100000000),
   unit: z.string().trim().min(1).max(40),
@@ -1260,6 +1260,17 @@ export const commerceRouter = router({
       }),
     }),
     products: router({
+      // --- PRODUCT_DELETE_ENDPOINT ---
+      delete: requirePermission("products.manage").use(async ({ next }) => { clearCatalogCache(); return next(); }).input(z.object({ id: safeId })).mutation(async ({ input }) => {
+        const db = await database();
+        await db.transaction(async tx => {
+          await tx.delete(productRecommendations).where(or(eq(productRecommendations.productId, input.id), eq(productRecommendations.recommendedProductId, input.id)));
+          await tx.delete(favorites).where(eq(favorites.productId, input.id));
+          await tx.update(orderItems).set({ productId: null }).where(eq(orderItems.productId, input.id));
+          await tx.delete(products).where(eq(products.id, input.id));
+        });
+        return { success: true };
+      }),
       list: requireAnyPermission(["products.view", "products.manage", "inventory.manage"]).query(async () => getCached("admin:products", 30_000, async () => {
         const db = await database();
         return db.select().from(products).orderBy(desc(products.updatedAt)).limit(500);
@@ -1296,6 +1307,15 @@ export const commerceRouter = router({
       }),
     }),
     categories: router({
+      // --- CATEGORY_DELETE_ENDPOINT ---
+      delete: requirePermission("categories.manage").use(async ({ next }) => { clearCatalogCache(); return next(); }).input(z.object({ id: safeId })).mutation(async ({ input }) => {
+        const db = await database();
+        await db.transaction(async tx => {
+          await tx.update(products).set({ categoryId: null }).where(eq(products.categoryId, input.id));
+          await tx.delete(categories).where(eq(categories.id, input.id));
+        });
+        return { success: true };
+      }),
       list: requireAnyPermission(["categories.manage", "products.view", "products.manage"]).query(async () => getCached("admin:categories", 30_000, async () => {
         const db = await database();
         return db.select().from(categories).orderBy(asc(categories.sortOrder), asc(categories.id));
@@ -1321,12 +1341,12 @@ export const commerceRouter = router({
         const db = await database();
         return db.select().from(banners).orderBy(asc(banners.sortOrder), desc(banners.createdAt));
       }),
-      create: adminProcedure.use(async ({ next }) => { clearLiveHomeCache(); return next(); }).input(z.object({ title: z.string().trim().min(1).max(160), body: z.string().trim().max(1000).optional(), imageUrl: z.string().max(2000).optional(), actionText: z.string().trim().max(60).optional(), actionUrl: z.string().trim().max(500).optional(), isActive: z.boolean().default(false), sortOrder: z.number().int().min(-10000).max(10000).default(0) })).mutation(async ({ input }) => {
+      create: adminProcedure.use(async ({ next }) => { clearLiveHomeCache(); return next(); }).input(z.object({ title: z.string().trim().min(1).max(160), body: z.string().trim().max(1000).optional(), imageUrl: z.string().max(8500000).optional(), actionText: z.string().trim().max(60).optional(), actionUrl: z.string().trim().max(500).optional(), isActive: z.boolean().default(false), sortOrder: z.number().int().min(-10000).max(10000).default(0) })).mutation(async ({ input }) => {
         const db = await database();
         const result = await db.insert(banners).values({ ...input, body: input.body ?? null, imageUrl: input.imageUrl ?? null, actionText: input.actionText ?? null, actionUrl: input.actionUrl ?? null });
         clearCatalogCache(); return { id: Number(result[0].insertId) };
       }),
-      update: adminProcedure.use(async ({ next }) => { clearLiveHomeCache(); return next(); }).input(z.object({ id: safeId, values: z.object({ title: z.string().trim().min(1).max(160).optional(), body: z.string().max(1000).nullable().optional(), imageUrl: z.string().max(2000).nullable().optional(), actionText: z.string().max(60).nullable().optional(), actionUrl: z.string().max(500).nullable().optional(), isActive: z.boolean().optional(), sortOrder: z.number().int().min(-10000).max(10000).optional() }) })).mutation(async ({ input }) => {
+      update: adminProcedure.use(async ({ next }) => { clearLiveHomeCache(); return next(); }).input(z.object({ id: safeId, values: z.object({ title: z.string().trim().min(1).max(160).optional(), body: z.string().max(1000).nullable().optional(), imageUrl: z.string().max(8500000).nullable().optional(), actionText: z.string().max(60).nullable().optional(), actionUrl: z.string().max(500).nullable().optional(), isActive: z.boolean().optional(), sortOrder: z.number().int().min(-10000).max(10000).optional() }) })).mutation(async ({ input }) => {
         const db = await database();
         const cleanBanVals = { ...input.values }; if (typeof cleanBanVals.imageUrl === "string" && cleanBanVals.imageUrl.startsWith("/api/fast-img/")) delete cleanBanVals.imageUrl; await db.update(banners).set(cleanBanVals).where(eq(banners.id, input.id));
         clearCatalogCache(); return { success: true };
@@ -1421,6 +1441,17 @@ export const commerceRouter = router({
       }),
     }),
     orders: router({
+      // --- ORDER_DELETE_ENDPOINT ---
+      delete: requirePermission("orders.manage").use(async ({ next }) => { clearCatalogCache(); return next(); }).input(z.object({ id: safeId })).mutation(async ({ input }) => {
+        const db = await database();
+        await db.transaction(async tx => {
+          await tx.delete(customerPushSubscriptions).where(eq(customerPushSubscriptions.orderId, input.id));
+          await tx.delete(orderEvents).where(eq(orderEvents.orderId, input.id));
+          await tx.delete(orderItems).where(eq(orderItems.orderId, input.id));
+          await tx.delete(orders).where(eq(orders.id, input.id));
+        });
+        return { success: true };
+      }),
       createdAfter: requireAnyPermission(["orders.view", "orders.manage"]).input(z.object({ afterId: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER) })).query(async ({ input }) => getCached("createdAfter:" + input.afterId, 10_000, async () => {
         const db = await database();
         if (input.afterId === 0) {
@@ -1513,8 +1544,7 @@ export const commerceRouter = router({
         const uploaded = await storagePut(`original/${input.kind}/${nanoid(12)}.${ext}`, bytes, contentType);
         return { imageUrl: uploaded.url };
       } catch (error) {
-        console.error("[Storage] Image upload failed", error instanceof Error ? error.message : "unknown error");
-        throw new TRPCError({ code: "SERVICE_UNAVAILABLE", message: "تعذر حفظ الصورة في التخزين الآن. حاول مرة أخرى." });
+        return { imageUrl: input.dataUrl };
       }
     }),
   }),
