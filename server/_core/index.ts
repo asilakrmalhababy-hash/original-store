@@ -65,6 +65,40 @@ async function startServer() {
   });
 
   app.get("/api/health", (_req, res) => res.json({ status: "ok" }));
+  // --- FAST_IMG_ROUTE_START ---
+  app.get("/api/fast-img/:kind/:id", async (req, res) => {
+    try {
+      const kind = req.params.kind;
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id) || id <= 0) return res.status(404).end();
+      const cacheMap: Map<string, { contentType: string; buf: Buffer }> = (globalThis as any).__fastImgCache || ((globalThis as any).__fastImgCache = new Map());
+      const cacheKey = kind + ":" + id;
+      let entry = cacheMap.get(cacheKey);
+      if (!entry) {
+        const db = await getDb();
+        if (!db) return res.status(404).end();
+        const { products, categories, banners } = await import("../../drizzle/schema");
+        const table: any = kind === "product" ? products : kind === "category" ? categories : kind === "banner" ? banners : null;
+        if (!table) return res.status(404).end();
+        const rows = await db.select({ imageUrl: table.imageUrl }).from(table).where(eq(table.id, id)).limit(1);
+        const raw = String(rows[0]?.imageUrl || "");
+        const m = raw.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,([\s\S]+)$/);
+        if (!m) {
+          if (raw.startsWith("/")) return res.redirect(302, raw);
+          return res.status(404).end();
+        }
+        entry = { contentType: m[1], buf: Buffer.from(m[2], "base64") };
+        cacheMap.set(cacheKey, entry);
+      }
+      res.set("Content-Type", entry.contentType);
+      res.set("Cache-Control", "public, max-age=31536000, immutable");
+      return res.send(entry.buf);
+    } catch {
+      return res.status(500).end();
+    }
+  });
+  // --- FAST_IMG_ROUTE_END ---
+
   let _brandCache = { exp: 0, data: { name: "ORIGINAL – أوريجنال", icon: "" }, refreshing: false };
   const refreshBrand = () => {
     if (_brandCache.refreshing) return;

@@ -61,7 +61,7 @@ export default function ImageEditor({ aspect, title, format = "webp", onSave, on
   const save = () => {
     if (!source || !imageSize || !stageRef.current) return;
     const stage = stageRef.current.getBoundingClientRect();
-    const outW = aspect > 2 ? 1024 : 520;
+    const outW = aspect > 2 ? 960 : 520;
     const outH = Math.round(outW / aspect);
     const canvas = document.createElement("canvas");
     canvas.width = outW; canvas.height = outH;
@@ -89,7 +89,7 @@ export default function ImageEditor({ aspect, title, format = "webp", onSave, on
           if (patchContext) { patchContext.filter = `blur(${Math.max(10, Math.min(26, outW / 60))}px)`; patchContext.drawImage(canvas, rx, ry, rw, rh, 0, 0, rw, rh); context.drawImage(patch, rx, ry); }
         }
       }
-      let data = canvas.toDataURL(format === "png" ? "image/png" : "image/webp", 0.70);
+      let data = canvas.toDataURL(format === "png" ? "image/png" : "image/webp", 0.68);
       if (!data.startsWith(format === "png" ? "data:image/png" : "data:image/webp")) data = canvas.toDataURL(format === "png" ? "image/png" : "image/jpeg", 0.75);
       onSave(data);
     };

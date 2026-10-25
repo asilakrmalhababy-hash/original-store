@@ -322,7 +322,7 @@ function ProductCard({ product, onOpen, onAiRecipe }: { product: PublicProduct; 
   const disabled = product.stock !== null && product.stock < (product.minQuantity || 1);
   return <article className="product-card">
     <div className="product-visual" onClick={onOpen} role="button" tabIndex={0} onKeyDown={event => { if (event.key === "Enter") onOpen(); }}>
-      {product.imageUrl ? <img src={product.imageUrl} alt={product.name} loading="lazy" /> : <div className="product-no-image"><Leaf size={27} strokeWidth={1.4} /><span>صورة المنتج</span></div>}
+      {product.imageUrl ? <img src={product.imageUrl} alt={product.name} loading="lazy" decoding="async" /> : <div className="product-no-image"><Leaf size={27} strokeWidth={1.4} /><span>صورة المنتج</span></div>}
       <button type="button" className={`favorite-toggle ${favorite ? "is-favorite" : ""}`} aria-label={favorite ? "إزالة من المفضلة" : "أضف للمفضلة"} aria-pressed={favorite} onClick={event => { event.stopPropagation(); toggleFavorite(product.id); toast.success(favorite ? "أُزيل من المفضلة" : "أُضيف إلى المفضلة على هذا الجهاز"); }}><Heart size={17} fill={favorite ? "currentColor" : "none"} /></button>
       {onAiRecipe && <button type="button" className="ai-recipe-toggle" aria-label="أفكار وتحضير بالذكاء الاصطناعي" title="أفكار ووصفات تحضير" onClick={event => { event.stopPropagation(); onAiRecipe(product); }}><Sparkles size={16} /></button>}
       {disabled && <span className="product-sold-out">غير متوفر</span>}
@@ -347,8 +347,8 @@ function CategoryStrip({ data, onSelect }: { data: HomeData["categories"]; onSel
 function HomePage({ data, onOpen, onAiRecipe }: { data: HomeData; onOpen: (id: number) => void; onAiRecipe?: (p: PublicProduct) => void }) {
   const [, navigate] = useLocation();
   const [sort, setSort] = useState<"featured" | "price-asc" | "price-desc">("featured");
-  const { data: products, isLoading: productsLoading } = trpc.commerce.catalog.listProducts.useQuery({ sort, limit: 24 }, { retry: 1, staleTime: 3000, refetchInterval: 5000, refetchOnWindowFocus: true });
-  const featured = products ?? data.products;
+  const { data: products, isLoading: productsLoading } = trpc.commerce.catalog.listProducts.useQuery({ sort, limit: 24 }, { enabled: sort !== "featured", retry: 1, staleTime: 2500, refetchInterval: sort !== "featured" ? 3000 : false, refetchOnWindowFocus: true });
+  const featured = sort === "featured" ? (data.products?.length ? data.products : (products ?? [])) : (products ?? data.products);
   const changeCategory = (id: number) => { navigate(`/products?category=${id}`); };
   return <main className="page-shell">
     <BannerCarousel banners={data.banners} />
@@ -1201,14 +1201,16 @@ function shouldShowFooterDescription(description: string | null | undefined) {
 }
 
 export default function Home() {
+  const storeCtx = useStore();
+  const trpcUtils = trpc.useUtils();
+  const lastCatalogSigRef = useRef("");
   const [activeAiProduct, setActiveAiProduct] = useState<PublicProduct | null>(null);
   useGuestPushSubscriptionSync();
   const [location, navigate] = useLocation();
   const [instantStoreData, setInstantStoreData] = useState<HomeData>(getInstantLocalCatalog);
   const home = trpc.commerce.catalog.home.useQuery(undefined, {
     retry: 1,
-    staleTime: 3000,
-    refetchInterval: 3500,
+    staleTime: 2000, refetchInterval: 2500,
     refetchOnWindowFocus: true,
   });
   useEffect(() => {

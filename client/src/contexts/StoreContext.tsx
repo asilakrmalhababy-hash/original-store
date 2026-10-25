@@ -14,6 +14,7 @@ type StoreContextValue = {
   setQuantity: (id: number, quantity: number) => void;
   remove: (id: number) => void;
   clear: () => void;
+  syncCatalogProducts?: (products: StoreProduct[]) => void;
 };
 
 const StoreContext = createContext<StoreContextValue | null>(null);
@@ -63,6 +64,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setQuantity: (id, quantity) => setCart(current => quantity <= 0 ? current.filter(line => line.id !== id) : current.map(line => line.id === id ? { ...line, quantity } : line)),
     remove: id => setCart(current => current.filter(line => line.id !== id)),
     clear: () => setCart([]),
+    syncCatalogProducts: (catalogProducts: StoreProduct[]) => {
+      if (!Array.isArray(catalogProducts) || !catalogProducts.length) return;
+      const byId = new Map(catalogProducts.map(p => [p.id, p]));
+      setCart(current => {
+        let changed = false;
+        const next = current.map(line => {
+          const fresh = byId.get(line.id);
+          if (!fresh) return line;
+          if (fresh.price !== line.price || fresh.name !== line.name || fresh.unit !== line.unit || fresh.imageUrl !== line.imageUrl || fresh.stock !== line.stock) {
+            changed = true;
+            return { ...line, name: fresh.name, price: fresh.price, unit: fresh.unit, imageUrl: fresh.imageUrl, stock: fresh.stock };
+          }
+          return line;
+        });
+        return changed ? next : current;
+      });
+    },
   }), [cart, favoriteIds]);
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

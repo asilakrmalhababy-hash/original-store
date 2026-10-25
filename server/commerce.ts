@@ -108,6 +108,7 @@ function getCached<T>(key: string, ttlMs: number, fetcher: () => Promise<T>): Pr
   });
 }
 function clearCatalogCache() {
+  try { const g = globalThis as any; g.__fastHomeData = null; g.__fastHomeTime = 0; g.__catalogVer = Date.now(); (g.__fastImgCache as Map<string, any>)?.clear(); } catch {}
   __catalogCache.clear();
   try { if (fs.existsSync(CACHE_FILE)) fs.unlinkSync(CACHE_FILE); } catch {}
 }
@@ -259,7 +260,7 @@ function slugify(value: string) {
 async function readSettings(db: NonNullable<Awaited<ReturnType<typeof getDb>>>) {
   const rows = await db.select({ key: storeSettings.key, value: storeSettings.value }).from(storeSettings).catch(err => { console.error("[store_settings error]:", err); return []; });
   const settings: Record<string, string> = {};
-  for (const row of rows) settings[row.key] = row.value;
+  for (const row of rows) { if (row.key === "live_ai_chats_v1") continue; settings[row.key] = row.value; }
   return settings;
 }
 
@@ -379,6 +380,21 @@ async function saveLiveChats(db: any) {
   } catch {}
 }
 // --- LIVE_CHAT_STORE_END ---
+// --- FAST_IMG_HELPER_START ---
+function toFastImg<T extends { id: number; imageUrl?: string | null; updatedAt?: Date | string | null }>(kind: "product" | "category" | "banner", row: T): T {
+  if (!row || !row.imageUrl || !row.imageUrl.startsWith("data:image/")) return row;
+  try {
+    const cacheMap: Map<string, { contentType: string; buf: Buffer }> = (globalThis as any).__fastImgCache || ((globalThis as any).__fastImgCache = new Map());
+    const cacheKey = kind + ":" + row.id;
+    const ver = row.updatedAt ? new Date(row.updatedAt).getTime() : ((globalThis as any).__catalogVer || 1);
+    const m = row.imageUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,([\s\S]+)$/);
+    if (m) cacheMap.set(cacheKey, { contentType: m[1], buf: Buffer.from(m[2], "base64") });
+    return { ...row, imageUrl: "/api/fast-img/" + kind + "/" + row.id + "?v=" + ver };
+  } catch {
+    return row;
+  }
+}
+// --- FAST_IMG_HELPER_END ---
 export const commerceRouter = router({
   access: publicProcedure.query(({ ctx }) => ({
     authenticated: Boolean(ctx.user),
@@ -416,11 +432,11 @@ export const commerceRouter = router({
         : input?.sort === "price-desc" ? desc(products.price)
         : input?.sort === "name" ? asc(products.name)
         : asc(products.sortOrder);
-      return db.select().from(products).where(and(...filters)).orderBy(ordering, desc(products.createdAt)).limit(input?.limit ?? 30);
+      const rows = await db.select().from(products).where(and(...filters)).orderBy(ordering, desc(products.createdAt)).limit(input?.limit ?? 30); return rows.map(r => toFastImg("product", r));
     })),
     listCategories: publicProcedure.query(async () => getCached("listCategories", 60_000, async () => {
       const db = await database();
-      return db.select().from(categories).where(eq(categories.isActive, true)).orderBy(asc(categories.sortOrder), asc(categories.id));
+      const rows = await db.select().from(categories).where(eq(categories.isActive, true)).orderBy(asc(categories.sortOrder), asc(categories.id)); return rows.map(r => toFastImg("category", r));
     })),
     product: publicProcedure.input(z.object({ id: safeId.optional(), slug: z.string().max(220).optional() })).query(async ({ input }) => getCached("product:" + JSON.stringify(input), 60_000, async () => {
       const db = await database();
@@ -432,7 +448,7 @@ export const commerceRouter = router({
       const linked = await db.select({ product: products }).from(productRecommendations)
         .innerJoin(products, eq(productRecommendations.recommendedProductId, products.id))
         .where(and(eq(productRecommendations.productId, product.id), eq(products.isPublished, true), eq(products.isAvailable, true)));
-      return { ...product, recommendations: linked.map(row => row.product) };
+      return { ...toFastImg("product", product), recommendations: linked.map(row => toFastImg("product", row.product)) };
     })),
     productsForReorder: publicProcedure.input(z.object({ ids: z.array(safeId).min(1).max(500) })).query(async ({ input }) => {
       const db = await database();
@@ -976,7 +992,7 @@ export const commerceRouter = router({
       }),
       update: adminProcedure.use(async ({ next }) => { clearLiveHomeCache(); return next(); }).input(z.object({ id: safeId, values: productInput.partial() })).mutation(async ({ input }) => {
         const db = await database();
-        await db.update(products).set({ ...input.values }).where(eq(products.id, input.id));
+        const cleanVals = { ...input.values }; if (typeof cleanVals.imageUrl === "string" && cleanVals.imageUrl.startsWith("/api/fast-img/")) delete cleanVals.imageUrl; await db.update(products).set(cleanVals).where(eq(products.id, input.id));
         clearCatalogCache(); return { success: true };
       }),
       archive: adminProcedure.use(async ({ next }) => { clearLiveHomeCache(); return next(); }).input(z.object({ id: safeId })).mutation(async ({ input }) => {
@@ -1006,7 +1022,7 @@ export const commerceRouter = router({
       }),
       update: adminProcedure.use(async ({ next }) => { clearLiveHomeCache(); return next(); }).input(z.object({ id: safeId, values: categoryInput.partial() })).mutation(async ({ input }) => {
         const db = await database();
-        await db.update(categories).set(input.values).where(eq(categories.id, input.id));
+        const cleanCatVals = { ...input.values }; if (typeof cleanCatVals.imageUrl === "string" && cleanCatVals.imageUrl.startsWith("/api/fast-img/")) delete cleanCatVals.imageUrl; await db.update(categories).set(cleanCatVals).where(eq(categories.id, input.id));
         clearCatalogCache(); return { success: true };
       }),
       archive: adminProcedure.use(async ({ next }) => { clearLiveHomeCache(); return next(); }).input(z.object({ id: safeId })).mutation(async ({ input }) => {
@@ -1027,7 +1043,7 @@ export const commerceRouter = router({
       }),
       update: adminProcedure.use(async ({ next }) => { clearLiveHomeCache(); return next(); }).input(z.object({ id: safeId, values: z.object({ title: z.string().trim().min(1).max(160).optional(), body: z.string().max(1000).nullable().optional(), imageUrl: z.string().max(2000).nullable().optional(), actionText: z.string().max(60).nullable().optional(), actionUrl: z.string().max(500).nullable().optional(), isActive: z.boolean().optional(), sortOrder: z.number().int().min(-10000).max(10000).optional() }) })).mutation(async ({ input }) => {
         const db = await database();
-        await db.update(banners).set(input.values).where(eq(banners.id, input.id));
+        const cleanBanVals = { ...input.values }; if (typeof cleanBanVals.imageUrl === "string" && cleanBanVals.imageUrl.startsWith("/api/fast-img/")) delete cleanBanVals.imageUrl; await db.update(banners).set(cleanBanVals).where(eq(banners.id, input.id));
         clearCatalogCache(); return { success: true };
       }),
       delete: adminProcedure.input(z.object({ id: safeId })).mutation(async ({ input }) => {
@@ -1108,7 +1124,7 @@ export const commerceRouter = router({
     }),
     settings: router({
       get: adminProcedure.query(async () => readSettings(await database())),
-      save: adminProcedure.input(settingSchema).mutation(async ({ input }) => {
+      save: adminProcedure.input(settingSchema).mutation(async ({ input }) => { clearCatalogCache();
         const db = await database();
         await db.transaction(async tx => {
           for (const [key, value] of Object.entries(input)) {
