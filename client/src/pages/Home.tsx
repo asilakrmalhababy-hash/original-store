@@ -348,8 +348,8 @@ function HomePage({ data, onOpen, onAiRecipe }: { data: HomeData; onOpen: (id: n
   const [, navigate] = useLocation();
   const [sort, setSort] = useState<"featured" | "price-asc" | "price-desc">("featured");
   const [visibleCount, setVisibleCount] = useState(8);
-  const { data: products, isLoading: productsLoading } = trpc.commerce.catalog.listProducts.useQuery({ sort, limit: 100 }, { enabled: sort !== "featured", retry: 1, staleTime: 2500, refetchInterval: sort !== "featured" ? 3000 : false, refetchOnWindowFocus: true });
-  const featured = sort === "featured" ? (data.products?.length ? data.products : (products ?? [])) : (products ?? data.products);
+  const { data: products, isLoading: productsLoading } = trpc.commerce.catalog.listProducts.useQuery({ sort, limit: 100 }, { enabled: true, retry: 1, staleTime: 2500, refetchInterval: sort !== "featured" ? 3000 : false, refetchOnWindowFocus: true });
+  const featured = products ?? data.products;
   const changeCategory = (id: number) => { navigate(`/products?category=${id}`); };
   return <main className="page-shell">
     <BannerCarousel banners={data.banners} />
