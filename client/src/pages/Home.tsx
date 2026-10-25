@@ -14,7 +14,7 @@ function getInstantLocalCatalog(): HomeData {
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Link, useLocation, useSearch } from "wouter";
 import {
-  ArrowDownWideNarrow, ArrowLeft, ArrowUpDown, BadgePercent, BellRing, Check, ChevronLeft, CircleUserRound, Copy,
+  ArrowDownWideNarrow, ArrowLeft, ArrowUpDown, BadgePercent, BellRing, Check, ChevronLeft, ChevronRight, CircleUserRound, Copy,
   Heart, Home as HomeIcon, Leaf, LoaderCircle, MapPin, Menu, MessageCircle, Minus, Package,
   Plus, Search, ShoppingBag, ShoppingCart, SlidersHorizontal, Sparkles, Trash2, Truck, UserRound,
   X, Bot, Clock3, ShieldCheck,
@@ -387,17 +387,72 @@ function CategoriesPage({ data }: { data: HomeData }) {
   </main>;
 }
 
-function ProductDetail({ id, onBack, onAiRecipe }: { id: number; onBack: () => void; onAiRecipe?: (p: PublicProduct) => void }) {
-  const { data: product, isLoading, error } = trpc.commerce.catalog.product.useQuery({ id }, { retry: 1 });
-  const { add } = useStore(); const [quantity, setQuantity] = useState(1);
+function ProductDetail({ id, allProducts, onSelectProduct, onBack, onAiRecipe }: { id: number; allProducts: PublicProduct[]; onSelectProduct: (id: number) => void; onBack: () => void; onAiRecipe?: (p: PublicProduct) => void }) {
+  const { data: product, isLoading, error } = trpc.commerce.catalog.product.useQuery({ id }, { retry: 1, staleTime: 30000 });
+  const { add } = useStore();
+  const [quantity, setQuantity] = useState(1);
+  const touchStartX = useRef<number | null>(null);
+  const index = allProducts.findIndex(item => item.id === id);
+  const previous = index > 0 ? allProducts[index - 1] : undefined;
+  const next = index >= 0 && index < allProducts.length - 1 ? allProducts[index + 1] : undefined;
+
+  useEffect(() => {
+    [previous?.imageUrl, next?.imageUrl].forEach(url => {
+      if (url) {
+        const image = new Image();
+        image.src = url;
+      }
+    });
+  }, [previous?.imageUrl, next?.imageUrl]);
+
+  useEffect(() => {
+    setQuantity(1);
+  }, [id]);
+
+  const swipeStart = (event: React.TouchEvent<HTMLDivElement>) => {
+    touchStartX.current = event.touches[0]?.clientX ?? null;
+  };
+  const swipeEnd = (event: React.TouchEvent<HTMLDivElement>) => {
+    const startX = touchStartX.current;
+    const endX = event.changedTouches[0]?.clientX;
+    touchStartX.current = null;
+    if (startX === null || endX === undefined) return;
+    const distance = endX - startX;
+    if (Math.abs(distance) < 55) return;
+    if (distance > 0 && previous) onSelectProduct(previous.id);
+    if (distance < 0 && next) onSelectProduct(next.id);
+  };
+
   if (isLoading) return <main className="page-shell inner-page"><Loading /></main>;
   if (error || !product) return <main className="page-shell inner-page"><LoadError onRetry={onBack} /></main>;
+
   const stockLimit = product.stock === null ? 9999 : product.stock;
-  return <main className="page-shell inner-page"><button className="back-link" onClick={onBack}><ArrowLeft size={16} /> العودة للمتجر</button><div className="detail-layout"><div className="detail-visual">{product.imageUrl ? <img src={product.imageUrl} alt={product.name} fetchPriority="high" decoding="async" /> : <div className="product-no-image detail-placeholder"><Leaf size={45} /><span>لا توجد صورة لهذا المنتج</span></div>}</div><div className="detail-copy"><span className="eyebrow">من متجر أوريجنال</span><h1>{product.name}</h1><p className="detail-description">{product.description || "لا يوجد وصف مضاف لهذا المنتج حتى الآن."}</p><div className="detail-price">{formatPrice(product.price)} <small>/ {product.unit}</small></div><div className="detail-meta"><span><Package size={15} /> الوحدة: {product.unit}</span><span>{product.stock === null ? "التوفر يحدده المتجر" : `المتاح: ${product.stock}`}</span></div><div className="quantity-control"><button aria-label="تقليل" onClick={() => setQuantity(value => Math.max(product.minQuantity || 1, value - (product.quantityStep || 1)))}><Minus size={16} /></button><strong>{quantity}</strong><button aria-label="زيادة" disabled={quantity + (product.quantityStep || 1) > stockLimit} onClick={() => setQuantity(value => Math.min(stockLimit, value + (product.quantityStep || 1)))}><Plus size={16} /></button><small>{product.unit}</small></div><button className="button button-primary full-button" disabled={stockLimit < (product.minQuantity || 1)} onClick={() => { add(product, quantity); toast.success("أُضيف المنتج إلى السلة"); }}><ShoppingCart size={17} /> أضف إلى السلة</button></div></div>
-    {!!product.recommendations.length && <section className="store-section"><div className="section-heading"><div><span className="eyebrow">قد يناسبك أيضًا</span><h2>منتجات مقترحة</h2></div></div><ProductGrid items={product.recommendations as PublicProduct[]} onOpen={nextId => window.location.assign(`/product/${nextId}`)} /></section>}
+  return <main className="page-shell inner-page">
+    <button className="back-link" onClick={onBack}><ArrowLeft size={16} /> العودة للمتجر</button>
+    <div className="detail-layout">
+      <div className="detail-visual" onTouchStart={swipeStart} onTouchEnd={swipeEnd}>
+        {product.imageUrl ? <img src={product.imageUrl} alt={product.name} fetchPriority="high" decoding="async" /> : <div className="product-no-image detail-placeholder"><Leaf size={45} /><span>لا توجد صورة لهذا المنتج</span></div>}
+        {previous && <button type="button" aria-label="المنتج السابق" title={`السابق: ${previous.name}`} onClick={() => onSelectProduct(previous.id)} style={{ position: "absolute", insetInlineStart: 10, top: "50%", zIndex: 2, transform: "translateY(-50%)", borderRadius: "50%", width: 42, height: 42, display: "grid", placeItems: "center", background: "rgba(255,255,255,.94)", border: "1px solid #e5e7eb", boxShadow: "0 2px 10px #0002" }}><ChevronLeft size={22} /></button>}
+        {next && <button type="button" aria-label="المنتج التالي" title={`التالي: ${next.name}`} onClick={() => onSelectProduct(next.id)} style={{ position: "absolute", insetInlineEnd: 10, top: "50%", zIndex: 2, transform: "translateY(-50%)", borderRadius: "50%", width: 42, height: 42, display: "grid", placeItems: "center", background: "rgba(255,255,255,.94)", border: "1px solid #e5e7eb", boxShadow: "0 2px 10px #0002" }}><ChevronRight size={22} /></button>}
+      </div>
+      <div className="detail-copy">
+        <span className="eyebrow">من متجر أوريجنال</span>
+        <h1>{product.name}</h1>
+        <p className="detail-description">{product.description || "لا يوجد وصف مضاف لهذا المنتج حتى الآن."}</p>
+        <div className="detail-price">{formatPrice(product.price)} <small>/ {product.unit}</small></div>
+        <div className="detail-meta"><span><Package size={15} /> الوحدة: {product.unit}</span><span>{product.stock === null ? "التوفر يحدده المتجر" : `المتاح: ${product.stock}`}</span></div>
+        <div className="quantity-control">
+          <button aria-label="تقليل" onClick={() => setQuantity(value => Math.max(product.minQuantity || 1, value - (product.quantityStep || 1)))}><Minus size={16} /></button>
+          <strong>{quantity}</strong>
+          <button aria-label="زيادة" disabled={quantity + (product.quantityStep || 1) > stockLimit} onClick={() => setQuantity(value => Math.min(stockLimit, value + (product.quantityStep || 1)))}><Plus size={16} /></button>
+          <small>{product.unit}</small>
+        </div>
+        <button className="button button-primary full-button" disabled={stockLimit < (product.minQuantity || 1)} onClick={() => { add(product, quantity); toast.success("أُضيف المنتج إلى السلة"); }}><ShoppingCart size={17} /> أضف إلى السلة</button>
+      </div>
+    </div>
+    {!!product.recommendations.length && <section className="store-section"><div className="section-heading"><div><span className="eyebrow">قد يناسبك أيضًا</span><h2>منتجات مقترحة</h2></div></div><ProductGrid items={product.recommendations as PublicProduct[]} onOpen={onSelectProduct} /></section>}
   </main>;
 }
-
 function CartPage({ minOrder = 0 }: { minOrder?: number }) {
   const { cart, setQuantity, remove, clear } = useStore();
   const [checkout, setCheckout] = useState(false);
@@ -1225,7 +1280,7 @@ export default function Home() {
   const productPath = location.startsWith("/product/");
   const productId = productPath ? Number(location.split("/")[2]) : 0;
   const content = useMemo(() => {
-    if (productPath && Number.isInteger(productId)) return <ProductDetail key={productId} id={productId} onBack={() => navigate("/")} onAiRecipe={setActiveAiProduct} />;
+    if (productPath && Number.isInteger(productId)) return <ProductDetail key={productId} id={productId} allProducts={data.products} onSelectProduct={openProduct} onBack={() => navigate("/")} onAiRecipe={setActiveAiProduct} />;
     if (location === "/products" || location.startsWith("/products?")) return <ProductListPage data={data} onOpen={openProduct} />;
     if (location === "/categories") return <CategoriesPage data={data} />;
     if (location === "/cart") return <CartPage minOrder={Number(data.settings?.minOrderAmount || 0)} />;
