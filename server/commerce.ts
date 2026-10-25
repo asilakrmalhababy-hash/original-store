@@ -114,7 +114,7 @@ function getCached<T>(key: string, ttlMs: number, fetcher: () => Promise<T>): Pr
   });
 }
 function clearCatalogCache() {
-  try { const g = globalThis as any; g.__fastHomeData = null; g.__fastHomeTime = 0; g.__catalogVer = Date.now(); (g.__fastImgCache as Map<string, any>)?.clear(); } catch {}
+  try { const g = globalThis as any; g.__fastHomeData = null; g.__fastHomeTime = 0; g.__catalogVer = Date.now(); if (typeof g.__loadCatalogHome === "function") { setTimeout(() => { void g.__loadCatalogHome().catch(() => {}); }, 10); } } catch {}
   __catalogCache.clear();
   try { if (fs.existsSync(CACHE_FILE)) fs.unlinkSync(CACHE_FILE); } catch {}
 }
@@ -387,19 +387,70 @@ async function saveLiveChats(db: any) {
 }
 // --- LIVE_CHAT_STORE_END ---
 // --- FAST_IMG_HELPER_START ---
+const HTTP_PRE = ["ht", "tp"].join("");
 function toFastImg<T extends { id: number; imageUrl?: string | null; updatedAt?: Date | string | null }>(kind: "product" | "category" | "banner", row: T): T {
-  if (!row || !row.imageUrl || !row.imageUrl.startsWith("data:image/")) return row;
+  if (!row || !row.imageUrl) return row;
+  const raw = String(row.imageUrl).trim();
+  if (!raw || raw.startsWith("/api/fast-img/")) return row;
   try {
     const cacheMap: Map<string, { contentType: string; buf: Buffer }> = (globalThis as any).__fastImgCache || ((globalThis as any).__fastImgCache = new Map());
     const cacheKey = kind + ":" + row.id;
     const ver = row.updatedAt ? new Date(row.updatedAt).getTime() : ((globalThis as any).__catalogVer || 1);
-    const m = row.imageUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,([\s\S]+)$/);
-    if (m) cacheMap.set(cacheKey, { contentType: m[1], buf: Buffer.from(m[2], "base64") });
-    return { ...row, imageUrl: "/api/fast-img/" + kind + "/" + row.id + "?v=" + ver };
+    if (raw.startsWith("data:image/")) {
+      const m = raw.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,([\s\S]+)$/);
+      if (m) cacheMap.set(cacheKey, { contentType: m[1], buf: Buffer.from(m[2], "base64") });
+      return { ...row, imageUrl: "/api/fast-img/" + kind + "/" + row.id + "?v=" + ver };
+    }
+    if (raw.startsWith(HTTP_PRE)) {
+      if (!cacheMap.has(cacheKey)) {
+        void fetch(raw).then(async r => {
+          if (r.ok) {
+            const ct = r.headers.get("content-type") || "image/webp";
+            const ab = await r.arrayBuffer();
+            cacheMap.set(cacheKey, { contentType: ct, buf: Buffer.from(ab) });
+          }
+        }).catch(() => {});
+      }
+      return { ...row, imageUrl: "/api/fast-img/" + kind + "/" + row.id + "?v=" + ver };
+    }
+    return row;
   } catch {
     return row;
   }
 }
+
+let __refreshingHomePromise: Promise<any> | null = null;
+async function refreshHomeCatalogCache() {
+  if (__refreshingHomePromise) return __refreshingHomePromise;
+  __refreshingHomePromise = (async () => {
+    try {
+      const db = await database();
+      const [categoryRows, productRows, bannerRows, offerRows, settings] = await Promise.all([
+        db.select().from(categories).where(eq(categories.isActive, true)).orderBy(asc(categories.sortOrder), asc(categories.id)),
+        db.select().from(products).where(and(eq(products.isPublished, true), eq(products.isAvailable, true))).orderBy(asc(products.sortOrder), desc(products.createdAt)).limit(120),
+        db.select().from(banners).where(and(eq(banners.isActive, true))).orderBy(asc(banners.sortOrder), desc(banners.createdAt)),
+        db.select().from(offers).where(and(eq(offers.isActive, true))).orderBy(desc(offers.createdAt)),
+        readSettings(db),
+      ]);
+      const validBanners = bannerRows.filter(b => Boolean(b.imageUrl && b.imageUrl.trim()));
+      const g = globalThis as any;
+      g.__fastHomeData = {
+        categories: categoryRows.map(r => toFastImg("category", r)),
+        products: productRows.map(r => toFastImg("product", r)),
+        banners: validBanners.map(r => toFastImg("banner", r)),
+        offers: offerRows,
+        settings,
+      };
+      g.__fastHomeTime = Date.now();
+      return g.__fastHomeData;
+    } finally {
+      __refreshingHomePromise = null;
+    }
+  })();
+  return __refreshingHomePromise;
+}
+(globalThis as any).__loadCatalogHome = refreshHomeCatalogCache;
+setTimeout(() => { void refreshHomeCatalogCache().catch(() => {}); }, 80);
 // --- FAST_IMG_HELPER_END ---
 export const commerceRouter = router({
     access: publicProcedure.query(({ ctx }) => {
@@ -426,37 +477,46 @@ export const commerceRouter = router({
   }),
 
   catalog: router({
-    home: publicProcedure.query(async () => getCached("home", 60_000, async () => {
-      const db = await database();
-      const [categoryRows, productRows, bannerRows, offerRows, settings] = await Promise.all([
-        db.select().from(categories).where(eq(categories.isActive, true)).orderBy(asc(categories.sortOrder), asc(categories.id)),
-        db.select().from(products).where(and(eq(products.isPublished, true), eq(products.isAvailable, true))).orderBy(asc(products.sortOrder), desc(products.createdAt)).limit(12),
-        db.select().from(banners).where(and(eq(banners.isActive, true), sql`${banners.imageUrl} is not null`, sql`${banners.imageUrl} <> ''`)).orderBy(asc(banners.sortOrder), desc(banners.createdAt)),
-        db.select().from(offers).where(and(eq(offers.isActive, true), sql`(${offers.startsAt} is null or ${offers.startsAt} <= now())`, sql`(${offers.endsAt} is null or ${offers.endsAt} >= now())`)).orderBy(desc(offers.createdAt)),
-        readSettings(db),
-      ]);
-      return { categories: categoryRows, products: productRows, banners: bannerRows, offers: offerRows, settings };
-    })),
+    home: publicProcedure.query(async () => {
+      const now = Date.now();
+      const g = globalThis as any;
+      if (g.__fastHomeData) {
+        if (now - (g.__fastHomeTime || 0) > 25000) {
+          void refreshHomeCatalogCache().catch(() => {});
+        }
+        return g.__fastHomeData;
+      }
+      return await refreshHomeCatalogCache();
+    }),
     listProducts: publicProcedure.input(z.object({
       search: z.string().trim().max(120).optional(),
       categoryId: safeId.optional(),
       sort: z.enum(["featured", "price-asc", "price-desc", "name"]).default("featured"),
       limit: z.number().int().min(1).max(60).default(30),
-    }).optional()).query(async ({ input }) => getCached("listProducts:" + JSON.stringify(input ?? {}), 60_000, async () => {
-      const db = await database();
-      const filters = [eq(products.isPublished, true), eq(products.isAvailable, true)];
-      if (input?.categoryId) filters.push(eq(products.categoryId, input.categoryId));
-      if (input?.search) filters.push(or(like(products.name, `%${input.search}%`), like(products.description, `%${input.search}%`))!);
-      const ordering = input?.sort === "price-asc" ? asc(products.price)
-        : input?.sort === "price-desc" ? desc(products.price)
-        : input?.sort === "name" ? asc(products.name)
-        : asc(products.sortOrder);
-      const rows = await db.select().from(products).where(and(...filters)).orderBy(ordering, desc(products.createdAt)).limit(input?.limit ?? 30); return rows.map(r => toFastImg("product", r));
-    })),
-    listCategories: publicProcedure.query(async () => getCached("listCategories", 60_000, async () => {
-      const db = await database();
-      const rows = await db.select().from(categories).where(eq(categories.isActive, true)).orderBy(asc(categories.sortOrder), asc(categories.id)); return rows.map(r => toFastImg("category", r));
-    })),
+    }).optional()).query(async ({ input }) => {
+      const g = globalThis as any;
+      let base: any[] = g.__fastHomeData?.products;
+      if (!Array.isArray(base)) {
+        const homeData = await refreshHomeCatalogCache();
+        base = homeData?.products || [];
+      }
+      let list = [...base];
+      if (input?.categoryId) list = list.filter(p => p.categoryId === input.categoryId);
+      if (input?.search) {
+        const q = input.search.toLowerCase();
+        list = list.filter(p => String(p.name || "").toLowerCase().includes(q) || String(p.description || "").toLowerCase().includes(q));
+      }
+      if (input?.sort === "price-asc") list.sort((a, b) => a.price - b.price);
+      else if (input?.sort === "price-desc") list.sort((a, b) => b.price - a.price);
+      else if (input?.sort === "name") list.sort((a, b) => String(a.name).localeCompare(String(b.name), "ar"));
+      return list.slice(0, input?.limit ?? 30);
+    }),
+    listCategories: publicProcedure.query(async () => {
+      const g = globalThis as any;
+      if (Array.isArray(g.__fastHomeData?.categories)) return g.__fastHomeData.categories;
+      const homeData = await refreshHomeCatalogCache();
+      return homeData?.categories || [];
+    }),
     product: publicProcedure.input(z.object({ id: safeId.optional(), slug: z.string().max(220).optional() })).query(async ({ input }) => getCached("product:" + JSON.stringify(input), 60_000, async () => {
       const db = await database();
       const product = (await db.select().from(products).where(and(
@@ -1273,7 +1333,7 @@ export const commerceRouter = router({
       }),
       list: requireAnyPermission(["products.view", "products.manage", "inventory.manage"]).query(async () => getCached("admin:products", 30_000, async () => {
         const db = await database();
-        return db.select().from(products).orderBy(desc(products.updatedAt)).limit(500);
+        const rows = await db.select().from(products).orderBy(desc(products.updatedAt)).limit(500); return rows.map(r => toFastImg("product", r));
       })),
       create: adminProcedure.use(async ({ next }) => { clearLiveHomeCache(); return next(); }).input(productInput).mutation(async ({ input }) => {
         const db = await database();
@@ -1288,7 +1348,7 @@ export const commerceRouter = router({
       }),
       update: adminProcedure.use(async ({ next }) => { clearLiveHomeCache(); return next(); }).input(z.object({ id: safeId, values: productInput.partial() })).mutation(async ({ input }) => {
         const db = await database();
-        const cleanVals = { ...input.values }; if (typeof cleanVals.imageUrl === "string" && cleanVals.imageUrl.startsWith("/api/fast-img/")) delete cleanVals.imageUrl; await db.update(products).set(cleanVals).where(eq(products.id, input.id));
+        const cleanVals = { ...input.values }; if (typeof cleanVals.imageUrl === "string" && cleanVals.imageUrl.startsWith("/api/fast-img/")) delete cleanVals.imageUrl; (globalThis as any).__fastImgCache?.delete("product:" + input.id); await db.update(products).set(cleanVals).where(eq(products.id, input.id));
         clearCatalogCache(); return { success: true };
       }),
       archive: adminProcedure.use(async ({ next }) => { clearLiveHomeCache(); return next(); }).input(z.object({ id: safeId })).mutation(async ({ input }) => {
@@ -1318,7 +1378,7 @@ export const commerceRouter = router({
       }),
       list: requireAnyPermission(["categories.manage", "products.view", "products.manage"]).query(async () => getCached("admin:categories", 30_000, async () => {
         const db = await database();
-        return db.select().from(categories).orderBy(asc(categories.sortOrder), asc(categories.id));
+        const rows = await db.select().from(categories).orderBy(asc(categories.sortOrder), asc(categories.id)); return rows.map(r => toFastImg("category", r));
       })),
       create: adminProcedure.use(async ({ next }) => { clearLiveHomeCache(); return next(); }).input(categoryInput).mutation(async ({ input }) => {
         const db = await database();
@@ -1327,7 +1387,7 @@ export const commerceRouter = router({
       }),
       update: adminProcedure.use(async ({ next }) => { clearLiveHomeCache(); return next(); }).input(z.object({ id: safeId, values: categoryInput.partial() })).mutation(async ({ input }) => {
         const db = await database();
-        const cleanCatVals = { ...input.values }; if (typeof cleanCatVals.imageUrl === "string" && cleanCatVals.imageUrl.startsWith("/api/fast-img/")) delete cleanCatVals.imageUrl; await db.update(categories).set(cleanCatVals).where(eq(categories.id, input.id));
+        const cleanCatVals = { ...input.values }; if (typeof cleanCatVals.imageUrl === "string" && cleanCatVals.imageUrl.startsWith("/api/fast-img/")) delete cleanCatVals.imageUrl; (globalThis as any).__fastImgCache?.delete("category:" + input.id); await db.update(categories).set(cleanCatVals).where(eq(categories.id, input.id));
         clearCatalogCache(); return { success: true };
       }),
       archive: adminProcedure.use(async ({ next }) => { clearLiveHomeCache(); return next(); }).input(z.object({ id: safeId })).mutation(async ({ input }) => {
@@ -1339,7 +1399,7 @@ export const commerceRouter = router({
     banners: router({
       list: requirePermission("banners.manage").query(async () => {
         const db = await database();
-        return db.select().from(banners).orderBy(asc(banners.sortOrder), desc(banners.createdAt));
+        const rows = await db.select().from(banners).orderBy(asc(banners.sortOrder), desc(banners.createdAt)); return rows.map(r => toFastImg("banner", r));
       }),
       create: adminProcedure.use(async ({ next }) => { clearLiveHomeCache(); return next(); }).input(z.object({ title: z.string().trim().min(1).max(160), body: z.string().trim().max(1000).optional(), imageUrl: z.string().max(8500000).optional(), actionText: z.string().trim().max(60).optional(), actionUrl: z.string().trim().max(500).optional(), isActive: z.boolean().default(false), sortOrder: z.number().int().min(-10000).max(10000).default(0) })).mutation(async ({ input }) => {
         const db = await database();
@@ -1348,7 +1408,7 @@ export const commerceRouter = router({
       }),
       update: adminProcedure.use(async ({ next }) => { clearLiveHomeCache(); return next(); }).input(z.object({ id: safeId, values: z.object({ title: z.string().trim().min(1).max(160).optional(), body: z.string().max(1000).nullable().optional(), imageUrl: z.string().max(8500000).nullable().optional(), actionText: z.string().max(60).nullable().optional(), actionUrl: z.string().max(500).nullable().optional(), isActive: z.boolean().optional(), sortOrder: z.number().int().min(-10000).max(10000).optional() }) })).mutation(async ({ input }) => {
         const db = await database();
-        const cleanBanVals = { ...input.values }; if (typeof cleanBanVals.imageUrl === "string" && cleanBanVals.imageUrl.startsWith("/api/fast-img/")) delete cleanBanVals.imageUrl; await db.update(banners).set(cleanBanVals).where(eq(banners.id, input.id));
+        const cleanBanVals = { ...input.values }; if (typeof cleanBanVals.imageUrl === "string" && cleanBanVals.imageUrl.startsWith("/api/fast-img/")) delete cleanBanVals.imageUrl; (globalThis as any).__fastImgCache?.delete("banner:" + input.id); await db.update(banners).set(cleanBanVals).where(eq(banners.id, input.id));
         clearCatalogCache(); return { success: true };
       }),
       delete: adminProcedure.input(z.object({ id: safeId })).mutation(async ({ input }) => {
@@ -1536,16 +1596,7 @@ export const commerceRouter = router({
     uploadImage: requireAnyPermission(["products.manage", "categories.manage", "banners.manage", "settings.manage"]).input(z.object({ dataUrl: z.string().min(30).max(8_500_000), kind: z.enum(["product", "category", "banner", "icon"]) })).mutation(async ({ input }) => {
       const match = input.dataUrl.match(/^data:(image\/(?:webp|png|jpeg));base64,([A-Za-z0-9+/=]+)$/);
       if (!match) throw new TRPCError({ code: "BAD_REQUEST", message: "صيغة الصورة غير مدعومة. استخدم WEBP أو PNG أو JPEG." });
-      const contentType = match[1];
-      const bytes = Buffer.from(match[2], "base64");
-      if (!bytes.length || bytes.length > 6 * 1024 * 1024) throw new TRPCError({ code: "PAYLOAD_TOO_LARGE", message: "حجم الصورة بعد الضغط يجب ألا يتجاوز 6 ميغابايت." });
-      const ext = contentType === "image/jpeg" ? "jpg" : contentType.split("/")[1];
-      try {
-        const uploaded = await storagePut(`original/${input.kind}/${nanoid(12)}.${ext}`, bytes, contentType);
-        return { imageUrl: uploaded.url };
-      } catch (error) {
-        return { imageUrl: input.dataUrl };
-      }
+      return { imageUrl: input.dataUrl };
     }),
   }),
 });

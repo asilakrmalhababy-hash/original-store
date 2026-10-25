@@ -316,13 +316,13 @@ function AiRecipeModal({ product, onClose }: { product: PublicProduct; onClose: 
   );
 }
 
-function ProductCard({ product, onOpen, onAiRecipe }: { product: PublicProduct; onOpen: () => void; onAiRecipe?: (p: PublicProduct) => void }) {
+function ProductCard({ product, onOpen, onAiRecipe, priority = false }: { product: PublicProduct; onOpen: () => void; onAiRecipe?: (p: PublicProduct) => void; priority?: boolean }) {
   const { add, isFavorite, toggleFavorite } = useStore();
   const favorite = isFavorite(product.id);
   const disabled = product.stock !== null && product.stock < (product.minQuantity || 1);
   return <article className="product-card">
     <div className="product-visual" onClick={onOpen} role="button" tabIndex={0} onKeyDown={event => { if (event.key === "Enter") onOpen(); }}>
-      {product.imageUrl ? <img src={product.imageUrl} alt={product.name} loading="lazy" decoding="async" /> : <div className="product-no-image"><Leaf size={27} strokeWidth={1.4} /><span>صورة المنتج</span></div>}
+      {product.imageUrl ? <img src={product.imageUrl} alt={product.name} loading={priority ? "eager" : "lazy"} fetchPriority={priority ? "high" : "auto"} decoding="async" /> : <div className="product-no-image"><Leaf size={27} strokeWidth={1.4} /><span>صورة المنتج</span></div>}
       <button type="button" className={`favorite-toggle ${favorite ? "is-favorite" : ""}`} aria-label={favorite ? "إزالة من المفضلة" : "أضف للمفضلة"} aria-pressed={favorite} onClick={event => { event.stopPropagation(); toggleFavorite(product.id); toast.success(favorite ? "أُزيل من المفضلة" : "أُضيف إلى المفضلة على هذا الجهاز"); }}><Heart size={17} fill={favorite ? "currentColor" : "none"} /></button>
       {onAiRecipe && <button type="button" className="ai-recipe-toggle" aria-label="أفكار وتحضير بالذكاء الاصطناعي" title="أفكار ووصفات تحضير" onClick={event => { event.stopPropagation(); onAiRecipe(product); }}><Sparkles size={16} /></button>}
       {disabled && <span className="product-sold-out">غير متوفر</span>}
@@ -334,13 +334,13 @@ function ProductCard({ product, onOpen, onAiRecipe }: { product: PublicProduct; 
 
 function ProductGrid({ items, onOpen, onAiRecipe }: { items: PublicProduct[]; onOpen: (id: number) => void; onAiRecipe?: (p: PublicProduct) => void }) {
   if (!items.length) return <EmptyState icon={ShoppingBag} title="المتجر ينتظر منتجاته الأولى" description="لا توجد منتجات منشورة بعد. ستظهر الأصناف هنا بعد أن تضيفها من لوحة الإدارة." action="تصفح الأقسام" href="/categories" />;
-  return <div className="product-grid">{items.map(product => <ProductCard key={product.id} product={product} onOpen={() => onOpen(product.id)} onAiRecipe={onAiRecipe} />)}</div>;
+  return <div className="product-grid">{items.map((product, idx) => <ProductCard key={product.id} product={product} priority={idx < 8} onOpen={() => onOpen(product.id)} onAiRecipe={onAiRecipe} />)}</div>;
 }
 
 function CategoryStrip({ data, onSelect }: { data: HomeData["categories"]; onSelect: (id: number) => void }) {
   if (!data.length) return <div className="category-empty"><span className="category-empty-mark"><SlidersHorizontal size={19} /></span><div><strong>الأقسام قيد التجهيز</strong><p>أضف أقسام متجرك لتبدأ ترتيب المنتجات.</p></div><Link href="/categories"><ChevronLeft size={18} /></Link></div>;
   return <div className="category-strip">{data.map((category, i) => <button key={category.id} className="category-tile" style={{ "--category-color": category.color } as React.CSSProperties} onClick={() => onSelect(category.id)}>
-    <span className="category-art">{category.imageUrl ? <img src={category.imageUrl} alt="" loading="lazy" decoding="async" /> : <Leaf size={23} strokeWidth={1.5} />}</span><span className="category-pill">{category.name}</span><span className="category-number">{String(i + 1).padStart(2, "0")}</span>
+    <span className="category-art">{category.imageUrl ? <img src={category.imageUrl} alt="" loading="eager" fetchPriority="high" decoding="async" /> : <Leaf size={23} strokeWidth={1.5} />}</span><span className="category-pill">{category.name}</span><span className="category-number">{String(i + 1).padStart(2, "0")}</span>
   </button>)}</div>;
 }
 

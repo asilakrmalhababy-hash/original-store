@@ -195,7 +195,7 @@ async function createLocalMariaPool(): Promise<mysql.Pool> {
     database: decodeURIComponent(dbUrl.pathname.replace(/^\//, "")),
     ssl: { rejectUnauthorized: true },
     waitForConnections: true,
-    connectionLimit: 5,
+    connectionLimit: 12,
   });
 
   const oq = pool.query.bind(pool);

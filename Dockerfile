@@ -1,12 +1,11 @@
 FROM node:22-bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends mariadb-server && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@10.18.0 --activate
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY patches ./patches
 RUN CI=1 pnpm install --frozen-lockfile
 COPY . .
-RUN pnpm build
+RUN if [ ! -f dist/index.js ]; then pnpm build; else echo "Using prebuilt dist/"; fi
 ENV NODE_ENV=production
 ENV PORT=3000
 EXPOSE 3000

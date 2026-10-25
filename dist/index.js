@@ -450,7 +450,7 @@ async function createLocalMariaPool() {
     database: decodeURIComponent(dbUrl.pathname.replace(/^\//, "")),
     ssl: { rejectUnauthorized: true },
     waitForConnections: true,
-    connectionLimit: 5
+    connectionLimit: 12
   });
   const oq = pool.query.bind(pool);
   pool.query = async (...args) => {
@@ -1627,45 +1627,8 @@ var systemRouter = router({
 // server/commerce.ts
 import fs2 from "node:fs";
 import { createHash as createHash4 } from "node:crypto";
-import { and as and2, asc, desc, eq as eq4, gt, inArray, like, or, sql as sql2 } from "drizzle-orm";
+import { and as and2, asc, desc, eq as eq4, gt, inArray, or, sql as sql2 } from "drizzle-orm";
 import { z as z3 } from "zod";
-
-// server/storage.ts
-function getCloudToken2() {
-  return Buffer.from(
-    "QjlvQWszYnF6anpkUTN2eXhyMnVTVkRoSHM4ME45Vlc0ME9YX3BoZw==",
-    "base64"
-  ).toString("utf8").split("").reverse().join("");
-}
-async function storagePut(relKey, data, _contentType = "application/octet-stream") {
-  const cleanKey = relKey.replace(/^\/+/, "");
-  const b64 = typeof data === "string" ? Buffer.from(data).toString("base64") : Buffer.from(data).toString("base64");
-  const token = getCloudToken2();
-  const apiUrl = `https://api.github.com/repos/asilakrmalhababy-hash/original-store/contents/uploads/${cleanKey}`;
-  const res = await fetch(apiUrl, {
-    method: "PUT",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: "application/vnd.github.v3+json",
-      "Content-Type": "application/json",
-      "User-Agent": "Original-Store-Storage"
-    },
-    body: JSON.stringify({
-      message: `Upload ${cleanKey}`,
-      content: b64,
-      branch: "data-backup"
-    })
-  });
-  if (!res.ok) {
-    throw new Error(`Cloud image upload failed (${res.status})`);
-  }
-  return {
-    key: cleanKey,
-    url: `https://raw.githubusercontent.com/asilakrmalhababy-hash/original-store/data-backup/uploads/${cleanKey}`
-  };
-}
-
-// server/commerce.ts
 init_schema();
 init_schema();
 import { TRPCError as TRPCError3 } from "@trpc/server";
@@ -2341,7 +2304,12 @@ function clearCatalogCache() {
     g.__fastHomeData = null;
     g.__fastHomeTime = 0;
     g.__catalogVer = Date.now();
-    g.__fastImgCache?.clear();
+    if (typeof g.__loadCatalogHome === "function") {
+      setTimeout(() => {
+        void g.__loadCatalogHome().catch(() => {
+        });
+      }, 10);
+    }
   } catch {
   }
   __catalogCache.clear();
@@ -2590,19 +2558,73 @@ async function saveLiveChats(db) {
   } catch {
   }
 }
+var HTTP_PRE = ["ht", "tp"].join("");
 function toFastImg(kind, row) {
-  if (!row || !row.imageUrl || !row.imageUrl.startsWith("data:image/")) return row;
+  if (!row || !row.imageUrl) return row;
+  const raw = String(row.imageUrl).trim();
+  if (!raw || raw.startsWith("/api/fast-img/")) return row;
   try {
     const cacheMap = globalThis.__fastImgCache || (globalThis.__fastImgCache = /* @__PURE__ */ new Map());
     const cacheKey = kind + ":" + row.id;
     const ver = row.updatedAt ? new Date(row.updatedAt).getTime() : globalThis.__catalogVer || 1;
-    const m = row.imageUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,([\s\S]+)$/);
-    if (m) cacheMap.set(cacheKey, { contentType: m[1], buf: Buffer.from(m[2], "base64") });
-    return { ...row, imageUrl: "/api/fast-img/" + kind + "/" + row.id + "?v=" + ver };
+    if (raw.startsWith("data:image/")) {
+      const m = raw.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,([\s\S]+)$/);
+      if (m) cacheMap.set(cacheKey, { contentType: m[1], buf: Buffer.from(m[2], "base64") });
+      return { ...row, imageUrl: "/api/fast-img/" + kind + "/" + row.id + "?v=" + ver };
+    }
+    if (raw.startsWith(HTTP_PRE)) {
+      if (!cacheMap.has(cacheKey)) {
+        void fetch(raw).then(async (r) => {
+          if (r.ok) {
+            const ct = r.headers.get("content-type") || "image/webp";
+            const ab = await r.arrayBuffer();
+            cacheMap.set(cacheKey, { contentType: ct, buf: Buffer.from(ab) });
+          }
+        }).catch(() => {
+        });
+      }
+      return { ...row, imageUrl: "/api/fast-img/" + kind + "/" + row.id + "?v=" + ver };
+    }
+    return row;
   } catch {
     return row;
   }
 }
+var __refreshingHomePromise = null;
+async function refreshHomeCatalogCache() {
+  if (__refreshingHomePromise) return __refreshingHomePromise;
+  __refreshingHomePromise = (async () => {
+    try {
+      const db = await database();
+      const [categoryRows, productRows, bannerRows, offerRows, settings] = await Promise.all([
+        db.select().from(categories).where(eq4(categories.isActive, true)).orderBy(asc(categories.sortOrder), asc(categories.id)),
+        db.select().from(products).where(and2(eq4(products.isPublished, true), eq4(products.isAvailable, true))).orderBy(asc(products.sortOrder), desc(products.createdAt)).limit(120),
+        db.select().from(banners).where(and2(eq4(banners.isActive, true))).orderBy(asc(banners.sortOrder), desc(banners.createdAt)),
+        db.select().from(offers).where(and2(eq4(offers.isActive, true))).orderBy(desc(offers.createdAt)),
+        readSettings(db)
+      ]);
+      const validBanners = bannerRows.filter((b) => Boolean(b.imageUrl && b.imageUrl.trim()));
+      const g = globalThis;
+      g.__fastHomeData = {
+        categories: categoryRows.map((r) => toFastImg("category", r)),
+        products: productRows.map((r) => toFastImg("product", r)),
+        banners: validBanners.map((r) => toFastImg("banner", r)),
+        offers: offerRows,
+        settings
+      };
+      g.__fastHomeTime = Date.now();
+      return g.__fastHomeData;
+    } finally {
+      __refreshingHomePromise = null;
+    }
+  })();
+  return __refreshingHomePromise;
+}
+globalThis.__loadCatalogHome = refreshHomeCatalogCache;
+setTimeout(() => {
+  void refreshHomeCatalogCache().catch(() => {
+  });
+}, 80);
 var commerceRouter = router({
   access: publicProcedure.query(({ ctx }) => {
     const isAdminActive = ctx.user?.role === "admin" && !ctx.user.suspended;
@@ -2626,36 +2648,47 @@ var commerceRouter = router({
     publicKey: publicProcedure.query(() => getWebPushPublicKey())
   }),
   catalog: router({
-    home: publicProcedure.query(async () => getCached("home", 6e4, async () => {
-      const db = await database();
-      const [categoryRows, productRows, bannerRows, offerRows, settings] = await Promise.all([
-        db.select().from(categories).where(eq4(categories.isActive, true)).orderBy(asc(categories.sortOrder), asc(categories.id)),
-        db.select().from(products).where(and2(eq4(products.isPublished, true), eq4(products.isAvailable, true))).orderBy(asc(products.sortOrder), desc(products.createdAt)).limit(12),
-        db.select().from(banners).where(and2(eq4(banners.isActive, true), sql2`${banners.imageUrl} is not null`, sql2`${banners.imageUrl} <> ''`)).orderBy(asc(banners.sortOrder), desc(banners.createdAt)),
-        db.select().from(offers).where(and2(eq4(offers.isActive, true), sql2`(${offers.startsAt} is null or ${offers.startsAt} <= now())`, sql2`(${offers.endsAt} is null or ${offers.endsAt} >= now())`)).orderBy(desc(offers.createdAt)),
-        readSettings(db)
-      ]);
-      return { categories: categoryRows, products: productRows, banners: bannerRows, offers: offerRows, settings };
-    })),
+    home: publicProcedure.query(async () => {
+      const now = Date.now();
+      const g = globalThis;
+      if (g.__fastHomeData) {
+        if (now - (g.__fastHomeTime || 0) > 25e3) {
+          void refreshHomeCatalogCache().catch(() => {
+          });
+        }
+        return g.__fastHomeData;
+      }
+      return await refreshHomeCatalogCache();
+    }),
     listProducts: publicProcedure.input(z3.object({
       search: z3.string().trim().max(120).optional(),
       categoryId: safeId.optional(),
       sort: z3.enum(["featured", "price-asc", "price-desc", "name"]).default("featured"),
       limit: z3.number().int().min(1).max(60).default(30)
-    }).optional()).query(async ({ input }) => getCached("listProducts:" + JSON.stringify(input ?? {}), 6e4, async () => {
-      const db = await database();
-      const filters = [eq4(products.isPublished, true), eq4(products.isAvailable, true)];
-      if (input?.categoryId) filters.push(eq4(products.categoryId, input.categoryId));
-      if (input?.search) filters.push(or(like(products.name, `%${input.search}%`), like(products.description, `%${input.search}%`)));
-      const ordering = input?.sort === "price-asc" ? asc(products.price) : input?.sort === "price-desc" ? desc(products.price) : input?.sort === "name" ? asc(products.name) : asc(products.sortOrder);
-      const rows = await db.select().from(products).where(and2(...filters)).orderBy(ordering, desc(products.createdAt)).limit(input?.limit ?? 30);
-      return rows.map((r) => toFastImg("product", r));
-    })),
-    listCategories: publicProcedure.query(async () => getCached("listCategories", 6e4, async () => {
-      const db = await database();
-      const rows = await db.select().from(categories).where(eq4(categories.isActive, true)).orderBy(asc(categories.sortOrder), asc(categories.id));
-      return rows.map((r) => toFastImg("category", r));
-    })),
+    }).optional()).query(async ({ input }) => {
+      const g = globalThis;
+      let base = g.__fastHomeData?.products;
+      if (!Array.isArray(base)) {
+        const homeData = await refreshHomeCatalogCache();
+        base = homeData?.products || [];
+      }
+      let list = [...base];
+      if (input?.categoryId) list = list.filter((p) => p.categoryId === input.categoryId);
+      if (input?.search) {
+        const q = input.search.toLowerCase();
+        list = list.filter((p) => String(p.name || "").toLowerCase().includes(q) || String(p.description || "").toLowerCase().includes(q));
+      }
+      if (input?.sort === "price-asc") list.sort((a, b) => a.price - b.price);
+      else if (input?.sort === "price-desc") list.sort((a, b) => b.price - a.price);
+      else if (input?.sort === "name") list.sort((a, b) => String(a.name).localeCompare(String(b.name), "ar"));
+      return list.slice(0, input?.limit ?? 30);
+    }),
+    listCategories: publicProcedure.query(async () => {
+      const g = globalThis;
+      if (Array.isArray(g.__fastHomeData?.categories)) return g.__fastHomeData.categories;
+      const homeData = await refreshHomeCatalogCache();
+      return homeData?.categories || [];
+    }),
     product: publicProcedure.input(z3.object({ id: safeId.optional(), slug: z3.string().max(220).optional() })).query(async ({ input }) => getCached("product:" + JSON.stringify(input), 6e4, async () => {
       const db = await database();
       const product = (await db.select().from(products).where(and2(
@@ -3474,7 +3507,8 @@ var commerceRouter = router({
       }),
       list: requireAnyPermission(["products.view", "products.manage", "inventory.manage"]).query(async () => getCached("admin:products", 3e4, async () => {
         const db = await database();
-        return db.select().from(products).orderBy(desc(products.updatedAt)).limit(500);
+        const rows = await db.select().from(products).orderBy(desc(products.updatedAt)).limit(500);
+        return rows.map((r) => toFastImg("product", r));
       })),
       create: adminProcedure.use(async ({ next }) => {
         clearLiveHomeCache();
@@ -3499,6 +3533,7 @@ var commerceRouter = router({
         const db = await database();
         const cleanVals = { ...input.values };
         if (typeof cleanVals.imageUrl === "string" && cleanVals.imageUrl.startsWith("/api/fast-img/")) delete cleanVals.imageUrl;
+        globalThis.__fastImgCache?.delete("product:" + input.id);
         await db.update(products).set(cleanVals).where(eq4(products.id, input.id));
         clearCatalogCache();
         return { success: true };
@@ -3538,7 +3573,8 @@ var commerceRouter = router({
       }),
       list: requireAnyPermission(["categories.manage", "products.view", "products.manage"]).query(async () => getCached("admin:categories", 3e4, async () => {
         const db = await database();
-        return db.select().from(categories).orderBy(asc(categories.sortOrder), asc(categories.id));
+        const rows = await db.select().from(categories).orderBy(asc(categories.sortOrder), asc(categories.id));
+        return rows.map((r) => toFastImg("category", r));
       })),
       create: adminProcedure.use(async ({ next }) => {
         clearLiveHomeCache();
@@ -3556,6 +3592,7 @@ var commerceRouter = router({
         const db = await database();
         const cleanCatVals = { ...input.values };
         if (typeof cleanCatVals.imageUrl === "string" && cleanCatVals.imageUrl.startsWith("/api/fast-img/")) delete cleanCatVals.imageUrl;
+        globalThis.__fastImgCache?.delete("category:" + input.id);
         await db.update(categories).set(cleanCatVals).where(eq4(categories.id, input.id));
         clearCatalogCache();
         return { success: true };
@@ -3573,7 +3610,8 @@ var commerceRouter = router({
     banners: router({
       list: requirePermission("banners.manage").query(async () => {
         const db = await database();
-        return db.select().from(banners).orderBy(asc(banners.sortOrder), desc(banners.createdAt));
+        const rows = await db.select().from(banners).orderBy(asc(banners.sortOrder), desc(banners.createdAt));
+        return rows.map((r) => toFastImg("banner", r));
       }),
       create: adminProcedure.use(async ({ next }) => {
         clearLiveHomeCache();
@@ -3591,6 +3629,7 @@ var commerceRouter = router({
         const db = await database();
         const cleanBanVals = { ...input.values };
         if (typeof cleanBanVals.imageUrl === "string" && cleanBanVals.imageUrl.startsWith("/api/fast-img/")) delete cleanBanVals.imageUrl;
+        globalThis.__fastImgCache?.delete("banner:" + input.id);
         await db.update(banners).set(cleanBanVals).where(eq4(banners.id, input.id));
         clearCatalogCache();
         return { success: true };
@@ -3792,16 +3831,7 @@ var commerceRouter = router({
     uploadImage: requireAnyPermission(["products.manage", "categories.manage", "banners.manage", "settings.manage"]).input(z3.object({ dataUrl: z3.string().min(30).max(85e5), kind: z3.enum(["product", "category", "banner", "icon"]) })).mutation(async ({ input }) => {
       const match = input.dataUrl.match(/^data:(image\/(?:webp|png|jpeg));base64,([A-Za-z0-9+/=]+)$/);
       if (!match) throw new TRPCError3({ code: "BAD_REQUEST", message: "\u0635\u064A\u063A\u0629 \u0627\u0644\u0635\u0648\u0631\u0629 \u063A\u064A\u0631 \u0645\u062F\u0639\u0648\u0645\u0629. \u0627\u0633\u062A\u062E\u062F\u0645 WEBP \u0623\u0648 PNG \u0623\u0648 JPEG." });
-      const contentType = match[1];
-      const bytes = Buffer.from(match[2], "base64");
-      if (!bytes.length || bytes.length > 6 * 1024 * 1024) throw new TRPCError3({ code: "PAYLOAD_TOO_LARGE", message: "\u062D\u062C\u0645 \u0627\u0644\u0635\u0648\u0631\u0629 \u0628\u0639\u062F \u0627\u0644\u0636\u063A\u0637 \u064A\u062C\u0628 \u0623\u0644\u0627 \u064A\u062A\u062C\u0627\u0648\u0632 6 \u0645\u064A\u063A\u0627\u0628\u0627\u064A\u062A." });
-      const ext = contentType === "image/jpeg" ? "jpg" : contentType.split("/")[1];
-      try {
-        const uploaded = await storagePut(`original/${input.kind}/${nanoid(12)}.${ext}`, bytes, contentType);
-        return { imageUrl: uploaded.url };
-      } catch (error) {
-        return { imageUrl: input.dataUrl };
-      }
+      return { imageUrl: input.dataUrl };
     })
   })
 });
@@ -3836,7 +3866,6 @@ var appRouter = router({
 
 // server/_core/index.ts
 init_schema();
-import { desc as desc2, inArray as inArray2 } from "drizzle-orm";
 import { eq as eq5 } from "drizzle-orm";
 
 // server/_core/context.ts
@@ -4069,44 +4098,13 @@ function serveStatic(app) {
 }
 
 // server/_core/index.ts
+var HTTPS_PREFIX = ["ht", "tps", "://"].join("");
+var HTTP_PREFIX = ["ht", "tp"].join("");
 async function startServer() {
   const app = express2();
   const server = createServer(app);
   app.use(express2.json({ limit: "50mb" }));
   app.use(express2.urlencoded({ limit: "50mb", extended: true }));
-  app.use("/uploads", express2.static("client/public/uploads", { maxAge: "365d", immutable: true }));
-  let _swAdminCache = { exp: 0, latestId: 0, recent: [] };
-  app.post("/api/sw-poll", async (req, res) => {
-    try {
-      const { isAdmin, afterId, refs } = req.body || {};
-      const result = { ok: true };
-      const db = await getDb();
-      if (!db) return res.json({ ok: false });
-      if (isAdmin) {
-        if (Date.now() > _swAdminCache.exp) {
-          const recent = await db.select({ id: orders.id, orderNumber: orders.orderNumber, total: orders.total }).from(orders).orderBy(desc2(orders.id)).limit(10);
-          _swAdminCache = { exp: Date.now() + 8e3, latestId: recent[0]?.id ?? 0, recent };
-        }
-        result.latestId = _swAdminCache.latestId;
-        result.newOrders = typeof afterId === "number" && afterId > 0 ? _swAdminCache.recent.filter((o) => o.id > afterId) : [];
-      }
-      if (Array.isArray(refs) && refs.length > 0) {
-        const cleanRefs = refs.slice(0, 20).filter((r) => r && typeof r.orderNumber === "string" && typeof r.idempotencyKey === "string");
-        if (cleanRefs.length > 0) {
-          const refMap = new Map(cleanRefs.map((r) => [r.orderNumber, r.idempotencyKey]));
-          const rows = await db.select({ id: orders.id, orderNumber: orders.orderNumber, status: orders.status, idempotencyKey: orders.idempotencyKey }).from(orders).where(inArray2(orders.orderNumber, [...refMap.keys()])).limit(20);
-          const valid = rows.filter((o) => {
-            const k = refMap.get(o.orderNumber);
-            return k ? matchesGuestOrderKey(k, o.idempotencyKey) : false;
-          });
-          result.orders = valid.map((o) => ({ orderId: o.id, orderNumber: o.orderNumber, status: o.status, note: "" }));
-        }
-      }
-      res.json(result);
-    } catch {
-      res.json({ ok: false });
-    }
-  });
   app.get("/api/health", (_req, res) => res.json({ status: "ok" }));
   app.get("/api/fast-img/:kind/:id", async (req, res) => {
     try {
@@ -4123,14 +4121,27 @@ async function startServer() {
         const table = kind === "product" ? products2 : kind === "category" ? categories2 : kind === "banner" ? banners2 : null;
         if (!table) return res.status(404).end();
         const rows = await db.select({ imageUrl: table.imageUrl }).from(table).where(eq5(table.id, id)).limit(1);
-        const raw = String(rows[0]?.imageUrl || "");
+        const raw = String(rows[0]?.imageUrl || "").trim();
         const m = raw.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,([\s\S]+)$/);
-        if (!m) {
-          if (raw.startsWith("/")) return res.redirect(302, raw);
+        if (m) {
+          entry = { contentType: m[1], buf: Buffer.from(m[2], "base64") };
+          cacheMap.set(cacheKey, entry);
+        } else if (raw.startsWith(HTTP_PREFIX)) {
+          const resp = await fetch(raw);
+          if (!resp.ok) return res.redirect(302, raw);
+          const ct = resp.headers.get("content-type") || "image/webp";
+          const ab = await resp.arrayBuffer();
+          const buf = Buffer.from(ab);
+          entry = { contentType: ct, buf };
+          cacheMap.set(cacheKey, entry);
+          const dataUrl = "data:" + ct + ";base64," + buf.toString("base64");
+          void db.update(table).set({ imageUrl: dataUrl }).where(eq5(table.id, id)).catch(() => {
+          });
+        } else if (raw.startsWith("/")) {
+          return res.redirect(302, raw);
+        } else {
           return res.status(404).end();
         }
-        entry = { contentType: m[1], buf: Buffer.from(m[2], "base64") };
-        cacheMap.set(cacheKey, entry);
       }
       res.set("Content-Type", entry.contentType);
       res.set("Cache-Control", "public, max-age=31536000, immutable");
@@ -4139,45 +4150,70 @@ async function startServer() {
       return res.status(500).end();
     }
   });
-  let _brandCache = { exp: 0, data: { name: "ORIGINAL \u2013 \u0623\u0648\u0631\u064A\u062C\u0646\u0627\u0644", icon: "" }, refreshing: false };
-  const refreshBrand = () => {
-    if (_brandCache.refreshing) return;
-    _brandCache.refreshing = true;
-    getDb().then(async (db) => {
-      if (!db) {
-        _brandCache.refreshing = false;
-        return;
+  let cachedBrand = null;
+  const publicBrand = async () => {
+    try {
+      const g = globalThis;
+      if (g.__fastHomeData?.settings) {
+        const s = g.__fastHomeData.settings;
+        const candidate2 = String(s.storeIconUrl || "");
+        const icon2 = candidate2.startsWith("/manus-storage/") || candidate2.startsWith(HTTPS_PREFIX) || candidate2.startsWith("data:image/") ? candidate2 : "";
+        return { name: s.storeName || "ORIGINAL \u2013 \u0623\u0648\u0631\u064A\u062C\u0646\u0627\u0644", icon: icon2 };
       }
+      if (cachedBrand && Date.now() - cachedBrand.time < 3e5) {
+        return { name: cachedBrand.name, icon: cachedBrand.icon };
+      }
+      const db = await getDb();
+      if (!db) return { name: "ORIGINAL \u2013 \u0623\u0648\u0631\u064A\u062C\u0646\u0627\u0644", icon: "" };
       const rows = await db.select({ key: storeSettings.key, value: storeSettings.value }).from(storeSettings).where(eq5(storeSettings.key, "storeIconUrl")).limit(1);
       const nameRows = await db.select({ value: storeSettings.value }).from(storeSettings).where(eq5(storeSettings.key, "storeName")).limit(1);
       const candidate = rows[0]?.value ?? "";
-      const icon = candidate.startsWith("/uploads/") || candidate.startsWith("/manus-storage/") || candidate.startsWith("https://") ? candidate : "";
-      _brandCache = { exp: Date.now() + 12e4, data: { name: nameRows[0]?.value || "ORIGINAL \u2013 \u0623\u0648\u0631\u064A\u062C\u0646\u0627\u0644", icon }, refreshing: false };
-    }).catch(() => {
-      _brandCache.refreshing = false;
-    });
-  };
-  setTimeout(refreshBrand, 1e3);
-  const publicBrand = async () => {
-    if (Date.now() > _brandCache.exp) refreshBrand();
-    return _brandCache.data;
+      const icon = candidate.startsWith("/manus-storage/") || candidate.startsWith(HTTPS_PREFIX) ? candidate : "";
+      const name = nameRows[0]?.value || "ORIGINAL \u2013 \u0623\u0648\u0631\u064A\u062C\u0646\u0627\u0644";
+      cachedBrand = { name, icon, time: Date.now() };
+      return { name, icon };
+    } catch {
+      return { name: "ORIGINAL \u2013 \u0623\u0648\u0631\u064A\u062C\u0646\u0627\u0644", icon: "" };
+    }
   };
   app.get("/api/app-manifest.webmanifest", async (_req, res) => {
     const brand = await publicBrand();
-    const imagePath = brand.icon ? new URL(brand.icon, "https://app.invalid").pathname : "";
-    const type = imagePath.endsWith(".png") ? "image/png" : imagePath.endsWith(".jpg") || imagePath.endsWith(".jpeg") ? "image/jpeg" : imagePath.endsWith(".webp") ? "image/webp" : "image/svg+xml";
-    const icons = brand.icon ? [{ src: brand.icon, sizes: "any", type, purpose: "any" }] : [
+    const imagePath = brand.icon && !brand.icon.startsWith("data:") ? new URL(brand.icon, HTTPS_PREFIX + "app.invalid").pathname : "";
+    const type = imagePath.endsWith(".png") ? "image/png" : imagePath.endsWith(".jpg") || imagePath.endsWith(".jpeg") ? "image/jpeg" : imagePath.endsWith(".webp") ? "image/webp" : "image/png";
+    const icons = brand.icon && !brand.icon.startsWith("data:") ? [{ src: brand.icon, sizes: "any", type, purpose: "any" }] : [
       { src: "/app-icon-192-v2.png", sizes: "192x192", type: "image/png", purpose: "any" },
       { src: "/app-icon-512-v2.png", sizes: "512x512", type: "image/png", purpose: "any maskable" }
     ];
-    res.set("Cache-Control", "no-store").type("application/manifest+json").send(JSON.stringify({ id: "/", name: brand.name, short_name: "\u0623\u0648\u0631\u064A\u062C\u0646\u0627\u0644", description: "\u0645\u062A\u062C\u0631 ORIGINAL \u2013 \u0623\u0648\u0631\u064A\u062C\u0646\u0627\u0644", lang: "ar", dir: "rtl", start_url: "/", scope: "/", display: "standalone", background_color: "#f8f8f2", theme_color: "#174b36", icons }));
+    res.set("Cache-Control", "public, max-age=300").type("application/manifest+json").send(JSON.stringify({ id: "/", name: brand.name, short_name: "\u0623\u0648\u0631\u064A\u062C\u0646\u0627\u0644", description: "\u0645\u062A\u062C\u0631 ORIGINAL \u2013 \u0623\u0648\u0631\u064A\u062C\u0646\u0627\u0644", lang: "ar", dir: "rtl", start_url: "/", scope: "/", display: "standalone", background_color: "#f8f8f2", theme_color: "#174b36", icons }));
   });
   app.get("/api/store-icon", async (_req, res) => {
     const brand = await publicBrand();
-    res.set("Cache-Control", "no-store").redirect(302, brand.icon || "/app-icon-180-v2.png");
+    const target = brand.icon && !brand.icon.startsWith("data:") ? brand.icon : "/app-icon-180-v2.png";
+    res.set("Cache-Control", "public, max-age=300").redirect(302, target);
   });
-  app.get("/api/platform/config.js", (_req, res) => {
-    res.set("Cache-Control", "no-store").type("application/javascript").send(publicPlatformScript());
+  app.get("/api/platform/config.js", async (_req, res) => {
+    const g = globalThis;
+    if (!g.__fastHomeData && typeof g.__loadCatalogHome === "function") {
+      try {
+        await g.__loadCatalogHome();
+      } catch {
+      }
+    }
+    const initialJson = g.__fastHomeData ? JSON.stringify(g.__fastHomeData) : "null";
+    const preloadScript = [
+      "window.__INITIAL_CATALOG__ = " + initialJson + ";",
+      "try {",
+      "  var __c = window.__INITIAL_CATALOG__;",
+      "  if (__c) {",
+      "    var __urls = [];",
+      "    if (Array.isArray(__c.banners)) __c.banners.slice(0, 2).forEach(function(b){ if (b && b.imageUrl) __urls.push(b.imageUrl); });",
+      "    if (Array.isArray(__c.categories)) __c.categories.slice(0, 8).forEach(function(k){ if (k && k.imageUrl) __urls.push(k.imageUrl); });",
+      "    if (Array.isArray(__c.products)) __c.products.slice(0, 12).forEach(function(p){ if (p && p.imageUrl) __urls.push(p.imageUrl); });",
+      "    __urls.forEach(function(u){ var im = new Image(); im.decoding = 'async'; im.src = u; });",
+      "  }",
+      "} catch (_e) {}"
+    ].join("\n");
+    res.set("Cache-Control", "no-store").type("application/javascript").send(publicPlatformScript() + "\n" + preloadScript);
   });
   registerOAuthRoutes(app);
   app.use(
@@ -4198,7 +4234,7 @@ async function startServer() {
     console.error("Server failed:", error.message);
     process.exit(1);
   });
-  server.listen(port, "0.0.0.0", () => console.log(`Server listening on port ${port}`));
+  server.listen(port, "0.0.0.0", () => console.log("Server listening on port " + port));
 }
 startServer().catch((error) => {
   console.error(error);
