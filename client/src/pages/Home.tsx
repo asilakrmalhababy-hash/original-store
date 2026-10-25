@@ -839,10 +839,30 @@ type AssistantMessage = {
   recipeAdded?: boolean;
   cartAction?: AssistantCartAction;
   suggestedQuestions?: string[];
+  ownerMsgId?: string;
 };
 
 const ASSISTANT_HISTORY_KEY = "original-assistant-history-v2";
-const assistantGreeting: AssistantMessage = { role: "assistant", text: "مرحبًا، أنا مساعد أوريجنال. أخبرني عن الطبخة أو احتياجك، وسأساعدك من المنتجات المتاحة فعلًا في المتجر." };
+const CHAT_SESSION_KEY = "original-chat-session-id-v1";
+
+function getOrCreateChatSessionId(): string {
+  try {
+    let sid = localStorage.getItem(CHAT_SESSION_KEY);
+    if (!sid) {
+      sid = "chat-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+      localStorage.setItem(CHAT_SESSION_KEY, sid);
+    }
+    return sid;
+  } catch {
+    return "chat-guest";
+  }
+}
+
+const assistantGreeting: AssistantMessage = {
+  role: "assistant",
+  text: "يا هلا بك في أوريجنال! محتار إيش تاكل أو تشتري اليوم؟ قولي نفسك في شي خفيف واقتصادي ولا عصير بارد، وأنا أرتب لك أحلى خيار!",
+  suggestedQuestions: ["عصير بارد اقتصادي", "وجبة خفيفة وسريعة", "عرض السلة"],
+};
 
 function readAssistantHistory(): AssistantMessage[] {
   try {
@@ -852,7 +872,13 @@ function readAssistantHistory(): AssistantMessage[] {
       if (!item || typeof item !== "object") return [];
       const row = item as Record<string, unknown>;
       if ((row.role !== "user" && row.role !== "assistant") || typeof row.text !== "string") return [];
-      return [{ role: row.role, text: row.text.slice(0, 1800), ...(typeof row.contextText === "string" ? { contextText: row.contextText.slice(0, 1800) } : {}) } as AssistantMessage];
+      return [{
+        role: row.role,
+        text: row.text.slice(0, 1800),
+        ...(typeof row.contextText === "string" ? { contextText: row.contextText.slice(0, 1800) } : {}),
+        ...(typeof row.ownerMsgId === "string" ? { ownerMsgId: row.ownerMsgId } : {}),
+        ...(Array.isArray(row.suggestedQuestions) ? { suggestedQuestions: row.suggestedQuestions.filter((x): x is string => typeof x === "string") } : {}),
+      } as AssistantMessage];
     }).slice(-32);
     return history.length ? history : [assistantGreeting];
   } catch { return [assistantGreeting]; }
@@ -863,101 +889,212 @@ function assistantHistoryText(message: AssistantMessage) {
 }
 
 function AssistantPage() {
-  const { add, cart, setQuantity, favoriteIds } = useStore();
+  const { add, cart, setQuantity, favoriteIds } = useStore(); const homeCatalog = trpc.commerce.catalog.home.useQuery();
   const [, navigate] = useLocation();
+  const [sessionId] = useState<string>(getOrCreateChatSessionId);
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<AssistantMessage[]>(readAssistantHistory);
   const messagesRef = useRef<HTMLDivElement>(null);
   const appliedActionsRef = useRef(new Set<string>());
+  const seenOwnerMsgsRef = useRef(new Set<string>());
+  const retryRef = useRef<{ request: string; history: Array<{ role: "user" | "assistant"; text: string }> } | null>(null);
   const mutation = trpc.commerce.assistant.recipe.useMutation();
 
+  const pollQuery = trpc.commerce.assistant.pollMessages.useQuery(
+    { sessionId },
+    { refetchInterval: 3000, retry: false }
+  );
+
   useEffect(() => {
-    const saved = messages.slice(-24).map(m => ({ role: m.role, text: m.text || (m as any).content || "", ...(m.contextText ? { contextText: m.contextText } : {}) }));
+    for (const m of messages) {
+      if (m.ownerMsgId) seenOwnerMsgsRef.current.add(m.ownerMsgId);
+    }
+  }, [messages]);
+
+  useEffect(() => {
+    const ownerMsgs = pollQuery.data?.ownerMessages;
+    if (!ownerMsgs || !ownerMsgs.length) return;
+    const unseen = ownerMsgs.filter(m => !seenOwnerMsgsRef.current.has(m.id));
+    if (!unseen.length) return;
+    for (const m of unseen) seenOwnerMsgsRef.current.add(m.id);
+    toast.success("💬 وصلتك رسالة جديدة من إدارة المتجر!");
+    setMessages(current => [
+      ...current,
+      ...unseen.map(m => ({
+        role: "assistant" as const,
+        text: "👨‍💼 إدارة المتجر:\n" + m.text,
+        ownerMsgId: m.id,
+      })),
+    ].slice(-32));
+  }, [pollQuery.data]);
+
+  useEffect(() => {
+    const saved = messages.slice(-32).map(message => ({
+      role: message.role,
+      text: message.text,
+      ...(message.contextText ? { contextText: message.contextText } : {}),
+      ...(message.ownerMsgId ? { ownerMsgId: message.ownerMsgId } : {}),
+      ...(message.suggestedQuestions?.length ? { suggestedQuestions: message.suggestedQuestions } : {}),
+    }));
     try { localStorage.setItem(ASSISTANT_HISTORY_KEY, JSON.stringify(saved)); } catch {}
   }, [messages]);
 
   useEffect(() => {
     const node = messagesRef.current;
-    if (node) node.scrollTop = node.scrollHeight;
+    if (node) node.scrollTo({ top: node.scrollHeight, behavior: "smooth" });
   }, [messages.length, mutation.isPending]);
 
   const startNewConversation = () => {
     if (mutation.isPending) return;
+    retryRef.current = null;
     appliedActionsRef.current.clear();
     setInput("");
     setMessages([assistantGreeting]);
     try { localStorage.removeItem(ASSISTANT_HISTORY_KEY); } catch {}
   };
 
+  const updateActionStatus = (actionId: string, status: "confirmed" | "cancelled") => {
+    setMessages(current => current.map(message => {
+      if (message.cartAction?.id === actionId) {
+        return { ...message, cartAction: { ...message.cartAction, status }, contextText: (message.contextText ?? message.text) + "\nحالة طلب السلة: " + (status === "confirmed" ? "أكد العميل التغيير" : "رفض العميل التغيير") + "." };
+      }
+      if (message.recipeActionId === actionId) {
+        return { ...message, recipeAdded: status === "confirmed", contextText: (message.contextText ?? message.text) + "\nحالة إضافة مقادير الوصفة: " + (status === "confirmed" ? "أكد العميل الإضافة" : "رفض العميل الإضافة") + "." };
+      }
+      return message;
+    }));
+  };
+
   const applyConfirmedChange = (actionId: string, type: "add" | "remove", items: AssistantProductLine[]) => {
     if (appliedActionsRef.current.has(actionId)) return;
     appliedActionsRef.current.add(actionId);
     let changed = 0;
+    let skipped = 0;
     for (const item of items) {
       const current = cart.find(line => line.id === item.productId);
       if (type === "add") {
+        const total = (current?.quantity ?? 0) + item.quantity;
+        if (item.stock !== null && total > item.stock) { skipped += 1; continue; }
         add({ id: item.productId, name: item.name, price: item.price, unit: item.unit, stock: item.stock, minQuantity: item.minQuantity, quantityStep: item.quantityStep }, item.quantity);
         changed += 1;
-      } else if (current) {
-        const nextQty = item.quantity === 0 ? 0 : Math.max(0, current.quantity - item.quantity);
-        setQuantity(item.productId, nextQty);
+      } else {
+        if (!current) { skipped += 1; continue; }
+        setQuantity(item.productId, Math.max(0, current.quantity - item.quantity));
         changed += 1;
       }
     }
-    setMessages(curr => curr.map(m => m.recipeActionId === actionId ? { ...m, recipeAdded: true } : m));
-    if (changed) toast.success(type === "add" ? "تمت الإضافة للسلة 🛒" : "تم تحديث السلة");
+    updateActionStatus(actionId, "confirmed");
+    if (changed) toast.success(type === "add" ? "تمت إضافة " + changed + " صنف إلى السلة." : "تم حذف " + changed + " صنف من السلة.");
+    if (skipped) toast.error("تغيّرت السلة أو الكمية المتاحة؛ راجع السلة قبل إتمام الطلب.");
   };
 
-  const copyMissingRequest = async (message: AssistantMessage) => {
-    const missing = message.missingIngredients ?? [];
-    if (!message.recipe || !missing.length) return;
-    const { text: note } = buildMissingIngredientNote(message.recipe.name, message.recipe.servings, missing);
-    try {
-      await navigator.clipboard.writeText(note);
-      toast.success("نُسخت النواقص! الصقها في ملاحظة الطلب عند الدفع.");
-    } catch {
-      toast.error("تعذر النسخ تلقائياً.");
-    }
+  const cancelCartChange = (actionId: string) => {
+    if (appliedActionsRef.current.has(actionId)) return;
+    appliedActionsRef.current.add(actionId);
+    updateActionStatus(actionId, "cancelled");
+    toast("لم يتم تغيير السلة.");
   };
 
-  const sendText = (rawRequest: string) => {
-    const request = rawRequest.trim();
-    if (mutation.isPending || !request) return;
-    const lastMsg = messages.at(-1);
-    if ((request === "أضف المقادير للسلة" || request === "أضف مقادير الحلى للسلة") && lastMsg?.ingredients?.length) {
-      applyConfirmedChange("rec-chip-" + Date.now(), "add", lastMsg.ingredients);
-      return;
-    }
-    if (["إتمام الطلب", "تأكيد الطلب", "استكمال الطلب", "عرض السلة", "مراجعة السلة"].includes(request)) {
+  const sendText = (rawText: string, prevAssistantText = "") => {
+    const trimmed = rawText.trim();
+    if (mutation.isPending || !trimmed) return;
+
+    if (/^(?:عرض السلة|السلة|شوف السلة|تأكيد الطلب|إتمام الطلب|اتمام الطلب)$/i.test(trimmed)) {
       navigate("/cart");
       return;
     }
-    const history = messages.slice(-12).map(m => ({ role: m.role, text: splitCleanReplyAndChips(m.text || (m as any).content || "").cleanText }));
-    setMessages(curr => [...curr, { role: "user" as const, text: request }].slice(-24));
-    setInput("");
-    mutation.mutate(
-      { request, history, cart: cart.map(line => ({ productId: line.id, quantity: line.quantity })), favoriteProductIds: favoriteIds, customerName: (() => { try { const d = JSON.parse(localStorage.getItem("original-customer-browser-v1") || "{}"); return d.name || d.addresses?.[0]?.recipientName || ""; } catch { return ""; } })(), customerPhone: (() => { try { const d = JSON.parse(localStorage.getItem("original-customer-browser-v1") || "{}"); return d.phone || d.addresses?.[0]?.phone || ""; } catch { return ""; } })() },
-      {
-        onSuccess: result => {
-          if (result.cartAction && Array.isArray(result.cartAction.items) && result.cartAction.items.length > 0) {
-            applyConfirmedChange("auto-" + Date.now(), result.cartAction.type, result.cartAction.items);
-          }
-          setMessages(curr => [...curr, {
-            role: "assistant" as const,
-            text: result.message,
-            recipe: result.recipe,
-            ingredients: result.ingredients,
-            missingIngredients: result.missingIngredients,
-            recipeActionId: result.recipe && result.ingredients?.length ? "rec-" + Date.now() : undefined,
-            recipeAdded: false
-          }].slice(-24));
-        },
-        onError: () => {
-          toast.error("الشبكة مشغولة لحظياً، أعد الإرسال.");
-          setInput(request);
+
+    const catalogProducts: PublicProduct[] = (homeCatalog.data?.products ?? []) as PublicProduct[];
+    const norm = (s: string) => s.replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي").toLowerCase().trim();
+    const cleanBtn = norm(trimmed.replace(/^(?:أضف|اضف|إضافة|اضافة|جرب|اعطني|أعطني)\s+/i, ""));
+
+    if (trimmed === "إضافة الاثنين" || trimmed === "اضافة الاثنين" || trimmed === "أضف الاثنين") {
+      const mentioned = catalogProducts.filter(p => prevAssistantText.includes(p.name) || norm(prevAssistantText).includes(norm(p.name)));
+      if (mentioned.length > 0) {
+        for (const prod of mentioned) {
+          add({ id: prod.id, name: prod.name, price: prod.price, unit: prod.unit, stock: prod.stock, minQuantity: prod.minQuantity, quantityStep: prod.quantityStep }, prod.minQuantity || 1);
         }
+        const names = mentioned.map(p => p.name).join(" + ");
+        toast.success("تمت إضافة (" + names + ") إلى السلة مباشرة!");
+        setMessages(current => [
+          ...current,
+          { role: "user" as const, text: trimmed },
+          {
+            role: "assistant" as const,
+            text: "أبشر يا غالي! أضفت لك (" + names + ") إلى سلة المشتريات بنجاح 🛒.\nتحب تضيف شي ثاني معاهم ولا ننتقل لإتمام الطلب؟",
+            suggestedQuestions: ["عرض السلة", "عصير بارد اقتصادي"],
+          },
+        ].slice(-32));
+        return;
       }
-    );
+    }
+
+    const matchedProd = catalogProducts.find(p => {
+      const np = norm(p.name);
+      return cleanBtn.length >= 3 && (np === cleanBtn || np.includes(cleanBtn) || cleanBtn.includes(np));
+    });
+
+    if (matchedProd && trimmed.length <= 35) {
+      const qty = matchedProd.minQuantity || 1;
+      add({ id: matchedProd.id, name: matchedProd.name, price: matchedProd.price, unit: matchedProd.unit, stock: matchedProd.stock, minQuantity: matchedProd.minQuantity, quantityStep: matchedProd.quantityStep }, qty);
+      toast.success("تمت إضافة " + matchedProd.name + " إلى السلة!");
+      setMessages(current => [
+        ...current,
+        { role: "user" as const, text: trimmed },
+        {
+          role: "assistant" as const,
+          text: "أبشر يا غالي! أضفت لك (" + qty + " × " + matchedProd.name + " — " + formatPrice(matchedProd.price) + ") إلى سلتك مباشرة 🛒.\nتحب تضيف صنف ثاني ولا نعتمد الطلب؟",
+          suggestedQuestions: ["عرض السلة", "إضافة صنف آخر"],
+        },
+      ].slice(-32));
+      return;
+    }
+
+    const updatedCart = cart.map(line => ({ productId: line.id, quantity: line.quantity }));
+    const history = messages.slice(-8).map(message => ({ role: message.role, text: assistantHistoryText(message) }));
+    setMessages(current => [...current, { role: "user" as const, text: trimmed }].slice(-32));
+    retryRef.current = { request: trimmed, history };
+    setInput("");
+
+    let cName = "";
+    let cPhone = "";
+    try {
+      const d = JSON.parse(localStorage.getItem("original-customer-browser-v1") || "{}");
+      cName = d.name || d.addresses?.[0]?.recipientName || "";
+      cPhone = d.phone || d.addresses?.[0]?.phone || "";
+    } catch {}
+
+    mutation.mutate({
+      request: trimmed,
+      history,
+      cart: updatedCart,
+      favoriteProductIds: favoriteIds,
+      sessionId,
+      customerName: cName,
+      customerPhone: cPhone,
+    }, {
+      onSuccess: (result: any) => {
+        retryRef.current = null;
+        if (result.cartAction && result.cartAction.type === "add" && Array.isArray(result.cartAction.items)) {
+          for (const item of result.cartAction.items) {
+            add({ id: item.productId, name: item.name, price: item.price, unit: item.unit, stock: item.stock, minQuantity: item.minQuantity, quantityStep: item.quantityStep }, item.quantity);
+          }
+          toast.success("تمت الإضافة إلى السلة تلقائياً!");
+        }
+        setMessages(current => [...current, {
+          role: "assistant" as const,
+          text: result.message,
+          recipe: result.recipe,
+          ingredients: result.ingredients,
+          missingIngredients: result.missingIngredients,
+          suggestedQuestions: Array.isArray(result.suggestedQuestions) ? result.suggestedQuestions : [],
+        }].slice(-32));
+      },
+      onError: () => {
+        toast.error("يرجى المحاولة مرة أخرى.");
+        setInput(trimmed);
+      },
+    });
   };
 
   const send = (event: FormEvent) => {
@@ -965,87 +1102,75 @@ function AssistantPage() {
     sendText(input);
   };
 
+  const copyMissingRequest = async (message: AssistantMessage) => {
+    const missing = message.missingIngredients ?? [];
+    if (!missing.length) return;
+    const note = "طلب توفير: " + missing.join("، ");
+    try {
+      await navigator.clipboard.writeText(note);
+      toast.success("نُسخ طلب التوفير بنجاح.");
+    } catch {}
+  };
+
   return (
-    <main className="page-shell inner-page assistant-page" style={{ paddingTop: "8px" }}>
-      <section className="chat-panel" style={{ borderRadius: "16px", boxShadow: "0 2px 10px rgba(0,0,0,0.04)" }}>
-        <div className="chat-head" style={{ padding: "10px 14px" }}>
-          <span className="chat-avatar" style={{ width: "30px", height: "30px" }}><Sparkles size={15} /></span>
-          <div><strong style={{ fontSize: "13.5px" }}>مساعد أوريجنال الذكي</strong><small style={{ fontSize: "10.5px" }}>يفهم سلتك ومفضلتك ويقترح أشهى الوصفات</small></div>
+    <main className="page-shell inner-page assistant-page">
+      <section className="chat-panel">
+        <div className="chat-head">
+          <span className="chat-avatar"><Sparkles size={17} /></span>
+          <div><strong>مساعد أوريجنال الذكي</strong><small>متصل الآن لخدمتك ومرتبط بإدارة المتجر</small></div>
           <span className="online-dot" />
-          <button type="button" className="assistant-new-chat" style={{ fontSize: "11px", padding: "4px 10px" }} disabled={mutation.isPending} onClick={startNewConversation}>محادثة جديدة</button>
+          <button type="button" className="assistant-new-chat" disabled={mutation.isPending} onClick={startNewConversation}>محادثة جديدة</button>
         </div>
-        <div className="chat-messages" ref={messagesRef} style={{ padding: "12px", gap: "10px" }}>
-          {messages.map((message, index) => {
-            const msgText = message.text || (message as any).content || "";
-            if (message.role === "user") {
-              return (
-                <div key={index} className="chat-message from-user" style={{ fontSize: "12.5px", padding: "8px 13px", borderRadius: "14px" }}>
-                  <p style={{ margin: 0 }}>{msgText}</p>
+        <div className="chat-messages" ref={messagesRef}>
+          {messages.map((message, index) => (
+            <div key={index + "-" + message.role} className={"chat-message " + (message.role === "user" ? "from-user" : "from-assistant")} style={message.ownerMsgId ? { border: "1.5px solid #e0a800", background: "#fffdf5" } : undefined}>
+              <p style={{ whiteSpace: "pre-line" }}>{message.text}</p>
+              {message.role === "assistant" && message.text.includes("770731619") && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginTop: "8px" }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard?.writeText("770731619");
+                      toast.success("تم نسخ رقم المالك 770731619 بنجاح!");
+                    }}
+                    style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "6px 12px", borderRadius: "10px", border: "1px solid #0f5c3a", background: "#f2f9f5", color: "#0f5c3a", fontSize: "0.78rem", fontWeight: 700, cursor: "pointer" }}
+                  >
+                    <Copy size={13} /> نسخ الرقم: 770731619
+                  </button>
+                  <a
+                    href="tel:770731619"
+                    style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "6px 12px", borderRadius: "10px", border: "1px solid #d5e6dc", background: "#ffffff", color: "#0f5c3a", fontSize: "0.78rem", fontWeight: 700, textDecoration: "none" }}
+                  >
+                    📞 اتصال مباشر
+                  </a>
                 </div>
-              );
-            }
-            const parsed = splitCleanReplyAndChips(msgText, (message as any).suggestedQuestions || (message as any).suggestions);
-            return (
-              <div key={index} className="chat-message from-assistant" style={{ fontSize: "12.5px", lineHeight: "1.65", padding: "10px 13px", borderRadius: "14px" }}>
-                <p style={{ margin: 0, whiteSpace: "pre-line" }}>{parsed.cleanText}</p>
-                {message.recipe && (
-                  <div className="recipe-card" style={{ marginTop: "10px", padding: "10px", borderRadius: "12px" }}>
-                    <span className="eyebrow" style={{ fontSize: "10px" }}>اقتراح وصفة</span>
-                    <h3 style={{ fontSize: "13.5px", margin: "2px 0" }}>{message.recipe.name}</h3>
-                    <small style={{ fontSize: "11px" }}>تكفي {message.recipe.servings} أشخاص</small>
-                    {message.ingredients?.length ? (
-                      <div className="recipe-ingredients" style={{ marginTop: "8px" }}>
-                        {message.ingredients.map(item => (
-                          <div className="recipe-ingredient" key={item.productId} style={{ fontSize: "11.5px", padding: "4px 0" }}>
-                            <span>{item.name} <small>({item.quantity} {item.unit})</small></span>
-                            <strong>{formatPrice(item.price)}</strong>
-                          </div>
-                        ))}
-                        {message.recipeAdded ? (
-                          <div className="assistant-action-complete" style={{ fontSize: "11px", marginTop: "6px" }}><Check size={14} /> أُضيفت المقادير إلى السلة</div>
-                        ) : (
-                          <button type="button" onClick={() => message.recipeActionId && applyConfirmedChange(message.recipeActionId, "add", message.ingredients ?? [])} style={{ ...tinyChipStyle, background: "#174b36", color: "#fff", marginTop: "8px", padding: "5px 12px" }}>
-                            إضافة مقادير الوصفة للسلة
-                          </button>
-                        )}
-                      </div>
-                    ) : null}
-                    {message.missingIngredients?.length ? (
-                      <div className="missing-ingredients" style={{ marginTop: "8px", fontSize: "11px" }}>
-                        <strong>مقادير منزلية / غير متوفرة حالياً:</strong>
-                        <ul style={{ margin: "4px 0", paddingInlineStart: "18px" }}>{message.missingIngredients.map((item, i) => <li key={i}>{item}</li>)}</ul>
-                        <button type="button" onClick={() => void copyMissingRequest(message)} style={tinyChipStyle}>نسخ طلب توفير المقادير</button>
-                      </div>
-                    ) : null}
-                    {message.recipe.steps?.length > 0 && (
-                      <details className="recipe-steps" style={{ marginTop: "8px", fontSize: "11.5px" }} open>
-                        <summary style={{ cursor: "pointer", fontWeight: 700 }}>طريقة التحضير</summary>
-                        <ol style={{ margin: "6px 0", paddingInlineStart: "18px" }}>{message.recipe.steps.map((step, sIdx) => <li key={sIdx} style={{ marginBottom: "4px" }}>{step}</li>)}</ol>
-                      </details>
-                    )}
-                  </div>
-                )}
-                {parsed.chips.length > 0 && (
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: "5px", marginTop: "8px" }}>
-                    {parsed.chips.map((chip, cIdx) => (
-                      <button key={cIdx} type="button" disabled={mutation.isPending} onClick={() => sendText(chip)} style={tinyChipStyle}>
-                        {chip}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+              )}
+              {message.role === "assistant" && message.suggestedQuestions && message.suggestedQuestions.length > 0 && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "8px" }}>
+                  {message.suggestedQuestions.map((q, qIdx) => (
+                    <button
+                      key={qIdx}
+                      type="button"
+                      disabled={mutation.isPending}
+                      onClick={() => sendText(q, message.text)}
+                      style={{ padding: "5px 11px", borderRadius: "999px", border: "1px solid #cfe2d6", background: "#f3f9f5", color: "#0f5c3a", fontSize: "0.75rem", fontWeight: 700, cursor: "pointer" }}
+                    >
+                      {q}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
           {mutation.isPending && (
-            <div className="chat-message from-assistant" style={{ background: "transparent", padding: "2px 4px", border: "none", boxShadow: "none" }}>
-              <AiThinkingStatus />
+            <div className="chat-message from-assistant" style={{ opacity: 0.75 }}>
+              <p>يكتب لك الآن...</p>
             </div>
           )}
         </div>
-        <form className="chat-input" onSubmit={send} style={{ padding: "8px 10px" }}>
-          <input maxLength={1200} value={input} onChange={e => setInput(e.target.value)} placeholder="اسأل عن منتج، وصفة، أو تعديل في سلتك..." aria-label="رسالة للمساعد" disabled={mutation.isPending} style={{ fontSize: "12.5px", minHeight: "38px" }} />
-          <button disabled={mutation.isPending || !input.trim()} aria-label="إرسال" style={{ width: "38px", height: "38px" }}><ArrowLeft size={16} /></button>
+        <form className="chat-input" onSubmit={send}>
+          <input maxLength={1200} value={input} onChange={event => setInput(event.target.value)} placeholder="اكتب رسالتك هنا..." aria-label="رسالة للمساعد" disabled={mutation.isPending} />
+          <button disabled={mutation.isPending || !input.trim()} aria-label="إرسال"><ArrowLeft size={18} /></button>
         </form>
       </section>
     </main>

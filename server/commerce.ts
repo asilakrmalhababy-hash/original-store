@@ -347,6 +347,38 @@ const productInput = z.object({
   sortOrder: z.number().int().min(-10000).max(10000).default(0),
 });
 
+// --- LIVE_CHAT_STORE_START ---
+export type LiveChatMsg = { id: string; role: "user" | "assistant" | "owner"; sender: string; text: string; createdAt: string };
+export type LiveChatSession = { sessionId: string; customerName: string; customerPhone: string; aiPaused: boolean; updatedAt: string; messages: LiveChatMsg[] };
+const liveChatsMemory = new Map<string, LiveChatSession>();
+let liveChatsLoaded = false;
+
+async function loadLiveChats(db: any) {
+  if (liveChatsLoaded || !db) return;
+  liveChatsLoaded = true;
+  try {
+    const rows = await db.select().from(storeSettings).where(eq(storeSettings.key, "live_ai_chats_v1")).limit(1);
+    if (rows[0]?.value) {
+      const parsed = JSON.parse(rows[0].value) as LiveChatSession[];
+      if (Array.isArray(parsed)) {
+        for (const s of parsed) if (s?.sessionId) liveChatsMemory.set(s.sessionId, s);
+      }
+    }
+  } catch {}
+}
+
+async function saveLiveChats(db: any) {
+  if (!db) return;
+  try {
+    const arr = [...liveChatsMemory.values()]
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+      .slice(0, 60)
+      .map(s => ({ ...s, messages: s.messages.slice(-50) }));
+    const stored = JSON.stringify(arr);
+    await db.insert(storeSettings).values({ key: "live_ai_chats_v1", value: stored }).onDuplicateKeyUpdate({ set: { value: stored } });
+  } catch {}
+}
+// --- LIVE_CHAT_STORE_END ---
 export const commerceRouter = router({
   access: publicProcedure.query(({ ctx }) => ({
     authenticated: Boolean(ctx.user),
@@ -650,17 +682,73 @@ export const commerceRouter = router({
   }),
 
   assistant: router({
+    pollMessages: publicProcedure.input(z.object({
+      sessionId: z.string().trim().min(1).max(80),
+    })).query(async ({ input }) => {
+      const db = await getDb();
+      await loadLiveChats(db);
+      const session = liveChatsMemory.get(input.sessionId);
+      return {
+        aiPaused: session?.aiPaused ?? false,
+        ownerMessages: (session?.messages ?? []).filter(m => m.role === "owner"),
+      };
+    }),
     recipe: publicProcedure.input(z.object({
       request: z.string().trim().min(1).max(1200),
       history: z.array(z.object({ role: z.enum(["user", "assistant"]), text: z.string().max(1800) })).max(20).optional(),
       cart: z.array(z.object({ productId: safeId, quantity: z.number().int().min(1).max(10000) })).max(100).optional(),
       favoriteProductIds: z.array(safeId).max(500).optional(),
+      sessionId: z.string().max(80).optional(),
       customerName: z.string().max(160).optional(),
       customerPhone: z.string().max(40).optional(),
     })).mutation(async ({ input, ctx }) => {
       const clientKey = ctx.user ? "user:" + ctx.user.id : "ip:" + (ctx.req.ip || "unknown-client");
       enforceAssistantRateLimit(clientKey.slice(0, 120));
       const db = await getDb();
+      await loadLiveChats(db);
+
+      const sid = (input.sessionId?.trim() || clientKey).slice(0, 80);
+      const customerNameClean = input.customerName?.trim() || "زبون المتجر";
+      const customerPhoneClean = input.customerPhone?.trim() || "غير مسجل بالموقع";
+      const nowIso = new Date().toISOString();
+
+      let chatSession = liveChatsMemory.get(sid);
+      if (!chatSession) {
+        chatSession = {
+          sessionId: sid,
+          customerName: customerNameClean,
+          customerPhone: customerPhoneClean,
+          aiPaused: false,
+          updatedAt: nowIso,
+          messages: [],
+        };
+        liveChatsMemory.set(sid, chatSession);
+      } else {
+        if (input.customerName?.trim()) chatSession.customerName = customerNameClean;
+        if (input.customerPhone?.trim()) chatSession.customerPhone = customerPhoneClean;
+        chatSession.updatedAt = nowIso;
+      }
+
+      chatSession.messages.push({
+        id: nanoid(10),
+        role: "user",
+        sender: chatSession.customerName,
+        text: input.request,
+        createdAt: nowIso,
+      });
+
+      if (chatSession.aiPaused) {
+        await saveLiveChats(db);
+        return {
+          message: "تم إرسال رسالتك إلى إدارة المتجر مباشرة، وسيرد عليك المالك هنا في المحادثة خلال لحظات...",
+          recipe: null,
+          ingredients: [],
+          missingIngredients: [],
+          cartAction: null,
+          suggestedQuestions: ["عرض السلة", "تصفح المنتجات"],
+        };
+      }
+
       const catalogRows = db ? await db.select({ id: products.id, name: products.name, description: products.description, price: products.price, unit: products.unit, stock: products.stock, minQuantity: products.minQuantity, quantityStep: products.quantityStep }).from(products).where(and(eq(products.isPublished, true), eq(products.isAvailable, true))).limit(150).catch(() => []) : [];
       const catalog = catalogRows.filter(product => product.stock === null || product.stock > 0) as AssistantCatalogProduct[];
       const catalogById = new Map(catalog.map(product => [product.id, product]));
@@ -706,13 +794,21 @@ export const commerceRouter = router({
         throw new TRPCError({ code: "SERVICE_UNAVAILABLE", message: "يرجى التحقق من اتصال الإنترنت والمحاولة مرة أخرى." });
       }
 
-      const prepared = prepareAssistantResponse(output, catalog, input.cart ?? []);
+      const prepared = (prepareAssistantResponse as any)(output, catalog, input.cart ?? [], input.request, input.history ?? []);
+
+      chatSession.messages.push({
+        id: nanoid(10),
+        role: "assistant",
+        sender: "المساعد الذكي",
+        text: prepared.message,
+        createdAt: new Date().toISOString(),
+      });
+      chatSession.updatedAt = new Date().toISOString();
+      void saveLiveChats(db);
 
       const missingItems = output.missingIngredients ?? [];
       if (missingItems.length > 0 && db) {
         const requestedItemText = missingItems.join("، ").replace(/^طلب توفير:\s*/i, "").trim().slice(0, 180);
-        const customerNameClean = input.customerName?.trim() || "زبون عبر المساعد الذكي";
-        const customerPhoneClean = input.customerPhone?.trim() || "غير مسجل بالموقع";
         void (async () => {
           try {
             const orderNumber = "REQ-" + Date.now().toString(36).toUpperCase().slice(-4) + "-" + nanoid(4).toUpperCase();
@@ -769,6 +865,55 @@ export const commerceRouter = router({
   }),
 
   admin: router({
+    chats: router({
+      list: adminProcedure.query(async () => {
+        const db = await database();
+        await loadLiveChats(db);
+        return [...liveChatsMemory.values()].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+      }),
+      reply: adminProcedure.input(z.object({
+        sessionId: z.string().trim().min(1).max(80),
+        text: z.string().trim().min(1).max(1200),
+      })).mutation(async ({ input }) => {
+        const db = await database();
+        await loadLiveChats(db);
+        const session = liveChatsMemory.get(input.sessionId);
+        if (!session) throw new TRPCError({ code: "NOT_FOUND", message: "المحادثة غير موجودة." });
+        session.messages.push({
+          id: nanoid(10),
+          role: "owner",
+          sender: "إدارة المتجر",
+          text: input.text.trim(),
+          createdAt: new Date().toISOString(),
+        });
+        session.updatedAt = new Date().toISOString();
+        await saveLiveChats(db);
+        return { success: true };
+      }),
+      toggleAi: adminProcedure.input(z.object({
+        sessionId: z.string().trim().min(1).max(80),
+        aiPaused: z.boolean(),
+      })).mutation(async ({ input }) => {
+        const db = await database();
+        await loadLiveChats(db);
+        const session = liveChatsMemory.get(input.sessionId);
+        if (session) {
+          session.aiPaused = input.aiPaused;
+          session.updatedAt = new Date().toISOString();
+          await saveLiveChats(db);
+        }
+        return { success: true };
+      }),
+      delete: adminProcedure.input(z.object({
+        sessionId: z.string().trim().min(1).max(80),
+      })).mutation(async ({ input }) => {
+        const db = await database();
+        await loadLiveChats(db);
+        liveChatsMemory.delete(input.sessionId);
+        await saveLiveChats(db);
+        return { success: true };
+      }),
+    }),
     overview: adminProcedure.query(async () => getCached("admin:overview", 30_000, async () => {
       const db = await database();
       const [productRows, categoryRows, orderRows, customerRows, orderMetrics, settings] = await Promise.all([

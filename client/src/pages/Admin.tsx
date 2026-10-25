@@ -14,7 +14,7 @@ import { ensureBrowserPushSubscription, getExistingBrowserPushSubscription, getP
 
 const money = (value: number) => `${Number(value || 0).toLocaleString("en-US")} ر.ي`;
 const labels: Record<string, string> = { new: "جديد", preparing: "قيد التجهيز", ready: "جاهز للتوصيل", out_for_delivery: "خرج للتوصيل", delivered: "تم التسليم", cancelled: "ملغي" };
-type Section = "overview" | "products" | "categories" | "banners" | "offers" | "orders" | "users" | "settings";
+type Section = "overview" | "products" | "categories" | "banners" | "offers" | "orders" | "chats" | "users" | "settings";
 const sections: Array<{ id: Section; label: string; icon: typeof LayoutDashboard }> = [
   { id: "overview", label: "نظرة عامة", icon: LayoutDashboard },
   { id: "products", label: "المنتجات", icon: Package },
@@ -22,6 +22,7 @@ const sections: Array<{ id: Section; label: string; icon: typeof LayoutDashboard
   { id: "banners", label: "الإعلانات", icon: Megaphone },
   { id: "offers", label: "العروض والخصومات", icon: BadgePercent },
   { id: "orders", label: "الطلبات", icon: ClipboardList },
+  { id: "chats", label: "محادثات الزبائن", icon: Sparkles },
   { id: "users", label: "العملاء", icon: Users },
   { id: "settings", label: "إعدادات المتجر", icon: Settings2 },
 ];
@@ -364,7 +365,167 @@ function OwnerNotificationControl() {
   return <section className="owner-push-control" style={{ margin: "14px 20px 0", padding: "12px 16px", background: "#eaf3e9", border: "1px solid #c8dcc5", borderRadius: "14px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px", flexWrap: "wrap" }}><div><strong style={{ color: "#174b36", fontSize: "12px", display: "block" }}>🔔 إشعارات الهاتف الفورية للطلبات الجديدة</strong><small style={{ color: "#4d6b57", fontSize: "10px" }}>{permission === "denied" ? "الإشعارات محظورة من إعدادات المتصفح (اضغط القفل بجانب الرابط لتفعيلها)." : enabled ? "مفعّلة على هاتفك — سيصلك إشعار خارجي وصوت فور وصول أي طلب جديد." : "اضغط زر التفعيل ليصلك إشعار في هاتفك فور قيام أي عميل بالطلب."}</small></div><button type="button" className="small-button selected" onClick={() => void enableNotifications()} disabled={pending || permission === "unsupported"}><BellRing size={15} />{pending ? "جارٍ التفعيل..." : enabled ? "إرسال إشعار تجريبي للهاتف" : "تفعيل إشعارات الهاتف الآن"}</button></section>;
 }
 
+// --- CHATS_PANEL_START ---
+function ChatsPanel() {
+  const utils = trpc.useUtils();
+  const query = trpc.commerce.admin.chats.list.useQuery(undefined, { refetchInterval: 3000 });
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [replyText, setReplyText] = useState("");
+  const replyMutation = trpc.commerce.admin.chats.reply.useMutation({
+    onSuccess: async () => {
+      setReplyText("");
+      toast.success("تم إرسال ردك للزبون في المحادثة مباشرة!");
+      await utils.commerce.admin.chats.list.invalidate();
+    },
+    onError: err => toast.error(err.message),
+  });
+  const toggleAiMutation = trpc.commerce.admin.chats.toggleAi.useMutation({
+    onSuccess: async () => {
+      await utils.commerce.admin.chats.list.invalidate();
+    },
+  });
+  const deleteMutation = trpc.commerce.admin.chats.delete.useMutation({
+    onSuccess: async () => {
+      toast.success("حُذفت المحادثة");
+      setSelectedId(null);
+      await utils.commerce.admin.chats.list.invalidate();
+    },
+  });
+
+  const sessions = query.data ?? [];
+  const activeSession = sessions.find(s => s.sessionId === selectedId) ?? sessions[0] ?? null;
+
+  const sendOwnerReply = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeSession || !replyText.trim() || replyMutation.isPending) return;
+    replyMutation.mutate({ sessionId: activeSession.sessionId, text: replyText.trim() });
+  };
+
+  return (
+    <div className="admin-content">
+      <AdminHeading eyebrow="متابعة حية ومباشرة" title="محادثات الزبائن مع المساعد الذكي" text="شاهد جميع رسائل الزبائن مع الذكاء الاصطناعي لحظة بلحظة، وأرسل أي رد ليظهر للزبون فوراً داخل نفس المحادثة." icon={Sparkles} />
+      {query.isLoading ? <AdminLoading /> : !sessions.length ? (
+        <AdminEmpty title="لا توجد محادثات نشطة بعد" text="بمجرد أن يراسل أي زبون المساعد الذكي في المتجر، ستظهر محادثته هنا فوراً." />
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(290px, 1fr))", gap: "16px", alignItems: "start" }}>
+          <section className="admin-form-card" style={{ padding: "14px", maxHeight: "70vh", overflowY: "auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+              <strong>قائمة المحادثات ({sessions.length})</strong>
+              <small style={{ color: "#0f5c3a" }}>تحديث تلقائي كل 3 ثوانٍ</small>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+              {sessions.map(s => {
+                const isSel = activeSession?.sessionId === s.sessionId;
+                const lastMsg = s.messages[s.messages.length - 1];
+                return (
+                  <button
+                    key={s.sessionId}
+                    type="button"
+                    onClick={() => setSelectedId(s.sessionId)}
+                    style={{
+                      textAlign: "right",
+                      padding: "12px",
+                      borderRadius: "12px",
+                      border: isSel ? "2px solid #0f5c3a" : "1px solid #e2ebe5",
+                      background: isSel ? "#f1f8f4" : "#ffffff",
+                      cursor: "pointer",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "4px",
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <strong style={{ color: "#12261c", fontSize: "0.92rem" }}>{s.customerName || "زبون المتجر"}</strong>
+                      <span style={{ fontSize: "0.72rem", padding: "2px 8px", borderRadius: "99px", background: s.aiPaused ? "#fff3cd" : "#e3f5ec", color: s.aiPaused ? "#856404" : "#0f5c3a", fontWeight: 700 }}>
+                        {s.aiPaused ? "✋ تدخل مباشر" : "🤖 الذكاء نشط"}
+                      </span>
+                    </div>
+                    <small style={{ color: "#0f5c3a", fontWeight: 600 }} dir="ltr">{s.customerPhone}</small>
+                    {lastMsg && <p style={{ margin: 0, fontSize: "0.8rem", color: "#556b5f", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{lastMsg.sender}: {lastMsg.text}</p>}
+                    <small style={{ fontSize: "0.7rem", color: "#889990" }}>{new Date(s.updatedAt).toLocaleTimeString("ar-YE")}</small>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+          {activeSession && (
+            <section className="admin-form-card" style={{ padding: "16px", display: "flex", flexDirection: "column", height: "70vh" }}>
+              <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: "8px", paddingBottom: "12px", borderBottom: "1px solid #e2ebe5" }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: "1rem" }}>{activeSession.customerName}</h3>
+                  <small style={{ color: "#0f5c3a", fontWeight: 700 }} dir="ltr">{activeSession.customerPhone}</small>
+                  {activeSession.customerPhone && activeSession.customerPhone !== "غير مسجل بالموقع" && (
+                    <a href={"tel:" + activeSession.customerPhone} className="small-button" style={{ marginRight: "8px", padding: "2px 8px", fontSize: "0.75rem" }}>📞 اتصال</a>
+                  )}
+                </div>
+                <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    className="small-button"
+                    onClick={() => toggleAiMutation.mutate({ sessionId: activeSession.sessionId, aiPaused: !activeSession.aiPaused })}
+                    style={{ background: activeSession.aiPaused ? "#0f5c3a" : "#fff3cd", color: activeSession.aiPaused ? "#fff" : "#856404" }}
+                  >
+                    {activeSession.aiPaused ? "🤖 إعادة تفعيل الذكاء" : "✋ إيقاف الذكاء والرد بنفسي"}
+                  </button>
+                  <button
+                    type="button"
+                    className="small-button danger-soft"
+                    onClick={() => deleteMutation.mutate({ sessionId: activeSession.sessionId })}
+                  >
+                    حذف
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ flex: 1, overflowY: "auto", padding: "12px 4px", display: "flex", flexDirection: "column", gap: "10px" }}>
+                {activeSession.messages.map(msg => {
+                  const isUser = msg.role === "user";
+                  const isOwner = msg.role === "owner";
+                  return (
+                    <div
+                      key={msg.id}
+                      style={{
+                        alignSelf: isUser ? "flex-start" : "flex-end",
+                        maxWidth: "85%",
+                        padding: "10px 14px",
+                        borderRadius: "14px",
+                        background: isUser ? "#0f5c3a" : isOwner ? "#fff8e6" : "#f3f7f4",
+                        color: isUser ? "#ffffff" : "#12261c",
+                        border: isOwner ? "1.5px solid #e0a800" : isUser ? "none" : "1px solid #d5e6dc",
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: "10px", marginBottom: "4px", fontSize: "0.72rem", opacity: 0.85, fontWeight: 700 }}>
+                        <span>{isUser ? "🧑 " + msg.sender : isOwner ? "👨‍💼 أنت (إدارة المتجر)" : "🤖 المساعد الذكي"}</span>
+                        <span>{new Date(msg.createdAt).toLocaleTimeString("ar-YE")}</span>
+                      </div>
+                      <p style={{ margin: 0, whiteSpace: "pre-line", fontSize: "0.88rem", lineHeight: 1.5 }}>{msg.text}</p>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <form onSubmit={sendOwnerReply} style={{ display: "flex", gap: "8px", paddingTop: "10px", borderTop: "1px solid #e2ebe5" }}>
+                <input
+                  value={replyText}
+                  onChange={e => setReplyText(e.target.value)}
+                  placeholder="اكتب رسالتك لتصل للزبون فوراً في نفس محادثة المساعد..."
+                  style={{ flex: 1, padding: "10px 12px", borderRadius: "10px", border: "1px solid #cddbd2" }}
+                />
+                <button type="submit" className="button button-primary" disabled={!replyText.trim() || replyMutation.isPending}>
+                  إرسال للزبون
+                </button>
+              </form>
+            </section>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+// --- CHATS_PANEL_END ---
 function AdminPanel({ section }: { section: Section }) {
+  if (section === "chats") return <ChatsPanel />;
   if (section === "products") return <ProductsPanel />;
   if (section === "categories") return <CategoriesPanel />;
   if (section === "banners") return <BannersPanel />;

@@ -107,12 +107,12 @@ function smartExtract(rawText: string, catalog: Array<{ id: number; name: string
     clean += "\n📲 تم إرسال طلبك للإدارة لتوفيره، وللتواصل المباشر مع المالك: 770731619";
   }
 
-  if (suggestedQuestions.length === 0) {
+  if ((suggestedQuestions.length as number) === 0) {
     for (const p of catalog) {
       if (clean.includes(p.name)) {
         suggestedQuestions.push("أضف " + p.name);
       }
-      if (suggestedQuestions.length >= 2) break;
+      if ((suggestedQuestions.length as number) >= 2) break;
     }
     if ((suggestedQuestions.length as number) === 2) {
       suggestedQuestions.push("إضافة الاثنين");
