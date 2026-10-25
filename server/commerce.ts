@@ -684,10 +684,19 @@ export const commerceRouter = router({
   assistant: router({
     pollMessages: publicProcedure.input(z.object({
       sessionId: z.string().trim().min(1).max(80),
-    })).query(async ({ input }) => {
+    })).query(async ({ input, ctx }) => {
       const db = await getDb();
       await loadLiveChats(db);
-      const session = liveChatsMemory.get(input.sessionId);
+      let session = liveChatsMemory.get(input.sessionId);
+      if (!session || !session.messages.some(m => m.role === "owner")) {
+        const ipKey = "ip:" + (ctx.req.ip || "unknown-client");
+        const fallback = [...liveChatsMemory.values()]
+          .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+          .find(s => s.sessionId === input.sessionId || s.sessionId === ipKey || s.messages.some(m => m.role === "owner"));
+        if (fallback && (!session || fallback.messages.some(m => m.role === "owner"))) {
+          session = fallback;
+        }
+      }
       return {
         aiPaused: session?.aiPaused ?? false,
         ownerMessages: (session?.messages ?? []).filter(m => m.role === "owner"),
@@ -736,9 +745,9 @@ export const commerceRouter = router({
         text: input.request,
         createdAt: nowIso,
       });
+      await saveLiveChats(db);
 
       if (chatSession.aiPaused) {
-        await saveLiveChats(db);
         return {
           message: "تم إرسال رسالتك إلى إدارة المتجر مباشرة، وسيرد عليك المالك هنا في المحادثة خلال لحظات...",
           recipe: null,
@@ -879,14 +888,15 @@ export const commerceRouter = router({
         await loadLiveChats(db);
         const session = liveChatsMemory.get(input.sessionId);
         if (!session) throw new TRPCError({ code: "NOT_FOUND", message: "المحادثة غير موجودة." });
-        session.messages.push({
+        const msgObj: LiveChatMsg = {
           id: nanoid(10),
           role: "owner",
           sender: "إدارة المتجر",
           text: input.text.trim(),
           createdAt: new Date().toISOString(),
-        });
-        session.updatedAt = new Date().toISOString();
+        };
+        session.messages.push(msgObj);
+        session.updatedAt = msgObj.createdAt;
         await saveLiveChats(db);
         return { success: true };
       }),

@@ -889,47 +889,55 @@ function assistantHistoryText(message: AssistantMessage) {
 }
 
 function AssistantPage() {
-  const { add, cart, setQuantity, favoriteIds } = useStore(); const homeCatalog = trpc.commerce.catalog.home.useQuery();
+  const { add, cart, setQuantity, favoriteIds } = useStore();
+  const homeCatalog = trpc.commerce.catalog.home.useQuery();
   const [, navigate] = useLocation();
-  const [sessionId] = useState<string>(getOrCreateChatSessionId);
+  const [sessionId, setSessionId] = useState<string>(getOrCreateChatSessionId);
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<AssistantMessage[]>(readAssistantHistory);
   const messagesRef = useRef<HTMLDivElement>(null);
   const appliedActionsRef = useRef(new Set<string>());
-  const seenOwnerMsgsRef = useRef(new Set<string>());
   const retryRef = useRef<{ request: string; history: Array<{ role: "user" | "assistant"; text: string }> } | null>(null);
   const mutation = trpc.commerce.assistant.recipe.useMutation();
 
   const pollQuery = trpc.commerce.assistant.pollMessages.useQuery(
     { sessionId },
-    { refetchInterval: 3000, retry: false }
+    { refetchInterval: 2000, staleTime: 0, refetchOnMount: "always", refetchOnWindowFocus: true, retry: false }
   );
-
-  useEffect(() => {
-    for (const m of messages) {
-      if (m.ownerMsgId) seenOwnerMsgsRef.current.add(m.ownerMsgId);
-    }
-  }, [messages]);
 
   useEffect(() => {
     const ownerMsgs = pollQuery.data?.ownerMessages;
     if (!ownerMsgs || !ownerMsgs.length) return;
-    const unseen = ownerMsgs.filter(m => !seenOwnerMsgsRef.current.has(m.id));
-    if (!unseen.length) return;
-    for (const m of unseen) seenOwnerMsgsRef.current.add(m.id);
-    toast.success("💬 وصلتك رسالة جديدة من إدارة المتجر!");
-    setMessages(current => [
-      ...current,
-      ...unseen.map(m => ({
+    setMessages(current => {
+      const existingIds = new Set(current.map(m => m.ownerMsgId).filter(Boolean));
+      const unseen = ownerMsgs.filter(m => !existingIds.has(m.id));
+      if (!unseen.length) return current;
+      toast.success("💬 وصلتك رسالة جديدة من إدارة المتجر!");
+      return [
+        ...current,
+        ...unseen.map(m => ({
+          role: "assistant" as const,
+          text: "👨‍💼 إدارة المتجر:\n" + m.text,
+          ownerMsgId: m.id,
+        })),
+      ].slice(-32);
+    });
+  }, [pollQuery.data, pollQuery.dataUpdatedAt]);
+
+  const displayedMessages: AssistantMessage[] = useMemo(() => {
+    const existingIds = new Set(messages.map(m => m.ownerMsgId).filter(Boolean));
+    const extra: AssistantMessage[] = (pollQuery.data?.ownerMessages ?? [])
+      .filter(m => !existingIds.has(m.id))
+      .map(m => ({
         role: "assistant" as const,
         text: "👨‍💼 إدارة المتجر:\n" + m.text,
         ownerMsgId: m.id,
-      })),
-    ].slice(-32));
-  }, [pollQuery.data]);
+      }));
+    return [...messages, ...extra];
+  }, [messages, pollQuery.data]);
 
   useEffect(() => {
-    const saved = messages.slice(-32).map(message => ({
+    const saved = displayedMessages.slice(-32).map(message => ({
       role: message.role,
       text: message.text,
       ...(message.contextText ? { contextText: message.contextText } : {}),
@@ -937,20 +945,25 @@ function AssistantPage() {
       ...(message.suggestedQuestions?.length ? { suggestedQuestions: message.suggestedQuestions } : {}),
     }));
     try { localStorage.setItem(ASSISTANT_HISTORY_KEY, JSON.stringify(saved)); } catch {}
-  }, [messages]);
+  }, [displayedMessages]);
 
   useEffect(() => {
     const node = messagesRef.current;
     if (node) node.scrollTo({ top: node.scrollHeight, behavior: "smooth" });
-  }, [messages.length, mutation.isPending]);
+  }, [displayedMessages.length, mutation.isPending]);
 
   const startNewConversation = () => {
     if (mutation.isPending) return;
     retryRef.current = null;
     appliedActionsRef.current.clear();
     setInput("");
+    const newSid = "chat-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+    try {
+      localStorage.setItem(CHAT_SESSION_KEY, newSid);
+      localStorage.removeItem(ASSISTANT_HISTORY_KEY);
+    } catch {}
+    setSessionId(newSid);
     setMessages([assistantGreeting]);
-    try { localStorage.removeItem(ASSISTANT_HISTORY_KEY); } catch {}
   };
 
   const updateActionStatus = (actionId: string, status: "confirmed" | "cancelled") => {
@@ -1051,7 +1064,7 @@ function AssistantPage() {
     }
 
     const updatedCart = cart.map(line => ({ productId: line.id, quantity: line.quantity }));
-    const history = messages.slice(-8).map(message => ({ role: message.role, text: assistantHistoryText(message) }));
+    const history = displayedMessages.slice(-8).map(message => ({ role: message.role, text: assistantHistoryText(message) }));
     setMessages(current => [...current, { role: "user" as const, text: trimmed }].slice(-32));
     retryRef.current = { request: trimmed, history };
     setInput("");
@@ -1075,6 +1088,7 @@ function AssistantPage() {
     }, {
       onSuccess: (result: any) => {
         retryRef.current = null;
+        void pollQuery.refetch();
         if (result.cartAction && result.cartAction.type === "add" && Array.isArray(result.cartAction.items)) {
           for (const item of result.cartAction.items) {
             add({ id: item.productId, name: item.name, price: item.price, unit: item.unit, stock: item.stock, minQuantity: item.minQuantity, quantityStep: item.quantityStep }, item.quantity);
@@ -1122,8 +1136,8 @@ function AssistantPage() {
           <button type="button" className="assistant-new-chat" disabled={mutation.isPending} onClick={startNewConversation}>محادثة جديدة</button>
         </div>
         <div className="chat-messages" ref={messagesRef}>
-          {messages.map((message, index) => (
-            <div key={index + "-" + message.role} className={"chat-message " + (message.role === "user" ? "from-user" : "from-assistant")} style={message.ownerMsgId ? { border: "1.5px solid #e0a800", background: "#fffdf5" } : undefined}>
+          {displayedMessages.map((message, index) => (
+            <div key={index + "-" + message.role + "-" + (message.ownerMsgId || "")} className={"chat-message " + (message.role === "user" ? "from-user" : "from-assistant")} style={message.ownerMsgId ? { border: "1.5px solid #e0a800", background: "#fffdf5" } : undefined}>
               <p style={{ whiteSpace: "pre-line" }}>{message.text}</p>
               {message.role === "assistant" && message.text.includes("770731619") && (
                 <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginTop: "8px" }}>

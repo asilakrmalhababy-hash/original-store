@@ -25,7 +25,7 @@ export type InvokeResult = {
 };
 
 const ENCODED_KEYS = [
-  "==gV1J3b0h2YpxmT5N3XnR2bJJnT1R3c6N1aB9FZy9WTyF2Y4V3c5N1a052bN9FZy9WTyF2Y4V3c"
+  "=EVVCF1Np5ESUxERoRFNxRkVYd1ViZnWNllRzIWekd0VGdEcQhGe5MXbvJUYPJXe5QGRah3XrN3Z"
 ];
 
 function decodeKey(encoded: string): string {
@@ -44,7 +44,7 @@ function getAllActiveKeys(): string[] {
     .map(k => k.trim())
     .filter(Boolean);
   const fromEncoded = ENCODED_KEYS.map(decodeKey).filter(k => k.startsWith("gsk_") || k.startsWith("sk-"));
-  return [...new Set([...fromEnv, ...fromEncoded])];
+  return [...new Set([...fromEncoded, ...fromEnv])];
 }
 
 function extractText(content: MessageContent | MessageContent[]): string {
@@ -53,7 +53,7 @@ function extractText(content: MessageContent | MessageContent[]): string {
   return "text" in content ? content.text : "";
 }
 
-function smartExtract(rawText: string, catalog: Array<{ id: number; name: string; price: number }>, userQuery: string): string {
+function smartExtract(rawText: string, catalog: Array<{ id: number; name: string; price: number }>, userQuery: string): string | null {
   let clean = rawText
     .replace(/<think>[\s\S]*?<\/think>/gi, "")
     .replace(/<think>[\s\S]*/gi, "")
@@ -61,10 +61,12 @@ function smartExtract(rawText: string, catalog: Array<{ id: number; name: string
     .replace(/\x60\x60\x60/g, "")
     .trim();
 
+  if (!clean) return null;
+
   if (clean.startsWith("{") && clean.includes('"message"')) {
     try {
       const parsed = JSON.parse(clean);
-      if (parsed && typeof parsed.message === "string") {
+      if (parsed && typeof parsed.message === "string" && parsed.message.trim()) {
         return JSON.stringify(parsed);
       }
     } catch {}
@@ -97,6 +99,7 @@ function smartExtract(rawText: string, catalog: Array<{ id: number; name: string
   });
 
   clean = clean.replace(/\*\*/g, "").trim();
+  if (!clean) return null;
 
   const mentionsUnavailable = /(?:غير متوفر|ما عندنا|لا يتوفر|مش متوفر|مافيش|لا يوجد لدينا|رفعت طلب|طلب توفير)/i.test(clean);
   if (mentionsUnavailable && missingIngredients.length === 0 && userQuery.trim().length > 1) {
@@ -122,7 +125,7 @@ function smartExtract(rawText: string, catalog: Array<{ id: number; name: string
   }
 
   return JSON.stringify({
-    message: clean || "يا هلا بك يا غالي! إيش تحب نجهز لك اليوم؟",
+    message: clean,
     recipeName: "",
     servings: 0,
     ingredients: [],
@@ -199,7 +202,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
       : P + ["openrouter.ai", "api", "v1", "chat", "completions"].join("/");
 
     const models = isGroq
-      ? ["qwen/qwen3.8-27b", "openai/gpt-oss-120b", "llama-3.3-70b-versatile"]
+      ? ["llama-3.3-70b-versatile", "qwen/qwen3.8-27b", "openai/gpt-oss-120b"]
       : ["qwen/qwen3-235b-a22b:free", "meta-llama/llama-3.3-70b-instruct:free"];
 
     for (const model of models) {
@@ -213,7 +216,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
           body: JSON.stringify({
             model,
             temperature: 0.35,
-            max_tokens: 220,
+            max_tokens: 700,
             messages: [
               { role: "system", content: systemPrompt },
               { role: "user", content: compactUser }
@@ -229,17 +232,20 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
         const data: any = await res.json();
         const rawReply = data?.choices?.[0]?.message?.content;
         if (rawReply && typeof rawReply === "string" && rawReply.trim()) {
-          keyIndex = idx;
-          return {
-            id: data.id || "chatcmpl-ok",
-            created: Math.floor(Date.now() / 1000),
-            model,
-            choices: [{
-              index: 0,
-              message: { role: "assistant", content: smartExtract(rawReply, catalog, currentMsg) },
-              finish_reason: "stop",
-            }],
-          };
+          const extracted = smartExtract(rawReply, catalog, currentMsg);
+          if (extracted) {
+            keyIndex = idx;
+            return {
+              id: data.id || "chatcmpl-ok",
+              created: Math.floor(Date.now() / 1000),
+              model,
+              choices: [{
+                index: 0,
+                message: { role: "assistant", content: extracted },
+                finish_reason: "stop",
+              }],
+            };
+          }
         }
       } catch {}
     }
