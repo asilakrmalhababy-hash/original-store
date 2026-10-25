@@ -1,28 +1,25 @@
-export { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
+export { COOKIE_NAME, ONE_YEAR_MS, OAUTH_STATE_COOKIE, encodeOAuthState } from "@shared/const";
 
-export const startLogin = async () => {
-  const pwd = window.prompt("أدخل كلمة مرور المدير للدخول إلى لوحة التحكم:");
-  if (!pwd) return;
-
+export async function submitAdminCredentials(username: string, password: string): Promise<{ ok: boolean; error?: string; mustChangePassword?: boolean }> {
   try {
     const res = await fetch("/api/admin-login", {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
       credentials: "include",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ password: pwd.trim() }),
+      body: JSON.stringify({ username: username.trim(), password }),
     });
-
-    const data = await res.json().catch(() => null);
-    if (!res.ok || data?.error) {
-      window.alert(data?.error || "تعذر تسجيل الدخول");
-      return;
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data?.success) {
+      return { ok: false, error: data?.error || "فشل تسجيل الدخول. تحقق من البيانات." };
     }
-
-    window.location.href = "/admin";
+    return { ok: true, mustChangePassword: Boolean(data.mustChangePassword) };
   } catch {
-    window.alert("تعذر الاتصال بالخادم. تحقق من اتصال الإنترنت وحاول مجددًا.");
+    return { ok: false, error: "تعذر الاتصال بالخادم. تحقق من اتصال الإنترنت." };
+  }
+}
+
+export const startLogin = () => {
+  if (typeof window !== "undefined" && !window.location.pathname.toLowerCase().startsWith("/admin")) {
+    window.location.href = "/admin";
   }
 };

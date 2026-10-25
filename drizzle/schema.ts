@@ -192,3 +192,43 @@ export type InsertUser = typeof users.$inferInsert;
 export type Product = typeof products.$inferSelect;
 export type Category = typeof categories.$inferSelect;
 export type Order = typeof orders.$inferSelect;
+
+// --- RBAC_SCHEMA_START ---
+export const adminStaff = mysqlTable("admin_staff", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").references(() => users.id, { onDelete: "set null" }),
+  username: varchar("username", { length: 120 }).notNull().unique(),
+  displayName: varchar("displayName", { length: 160 }).notNull(),
+  passwordHash: varchar("passwordHash", { length: 255 }).notNull(),
+  roleKey: varchar("roleKey", { length: 40 }).default("staff").notNull(),
+  permissionsJson: text("permissionsJson").notNull(),
+  isActive: boolean("isActive").default(true).notNull(),
+  mustChangePassword: boolean("mustChangePassword").default(true).notNull(),
+  sessionVersion: int("sessionVersion").default(1).notNull(),
+  createdBy: varchar("createdBy", { length: 160 }),
+  lastLoginAt: timestamp("lastLoginAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, table => [
+  uniqueIndex("admin_staff_username_uq").on(table.username),
+  index("admin_staff_role_active_idx").on(table.roleKey, table.isActive),
+]);
+
+export const adminAuditLogs = mysqlTable("admin_audit_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  actorId: int("actorId"),
+  actorName: varchar("actorName", { length: 160 }).notNull(),
+  actorRole: varchar("actorRole", { length: 60 }).notNull(),
+  action: varchar("action", { length: 80 }).notNull(),
+  targetName: varchar("targetName", { length: 160 }),
+  details: text("details"),
+  ipAddress: varchar("ipAddress", { length: 80 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, table => [
+  index("admin_audit_created_idx").on(table.createdAt),
+]);
+
+export type AdminStaffRow = typeof adminStaff.$inferSelect;
+export type InsertAdminStaffRow = typeof adminStaff.$inferInsert;
+export type AdminAuditLogRow = typeof adminAuditLogs.$inferSelect;
+// --- RBAC_SCHEMA_END ---

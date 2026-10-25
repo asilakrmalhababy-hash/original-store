@@ -253,3 +253,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
 
   throw new Error("AI_UNAVAILABLE");
 }
+export async function listLLMModels(): Promise<string[]> {
+  if (!ENV.forgeApiUrl) throw new Error("MANUS_API_URL is not configured");
+  return [];
+}

@@ -7,6 +7,10 @@ import { SignJWT, jwtVerify } from "jose";
 import type { User } from "../../drizzle/schema";
 import * as db from "../db";
 import { ENV } from "./env";
+import { eq } from "drizzle-orm";
+import { adminStaff } from "../../drizzle/schema";
+import { PERMISSION_KEYS, parsePermissionsJson, type AdminRoleKey, type PermissionKey } from "@shared/rbac";
+import { ensureRbacTables, getOwnerSessionOpenId } from "./adminAuth";
 import { isConfiguredOwnerIdentity, shouldPromoteConfiguredOwner } from "./owner";
 import type {
   ExchangeTokenRequest,
@@ -294,10 +298,72 @@ class SDKServer {
 
     const sessionUserId = session.openId;
     const signedInAt = new Date();
-    let user = await db.getUserByOpenId(sessionUserId);
 
-    // Only the configured store owner may have an application session. Ordinary
-    // Manus accounts are rejected before an application-user row is created.
+    if (sessionUserId.startsWith("owner_root_")) {
+      const expectedOwnerOpenId = getOwnerSessionOpenId();
+      if (expectedOwnerOpenId === "owner_disabled_unconfigured" || sessionUserId !== expectedOwnerOpenId) {
+        throw ForbiddenError("Owner session invalidated by password change");
+      }
+      const ownerUser = await db.getUserByOpenId(sessionUserId);
+      return {
+        id: ownerUser?.id ?? 1,
+        openId: sessionUserId,
+        name: ownerUser?.name || "مالك المتجر",
+        email: ownerUser?.email || ENV.ownerEmail || null,
+        phone: ownerUser?.phone || null,
+        loginMethod: "admin_password",
+        role: "admin",
+        suspended: false,
+        createdAt: ownerUser?.createdAt ?? signedInAt,
+        updatedAt: ownerUser?.updatedAt ?? signedInAt,
+        lastSignedIn: signedInAt,
+        isOwner: true,
+        adminRole: "owner",
+        permissions: [...PERMISSION_KEYS],
+        mustChangePassword: false,
+        staffId: null,
+      };
+    }
+
+    if (sessionUserId.startsWith("staff_")) {
+      const m = sessionUserId.match(/^staff_(\d+)_v(\d+)$/);
+      if (!m) throw ForbiddenError("Invalid staff session format");
+      const staffId = Number(m[1]);
+      const tokenVersion = Number(m[2]);
+      const database = await db.getDb();
+      if (!database) throw ForbiddenError("Database unavailable");
+      await ensureRbacTables(database);
+      const rows = await database.select().from(adminStaff).where(eq(adminStaff.id, staffId)).limit(1);
+      const staff = rows[0];
+      if (!staff || !staff.isActive || staff.sessionVersion !== tokenVersion) {
+        throw ForbiddenError("Staff session expired, disabled, or revoked");
+      }
+      const linkedUser = await db.getUserByOpenId("staff_user_" + staff.id);
+      const roleKey = (staff.roleKey || "staff") as AdminRoleKey;
+      const perms = parsePermissionsJson(staff.permissionsJson, roleKey);
+      const now = new Date();
+      return {
+        id: linkedUser?.id ?? -1000 - staff.id,
+        openId: sessionUserId,
+        name: staff.displayName,
+        email: staff.username.includes("@") ? staff.username : null,
+        phone: linkedUser?.phone ?? null,
+        loginMethod: "staff_password",
+        role: "admin",
+        suspended: !staff.isActive,
+        createdAt: staff.createdAt ?? now,
+        updatedAt: staff.updatedAt ?? now,
+        lastSignedIn: staff.lastLoginAt ?? now,
+        isOwner: false,
+        adminRole: roleKey,
+        permissions: perms,
+        mustChangePassword: Boolean(staff.mustChangePassword),
+        staffId: staff.id,
+        staffUsername: staff.username,
+      };
+    }
+
+    let user = await db.getUserByOpenId(sessionUserId);
     if (!user) {
       let userInfo: GetUserInfoWithJwtResponse;
       try {
@@ -330,8 +396,6 @@ class SDKServer {
       throw ForbiddenError("Only the configured store owner may sign in");
     }
 
-    // Reconcile only the authenticated, configured owner; never grant admin
-    // based on signup order or client-provided data.
     if (shouldPromoteConfiguredOwner(user, ENV.ownerEmail)) {
       user = await db.promoteConfiguredOwner(sessionUserId, user.email) ?? user;
     } else if (
@@ -348,7 +412,14 @@ class SDKServer {
       user = await db.getUserByOpenId(sessionUserId) ?? user;
     }
 
-    return user;
+    return {
+      ...user,
+      isOwner: true,
+      adminRole: "owner",
+      permissions: [...PERMISSION_KEYS],
+      mustChangePassword: false,
+      staffId: null,
+    };
   }
 }
 
@@ -358,6 +429,12 @@ const CRON_OPEN_ID_PREFIX = "cron_";
 export type AuthenticatedUser = User & {
   taskUid?: string;
   isCron?: boolean;
+  isOwner?: boolean;
+  adminRole?: AdminRoleKey;
+  permissions?: PermissionKey[];
+  mustChangePassword?: boolean;
+  staffId?: number | null;
+  staffUsername?: string;
 };
 
 function buildCronUser(

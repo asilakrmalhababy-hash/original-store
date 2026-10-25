@@ -8,13 +8,14 @@ import {
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { startLogin } from "@/const";
+import { startLogin, submitAdminCredentials } from "@/const";
+import { PERMISSION_KEYS, PERMISSION_LABELS, ROLE_DEFINITIONS, type AdminRoleKey, type PermissionKey } from "@shared/rbac";
 import ImageEditor from "@/components/ImageEditor";
 import { ensureBrowserPushSubscription, getExistingBrowserPushSubscription, getPushPermissionState, requestPushPermission } from "@/lib/pushNotifications";
 
 const money = (value: number) => `${Number(value || 0).toLocaleString("en-US")} ر.ي`;
 const labels: Record<string, string> = { new: "جديد", preparing: "قيد التجهيز", ready: "جاهز للتوصيل", out_for_delivery: "خرج للتوصيل", delivered: "تم التسليم", cancelled: "ملغي" };
-type Section = "overview" | "products" | "categories" | "banners" | "offers" | "orders" | "chats" | "users" | "settings";
+type Section = "overview" | "products" | "categories" | "banners" | "offers" | "orders" | "chats" | "users" | "staff" | "settings";
 const sections: Array<{ id: Section; label: string; icon: typeof LayoutDashboard }> = [
   { id: "overview", label: "نظرة عامة", icon: LayoutDashboard },
   { id: "products", label: "المنتجات", icon: Package },
@@ -24,6 +25,7 @@ const sections: Array<{ id: Section; label: string; icon: typeof LayoutDashboard
   { id: "orders", label: "الطلبات", icon: ClipboardList },
   { id: "chats", label: "محادثات الزبائن", icon: Sparkles },
   { id: "users", label: "العملاء", icon: Users },
+  { id: "staff", label: "المديرون والصلاحيات", icon: ShieldCheck },
   { id: "settings", label: "إعدادات المتجر", icon: Settings2 },
 ];
 
@@ -33,13 +35,143 @@ function ImageField({ value, onChange, kind, aspect, title }: { value: string; o
   return <div className="admin-image-field"><div className="admin-image-preview">{value ? <img src={value} alt="معاينة الصورة" /> : <span><ImagePlus size={22} /><small>لم تُرفع صورة</small></span>}</div><div className="admin-image-buttons"><button type="button" className="small-button" onClick={() => setOpen(true)}><ImagePlus size={15} />{value ? "قص/استبدال الصورة" : "رفع صورة"}</button>{value && <button type="button" className="small-button danger-soft" onClick={() => onChange("")}><X size={14} />إزالة</button>}</div>{open && <ImageEditor title={title} aspect={aspect} format="webp" onCancel={() => setOpen(false)} onSave={dataUrl => upload.mutate({ dataUrl, kind })} />}{upload.isPending && <small className="upload-status"><LoaderCircle size={14} className="spin" /> جارٍ الرفع...</small>}</div>;
 }
 
-function AdminLoginGate({ reason, onLogout }: { reason: "login" | "forbidden" | "suspended"; onLogout?: () => void | Promise<void> }) {
-  const message = reason === "login"
-    ? "أدخل كلمة مرور الإدارة للمتابعة إلى لوحة التحكم."
-    : reason === "suspended"
-      ? "تم إيقاف هذا الحساب. تواصل مع مالك المتجر."
-      : "تم تسجيل دخولك، لكن هذا الحساب غير مربوط حاليًا بصلاحية المالك. إذا كنت مالك المتجر، اربط بريد حساب Manus من إعداد المالك المحمي، ثم سجّل الخروج والدخول مجددًا. لا تُمنح الإدارة لأول مستخدم تلقائيًا.";
-  return <main className="admin-gate" dir="rtl"><div className="admin-gate-card"><span className="admin-gate-mark"><ShieldCheck size={26} /></span><span className="eyebrow">إدارة خاصة</span><h1>{reason === "login" ? "تسجيل دخول المالك" : reason === "suspended" ? "الحساب موقوف" : "تعذّر التحقق من صلاحية المالك"}</h1><p>{message}</p>{reason === "login" ? <button className="button button-primary" onClick={startLogin}>دخول لوحة تحكم المالك<ArrowLeft size={16} /></button> : <><Link className="button button-outline" href="/">العودة للمتجر</Link>{reason === "forbidden" && onLogout && <button className="button button-quiet" onClick={() => void onLogout()}>تسجيل الخروج</button>}</>}<small className="secure-caption"><ShieldCheck size={14} /> تُفحص الصلاحيات على الخادم</small></div></main>;
+function AdminLoginGate({ reason, onLogout, onSuccess }: { reason: "login" | "forbidden" | "suspended"; onLogout?: () => void | Promise<void>; onSuccess?: () => void }) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [errMsg, setErrMsg] = useState("");
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!password || busy) return;
+    setBusy(true);
+    setErrMsg("");
+    const res = await submitAdminCredentials(username, password);
+    setBusy(false);
+    if (!res.ok) {
+      setErrMsg(res.error || "بيانات الدخول غير صحيحة.");
+      return;
+    }
+    toast.success("تم تسجيل الدخول بنجاح");
+    setPassword("");
+    if (onSuccess) onSuccess();
+    else window.location.reload();
+  };
+
+  if (reason !== "login") {
+    const message = reason === "suspended"
+      ? "تم إيقاف هذا الحساب الإداري. تواصل مع مالك المتجر."
+      : "تم تسجيل دخولك، لكن هذا الحساب غير مخول بصلاحيات الإدارة حالياً.";
+    return (
+      <main className="admin-gate" dir="rtl">
+        <div className="admin-gate-card">
+          <span className="admin-gate-mark"><ShieldCheck size={26} /></span>
+          <span className="eyebrow">حماية لوحة الإدارة</span>
+          <h1>{reason === "suspended" ? "الحساب معطل" : "غير مصرح بالدخول"}</h1>
+          <p>{message}</p>
+          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", justifyContent: "center" }}>
+            <Link className="button button-outline" href="/">العودة للمتجر</Link>
+            {onLogout && <button className="button button-quiet" onClick={() => void onLogout()}>تسجيل الخروج</button>}
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  return (
+    <main className="admin-gate" dir="rtl">
+      <div className="admin-gate-card" style={{ maxWidth: "430px", textAlign: "right", alignItems: "stretch" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "10px" }}>
+          <span className="admin-gate-mark" style={{ margin: 0, width: "46px", height: "46px" }}><ShieldCheck size={24} /></span>
+          <div>
+            <span className="eyebrow">بوابة الإدارة المحمية</span>
+            <h1 style={{ margin: "2px 0 0", fontSize: "20px" }}>تسجيل دخول الإدارة</h1>
+          </div>
+        </div>
+        <p style={{ margin: "0 0 14px", fontSize: "11px" }}>للمالك: اترك اسم المستخدم فارغاً (أو اكتب owner) وأدخل كلمة مرور المالك. للمديرين والموظفين: أدخل اسم المستخدم وكلمة المرور المخصصة لك.</p>
+        {errMsg && (
+          <div className="admin-error" style={{ marginBottom: "12px", padding: "10px 12px" }}>
+            <AlertTriangle size={16} />
+            <div><strong>تعذر تسجيل الدخول</strong><small>{errMsg}</small></div>
+          </div>
+        )}
+        <form onSubmit={handleLogin} className="form-stack">
+          <label>
+            اسم المستخدم أو البريد (اختياري للمالك)
+            <input
+              type="text"
+              autoComplete="username"
+              value={username}
+              onChange={e => setUsername(e.target.value)}
+              placeholder="owner أو اسم مستخدم الموظف..."
+              disabled={busy}
+            />
+          </label>
+          <label>
+            كلمة المرور
+            <input
+              required
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              placeholder="أدخل كلمة المرور السرية"
+              disabled={busy}
+            />
+          </label>
+          <button type="submit" className="button button-primary full-button" disabled={busy || !password}>
+            {busy ? <LoaderCircle size={16} className="spin" /> : <ShieldCheck size={16} />}
+            {busy ? "جارٍ التحقق..." : "دخول آمن للوحة الإدارة"}
+          </button>
+        </form>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "14px", paddingTop: "12px", borderTop: "1px solid #ebefe8" }}>
+          <Link className="text-link" href="/">العودة لواجهة المتجر</Link>
+          <small className="secure-caption" style={{ margin: 0 }}><ShieldCheck size={13} /> محمي بتشفير الخادم</small>
+        </div>
+      </div>
+    </main>
+  );
+}
+
+function ForcePasswordChangeGate({ displayName, onSuccess, onLogout }: { displayName: string; onSuccess: () => void; onLogout: () => void }) {
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const changeMut = trpc.commerce.admin.staff.changeOwnPassword.useMutation({
+    onSuccess: () => {
+      toast.success("تم تحديث كلمة المرور بنجاح! مرحباً بك.");
+      onSuccess();
+    },
+    onError: err => toast.error(err.message),
+  });
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPassword.length < 6) { toast.error("كلمة المرور الجديدة يجب ألا تقل عن 6 أحرف."); return; }
+    if (newPassword !== confirmPassword) { toast.error("كلمتا المرور غير متطابقتين."); return; }
+    if (newPassword === currentPassword) { toast.error("يرجى اختيار كلمة مرور جديدة مختلفة عن المؤقتة."); return; }
+    changeMut.mutate({ currentPassword, newPassword });
+  };
+
+  return (
+    <main className="admin-gate" dir="rtl">
+      <div className="admin-gate-card" style={{ maxWidth: "430px", textAlign: "right", alignItems: "stretch" }}>
+        <span className="eyebrow">إجراء أمني إلزامي</span>
+        <h1 style={{ fontSize: "20px", margin: "4px 0 8px" }}>تغيير كلمة المرور المؤقتة</h1>
+        <p style={{ margin: "0 0 14px", fontSize: "11px" }}>مرحباً {displayName}، لحماية حسابك الإداري يجب تعيين كلمة مرور خاصة بك قبل المتابعة إلى لوحة الإدارة.</p>
+        <form onSubmit={submit} className="form-stack">
+          <label>كلمة المرور المؤقتة (الحالية)<input required type="password" value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} /></label>
+          <label>كلمة المرور الجديدة (6 أحرف على الأقل)<input required type="password" minLength={6} value={newPassword} onChange={e => setNewPassword(e.target.value)} /></label>
+          <label>تأكيد كلمة المرور الجديدة<input required type="password" minLength={6} value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} /></label>
+          <button type="submit" className="button button-primary full-button" disabled={changeMut.isPending}>
+            {changeMut.isPending ? <LoaderCircle size={16} className="spin" /> : <Save size={16} />}
+            حفظ كلمة المرور الجديدة والمتابعة
+          </button>
+          <button type="button" className="button button-quiet full-button" onClick={onLogout}>تسجيل الخروج</button>
+        </form>
+      </div>
+    </main>
+  );
 }
 
 function Overview() {
@@ -524,7 +656,446 @@ function ChatsPanel() {
   );
 }
 // --- CHATS_PANEL_END ---
-function AdminPanel({ section }: { section: Section }) {
+// --- STAFF_PANEL_START ---
+function StaffManagementPanel({ actorIsOwner, actorPermissions, actorStaffId }: { actorIsOwner: boolean; actorPermissions: PermissionKey[]; actorStaffId: number | null }) {
+  const utils = trpc.useUtils();
+  const staffQuery = trpc.commerce.admin.staff.list.useQuery(undefined, { retry: 1 });
+  const logsQuery = trpc.commerce.admin.staff.auditLogs.useQuery(undefined, { retry: 1 });
+
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [displayName, setDisplayName] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [roleKey, setRoleKey] = useState<"general_manager" | "product_manager" | "order_manager" | "content_manager" | "staff">("product_manager");
+  const [permissions, setPermissions] = useState<PermissionKey[]>(ROLE_DEFINITIONS.product_manager.defaultPermissions);
+  const [mustChangePassword, setMustChangePassword] = useState(true);
+
+  const [search, setSearch] = useState("");
+  const [roleFilter, setRoleFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "disabled">("all");
+
+  const [resetTarget, setResetTarget] = useState<{ id: number; name: string } | null>(null);
+  const [resetNewPass, setResetNewPass] = useState("");
+  const [resetMustChange, setResetMustChange] = useState(true);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: number; name: string } | null>(null);
+
+  const refreshAll = async () => {
+    await Promise.all([
+      utils.commerce.admin.staff.list.invalidate(),
+      utils.commerce.admin.staff.auditLogs.invalidate(),
+    ]);
+  };
+
+  const resetForm = () => {
+    setEditingId(null);
+    setDisplayName("");
+    setUsername("");
+    setPassword("");
+    setRoleKey("product_manager");
+    setPermissions([...ROLE_DEFINITIONS.product_manager.defaultPermissions]);
+    setMustChangePassword(true);
+  };
+
+  const createMut = trpc.commerce.admin.staff.create.useMutation({
+    onSuccess: async () => {
+      toast.success("تم إنشاء الحساب الإداري وحفظ صلاحياته بنجاح");
+      resetForm();
+      await refreshAll();
+    },
+    onError: err => toast.error(err.message),
+  });
+
+  const updateMut = trpc.commerce.admin.staff.update.useMutation({
+    onSuccess: async () => {
+      toast.success("تم تحديث بيانات وصلاحيات المدير بنجاح");
+      resetForm();
+      await refreshAll();
+    },
+    onError: err => toast.error(err.message),
+  });
+
+  const statusMut = trpc.commerce.admin.staff.setStatus.useMutation({
+    onSuccess: async (_res, vars) => {
+      toast.success(vars.isActive ? "تم تفعيل الحساب الإداري" : "تم تعطيل الحساب وإبطال جلسته");
+      await refreshAll();
+    },
+    onError: err => toast.error(err.message),
+  });
+
+  const resetPassMut = trpc.commerce.admin.staff.resetPassword.useMutation({
+    onSuccess: async () => {
+      toast.success("تم إعادة تعيين كلمة المرور بنجاح");
+      setResetTarget(null);
+      setResetNewPass("");
+      await refreshAll();
+    },
+    onError: err => toast.error(err.message),
+  });
+
+  const deleteMut = trpc.commerce.admin.staff.delete.useMutation({
+    onSuccess: async () => {
+      toast.success("تم حذف الحساب الإداري بأمان");
+      setDeleteTarget(null);
+      await refreshAll();
+    },
+    onError: err => toast.error(err.message),
+  });
+
+  const handleRoleChange = (nextRole: "general_manager" | "product_manager" | "order_manager" | "content_manager" | "staff") => {
+    setRoleKey(nextRole);
+    const defaults = ROLE_DEFINITIONS[nextRole]?.defaultPermissions ?? [];
+    const allowedDefaults = actorIsOwner ? defaults : defaults.filter(p => actorPermissions.includes(p));
+    setPermissions([...allowedDefaults]);
+  };
+
+  const togglePermission = (perm: PermissionKey) => {
+    if (!actorIsOwner && !actorPermissions.includes(perm)) {
+      toast.error("لا يمكنك منح صلاحية لا تملكها في حسابك.");
+      return;
+    }
+    setPermissions(curr => curr.includes(perm) ? curr.filter(p => p !== perm) : [...curr, perm]);
+  };
+
+  const generateStrongPass = (setter: (val: string) => void) => {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$";
+    let out = "";
+    for (let i = 0; i < 10; i++) out += chars[Math.floor(Math.random() * chars.length)];
+    setter(out);
+    navigator.clipboard?.writeText(out).catch(() => {});
+    toast.success("تم توليد ونسخ كلمة مرور قوية: " + out);
+  };
+
+  const submitForm = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!permissions.length) {
+      toast.error("اختر صلاحية واحدة على الأقل لهذا الحساب.");
+      return;
+    }
+    if (editingId) {
+      updateMut.mutate({ id: editingId, displayName, username, roleKey, permissions });
+    } else {
+      if (password.length < 6) {
+        toast.error("كلمة المرور يجب ألا تقل عن 6 أحرف.");
+        return;
+      }
+      createMut.mutate({ displayName, username, password, roleKey, permissions, mustChangePassword });
+    }
+  };
+
+  const startEdit = (item: NonNullable<typeof staffQuery.data>["items"][number]) => {
+    setEditingId(item.id);
+    setDisplayName(item.displayName);
+    setUsername(item.username);
+    setPassword("");
+    const r = (["general_manager", "product_manager", "order_manager", "content_manager", "staff"].includes(item.roleKey) ? item.roleKey : "staff") as "general_manager" | "product_manager" | "order_manager" | "content_manager" | "staff";
+    setRoleKey(r);
+    setPermissions([...item.permissions]);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const items = staffQuery.data?.items ?? [];
+  const summary = staffQuery.data?.summary ?? { total: 0, active: 0, disabled: 0 };
+  const filteredItems = items.filter(item => {
+    if (roleFilter !== "all" && item.roleKey !== roleFilter) return false;
+    if (statusFilter === "active" && !item.isActive) return false;
+    if (statusFilter === "disabled" && item.isActive) return false;
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      if (!item.displayName.toLowerCase().includes(q) && !item.username.toLowerCase().includes(q)) return false;
+    }
+    return true;
+  });
+
+  return (
+    <div className="admin-content">
+      <AdminHeading
+        eyebrow="الأمن والحوكمة متعددة المستويات"
+        title="إدارة المديرين والمشرفين والصلاحيات"
+        text="تحكم كامل في حسابات الطاقم الإداري، وحدد لكل مدير أو موظف الصلاحيات الدقيقة المسموح له بها في الخادم."
+        icon={ShieldCheck}
+      />
+
+      <div className="admin-stat-grid">
+        <div className="admin-stat"><span><Users size={18} /></span><small>إجمالي الطاقم الإداري</small><strong>{summary.total}</strong><em>بخلاف حساب المالك الرئيسي</em></div>
+        <div className="admin-stat"><span><Check size={18} /></span><small>الحسابات النشطة</small><strong style={{ color: "#174b36" }}>{summary.active}</strong><em>يمكنهم الدخول حسب صلاحياتهم</em></div>
+        <div className="admin-stat"><span><AlertTriangle size={18} /></span><small>الحسابات المعطلة</small><strong style={{ color: "#9b5346" }}>{summary.disabled}</strong><em>ممنوعون من الدخول فوراً</em></div>
+        <div className="admin-stat"><span><ClipboardList size={18} /></span><small>عمليات مسجلة في التدقيق</small><strong>{logsQuery.data?.length ?? 0}</strong><em>أحدث السجلات الأمنية</em></div>
+      </div>
+
+      <section className="admin-form-card">
+        <div className="form-card-heading">
+          <span className="form-card-number">{editingId ? "✳" : "01"}</span>
+          <div>
+            <h2>{editingId ? "تعديل بيانات وصلاحيات المدير" : "إضافة مدير أو مشرف جديد"}</h2>
+            <p>تُحفظ كلمات المرور مشفرة بخوارزمية scrypt في قاعدة البيانات ولا تُخزن كنص صريح أبداً.</p>
+          </div>
+          {editingId && <button type="button" className="small-button" onClick={resetForm}>إلغاء التعديل <X size={14} /></button>}
+        </div>
+
+        <form onSubmit={submitForm} className="admin-form">
+          <div className="form-fields-grid">
+            <label>
+              الاسم الكامل للمدير / الموظف
+              <input required minLength={2} maxLength={160} value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="مثال: أحمد محمد - مدير الطلبات" />
+            </label>
+            <label>
+              اسم المستخدم أو البريد الإلكتروني للدخول
+              <input required minLength={3} maxLength={120} value={username} onChange={e => setUsername(e.target.value)} placeholder="مثال: ahmed_orders أو ahmed@store.com" dir="ltr" />
+            </label>
+            {!editingId && (
+              <label>
+                <span style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span>كلمة المرور المؤقتة (6 أحرف فأكثر)</span>
+                  <button type="button" className="text-link" style={{ fontSize: "10px", padding: 0 }} onClick={() => generateStrongPass(setPassword)}>توليد ونسخ كلمة قوية</button>
+                </span>
+                <input required minLength={6} maxLength={128} type="text" value={password} onChange={e => setPassword(e.target.value)} placeholder="أدخل كلمة مرور أو اضغط توليد" dir="ltr" />
+              </label>
+            )}
+            <label>
+              الدور الوظيفي الأساسي
+              <select value={roleKey} onChange={e => handleRoleChange(e.target.value as any)}>
+                <option value="general_manager">مدير عام — {ROLE_DEFINITIONS.general_manager.description}</option>
+                <option value="product_manager">مدير منتجات — {ROLE_DEFINITIONS.product_manager.description}</option>
+                <option value="order_manager">مدير طلبات — {ROLE_DEFINITIONS.order_manager.description}</option>
+                <option value="content_manager">مدير محتوى وعروض — {ROLE_DEFINITIONS.content_manager.description}</option>
+                <option value="staff">موظف / مشرف — {ROLE_DEFINITIONS.staff.description}</option>
+              </select>
+            </label>
+            {!editingId && (
+              <label className="toggle-field field-wide">
+                <input type="checkbox" checked={mustChangePassword} onChange={e => setMustChangePassword(e.target.checked)} />
+                إلزام هذا المدير بتغيير كلمة المرور المؤقتة فور أول تسجيل دخول له
+              </label>
+            )}
+          </div>
+
+          <div style={{ padding: "14px", borderRadius: "14px", border: "1px solid #e2ebe4", background: "#f9fbf8" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px", flexWrap: "wrap", gap: "8px" }}>
+              <strong style={{ fontSize: "12px", color: "#174b36" }}>تخصيص الصلاحيات الدقيقة ({permissions.length} محددة)</strong>
+              <div style={{ display: "flex", gap: "6px" }}>
+                <button type="button" className="small-button" onClick={() => setPermissions(actorIsOwner ? [...PERMISSION_KEYS] : [...actorPermissions])}>تحديد الكل المسموح</button>
+                <button type="button" className="small-button" onClick={() => handleRoleChange(roleKey)}>إعادة الافتراضي للدور</button>
+              </div>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: "8px" }}>
+              {PERMISSION_KEYS.map(perm => {
+                const meta = PERMISSION_LABELS[perm];
+                const checked = permissions.includes(perm);
+                const disabled = !actorIsOwner && !actorPermissions.includes(perm);
+                return (
+                  <label
+                    key={perm}
+                    style={{
+                      display: "flex",
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: "8px",
+                      padding: "8px 10px",
+                      borderRadius: "10px",
+                      border: checked ? "1.5px solid #174b36" : "1px solid #e1e8e2",
+                      background: checked ? "#eef6f0" : "#ffffff",
+                      opacity: disabled ? 0.5 : 1,
+                      cursor: disabled ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    <input type="checkbox" checked={checked} disabled={disabled} onChange={() => togglePermission(perm)} style={{ width: "15px", minHeight: "15px", accentColor: "#174b36" }} />
+                    <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                      <span style={{ fontSize: "11px", fontWeight: 700, color: "#1c3b2b" }}>{meta.label}</span>
+                      <small style={{ fontSize: "9px", color: meta.sensitive ? "#9b5346" : "#78847b" }}>{meta.group}{meta.sensitive ? " · صلاحية حساسة" : ""}</small>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="form-submit-row">
+            <button type="submit" className="button button-primary" disabled={createMut.isPending || updateMut.isPending}>
+              {createMut.isPending || updateMut.isPending ? <LoaderCircle size={16} className="spin" /> : editingId ? <Save size={16} /> : <Plus size={16} />}
+              {editingId ? "حفظ تعديلات المدير والصلاحيات" : "إضافة المدير وتفعيل صلاحياته"}
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <div className="admin-section-heading">
+        <div><h2>قائمة المديرين والمشرفين</h2><p>ابحث أو صفِّ حسب الدور والحالة، أو تحكم في الحسابات النشطة.</p></div>
+        <span className="count-chip">{filteredItems.length}</span>
+      </div>
+
+      <div className="filter-bar" style={{ marginBottom: "14px" }}>
+        <label className="filter-search"><input value={search} onChange={e => setSearch(e.target.value)} placeholder="ابحث بالاسم أو اسم المستخدم..." /></label>
+        <label className="filter-select">
+          <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)}>
+            <option value="all">كل الأدوار</option>
+            <option value="general_manager">مدير عام</option>
+            <option value="product_manager">مدير منتجات</option>
+            <option value="order_manager">مدير طلبات</option>
+            <option value="content_manager">مدير محتوى وعروض</option>
+            <option value="staff">موظف / مشرف</option>
+          </select>
+        </label>
+        <label className="filter-select">
+          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)}>
+            <option value="all">كل الحالات</option>
+            <option value="active">نشط فقط</option>
+            <option value="disabled">معطل فقط</option>
+          </select>
+        </label>
+      </div>
+
+      {staffQuery.isLoading ? <AdminLoading /> : staffQuery.error ? <AdminError message={staffQuery.error.message} retry={() => void staffQuery.refetch()} /> : !filteredItems.length ? (
+        <AdminEmpty title="لا توجد حسابات إدارية مطابقة" text="أضف أول مدير أو موظف من النموذج أعلاه ليظهر هنا." />
+      ) : (
+        <div className="entity-list">
+          {filteredItems.map(item => {
+            const isSelf = Boolean(actorStaffId && actorStaffId === item.id);
+            return (
+              <article className="admin-order-card" key={item.id} style={{ borderLeft: item.isActive ? "4px solid #174b36" : "4px solid #b95653" }}>
+                <div className="admin-order-top">
+                  <div>
+                    <strong style={{ fontSize: "14px", color: "#173c2a" }}>{item.displayName} {isSelf && <span className="default-tag">حسابك</span>}</strong>
+                    <small dir="ltr" style={{ fontWeight: 700, color: "#397a54" }}>@{item.username}</small>
+                  </div>
+                  <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", alignItems: "center" }}>
+                    <span className="status-pill status-ready">{item.roleLabel}</span>
+                    <span className={"visibility-tag " + (item.isActive ? "visible" : "hidden")}>{item.isActive ? "نشط" : "معطل"}</span>
+                    {item.mustChangePassword && <span className="status-pill status-new">تغيير كلمة المرور مطلوب</span>}
+                  </div>
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "5px", margin: "10px 0" }}>
+                  {item.permissions.map(p => (
+                    <span key={p} style={{ padding: "3px 8px", borderRadius: "6px", background: "#f1f6f2", color: "#29523c", fontSize: "10px", fontWeight: 600 }}>
+                      {PERMISSION_LABELS[p]?.label || p}
+                    </span>
+                  ))}
+                </div>
+                <div className="admin-order-customer" style={{ marginTop: "6px", paddingBottom: "8px" }}>
+                  <span>تاريخ الإنشاء: {new Date(item.createdAt).toLocaleDateString("ar-YE")}</span>
+                  <span>آخر دخول: {item.lastLoginAt ? new Date(item.lastLoginAt).toLocaleString("ar-YE") : "لم يسجل الدخول بعد"}</span>
+                  {item.createdBy && <span>أُنشئ بواسطة: {item.createdBy}</span>}
+                </div>
+                {!isSelf && (
+                  <div className="entity-actions" style={{ justifyContent: "flex-start", paddingTop: "8px", borderTop: "1px solid #eef1ec" }}>
+                    <button type="button" className="small-button" onClick={() => startEdit(item)}>تعديل الصلاحيات</button>
+                    <button type="button" className="small-button" onClick={() => { setResetTarget({ id: item.id, name: item.displayName }); setResetNewPass(""); setResetMustChange(true); }}>إعادة تعيين كلمة المرور</button>
+                    <button
+                      type="button"
+                      className={"small-button " + (item.isActive ? "danger-soft" : "selected")}
+                      onClick={() => {
+                        if (item.isActive && !window.confirm("هل أنت متأكد من تعطيل حساب «" + item.displayName + "» وإخراجه فوراً من النظام؟")) return;
+                        statusMut.mutate({ id: item.id, isActive: !item.isActive });
+                      }}
+                    >
+                      {item.isActive ? "تعطيل الحساب" : "تفعيل الحساب"}
+                    </button>
+                    {actorIsOwner && (
+                      <button type="button" className="small-button danger-soft" onClick={() => setDeleteTarget({ id: item.id, name: item.displayName })}>
+                        حذف نهائي
+                      </button>
+                    )}
+                  </div>
+                )}
+              </article>
+            );
+          })}
+        </div>
+      )}
+
+      {resetTarget && (
+        <div className="modal-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) setResetTarget(null); }}>
+          <section className="checkout-modal" style={{ maxWidth: "440px" }}>
+            <div className="modal-heading">
+              <div><span className="eyebrow">أمان الحساب</span><h2>إعادة تعيين كلمة مرور: {resetTarget.name}</h2></div>
+              <button type="button" className="icon-button" onClick={() => setResetTarget(null)}><X size={18} /></button>
+            </div>
+            <form
+              className="form-stack"
+              onSubmit={e => {
+                e.preventDefault();
+                if (resetNewPass.length < 6) { toast.error("كلمة المرور يجب ألا تقل عن 6 أحرف."); return; }
+                resetPassMut.mutate({ id: resetTarget.id, newPassword: resetNewPass, mustChangePassword: resetMustChange });
+              }}
+            >
+              <label>
+                <span style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span>كلمة المرور الجديدة</span>
+                  <button type="button" className="text-link" style={{ fontSize: "10px", padding: 0 }} onClick={() => generateStrongPass(setResetNewPass)}>توليد ونسخ كلمة قوية</button>
+                </span>
+                <input required minLength={6} type="text" value={resetNewPass} onChange={e => setResetNewPass(e.target.value)} placeholder="أدخل كلمة المرور الجديدة" dir="ltr" />
+              </label>
+              <label className="toggle-field">
+                <input type="checkbox" checked={resetMustChange} onChange={e => setResetMustChange(e.target.checked)} />
+                إلزام المدير بتغييرها عند أول دخول قادم
+              </label>
+              <div className="modal-footer">
+                <button type="button" className="button button-quiet" onClick={() => setResetTarget(null)}>إلغاء</button>
+                <button type="submit" className="button button-primary" disabled={resetPassMut.isPending}>حفظ كلمة المرور</button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
+
+      {deleteTarget && (
+        <div className="modal-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) setDeleteTarget(null); }}>
+          <section className="checkout-modal" style={{ maxWidth: "420px" }}>
+            <div className="modal-heading">
+              <div><span className="eyebrow">تأكيد عملية حساسة</span><h2>حذف الحساب الإداري</h2></div>
+              <button type="button" className="icon-button" onClick={() => setDeleteTarget(null)}><X size={18} /></button>
+            </div>
+            <p style={{ fontSize: "12px", lineHeight: 1.8, color: "#4e5e53" }}>
+              هل أنت متأكد من حذف حساب <strong>«{deleteTarget.name}»</strong> نهائياً؟ سيتم إبطال جلسته فوراً مع الحفاظ الكامل على سجلات الطلبات والعمليات السابقة المرتبطة به.
+            </p>
+            <div className="modal-footer">
+              <button type="button" className="button button-quiet" onClick={() => setDeleteTarget(null)}>تراجع</button>
+              <button type="button" className="button button-primary" style={{ background: "#9b5346" }} disabled={deleteMut.isPending} onClick={() => deleteMut.mutate({ id: deleteTarget.id })}>
+                تأكيد الحذف النهائي
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      <div className="admin-section-heading" style={{ marginTop: "32px" }}>
+        <div><h2>سجل التدقيق والنشاط الإداري (Audit Log)</h2><p>توثيق زمني لجميع عمليات الدخول وإدارة الحسابات والصلاحيات.</p></div>
+      </div>
+      {!logsQuery.data?.length ? (
+        <AdminEmpty title="لا توجد سجلات تدقيق بعد" text="ستظهر هنا جميع العمليات الإدارية الحساسة فور حدوثها." />
+      ) : (
+        <div className="admin-order-table" style={{ maxHeight: "380px", overflowY: "auto" }}>
+          {logsQuery.data.map(log => (
+            <div className="admin-order-row" key={log.id} style={{ gridTemplateColumns: "1fr 1fr 1.5fr auto" }}>
+              <span><strong>{log.actorName}</strong> <small>({log.actorRole})</small></span>
+              <span className="order-number">{log.action}</span>
+              <span>{log.targetName ? log.targetName + " — " : ""}{log.details || ""}</span>
+              <small dir="ltr">{new Date(log.createdAt).toLocaleString("ar-YE")}</small>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+// --- STAFF_PANEL_END ---
+
+function canAccessSection(section: Section, isOwner: boolean, perms: PermissionKey[]): boolean {
+  if (isOwner) return true;
+  const has = (p: PermissionKey) => perms.includes(p);
+  if (section === "overview") return has("overview.view");
+  if (section === "products") return has("products.view") || has("products.manage") || has("inventory.manage");
+  if (section === "categories") return has("categories.manage");
+  if (section === "banners") return has("banners.manage");
+  if (section === "offers") return has("offers.manage");
+  if (section === "orders") return has("orders.view") || has("orders.manage");
+  if (section === "chats") return has("chats.manage");
+  if (section === "users") return has("customers.view");
+  if (section === "staff") return has("staff.manage");
+  if (section === "settings") return has("settings.manage");
+  return false;
+}
+
+function AdminPanel({ section, isOwner, permissions, staffId }: { section: Section; isOwner: boolean; permissions: PermissionKey[]; staffId: number | null }) {
   if (section === "chats") return <ChatsPanel />;
   if (section === "products") return <ProductsPanel />;
   if (section === "categories") return <CategoriesPanel />;
@@ -532,20 +1103,76 @@ function AdminPanel({ section }: { section: Section }) {
   if (section === "offers") return <OffersPanel />;
   if (section === "orders") return <OrdersPanel />;
   if (section === "users") return <UsersPanel />;
+  if (section === "staff") return <StaffManagementPanel actorIsOwner={isOwner} actorPermissions={permissions} actorStaffId={staffId} />;
   if (section === "settings") return <SettingsPanel />;
   return <Overview />;
 }
 
 export default function Admin() {
-  const [location, navigate] = useLocation(); const auth = useAuth();
+  const [location, navigate] = useLocation();
+  const auth = useAuth();
+  const utils = trpc.useUtils();
   const access = trpc.commerce.access.useQuery(undefined, { retry: 1, refetchOnWindowFocus: false });
-  const sectionName = location.split("/")[2] as Section | undefined;
-  const section = sections.some(item => item.id === sectionName) ? sectionName! : "overview";
-  const logout = async () => { try { await auth.logout(); } finally { navigate("/"); } };
+  const logout = async () => { try { await auth.logout(); } finally { await utils.commerce.access.invalidate(); navigate("/admin"); } };
+  const onLoginSuccess = async () => {
+    await Promise.all([auth.refresh(), utils.commerce.access.invalidate()]);
+  };
+
   if (auth.loading || access.isLoading) return <main className="admin-gate" dir="rtl"><AdminLoading /></main>;
-  if (auth.error && !auth.user) return <AdminLoginGate reason="login" />;
-  if (!auth.user) return <AdminLoginGate reason="login" />;
-  if (auth.user.suspended) return <AdminLoginGate reason="suspended" />;
+  if (auth.error && !auth.user) return <AdminLoginGate reason="login" onSuccess={() => void onLoginSuccess()} />;
+  if (!auth.user) return <AdminLoginGate reason="login" onSuccess={() => void onLoginSuccess()} />;
+  if (auth.user.suspended || access.data?.isSuspended) return <AdminLoginGate reason="suspended" onLogout={logout} />;
   if (!access.data?.isAdmin) return <AdminLoginGate reason="forbidden" onLogout={logout} />;
-  return <div className="admin-app" dir="rtl"><aside className="admin-sidebar"><Link href="/" className="admin-brand"><span className="brand-mark"><Leaf size={20} /></span><span><strong>ORIGINAL</strong><small>لوحة المالك</small></span></Link><div className="admin-profile"><span className="profile-initial">{(auth.user.name || "O").slice(0, 1)}</span><span><strong>{auth.user.name || "مالك المتجر"}</strong><small>إدارة المتجر</small></span><span className="online-dot" /></div><nav className="admin-nav">{sections.map(item => { const Icon = item.icon; return <button key={item.id} className={section === item.id ? "active" : ""} onClick={() => navigate(item.id === "overview" ? "/admin" : `/admin/${item.id}`)}><Icon size={18} /><span>{item.label}</span>{section === item.id && <i />}</button>; })}</nav><div className="admin-sidebar-bottom"><Link href="/" className="back-store"><ShoppingBag size={16} />عرض المتجر<ArrowLeft size={14} /></Link><button className="logout-admin" onClick={logout}><LogOut size={16} />تسجيل الخروج</button><small>بيانات المتجر محفوظة على الخادم</small></div></aside><main className="admin-main"><header className="admin-topbar"><button className="admin-menu-button" onClick={() => document.body.classList.toggle("admin-menu-open")}><ChevronDown size={18} />القائمة</button><span className="admin-breadcrumb">أوريجنال <span>/</span> {sections.find(item => item.id === section)?.label}</span><Link className="small-button" href="/">فتح المتجر<ArrowLeft size={14} /></Link></header><OwnerNotificationControl /><AdminPanel section={section} /></main><div className="admin-mobile-backdrop" onClick={() => document.body.classList.remove("admin-menu-open")} /></div>;
+
+  const isOwner = Boolean(access.data.isOwner);
+  const permissions = (access.data.permissions ?? []) as PermissionKey[];
+  const staffId = access.data.staffId ?? null;
+  const roleLabel = isOwner ? "مالك المتجر" : (ROLE_DEFINITIONS[access.data.adminRole as AdminRoleKey]?.label || "مدير");
+
+  if (access.data.mustChangePassword) {
+    return <ForcePasswordChangeGate displayName={auth.user.name || "المدير"} onSuccess={() => void onLoginSuccess()} onLogout={() => void logout()} />;
+  }
+
+  const allowedSections = sections.filter(item => canAccessSection(item.id, isOwner, permissions));
+  const requestedSection = location.split("/")[2] as Section | undefined;
+  const activeSection = allowedSections.some(item => item.id === requestedSection)
+    ? requestedSection!
+    : (allowedSections[0]?.id ?? "overview");
+
+  return (
+    <div className="admin-app" dir="rtl">
+      <aside className="admin-sidebar">
+        <Link href="/" className="admin-brand"><span className="brand-mark"><Leaf size={20} /></span><span><strong>ORIGINAL</strong><small>لوحة الإدارة</small></span></Link>
+        <div className="admin-profile">
+          <span className="profile-initial">{(auth.user.name || "O").slice(0, 1)}</span>
+          <span><strong>{auth.user.name || "مالك المتجر"}</strong><small>{roleLabel}</small></span>
+          <span className="online-dot" />
+        </div>
+        <nav className="admin-nav">
+          {allowedSections.map(item => {
+            const Icon = item.icon;
+            return (
+              <button key={item.id} className={activeSection === item.id ? "active" : ""} onClick={() => { document.body.classList.remove("admin-menu-open"); navigate(item.id === "overview" ? "/admin" : "/admin/" + item.id); }}>
+                <Icon size={18} /><span>{item.label}</span>{activeSection === item.id && <i />}
+              </button>
+            );
+          })}
+        </nav>
+        <div className="admin-sidebar-bottom">
+          <Link href="/" className="back-store"><ShoppingBag size={16} />عرض المتجر<ArrowLeft size={14} /></Link>
+          <button className="logout-admin" onClick={() => void logout()}><LogOut size={16} />تسجيل الخروج</button>
+          <small>نظام صلاحيات متعدد المستويات</small>
+        </div>
+      </aside>
+      <main className="admin-main">
+        <header className="admin-topbar">
+          <button className="admin-menu-button" onClick={() => document.body.classList.toggle("admin-menu-open")}><ChevronDown size={18} />القائمة</button>
+          <span className="admin-breadcrumb">أوريجنال <span>/</span> {allowedSections.find(item => item.id === activeSection)?.label}</span>
+          <Link className="small-button" href="/">فتح المتجر<ArrowLeft size={14} /></Link>
+        </header>
+        <AdminPanel section={activeSection} isOwner={isOwner} permissions={permissions} staffId={staffId} />
+      </main>
+      <div className="admin-mobile-backdrop" onClick={() => document.body.classList.remove("admin-menu-open")} />
+    </div>
+  );
 }

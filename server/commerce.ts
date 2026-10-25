@@ -28,7 +28,13 @@ import {
   storeSettings,
   users,
 } from "../drizzle/schema";
-import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
+import { adminAuditLogs, adminStaff } from "../drizzle/schema";
+import { adminProcedure, protectedProcedure, publicProcedure, requireAnyPermission, requirePermission, router } from "./_core/trpc";
+import { PERMISSION_KEYS, ROLE_DEFINITIONS, ROLE_KEYS, canManageTargetStaff, hasPermission, parsePermissionsJson, type AdminRoleKey, type PermissionKey } from "@shared/rbac";
+import { ensureRbacTables, getClientIp, hashAdminPassword, verifyAdminPassword, writeAdminAuditLog } from "./_core/adminAuth";
+import { COOKIE_NAME } from "@shared/const";
+import { getSessionCookieOptions } from "./_core/cookies";
+import { sdk } from "./_core/sdk";
 import { TRPCError } from "@trpc/server";
 import { nanoid } from "nanoid";
 import { invokeLLM } from "./_core/llm";
@@ -396,11 +402,24 @@ function toFastImg<T extends { id: number; imageUrl?: string | null; updatedAt?:
 }
 // --- FAST_IMG_HELPER_END ---
 export const commerceRouter = router({
-  access: publicProcedure.query(({ ctx }) => ({
-    authenticated: Boolean(ctx.user),
-    isAdmin: ctx.user?.role === "admin" && !ctx.user.suspended,
-    isSuspended: Boolean(ctx.user?.suspended),
-  })),
+    access: publicProcedure.query(({ ctx }) => {
+    const isAdminActive = ctx.user?.role === "admin" && !ctx.user.suspended;
+    const isOwner = Boolean(ctx.user?.isOwner ?? (isAdminActive && !ctx.user?.adminRole));
+    const adminRole = (ctx.user?.adminRole ?? (isOwner ? "owner" : null)) as AdminRoleKey | null;
+    const permissions = (ctx.user?.permissions ?? (isOwner ? [...PERMISSION_KEYS] : [])) as PermissionKey[];
+    return {
+      authenticated: Boolean(ctx.user),
+      isAdmin: isAdminActive,
+      isOwner,
+      adminRole,
+      permissions,
+      mustChangePassword: Boolean(ctx.user?.mustChangePassword),
+      staffId: ctx.user?.staffId ?? null,
+      staffUsername: ctx.user?.staffUsername ?? null,
+      displayName: ctx.user?.name ?? null,
+      isSuspended: Boolean(ctx.user?.suspended),
+    };
+  }),
 
   notifications: router({
     publicKey: publicProcedure.query(() => getWebPushPublicKey()),
@@ -882,13 +901,279 @@ export const commerceRouter = router({
   }),
 
   admin: router({
+    // --- ADMIN_STAFF_ROUTER_START ---
+    staff: router({
+      list: requirePermission("staff.manage").query(async () => {
+        const db = await database();
+        await ensureRbacTables(db);
+        const rows = await db.select().from(adminStaff).orderBy(desc(adminStaff.createdAt));
+        const items = rows.map(row => {
+          const roleKey = (ROLE_KEYS.includes(row.roleKey as any) ? row.roleKey : "staff") as AdminRoleKey;
+          return {
+            id: row.id,
+            username: row.username,
+            displayName: row.displayName,
+            roleKey,
+            roleLabel: ROLE_DEFINITIONS[roleKey]?.label || row.roleKey,
+            permissions: parsePermissionsJson(row.permissionsJson, roleKey),
+            isActive: row.isActive,
+            mustChangePassword: row.mustChangePassword,
+            createdBy: row.createdBy,
+            lastLoginAt: row.lastLoginAt,
+            createdAt: row.createdAt,
+            updatedAt: row.updatedAt,
+          };
+        });
+        return {
+          items,
+          summary: {
+            total: items.length,
+            active: items.filter(i => i.isActive).length,
+            disabled: items.filter(i => !i.isActive).length,
+          },
+        };
+      }),
+      auditLogs: requirePermission("staff.manage").query(async () => {
+        const db = await database();
+        await ensureRbacTables(db);
+        return db.select().from(adminAuditLogs).orderBy(desc(adminAuditLogs.createdAt)).limit(150);
+      }),
+      create: requirePermission("staff.manage").input(z.object({
+        displayName: z.string().trim().min(2).max(160),
+        username: z.string().trim().min(3).max(120),
+        password: z.string().min(6).max(128),
+        roleKey: z.enum(["general_manager", "product_manager", "order_manager", "content_manager", "staff"]),
+        permissions: z.array(z.enum(PERMISSION_KEYS)).max(30),
+        mustChangePassword: z.boolean().default(true),
+      })).mutation(async ({ ctx, input }) => {
+        const normalizedUsername = input.username.trim().toLowerCase();
+        if (["owner", "admin", "root"].includes(normalizedUsername)) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "اسم المستخدم هذا محجوز لمالك المتجر." });
+        }
+        if (["123456", "12345678", "password", "admin123"].includes(input.password.trim().toLowerCase())) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "لا يُسمح باستخدام كلمة مرور ضعيفة أو افتراضية مثل 123456." });
+        }
+        const guard = canManageTargetStaff(
+          { isOwner: ctx.user.isOwner, permissions: ctx.user.permissions, staffId: ctx.user.staffId },
+          input.roleKey,
+          input.permissions,
+        );
+        if (!guard.allowed) {
+          throw new TRPCError({ code: "FORBIDDEN", message: guard.reason || "غير مسموح." });
+        }
+        const db = await database();
+        await ensureRbacTables(db);
+        const existing = await db.select({ id: adminStaff.id }).from(adminStaff).where(eq(adminStaff.username, normalizedUsername)).limit(1);
+        if (existing.length > 0) {
+          throw new TRPCError({ code: "CONFLICT", message: "اسم المستخدم أو البريد مسجل مسبقاً لمدير آخر." });
+        }
+        const passwordHash = hashAdminPassword(input.password);
+        const uniquePerms = [...new Set(input.permissions)];
+        const result = await db.insert(adminStaff).values({
+          username: normalizedUsername,
+          displayName: input.displayName.trim(),
+          passwordHash,
+          roleKey: input.roleKey,
+          permissionsJson: JSON.stringify(uniquePerms),
+          isActive: true,
+          mustChangePassword: input.mustChangePassword,
+          sessionVersion: 1,
+          createdBy: ctx.user.name || "مالك المتجر",
+        });
+        await writeAdminAuditLog({
+          actorId: ctx.user.staffId ?? ctx.user.id,
+          actorName: ctx.user.name || "مالك المتجر",
+          actorRole: ctx.user.adminRole || "owner",
+          action: "CREATE_STAFF",
+          targetName: input.displayName + " (" + normalizedUsername + ")",
+          details: "إنشاء حساب بدور: " + (ROLE_DEFINITIONS[input.roleKey]?.label || input.roleKey) + " | الصلاحيات: " + uniquePerms.join(", "),
+          ipAddress: getClientIp(ctx.req),
+        });
+        return { id: Number(result[0].insertId), success: true };
+      }),
+      update: requirePermission("staff.manage").input(z.object({
+        id: safeId,
+        displayName: z.string().trim().min(2).max(160),
+        username: z.string().trim().min(3).max(120),
+        roleKey: z.enum(["general_manager", "product_manager", "order_manager", "content_manager", "staff"]),
+        permissions: z.array(z.enum(PERMISSION_KEYS)).max(30),
+      })).mutation(async ({ ctx, input }) => {
+        const db = await database();
+        await ensureRbacTables(db);
+        const target = (await db.select().from(adminStaff).where(eq(adminStaff.id, input.id)).limit(1))[0];
+        if (!target) throw new TRPCError({ code: "NOT_FOUND", message: "الحساب الإداري غير موجود." });
+        if (target.roleKey === "owner") throw new TRPCError({ code: "FORBIDDEN", message: "لا يمكن تعديل حساب المالك." });
+        const guard = canManageTargetStaff(
+          { isOwner: ctx.user.isOwner, permissions: ctx.user.permissions, staffId: ctx.user.staffId },
+          input.roleKey,
+          input.permissions,
+          target.id,
+        );
+        if (!guard.allowed) throw new TRPCError({ code: "FORBIDDEN", message: guard.reason || "غير مسموح." });
+        const normalizedUsername = input.username.trim().toLowerCase();
+        if (["owner", "admin", "root"].includes(normalizedUsername)) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "اسم المستخدم هذا محجوز لمالك المتجر." });
+        }
+        const duplicateRows = await db.select({ id: adminStaff.id }).from(adminStaff).where(eq(adminStaff.username, normalizedUsername)).limit(5);
+        const duplicate = duplicateRows.filter(r => r.id !== input.id);
+        if (duplicate.length > 0) {
+          throw new TRPCError({ code: "CONFLICT", message: "اسم المستخدم مستخدم بالفعل لحساب آخر." });
+        }
+        const uniquePerms = [...new Set(input.permissions)];
+        await db.update(adminStaff).set({
+          displayName: input.displayName.trim(),
+          username: normalizedUsername,
+          roleKey: input.roleKey,
+          permissionsJson: JSON.stringify(uniquePerms),
+          sessionVersion: target.sessionVersion + 1,
+        }).where(eq(adminStaff.id, input.id));
+        await writeAdminAuditLog({
+          actorId: ctx.user.staffId ?? ctx.user.id,
+          actorName: ctx.user.name || "مالك المتجر",
+          actorRole: ctx.user.adminRole || "owner",
+          action: "UPDATE_STAFF",
+          targetName: input.displayName + " (" + normalizedUsername + ")",
+          details: "تحديث الدور إلى: " + (ROLE_DEFINITIONS[input.roleKey]?.label || input.roleKey) + " | الصلاحيات: " + uniquePerms.join(", "),
+          ipAddress: getClientIp(ctx.req),
+        });
+        return { success: true };
+      }),
+      setStatus: requirePermission("staff.manage").input(z.object({
+        id: safeId,
+        isActive: z.boolean(),
+      })).mutation(async ({ ctx, input }) => {
+        const db = await database();
+        await ensureRbacTables(db);
+        const target = (await db.select().from(adminStaff).where(eq(adminStaff.id, input.id)).limit(1))[0];
+        if (!target) throw new TRPCError({ code: "NOT_FOUND", message: "الحساب الإداري غير موجود." });
+        if (target.roleKey === "owner") throw new TRPCError({ code: "FORBIDDEN", message: "لا يمكن تعطيل حساب مالك المتجر." });
+        if (ctx.user.staffId && ctx.user.staffId === target.id) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "لا يمكنك تعطيل حسابك الشخصي." });
+        }
+        if (!ctx.user.isOwner) {
+          const targetPerms = parsePermissionsJson(target.permissionsJson, target.roleKey as AdminRoleKey);
+          const guard = canManageTargetStaff({ isOwner: false, permissions: ctx.user.permissions, staffId: ctx.user.staffId }, target.roleKey as AdminRoleKey, targetPerms, target.id);
+          if (!guard.allowed) throw new TRPCError({ code: "FORBIDDEN", message: guard.reason });
+        }
+        await db.update(adminStaff).set({
+          isActive: input.isActive,
+          sessionVersion: target.sessionVersion + 1,
+        }).where(eq(adminStaff.id, input.id));
+        await writeAdminAuditLog({
+          actorId: ctx.user.staffId ?? ctx.user.id,
+          actorName: ctx.user.name || "مالك المتجر",
+          actorRole: ctx.user.adminRole || "owner",
+          action: input.isActive ? "ACTIVATE_STAFF" : "DISABLE_STAFF",
+          targetName: target.displayName + " (" + target.username + ")",
+          details: input.isActive ? "تم تفعيل الحساب الإداري" : "تم تعطيل الحساب الإداري وإبطال جلسته الفورية",
+          ipAddress: getClientIp(ctx.req),
+        });
+        return { success: true };
+      }),
+      resetPassword: requirePermission("staff.manage").input(z.object({
+        id: safeId,
+        newPassword: z.string().min(6).max(128),
+        mustChangePassword: z.boolean().default(true),
+      })).mutation(async ({ ctx, input }) => {
+        if (["123456", "12345678", "password", "admin123"].includes(input.newPassword.trim().toLowerCase())) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "لا يُسمح بتعيين كلمة مرور ضعيفة أو افتراضية مثل 123456." });
+        }
+        const db = await database();
+        await ensureRbacTables(db);
+        const target = (await db.select().from(adminStaff).where(eq(adminStaff.id, input.id)).limit(1))[0];
+        if (!target) throw new TRPCError({ code: "NOT_FOUND", message: "الحساب الإداري غير موجود." });
+        if (target.roleKey === "owner") throw new TRPCError({ code: "FORBIDDEN", message: "لا يمكن إعادة تعيين كلمة مرور المالك من هنا." });
+        if (!ctx.user.isOwner && ctx.user.staffId === target.id) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "استخدم نافذة تغيير كلمة المرور الخاصة بك." });
+        }
+        const passwordHash = hashAdminPassword(input.newPassword);
+        await db.update(adminStaff).set({
+          passwordHash,
+          mustChangePassword: input.mustChangePassword,
+          sessionVersion: target.sessionVersion + 1,
+        }).where(eq(adminStaff.id, input.id));
+        await writeAdminAuditLog({
+          actorId: ctx.user.staffId ?? ctx.user.id,
+          actorName: ctx.user.name || "مالك المتجر",
+          actorRole: ctx.user.adminRole || "owner",
+          action: "RESET_STAFF_PASSWORD",
+          targetName: target.displayName + " (" + target.username + ")",
+          details: "إعادة تعيين كلمة المرور" + (input.mustChangePassword ? " مع فرض تغييرها عند الدخول القادم" : ""),
+          ipAddress: getClientIp(ctx.req),
+        });
+        return { success: true };
+      }),
+      delete: requirePermission("staff.manage").input(z.object({ id: safeId })).mutation(async ({ ctx, input }) => {
+        if (!ctx.user.isOwner) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "حذف الحسابات الإدارية نهائياً متاح لمالك المتجر فقط؛ يمكنك تعطيل الحساب بدلاً من ذلك." });
+        }
+        const db = await database();
+        await ensureRbacTables(db);
+        const target = (await db.select().from(adminStaff).where(eq(adminStaff.id, input.id)).limit(1))[0];
+        if (!target) throw new TRPCError({ code: "NOT_FOUND", message: "الحساب غير موجود." });
+        if (target.roleKey === "owner") throw new TRPCError({ code: "FORBIDDEN", message: "لا يمكن حذف حساب المالك." });
+        await db.update(users).set({ role: "user", suspended: true }).where(eq(users.openId, "staff_user_" + target.id));
+        await db.delete(adminStaff).where(eq(adminStaff.id, input.id));
+        await writeAdminAuditLog({
+          actorId: ctx.user.id,
+          actorName: ctx.user.name || "مالك المتجر",
+          actorRole: "owner",
+          action: "DELETE_STAFF",
+          targetName: target.displayName + " (" + target.username + ")",
+          details: "حذف الحساب الإداري نهائياً مع الحفاظ على سجلات الطلبات المرتبطة",
+          ipAddress: getClientIp(ctx.req),
+        });
+        return { success: true };
+      }),
+      changeOwnPassword: protectedProcedure.input(z.object({
+        currentPassword: z.string().min(1).max(128),
+        newPassword: z.string().min(6).max(128),
+      })).mutation(async ({ ctx, input }) => {
+        if (!ctx.user.staffId) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "تغيير كلمة مرور مالك المتجر يتم عبر متغير البيئة ADMIN_PASSWORD في الاستضافة." });
+        }
+        if (["123456", "12345678", "password", "admin123"].includes(input.newPassword.trim().toLowerCase())) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "يرجى اختيار كلمة مرور قوية وغير افتراضية." });
+        }
+        const db = await database();
+        await ensureRbacTables(db);
+        const staff = (await db.select().from(adminStaff).where(eq(adminStaff.id, ctx.user.staffId)).limit(1))[0];
+        if (!staff || !verifyAdminPassword(input.currentPassword, staff.passwordHash)) {
+          throw new TRPCError({ code: "UNAUTHORIZED", message: "كلمة المرور الحالية غير صحيحة." });
+        }
+        const nextVersion = staff.sessionVersion + 1;
+        const passwordHash = hashAdminPassword(input.newPassword);
+        await db.update(adminStaff).set({
+          passwordHash,
+          mustChangePassword: false,
+          sessionVersion: nextVersion,
+        }).where(eq(adminStaff.id, staff.id));
+        const newToken = await sdk.createSessionToken("staff_" + staff.id + "_v" + nextVersion, {
+          name: staff.displayName,
+          expiresInMs: 7 * 24 * 60 * 60 * 1000,
+        });
+        const cookieOptions = getSessionCookieOptions(ctx.req);
+        ctx.res.cookie(COOKIE_NAME, newToken, { ...cookieOptions, maxAge: 7 * 24 * 60 * 60 * 1000 });
+        await writeAdminAuditLog({
+          actorId: staff.id,
+          actorName: staff.displayName,
+          actorRole: staff.roleKey,
+          action: "CHANGE_OWN_PASSWORD",
+          targetName: staff.username,
+          details: "قام المدير بتحديث كلمة مروره المؤقتة بنجاح",
+          ipAddress: getClientIp(ctx.req),
+        });
+        return { success: true };
+      }),
+    }),
+    // --- ADMIN_STAFF_ROUTER_END ---
     chats: router({
-      list: adminProcedure.query(async () => {
+      list: requirePermission("chats.manage").query(async () => {
         const db = await database();
         await loadLiveChats(db);
         return [...liveChatsMemory.values()].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
       }),
-      reply: adminProcedure.input(z.object({
+      reply: requirePermission("chats.manage").input(z.object({
         sessionId: z.string().trim().min(1).max(80),
         text: z.string().trim().min(1).max(1200),
       })).mutation(async ({ input }) => {
@@ -908,7 +1193,7 @@ export const commerceRouter = router({
         await saveLiveChats(db);
         return { success: true };
       }),
-      toggleAi: adminProcedure.input(z.object({
+      toggleAi: requirePermission("chats.manage").input(z.object({
         sessionId: z.string().trim().min(1).max(80),
         aiPaused: z.boolean(),
       })).mutation(async ({ input }) => {
@@ -922,7 +1207,7 @@ export const commerceRouter = router({
         }
         return { success: true };
       }),
-      delete: adminProcedure.input(z.object({
+      delete: requirePermission("chats.manage").input(z.object({
         sessionId: z.string().trim().min(1).max(80),
       })).mutation(async ({ input }) => {
         const db = await database();
@@ -932,7 +1217,7 @@ export const commerceRouter = router({
         return { success: true };
       }),
     }),
-    overview: adminProcedure.query(async () => getCached("admin:overview", 30_000, async () => {
+    overview: requirePermission("overview.view").query(async () => getCached("admin:overview", 30_000, async () => {
       const db = await database();
       const [productRows, categoryRows, orderRows, customerRows, orderMetrics, settings] = await Promise.all([
         db.select({ count: sql<number>`count(*)` }).from(products),
@@ -975,7 +1260,7 @@ export const commerceRouter = router({
       }),
     }),
     products: router({
-      list: adminProcedure.query(async () => getCached("admin:products", 30_000, async () => {
+      list: requireAnyPermission(["products.view", "products.manage", "inventory.manage"]).query(async () => getCached("admin:products", 30_000, async () => {
         const db = await database();
         return db.select().from(products).orderBy(desc(products.updatedAt)).limit(500);
       })),
@@ -1000,7 +1285,7 @@ export const commerceRouter = router({
         await db.update(products).set({ isPublished: false, isAvailable: false }).where(eq(products.id, input.id));
         clearCatalogCache(); return { success: true };
       }),
-      setRecommendations: adminProcedure.input(z.object({ productId: safeId, recommendedIds: z.array(safeId).max(30) })).mutation(async ({ input }) => {
+      setRecommendations: requirePermission("products.manage").input(z.object({ productId: safeId, recommendedIds: z.array(safeId).max(30) })).mutation(async ({ input }) => {
         if (input.recommendedIds.includes(input.productId)) throw new TRPCError({ code: "BAD_REQUEST", message: "لا يمكن اقتراح المنتج نفسه." });
         const db = await database();
         await db.transaction(async tx => {
@@ -1011,7 +1296,7 @@ export const commerceRouter = router({
       }),
     }),
     categories: router({
-      list: adminProcedure.query(async () => getCached("admin:categories", 30_000, async () => {
+      list: requireAnyPermission(["categories.manage", "products.view", "products.manage"]).query(async () => getCached("admin:categories", 30_000, async () => {
         const db = await database();
         return db.select().from(categories).orderBy(asc(categories.sortOrder), asc(categories.id));
       })),
@@ -1032,7 +1317,7 @@ export const commerceRouter = router({
       }),
     }),
     banners: router({
-      list: adminProcedure.query(async () => {
+      list: requirePermission("banners.manage").query(async () => {
         const db = await database();
         return db.select().from(banners).orderBy(asc(banners.sortOrder), desc(banners.createdAt));
       }),
@@ -1053,7 +1338,7 @@ export const commerceRouter = router({
       }),
     }),
     offers: router({
-      list: adminProcedure.query(async () => {
+      list: requirePermission("offers.manage").query(async () => {
         const db = await database();
         return db.select().from(offers).orderBy(desc(offers.createdAt));
       }),
@@ -1123,8 +1408,8 @@ export const commerceRouter = router({
       }),
     }),
     settings: router({
-      get: adminProcedure.query(async () => readSettings(await database())),
-      save: adminProcedure.input(settingSchema).mutation(async ({ input }) => { clearCatalogCache();
+      get: requireAnyPermission(["settings.manage", "overview.view"]).query(async () => readSettings(await database())),
+      save: requirePermission("settings.manage").input(settingSchema).mutation(async ({ input }) => { clearCatalogCache();
         const db = await database();
         await db.transaction(async tx => {
           for (const [key, value] of Object.entries(input)) {
@@ -1136,7 +1421,7 @@ export const commerceRouter = router({
       }),
     }),
     orders: router({
-      createdAfter: adminProcedure.input(z.object({ afterId: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER) })).query(async ({ input }) => getCached("createdAfter:" + input.afterId, 10_000, async () => {
+      createdAfter: requireAnyPermission(["orders.view", "orders.manage"]).input(z.object({ afterId: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER) })).query(async ({ input }) => getCached("createdAfter:" + input.afterId, 10_000, async () => {
         const db = await database();
         if (input.afterId === 0) {
           const latest = (await db.select({ id: orders.id }).from(orders).orderBy(desc(orders.id)).limit(1))[0];
@@ -1146,7 +1431,7 @@ export const commerceRouter = router({
           .from(orders).where(gt(orders.id, input.afterId)).orderBy(asc(orders.id)).limit(25);
         return { latestId: rows.at(-1)?.id ?? input.afterId, orders: rows };
       })),
-      list: adminProcedure.query(async () => {
+      list: requireAnyPermission(["orders.view", "orders.manage"]).query(async () => {
         const db = await database();
         const rows = await db.select().from(orders).orderBy(desc(orders.createdAt)).limit(500);
         if (!rows.length) return [];
@@ -1157,7 +1442,7 @@ export const commerceRouter = router({
         ]);
         return rows.map(order => ({ ...order, items: items.filter(item => item.orderId === order.id), events: events.filter(event => event.orderId === order.id) }));
       }),
-      setStatus: adminProcedure.input(z.object({ id: safeId, status: orderStatus, note: z.string().trim().max(500).optional() })).mutation(async ({ ctx, input }) => {
+      setStatus: requirePermission("orders.manage").input(z.object({ id: safeId, status: orderStatus, note: z.string().trim().max(500).optional() })).mutation(async ({ ctx, input }) => {
         const db = await database();
         const orderNumber = await db.transaction(async tx => {
           const current = (await tx.select({ id: orders.id, status: orders.status, orderNumber: orders.orderNumber }).from(orders).where(eq(orders.id, input.id)).limit(1).for("update"))[0];
@@ -1183,7 +1468,7 @@ export const commerceRouter = router({
       }),
     }),
     customers: router({
-      list: adminProcedure.query(async () => {
+      list: requirePermission("customers.view").query(async () => {
         const db = await database();
         return db.select({
           phone: orders.phone,
@@ -1194,7 +1479,7 @@ export const commerceRouter = router({
       }),
     }),
     users: router({
-      list: adminProcedure.query(async () => {
+      list: requirePermission("customers.view").query(async () => {
         const db = await database();
         const rows = await db.select({ id: users.id, name: users.name, email: users.email, phone: users.phone, role: users.role, suspended: users.suspended, createdAt: users.createdAt, lastSignedIn: users.lastSignedIn }).from(users).orderBy(desc(users.createdAt)).limit(1000);
         if (!rows.length) return [];
@@ -1208,7 +1493,7 @@ export const commerceRouter = router({
           return { ...user, orderCount: Number(stat?.orderCount ?? 0), totalSpent: Number(stat?.totalSpent ?? 0), addresses: savedAddresses.filter(address => address.userId === user.id) };
         });
       }),
-      setSuspended: adminProcedure.input(z.object({ id: safeId, suspended: z.boolean() })).mutation(async ({ ctx, input }) => {
+      setSuspended: requirePermission("staff.manage").input(z.object({ id: safeId, suspended: z.boolean() })).mutation(async ({ ctx, input }) => {
         const db = await database();
         const target = (await db.select({ id: users.id, role: users.role, openId: users.openId }).from(users).where(eq(users.id, input.id)).limit(1))[0];
         if (!target) throw new TRPCError({ code: "NOT_FOUND", message: "الحساب غير موجود." });
@@ -1217,7 +1502,7 @@ export const commerceRouter = router({
         clearCatalogCache(); return { success: true };
       }),
     }),
-    uploadImage: adminProcedure.input(z.object({ dataUrl: z.string().min(30).max(8_500_000), kind: z.enum(["product", "category", "banner", "icon"]) })).mutation(async ({ input }) => {
+    uploadImage: requireAnyPermission(["products.manage", "categories.manage", "banners.manage", "settings.manage"]).input(z.object({ dataUrl: z.string().min(30).max(8_500_000), kind: z.enum(["product", "category", "banner", "icon"]) })).mutation(async ({ input }) => {
       const match = input.dataUrl.match(/^data:(image\/(?:webp|png|jpeg));base64,([A-Za-z0-9+/=]+)$/);
       if (!match) throw new TRPCError({ code: "BAD_REQUEST", message: "صيغة الصورة غير مدعومة. استخدم WEBP أو PNG أو JPEG." });
       const contentType = match[1];
