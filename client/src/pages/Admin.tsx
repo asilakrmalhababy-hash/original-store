@@ -1113,19 +1113,20 @@ function OffersPanel() {
 
 function OrdersPanel() {
   const utils = trpc.useUtils();
-  const query = trpc.commerce.admin.orders.list.useQuery(undefined, { retry: 1 });
+  const query = trpc.commerce.admin.orders.list.useQuery(undefined, { retry: 1, refetchInterval: 10_000 });
   const nextStates: Record<string, string[]> = { new: ["preparing", "cancelled"], preparing: ["ready", "cancelled"], ready: ["out_for_delivery", "cancelled"], out_for_delivery: ["delivered"], delivered: [], cancelled: [] };
   const [deliveryNotes, setDeliveryNotes] = useState<Record<number, string>>({});
+  const focusedOrderNo = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("order") : null;
   const change = trpc.commerce.admin.orders.setStatus.useMutation({
     onSuccess: async () => {
-      toast.success("تم تحديث حالة الطلب وإرسال إشعار فوري للعميل");
+      toast.success("تم تحديث حالة الطلب وإرسال إشعار فوري واحد للعميل");
       await Promise.all([utils.commerce.admin.orders.list.invalidate(), utils.commerce.admin.overview.invalidate(), utils.commerce.orders.mine.invalidate(), utils.commerce.catalog.home.invalidate(), utils.commerce.catalog.listProducts.invalidate()]);
     },
     onError: error => toast.error(error.message),
   });
   const sendNoteMut = trpc.commerce.admin.orders.sendNote.useMutation({
     onSuccess: async (_res, vars) => {
-      toast.success("تم إرسال الإشعار الفوري لجوال العميل بنجاح");
+      toast.success("تم إرسال رسالتك كإشعار فوري أنيق لجوال العميل");
       setDeliveryNotes(current => ({ ...current, [vars.id]: "" }));
       await utils.commerce.admin.orders.list.invalidate();
     },
@@ -1157,14 +1158,15 @@ function OrdersPanel() {
     {query.isLoading ? <AdminLoading /> : query.error ? <AdminError message={query.error.message} retry={() => void query.refetch()} /> : !query.data?.length ? <AdminEmpty title="لا توجد طلبات" text="ستظهر الطلبات الجديدة هنا بعد تفعيل إعدادات التوصيل." /> : <div className="admin-orders">{query.data.map(order => {
       const allowedStatuses = [order.status, ...(nextStates[order.status] ?? [])];
       const noteVal = deliveryNotes[order.id] ?? "";
-      return <article className="admin-order-card" key={order.id}>
+      const isFocused = focusedOrderNo === order.orderNumber;
+      return <article className="admin-order-card" key={order.id} style={isFocused ? { border: "2px solid #174b36", boxShadow: "0 12px 28px rgba(23, 75, 54, 0.14)" } : undefined}>
         <div className="admin-order-top"><div><strong className="order-number">{order.orderNumber}</strong><small>{new Date(order.createdAt).toLocaleString("ar-YE")}</small></div><div style={{ display: "flex", gap: "6px", alignItems: "center" }}><span className={"status-pill status-" + order.status}>{labels[order.status]}</span><button type="button" className="small-button danger-soft" onClick={() => { if (window.confirm("هل أنت متأكد من حذف الطلب «" + order.orderNumber + "» نهائياً؟")) deleteOrder.mutate({ id: order.id }); }}><Trash2 size={14} /> حذف</button></div></div>
         <div className="admin-order-customer"><strong>{order.recipientName}</strong><span dir="ltr">{order.phone}</span><span>{order.city}، {order.district}</span>{order.addressDetails && <small>{order.addressDetails}</small>}{order.customerNote && <small>ملاحظة العميل: {order.customerNote}</small>}</div>
         <div className="admin-order-lines">{order.items.map(item => <span key={item.id}>{item.productName} × {item.quantity} · {money(item.lineTotal)}</span>)}</div>
         <div className="admin-order-total"><span>فرعي {money(order.subtotal)} · توصيل {money(order.deliveryFee)}{order.discount ? " · خصم " + money(order.discount) : ""}</span><strong>{money(order.total)}</strong></div>
         <div className="admin-order-controls"><label>حالة الطلب<select value={order.status} disabled={order.status === "delivered" || order.status === "cancelled" || change.isPending} onChange={e => change.mutate({ id: order.id, status: e.target.value as "new" | "preparing" | "ready" | "out_for_delivery" | "delivered" | "cancelled", note: noteVal.trim() || undefined }, { onSuccess: () => setDeliveryNotes(current => ({ ...current, [order.id]: "" })) })}>{Object.entries(labels).filter(([value]) => allowedStatuses.includes(value)).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><span className="cod-note small"><Truck size={15} /> نقدًا عند الاستلام</span></div>
         <div className="admin-order-delivery-note" style={{ display: "grid", gap: "6px", marginTop: "8px" }}>
-          <span style={{ fontSize: "11px", fontWeight: 700, color: "#174b36" }}>رسالة الإشعار للعميل (يصل النص الذي تكتبه هنا فقط دون إضافات):</span>
+          <span style={{ fontSize: "11px", fontWeight: 700, color: "#174b36" }}>رسالة الإشعار للعميل (يصل النص الذي تكتبه هنا فقط بإشعار واحد أنيق):</span>
           <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
             <input maxLength={500} value={noteVal} onChange={e => setDeliveryNotes(current => ({ ...current, [order.id]: e.target.value }))} placeholder="اكتب رسالتك للعميل (مثلاً: طلبك خرج للتوصيل)..." style={{ flex: "1 1 200px" }} />
             <button type="button" className="small-button selected" disabled={!noteVal.trim() || sendNoteMut.isPending} onClick={() => sendNoteMut.mutate({ id: order.id, note: noteVal.trim() })}><BellRing size={14} /> إرسال إشعار فوري</button>
@@ -1175,11 +1177,134 @@ function OrdersPanel() {
             ))}
           </div>
         </div>
-        {order.events.length ? <details className="order-history"><summary>سجل تغييرات الحالة والإشعارات</summary><ol>{order.events.map(event => <li key={event.id}><span className={"status-pill status-" + event.status}>{labels[event.status] || event.status}</span><time>{new Date(event.createdAt).toLocaleString("ar-YE")}</time>{event.note && <small>{event.note}</small>}</li>)}</ol></details> : null}
+        {order.events.length ? <details className="order-history" open={isFocused}><summary>سجل تغييرات الحالة والإشعارات</summary><ol>{order.events.map(event => <li key={event.id}><span className={"status-pill status-" + event.status}>{labels[event.status]}</span><time>{new Date(event.createdAt).toLocaleString("ar-YE")}</time>{event.note && <small>{event.note}</small>}</li>)}</ol></details> : null}
       </article>;
     })}</div>}
   </div>;
 }
+
+const OWNER_ORDER_CURSOR_KEY = "original-owner-order-notification-cursor-v1";
+function readOwnerOrderCursor() {
+  try {
+    if (typeof window === "undefined") return 0;
+    const value = Number(window.localStorage.getItem(OWNER_ORDER_CURSOR_KEY));
+    return Number.isSafeInteger(value) && value > 0 ? value : 0;
+  } catch { return 0; }
+}
+
+function useAdminGlobalPushSync(isAdmin: boolean) {
+  const publicKey = trpc.commerce.notifications.publicKey.useQuery(undefined, { enabled: false, retry: 1 });
+  const subscribe = trpc.commerce.admin.notifications.subscribe.useMutation();
+  useEffect(() => {
+    if (!isAdmin || getPushPermissionState() !== "granted") return;
+    let active = true;
+    void (async () => {
+      try {
+        let subscription = await getExistingBrowserPushSubscription();
+        if (!subscription) {
+          const key = publicKey.data ?? (await publicKey.refetch()).data;
+          if (key) subscription = await ensureBrowserPushSubscription(key);
+        }
+        if (!subscription || !active) return;
+        await subscribe.mutateAsync(subscription);
+      } catch {}
+    })();
+    return () => { active = false; };
+  }, [isAdmin]);
+}
+
+function OwnerNotificationControl() {
+  const utils = trpc.useUtils();
+  const [permission, setPermission] = useState(getPushPermissionState);
+  const [enabled, setEnabled] = useState(() => getPushPermissionState() === "granted");
+  const [pending, setPending] = useState(false);
+  const [cursor, setCursor] = useState(readOwnerOrderCursor);
+  const publicKey = trpc.commerce.notifications.publicKey.useQuery(undefined, { enabled: false, retry: 1 });
+  const subscribe = trpc.commerce.admin.notifications.subscribe.useMutation();
+  const testPush = trpc.commerce.admin.notifications.testPush.useMutation({
+    onSuccess: () => toast.success("أُرسل إشعار تجريبي لشريط جوالك الآن!"),
+    onError: err => toast.error(err.message),
+  });
+  const newOrders = trpc.commerce.admin.orders.createdAfter.useQuery({ afterId: cursor }, { retry: 1, staleTime: 0, refetchInterval: 10_000, refetchOnWindowFocus: true });
+
+  useEffect(() => {
+    if (getPushPermissionState() !== "granted") return;
+    let active = true;
+    void (async () => {
+      try {
+        let subscription = await getExistingBrowserPushSubscription();
+        if (!subscription) {
+          const key = publicKey.data ?? (await publicKey.refetch()).data;
+          if (key) subscription = await ensureBrowserPushSubscription(key);
+        }
+        if (!subscription || !active) return;
+        await subscribe.mutateAsync(subscription);
+        if (active) setEnabled(true);
+      } catch {}
+    })();
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    const data = newOrders.data;
+    if (!data) return;
+    const saveCursor = (next: number) => {
+      setCursor(next);
+      try { window.localStorage.setItem(OWNER_ORDER_CURSOR_KEY, String(next)); } catch {}
+    };
+    if (cursor === 0) {
+      if (data.latestId > 0) saveCursor(data.latestId);
+      return;
+    }
+    const incoming = data.orders.filter(order => order.id > cursor);
+    if (incoming.length) {
+      incoming.forEach(order => toast.success("🛍️ وصل طلب جديد " + order.orderNumber));
+      void Promise.all([utils.commerce.admin.orders.list.invalidate(), utils.commerce.admin.overview.invalidate()]);
+    }
+    if (data.latestId > cursor) saveCursor(data.latestId);
+  }, [newOrders.data, cursor, utils]);
+
+  const enableNotifications = async () => {
+    setPending(true);
+    try {
+      const requestedPermission = await requestPushPermission();
+      setPermission(requestedPermission);
+      if (requestedPermission === "unsupported") throw new Error("متصفحك لا يدعم إشعارات Push لهذا التطبيق.");
+      if (requestedPermission !== "granted") throw new Error("يرجى السماح بالإشعارات من إعدادات الموقع في المتصفح.");
+      const key = publicKey.data ?? (await publicKey.refetch()).data;
+      if (!key) throw new Error("تعذر الاتصال بخدمة الإشعارات. أعد المحاولة بعد قليل.");
+      const subscription = await ensureBrowserPushSubscription(key);
+      await subscribe.mutateAsync(subscription);
+      setEnabled(true);
+      toast.success("تم ربط هذا الجهاز بإشعارات الإدارة الفورية بنجاح!");
+      void testPush.mutateAsync().catch(() => {});
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "تعذر تفعيل إشعارات الطلبات.");
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <section className="owner-push-control" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: "10px", padding: "14px 16px", borderRadius: "16px", background: enabled ? "#edf7f0" : "#fff9e8", border: enabled ? "1.5px solid #b8dec6" : "1.5px solid #f0dc9c" }}>
+      <div>
+        <strong style={{ display: "block", color: "#174b36", fontSize: "13px" }}>{enabled ? "🔔 إشعارات الإدارة الفورية نشطة على هذا الجهاز" : "🔔 تفعيل إشعارات الطلبات الفورية للإدارة"}</strong>
+        <small style={{ color: "#4e6258", fontSize: "11px" }}>{permission === "denied" ? "الإذن محظور من إعدادات المتصفح؛ يرجى السماح به من أيقونة القفل أعلى المتصفح." : enabled ? "يصلك إشعار فوري مع كل طلب جديد لجميع الصلاحيات حتى لو كان الموقع مغلقاً لساعات." : "فعّل الإشعارات مرة واحدة ليصلك تنبيه فوري بشعار المتجر عند تأكيد أي طلب جديد."}</small>
+      </div>
+      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+        <button type="button" className="small-button selected" onClick={() => void enableNotifications()} disabled={pending || permission === "denied" || permission === "unsupported"}>
+          <BellRing size={15} />{pending ? "جارٍ الربط..." : enabled ? "تحديث ربط الإشعارات" : "تفعيل الإشعارات الآن"}
+        </button>
+        {enabled && (
+          <button type="button" className="small-button" onClick={() => testPush.mutate()} disabled={testPush.isPending}>
+            {testPush.isPending ? "جارٍ الإرسال..." : "🔔 تجربة الإشعار"}
+          </button>
+        )}
+      </div>
+    </section>
+  );
+}
+
 
 function UsersPanel() {
   const query = trpc.commerce.admin.customers.list.useQuery(undefined, { retry: 1 });
@@ -1233,153 +1358,6 @@ function AdminEmpty({ title, text }: { title: string; text: string }) { return <
 function AdminLoading() { return <div className="admin-loading"><LoaderCircle className="spin" size={20} /> جارٍ تحميل بيانات المتجر...</div>; }
 function AdminError({ message, retry }: { message: string; retry: () => void }) { return <div className="admin-error"><AlertTriangle size={18} /><div><strong>تعذر تحميل بيانات الإدارة</strong><small>{message}</small></div><button className="small-button" onClick={retry}>إعادة المحاولة</button></div>; }
 
-const OWNER_ORDER_CURSOR_KEY = "original-owner-order-notification-cursor-v1";
-function readOwnerOrderCursor() {
-  try {
-    if (typeof window === "undefined") return 0;
-    const value = Number(window.localStorage.getItem(OWNER_ORDER_CURSOR_KEY));
-    return Number.isSafeInteger(value) && value > 0 ? value : 0;
-  } catch { return 0; }
-}
-
-function playOrderAlertSound() {
-  try {
-    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-    if (!AudioCtx) return;
-    const ctx = new AudioCtx();
-    [587.33, 880].forEach((freq, idx) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = "sine";
-      osc.frequency.setValueAtTime(freq, ctx.currentTime + idx * 0.16);
-      gain.gain.setValueAtTime(0.25, ctx.currentTime + idx * 0.16);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + idx * 0.16 + 0.35);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start(ctx.currentTime + idx * 0.16);
-      osc.stop(ctx.currentTime + idx * 0.16 + 0.36);
-    });
-  } catch {}
-}
-
-async function showPhoneOrderNotification(title: string, body: string, tag: string) {
-  try {
-    if ("serviceWorker" in navigator && Notification.permission === "granted") {
-      const reg = await navigator.serviceWorker.ready;
-      await reg.showNotification(title, {
-        body,
-        icon: "/app-icon-192-v2.png",
-        badge: "/app-icon-192-v2.png",
-        tag,
-        dir: "rtl",
-        lang: "ar",
-        vibrate: [250, 120, 250, 120, 350],
-        requireInteraction: true,
-        renotify: true,
-        data: { url: "/admin/orders" },
-      } as any);
-      return;
-    }
-    if ("Notification" in window && Notification.permission === "granted") {
-      new Notification(title, { body, icon: "/app-icon-192-v2.png", tag, dir: "rtl", lang: "ar" });
-    }
-  } catch {}
-}
-
-function OwnerNotificationControl() {
-  const utils = trpc.useUtils();
-  const [permission, setPermission] = useState(getPushPermissionState);
-  const [enabled, setEnabled] = useState(() => getPushPermissionState() === "granted");
-  const [pending, setPending] = useState(false);
-  const [cursor, setCursor] = useState(readOwnerOrderCursor);
-  const publicKey = trpc.commerce.notifications.publicKey.useQuery(undefined, { enabled: false, retry: 1 });
-  const subscribe = trpc.commerce.admin.notifications.subscribe.useMutation();
-  const newOrders = trpc.commerce.admin.orders.createdAfter.useQuery({ afterId: cursor }, { retry: 1, staleTime: 0, refetchInterval: 4000, refetchIntervalInBackground: true, refetchOnWindowFocus: true });
-
-  useEffect(() => {
-    if ("serviceWorker" in navigator) {
-      void navigator.serviceWorker.ready.then(reg => {
-        reg.active?.postMessage({ type: "SYNC_SW_STATE", isAdmin: true, afterId: cursor });
-        if ("periodicSync" in reg) {
-          void (reg as any).periodicSync.register("original-order-sync", { minInterval: 60000 }).catch(() => {});
-        }
-      }).catch(() => {});
-    }
-    if (getPushPermissionState() !== "granted") return;
-    setEnabled(true);
-    let active = true;
-    void (async () => {
-      try {
-        const key = publicKey.data ?? (await publicKey.refetch()).data;
-        if (key && active) {
-          const sub = await ensureBrowserPushSubscription(key);
-          await subscribe.mutateAsync(sub);
-        }
-      } catch {}
-    })();
-    return () => { active = false; };
-  }, [cursor]);
-
-  useEffect(() => {
-    const data = newOrders.data;
-    if (!data) return;
-    const saveCursor = (next: number) => {
-      setCursor(next);
-      try { window.localStorage.setItem(OWNER_ORDER_CURSOR_KEY, String(next)); } catch {}
-    };
-    if (cursor === 0) {
-      if (data.latestId > 0) saveCursor(data.latestId);
-      return;
-    }
-    const incoming = data.orders.filter(order => order.id > cursor);
-    if (incoming.length) {
-      playOrderAlertSound();
-      incoming.forEach(order => {
-        toast.success(`🔔 وصل طلب جديد رقم ${order.orderNumber}`);
-        void showPhoneOrderNotification(
-          "طلب جديد في أوريجنال 🔔",
-          `وصل الطلب رقم ${order.orderNumber} الآن — اضغط لفتحه في لوحة الطلبات.`,
-          `original-new-order-${order.id}`
-        );
-      });
-      void Promise.all([utils.commerce.admin.orders.list.invalidate(), utils.commerce.admin.overview.invalidate()]);
-    }
-    if (data.latestId > cursor) saveCursor(data.latestId);
-  }, [newOrders.data, cursor, enabled, utils]);
-
-  const enableNotifications = async () => {
-    setPending(true);
-    try {
-      const requestedPermission = await requestPushPermission();
-      setPermission(requestedPermission);
-      if (requestedPermission === "unsupported") throw new Error("متصفحك لا يدعم إشعارات الهاتف لهذا التطبيق.");
-      if (requestedPermission !== "granted") throw new Error("يرجى السماح بالإشعارات من نافذة المتصفح لتصلك تنبيهات الطلبات.");
-      setEnabled(true);
-      playOrderAlertSound();
-      await showPhoneOrderNotification(
-        "تم تفعيل إشعارات الطلبات 🔔",
-        "سيصلك إشعار فوري في شريط الهاتف مع كل طلب جديد حتى وأنت خارج المتصفح!",
-        "original-admin-push-test"
-      );
-      toast.success("تم تفعيل إشعارات الهاتف بنجاح! أرسلنا لك إشعاراً تجريبياً في أعلى الشاشة.");
-      try {
-        const key = publicKey.data ?? (await publicKey.refetch()).data;
-        if (key) {
-          const subscription = await ensureBrowserPushSubscription(key);
-          await subscribe.mutateAsync(subscription);
-        }
-      } catch {}
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "تعذر تفعيل الإشعارات الآن.");
-    } finally {
-      setPending(false);
-    }
-  };
-
-  return <section className="owner-push-control" style={{ margin: "14px 20px 0", padding: "12px 16px", background: "#eaf3e9", border: "1px solid #c8dcc5", borderRadius: "14px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px", flexWrap: "wrap" }}><div><strong style={{ color: "#174b36", fontSize: "12px", display: "block" }}>🔔 إشعارات الهاتف الفورية للطلبات الجديدة</strong><small style={{ color: "#4d6b57", fontSize: "10px" }}>{permission === "denied" ? "الإشعارات محظورة من إعدادات المتصفح (اضغط القفل بجانب الرابط لتفعيلها)." : enabled ? "مفعّلة على هاتفك — سيصلك إشعار خارجي وصوت فور وصول أي طلب جديد." : "اضغط زر التفعيل ليصلك إشعار في هاتفك فور قيام أي عميل بالطلب."}</small></div><button type="button" className="small-button selected" onClick={() => void enableNotifications()} disabled={pending || permission === "unsupported"}><BellRing size={15} />{pending ? "جارٍ التفعيل..." : enabled ? "إرسال إشعار تجريبي للهاتف" : "تفعيل إشعارات الهاتف الآن"}</button></section>;
-}
-
-// --- CHATS_PANEL_START ---
 function ChatsPanel() {
   const utils = trpc.useUtils();
   const query = trpc.commerce.admin.chats.list.useQuery(undefined, { refetchInterval: 3000 });
@@ -1995,6 +1973,7 @@ export default function Admin() {
   const auth = useAuth();
   const utils = trpc.useUtils();
   const access = trpc.commerce.access.useQuery(undefined, { retry: 1, refetchOnWindowFocus: false });
+  useAdminGlobalPushSync(Boolean(access.data?.isAdmin));
   const logout = async () => { try { await auth.logout(); } finally { await utils.commerce.access.invalidate(); navigate("/admin"); } };
   const onLoginSuccess = async () => {
     await Promise.all([auth.refresh(), utils.commerce.access.invalidate()]);

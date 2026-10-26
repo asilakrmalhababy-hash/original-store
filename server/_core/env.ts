@@ -1,6 +1,6 @@
 export const ENV = {
   get appId() { return process.env.MANUS_PROJECT_ID || "original-store"; },
-  get cookieSecret() { return process.env.MANUS_JWT_SECRET || "secret_token_123456789_abcdef_32_chars"; },
+  get cookieSecret() { return process.env.MANUS_JWT_SECRET || process.env.JWT_SECRET || "original-store-permanent-jwt-secret-key-2026-yemen"; },
   get databaseUrl() { return process.env.DATABASE_URL || ""; },
   get oAuthServerUrl() { return process.env.MANUS_OAUTH_API_URL || ""; },
   get ownerOpenId() { return process.env.OWNER_OPEN_ID?.trim() || "admin-owner"; },

@@ -179,50 +179,113 @@ const pushSubscriptionSchema = z.object({
   }),
 });
 
+const ADMIN_PUSH_BACKUP_KEY = "admin_push_subscriptions_v2";
+
+async function loadBackupAdminSubscriptions(db: any): Promise<Array<{ endpointHash: string; encryptedPayload: string }>> {
+  try {
+    const rows = await db.select().from(storeSettings).where(eq(storeSettings.key, ADMIN_PUSH_BACKUP_KEY)).limit(1);
+    const parsed = JSON.parse(rows[0]?.value || "[]");
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((x: any) => x && typeof x.endpointHash === "string" && typeof x.encryptedPayload === "string");
+  } catch {
+    return [];
+  }
+}
+
+async function saveBackupAdminSubscription(db: any, sub: { endpointHash: string; encryptedPayload: string }) {
+  try {
+    const existing = await loadBackupAdminSubscriptions(db);
+    const filtered = existing.filter(x => x.endpointHash !== sub.endpointHash);
+    filtered.unshift({ endpointHash: sub.endpointHash, encryptedPayload: sub.encryptedPayload });
+    const nextVal = JSON.stringify(filtered.slice(0, 30));
+    await db.insert(storeSettings).values({ key: ADMIN_PUSH_BACKUP_KEY, value: nextVal })
+      .onDuplicateKeyUpdate({ set: { value: nextVal } });
+  } catch {}
+}
+
+async function removeBackupAdminSubscription(db: any, endpointHash: string) {
+  try {
+    const existing = await loadBackupAdminSubscriptions(db);
+    const filtered = existing.filter(x => x.endpointHash !== endpointHash);
+    if (filtered.length === existing.length) return;
+    const nextVal = JSON.stringify(filtered);
+    await db.insert(storeSettings).values({ key: ADMIN_PUSH_BACKUP_KEY, value: nextVal })
+      .onDuplicateKeyUpdate({ set: { value: nextVal } });
+  } catch {}
+}
+
 async function deliverPushRows(
-  rows: Array<{ id: number; encryptedPayload: string }>,
+  rows: Array<{ id: number; endpointHash?: string; encryptedPayload: string }>,
   message: PushMessage,
-  remove: (id: number) => Promise<void>,
+  remove: (id: number, endpointHash?: string) => Promise<void>,
 ) {
   await Promise.allSettled(rows.map(async row => {
     let subscription;
     try {
       subscription = unprotectPushSubscription(row.encryptedPayload);
     } catch {
-      await remove(row.id);
+      await remove(row.id, row.endpointHash);
       return;
     }
     try {
       await sendWebPush(subscription, message);
-      console.log("[Push] Web Push sent:", message.title);
     } catch (error) {
       const statusCode = error && typeof error === "object" && "statusCode" in error
         ? Number(error.statusCode)
         : undefined;
-      if (statusCode === 404 || statusCode === 410) await remove(row.id);
+      if (statusCode === 404 || statusCode === 410) await remove(row.id, row.endpointHash);
       console.warn("[Push] Delivery failed", statusCode ?? "network");
     }
   }));
 }
 
-async function notifyOwnerNewOrder(orderId: number, orderNumber: string, total: number) {
+async function getAllAdminPushTargets(db: any) {
+  const dbRows = await db.select({
+    id: ownerPushSubscriptions.id,
+    endpointHash: ownerPushSubscriptions.endpointHash,
+    encryptedPayload: ownerPushSubscriptions.encryptedPayload,
+  }).from(ownerPushSubscriptions).catch(() => []);
+  const backupRows = await loadBackupAdminSubscriptions(db);
+  const map = new Map<string, { id: number; endpointHash: string; encryptedPayload: string }>();
+  for (const r of dbRows) {
+    if (r.endpointHash && r.encryptedPayload) map.set(r.endpointHash, r);
+  }
+  for (const b of backupRows) {
+    if (b.endpointHash && b.encryptedPayload && !map.has(b.endpointHash)) {
+      map.set(b.endpointHash, { id: -1, endpointHash: b.endpointHash, encryptedPayload: b.encryptedPayload });
+    }
+  }
+  return [...map.values()];
+}
+
+const __recentAdminPushLocks = new Map<string, number>();
+async function notifyOwnerNewOrder(orderId: number, orderNumber: string, total: number, recipientName?: string, area?: string) {
+  const lockKey = "admin-order-" + orderId;
+  const now = Date.now();
+  if (__recentAdminPushLocks.has(lockKey) && now - (__recentAdminPushLocks.get(lockKey) || 0) < 8000) return;
+  __recentAdminPushLocks.set(lockKey, now);
   const db = await database();
-  const subscriptions = await db.select({ id: ownerPushSubscriptions.id, encryptedPayload: ownerPushSubscriptions.encryptedPayload })
-    .from(ownerPushSubscriptions);
-  await deliverPushRows(subscriptions, {
-    title: "طلب جديد في أوريجنال",
-    body: `وصل الطلب ${orderNumber} بإجمالي ${total.toLocaleString("en-US")} ر.ي.`,
-    url: "/admin/orders",
-    tag: `original-new-order-${orderId}`,
-  }, async id => { await db.delete(ownerPushSubscriptions).where(eq(ownerPushSubscriptions.id, id)); });
+  const targets = await getAllAdminPushTargets(db);
+  if (!targets.length) return;
+  const shortNo = orderNumber.split("-").pop() || orderNumber;
+  const who = recipientName ? ("العميل: " + recipientName + (area ? " (" + area + ")" : "") + " · ") : "";
+  await deliverPushRows(targets, {
+    title: "🛍️ طلب جديد #" + shortNo + " · " + total.toLocaleString("en-US") + " ر.ي",
+    body: who + "اضغط لفتح الطلب وتجهيزه الآن",
+    url: "/admin/orders?order=" + encodeURIComponent(orderNumber),
+    tag: "original-admin-order-" + orderId,
+  }, async (id, endpointHash) => {
+    if (id > 0) await db.delete(ownerPushSubscriptions).where(eq(ownerPushSubscriptions.id, id)).catch(() => {});
+    if (endpointHash) await removeBackupAdminSubscription(db, endpointHash);
+  });
 }
 
 const __recentOrderPushLocks = new Map<string, number>();
 async function notifyCustomerOrderStatus(orderId: number, orderNumber: string, status: string, note?: string) {
   const cleanNote = (note || "").trim();
-  const lockKey = orderId + "::" + status + "::" + cleanNote;
+  const lockKey = "cust-order-" + orderId + "::" + status + "::" + cleanNote;
   const now = Date.now();
-  if (__recentOrderPushLocks.has(lockKey) && now - (__recentOrderPushLocks.get(lockKey) || 0) < 6000) {
+  if (__recentOrderPushLocks.has(lockKey) && now - (__recentOrderPushLocks.get(lockKey) || 0) < 5000) {
     return;
   }
   __recentOrderPushLocks.set(lockKey, now);
@@ -234,30 +297,23 @@ async function notifyCustomerOrderStatus(orderId: number, orderNumber: string, s
   }).from(customerPushSubscriptions).where(eq(customerPushSubscriptions.orderId, orderId));
   const uniqueByEndpoint = [...new Map(subscriptions.map(s => [s.endpointHash, s])).values()];
   if (!uniqueByEndpoint.length) return;
-  const titles: Record<string, string> = {
-    new: "🌿 أوريجنال · تم استلام طلبك",
-    preparing: "👨‍🍳 أوريجنال · طلبك قيد التجهيز",
-    ready: "✨ أوريجنال · طلبك جاهز للتوصيل",
-    out_for_delivery: "🛵 أوريجنال · طلبك خرج للتوصيل",
-    delivered: "💚 أوريجنال · تم تسليم طلبك",
-    cancelled: "⚠️ أوريجنال · تم إلغاء الطلب",
-  };
+  const shortNo = orderNumber.split("-").pop() || orderNumber;
   const defaultBodies: Record<string, string> = {
-    new: "استلمنا طلبك ونراجعه الآن بعناية ✨",
-    preparing: "طلبك قيد التجهيز الآن 👨‍🍳",
-    ready: "طلبك جاهز للتوصيل 📦",
+    new: "تم استلام طلبك بنجاح وبانتظار التجهيز ✨",
+    preparing: "طلبك الآن قيد التجهيز بعناية 👨‍🍳",
+    ready: "طلبك جاهز للتوصيل الكامل 📦",
     out_for_delivery: "طلبك خرج للتوصيل وهو في طريقه إليك 🛵",
-    delivered: "تم تسليم طلبك بنجاح، شكراً لتسوقك من أوريجنال 🌿",
-    cancelled: "تم إلغاء الطلب",
+    delivered: "تم تسليم طلبك بنجاح، شكراً لتسوقك من أوريجنال 💚",
+    cancelled: "عذراً، تم إلغاء الطلب #" + shortNo,
   };
-  const title = titles[status] || "🌿 أوريجنال · تحديث حالة طلبك";
-  const body = cleanNote ? cleanNote.slice(0, 220) : (defaultBodies[status] || "تم تحديث حالة طلبك");
+  const title = "🌿 متجر أوريجنال · طلب #" + shortNo;
+  const body = cleanNote ? cleanNote.slice(0, 240) : (defaultBodies[status] || "تم تحديث حالة طلبك");
   await deliverPushRows(uniqueByEndpoint, {
     title,
     body,
     url: "/orders?order=" + encodeURIComponent(orderNumber),
-    tag: "original-order-" + orderId,
-  }, async id => { await db.delete(customerPushSubscriptions).where(eq(customerPushSubscriptions.id, id)); });
+    tag: "original-customer-order-" + orderId,
+  }, async id => { await db.delete(customerPushSubscriptions).where(eq(customerPushSubscriptions.id, id)).catch(() => {}); });
 }
 
 const orderStatus = z.enum(["new", "preparing", "ready", "out_for_delivery", "delivered", "cancelled"]);
@@ -794,7 +850,7 @@ export const commerceRouter = router({
       });
       clearCatalogCache();
       if (!result.duplicate) {
-        void notifyOwnerNewOrder(result.id, result.orderNumber, result.total)
+        void notifyOwnerNewOrder(result.id, result.orderNumber, result.total, input.recipientName, input.city + " - " + input.district)
           .catch(() => console.warn("[Push] Could not notify owner of a new order"));
       }
       return result;
@@ -967,8 +1023,7 @@ export const commerceRouter = router({
               note: "طلب توفير تلقائي من المساعد الذكي — هاتف الزبون: " + customerPhoneClean,
               changedByUserId: null,
             });
-            const subscriptions = await db.select({ id: ownerPushSubscriptions.id, encryptedPayload: ownerPushSubscriptions.encryptedPayload })
-              .from(ownerPushSubscriptions);
+            const subscriptions = await getAllAdminPushTargets(db);
             await deliverPushRows(subscriptions, {
               title: "🔔 طلب توفير منتج غير متوفر!",
               body: "طلب (" + requestedItemText + ") · هاتف الزبون: " + customerPhoneClean,
@@ -1321,27 +1376,38 @@ export const commerceRouter = router({
           throw new TRPCError({ code: "BAD_REQUEST", message: "خدمة الإشعارات في هذا المتصفح غير مدعومة." });
         }
         const db = await database();
-        let targetUserId = ctx.user?.id || 1;
-        const existingUser = await db.select({ id: users.id }).from(users).where(eq(users.id, targetUserId)).limit(1);
-        if (!existingUser.length) {
-          const anyUser = await db.select({ id: users.id }).from(users).limit(1);
-          if (anyUser.length) {
-            targetUserId = anyUser[0].id;
-          } else {
-            const ins = await db.insert(users).values({
-              openId: "admin-owner-local",
-              name: "المدير",
-              role: "admin",
-            });
-            targetUserId = Number(ins[0].insertId || 1);
-          }
-        }
         const protectedSubscription = protectPushSubscription(input);
-        await db.insert(ownerPushSubscriptions).values({ userId: targetUserId, ...protectedSubscription })
-          .onDuplicateKeyUpdate({ set: { encryptedPayload: protectedSubscription.encryptedPayload, updatedAt: new Date() } });
-        console.log("[Push] Admin device registered for background Web Push (userId:", targetUserId, ")");
-        clearCatalogCache();
+        await saveBackupAdminSubscription(db, protectedSubscription);
+        let userId = ctx.user.id;
+        if (!userId || userId <= 0) {
+          const openId = ctx.user.openId || ("staff_user_" + (ctx.user.staffId || "admin"));
+          await db.insert(users).values({ openId, name: ctx.user.name || "إدارة المتجر", role: "admin", loginMethod: "staff_password" })
+            .onDuplicateKeyUpdate({ set: { updatedAt: new Date() } }).catch(() => {});
+          const uRows = await db.select({ id: users.id }).from(users).where(eq(users.openId, openId)).limit(1).catch(() => []);
+          if (uRows[0]?.id) userId = uRows[0].id;
+        }
+        if (userId && userId > 0) {
+          await db.insert(ownerPushSubscriptions).values({ userId, ...protectedSubscription })
+            .onDuplicateKeyUpdate({ set: { encryptedPayload: protectedSubscription.encryptedPayload, updatedAt: new Date() } }).catch(() => {});
+        }
         return { success: true };
+      }),
+      testPush: adminProcedure.mutation(async () => {
+        const db = await database();
+        const targets = await getAllAdminPushTargets(db);
+        if (!targets.length) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: "يرجى الضغط على زر تفعيل الإشعارات أولاً لربط هذا الجهاز." });
+        }
+        await deliverPushRows(targets, {
+          title: "🌿 إدارة أوريجنال · الإشعارات نشطة",
+          body: "جهازك مربوط بنجاح! سيصلك إشعار فوري وأنيق مع كل طلب جديد حتى لو كان التطبيق مغلقاً ✨",
+          url: "/admin/orders",
+          tag: "original-admin-test-push",
+        }, async (id, endpointHash) => {
+          if (id > 0) await db.delete(ownerPushSubscriptions).where(eq(ownerPushSubscriptions.id, id)).catch(() => {});
+          if (endpointHash) await removeBackupAdminSubscription(db, endpointHash);
+        });
+        return { sent: targets.length };
       }),
     }),
     products: router({
@@ -1537,7 +1603,7 @@ export const commerceRouter = router({
         });
         return { success: true };
       }),
-      createdAfter: requireAnyPermission(["orders.view", "orders.manage"]).input(z.object({ afterId: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER) })).query(async ({ input }) => getCached("createdAfter:" + input.afterId, 10_000, async () => {
+      createdAfter: adminProcedure.input(z.object({ afterId: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER) })).query(async ({ input }) => getCached("createdAfter:" + input.afterId, 10_000, async () => {
         const db = await database();
         if (input.afterId === 0) {
           const latest = (await db.select({ id: orders.id }).from(orders).orderBy(desc(orders.id)).limit(1))[0];
@@ -1562,7 +1628,7 @@ export const commerceRouter = router({
         const db = await database();
         const current = (await db.select({ id: orders.id, status: orders.status, orderNumber: orders.orderNumber }).from(orders).where(eq(orders.id, input.id)).limit(1))[0];
         if (!current) throw new TRPCError({ code: "NOT_FOUND", message: "لم يتم العثور على الطلب." });
-        await db.insert(orderEvents).values({ orderId: input.id, status: current.status, note: input.note, changedByUserId: ctx.user.id });
+        await db.insert(orderEvents).values({ orderId: input.id, status: current.status, note: input.note, changedByUserId: ctx.user.id > 0 ? ctx.user.id : null });
         await notifyCustomerOrderStatus(input.id, current.orderNumber, current.status, input.note);
         return { success: true };
       }),

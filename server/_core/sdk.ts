@@ -338,7 +338,11 @@ class SDKServer {
       if (!staff || !staff.isActive || staff.sessionVersion !== tokenVersion) {
         throw ForbiddenError("Staff session expired, disabled, or revoked");
       }
-      const linkedUser = await db.getUserByOpenId("staff_user_" + staff.id);
+      let linkedUser = await db.getUserByOpenId("staff_user_" + staff.id);
+      if (!linkedUser) {
+        await db.upsertUser({ openId: "staff_user_" + staff.id, name: staff.displayName, email: null, loginMethod: "staff_password", lastSignedIn: new Date() }).catch(() => {});
+        linkedUser = await db.getUserByOpenId("staff_user_" + staff.id);
+      }
       const roleKey = (staff.roleKey || "staff") as AdminRoleKey;
       const perms = parsePermissionsJson(staff.permissionsJson, roleKey);
       const now = new Date();

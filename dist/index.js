@@ -287,7 +287,7 @@ var ENV = {
     return process.env.MANUS_PROJECT_ID || "original-store";
   },
   get cookieSecret() {
-    return process.env.MANUS_JWT_SECRET || "secret_token_123456789_abcdef_32_chars";
+    return process.env.MANUS_JWT_SECRET || process.env.JWT_SECRET || "original-store-permanent-jwt-secret-key-2026-yemen";
   },
   get databaseUrl() {
     return process.env.DATABASE_URL || "";
@@ -1130,7 +1130,12 @@ var SDKServer = class {
       if (!staff || !staff.isActive || staff.sessionVersion !== tokenVersion) {
         throw ForbiddenError("Staff session expired, disabled, or revoked");
       }
-      const linkedUser = await getUserByOpenId("staff_user_" + staff.id);
+      let linkedUser = await getUserByOpenId("staff_user_" + staff.id);
+      if (!linkedUser) {
+        await upsertUser({ openId: "staff_user_" + staff.id, name: staff.displayName, email: null, loginMethod: "staff_password", lastSignedIn: /* @__PURE__ */ new Date() }).catch(() => {
+        });
+        linkedUser = await getUserByOpenId("staff_user_" + staff.id);
+      }
       const roleKey = staff.roleKey || "staff";
       const perms = parsePermissionsJson(staff.permissionsJson, roleKey);
       const now = /* @__PURE__ */ new Date();
@@ -1897,7 +1902,7 @@ function getWebPushPublicKey() {
 function configureVapid() {
   if (vapidConfigured) return;
   const keys = getVapidKeys();
-  setVapidDetails("mailto:admin@original.store", keys.publicKey, keys.privateKey);
+  setVapidDetails("mailto:admin@original-store.com", keys.publicKey, keys.privateKey);
   vapidConfigured = true;
 }
 function isAllowedPushEndpoint(value) {
@@ -1938,9 +1943,11 @@ function unprotectPushSubscription(encryptedPayload) {
 }
 async function sendWebPush(subscription, message) {
   configureVapid();
+  const rawTopic = (message.tag || "").replace(/[^A-Za-z0-9_-]/g, "").slice(0, 32);
   return sendNotification(subscription, JSON.stringify(message), {
     TTL: 60 * 60 * 24,
-    urgency: "high"
+    urgency: "high",
+    ...rawTopic ? { topic: rawTopic } : {}
   });
 }
 
@@ -2365,43 +2372,101 @@ var pushSubscriptionSchema = z3.object({
     auth: z3.string().min(10).max(100).regex(/^[A-Za-z0-9_+/=-]+$/)
   })
 });
+var ADMIN_PUSH_BACKUP_KEY = "admin_push_subscriptions_v2";
+async function loadBackupAdminSubscriptions(db) {
+  try {
+    const rows = await db.select().from(storeSettings).where(eq4(storeSettings.key, ADMIN_PUSH_BACKUP_KEY)).limit(1);
+    const parsed = JSON.parse(rows[0]?.value || "[]");
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((x) => x && typeof x.endpointHash === "string" && typeof x.encryptedPayload === "string");
+  } catch {
+    return [];
+  }
+}
+async function saveBackupAdminSubscription(db, sub) {
+  try {
+    const existing = await loadBackupAdminSubscriptions(db);
+    const filtered = existing.filter((x) => x.endpointHash !== sub.endpointHash);
+    filtered.unshift({ endpointHash: sub.endpointHash, encryptedPayload: sub.encryptedPayload });
+    const nextVal = JSON.stringify(filtered.slice(0, 30));
+    await db.insert(storeSettings).values({ key: ADMIN_PUSH_BACKUP_KEY, value: nextVal }).onDuplicateKeyUpdate({ set: { value: nextVal } });
+  } catch {
+  }
+}
+async function removeBackupAdminSubscription(db, endpointHash) {
+  try {
+    const existing = await loadBackupAdminSubscriptions(db);
+    const filtered = existing.filter((x) => x.endpointHash !== endpointHash);
+    if (filtered.length === existing.length) return;
+    const nextVal = JSON.stringify(filtered);
+    await db.insert(storeSettings).values({ key: ADMIN_PUSH_BACKUP_KEY, value: nextVal }).onDuplicateKeyUpdate({ set: { value: nextVal } });
+  } catch {
+  }
+}
 async function deliverPushRows(rows, message, remove) {
   await Promise.allSettled(rows.map(async (row) => {
     let subscription;
     try {
       subscription = unprotectPushSubscription(row.encryptedPayload);
     } catch {
-      await remove(row.id);
+      await remove(row.id, row.endpointHash);
       return;
     }
     try {
       await sendWebPush(subscription, message);
-      console.log("[Push] Web Push sent:", message.title);
     } catch (error) {
       const statusCode = error && typeof error === "object" && "statusCode" in error ? Number(error.statusCode) : void 0;
-      if (statusCode === 404 || statusCode === 410) await remove(row.id);
+      if (statusCode === 404 || statusCode === 410) await remove(row.id, row.endpointHash);
       console.warn("[Push] Delivery failed", statusCode ?? "network");
     }
   }));
 }
-async function notifyOwnerNewOrder(orderId, orderNumber, total) {
+async function getAllAdminPushTargets(db) {
+  const dbRows = await db.select({
+    id: ownerPushSubscriptions.id,
+    endpointHash: ownerPushSubscriptions.endpointHash,
+    encryptedPayload: ownerPushSubscriptions.encryptedPayload
+  }).from(ownerPushSubscriptions).catch(() => []);
+  const backupRows = await loadBackupAdminSubscriptions(db);
+  const map = /* @__PURE__ */ new Map();
+  for (const r of dbRows) {
+    if (r.endpointHash && r.encryptedPayload) map.set(r.endpointHash, r);
+  }
+  for (const b of backupRows) {
+    if (b.endpointHash && b.encryptedPayload && !map.has(b.endpointHash)) {
+      map.set(b.endpointHash, { id: -1, endpointHash: b.endpointHash, encryptedPayload: b.encryptedPayload });
+    }
+  }
+  return [...map.values()];
+}
+var __recentAdminPushLocks = /* @__PURE__ */ new Map();
+async function notifyOwnerNewOrder(orderId, orderNumber, total, recipientName, area) {
+  const lockKey = "admin-order-" + orderId;
+  const now = Date.now();
+  if (__recentAdminPushLocks.has(lockKey) && now - (__recentAdminPushLocks.get(lockKey) || 0) < 8e3) return;
+  __recentAdminPushLocks.set(lockKey, now);
   const db = await database();
-  const subscriptions = await db.select({ id: ownerPushSubscriptions.id, encryptedPayload: ownerPushSubscriptions.encryptedPayload }).from(ownerPushSubscriptions);
-  await deliverPushRows(subscriptions, {
-    title: "\u0637\u0644\u0628 \u062C\u062F\u064A\u062F \u0641\u064A \u0623\u0648\u0631\u064A\u062C\u0646\u0627\u0644",
-    body: `\u0648\u0635\u0644 \u0627\u0644\u0637\u0644\u0628 ${orderNumber} \u0628\u0625\u062C\u0645\u0627\u0644\u064A ${total.toLocaleString("en-US")} \u0631.\u064A.`,
-    url: "/admin/orders",
-    tag: `original-new-order-${orderId}`
-  }, async (id) => {
-    await db.delete(ownerPushSubscriptions).where(eq4(ownerPushSubscriptions.id, id));
+  const targets = await getAllAdminPushTargets(db);
+  if (!targets.length) return;
+  const shortNo = orderNumber.split("-").pop() || orderNumber;
+  const who = recipientName ? "\u0627\u0644\u0639\u0645\u064A\u0644: " + recipientName + (area ? " (" + area + ")" : "") + " \xB7 " : "";
+  await deliverPushRows(targets, {
+    title: "\u{1F6CD}\uFE0F \u0637\u0644\u0628 \u062C\u062F\u064A\u062F #" + shortNo + " \xB7 " + total.toLocaleString("en-US") + " \u0631.\u064A",
+    body: who + "\u0627\u0636\u063A\u0637 \u0644\u0641\u062A\u062D \u0627\u0644\u0637\u0644\u0628 \u0648\u062A\u062C\u0647\u064A\u0632\u0647 \u0627\u0644\u0622\u0646",
+    url: "/admin/orders?order=" + encodeURIComponent(orderNumber),
+    tag: "original-admin-order-" + orderId
+  }, async (id, endpointHash) => {
+    if (id > 0) await db.delete(ownerPushSubscriptions).where(eq4(ownerPushSubscriptions.id, id)).catch(() => {
+    });
+    if (endpointHash) await removeBackupAdminSubscription(db, endpointHash);
   });
 }
 var __recentOrderPushLocks = /* @__PURE__ */ new Map();
 async function notifyCustomerOrderStatus(orderId, orderNumber, status, note) {
   const cleanNote = (note || "").trim();
-  const lockKey = orderId + "::" + status + "::" + cleanNote;
+  const lockKey = "cust-order-" + orderId + "::" + status + "::" + cleanNote;
   const now = Date.now();
-  if (__recentOrderPushLocks.has(lockKey) && now - (__recentOrderPushLocks.get(lockKey) || 0) < 6e3) {
+  if (__recentOrderPushLocks.has(lockKey) && now - (__recentOrderPushLocks.get(lockKey) || 0) < 5e3) {
     return;
   }
   __recentOrderPushLocks.set(lockKey, now);
@@ -2413,31 +2478,25 @@ async function notifyCustomerOrderStatus(orderId, orderNumber, status, note) {
   }).from(customerPushSubscriptions).where(eq4(customerPushSubscriptions.orderId, orderId));
   const uniqueByEndpoint = [...new Map(subscriptions.map((s) => [s.endpointHash, s])).values()];
   if (!uniqueByEndpoint.length) return;
-  const titles = {
-    new: "\u{1F33F} \u0623\u0648\u0631\u064A\u062C\u0646\u0627\u0644 \xB7 \u062A\u0645 \u0627\u0633\u062A\u0644\u0627\u0645 \u0637\u0644\u0628\u0643",
-    preparing: "\u{1F468}\u200D\u{1F373} \u0623\u0648\u0631\u064A\u062C\u0646\u0627\u0644 \xB7 \u0637\u0644\u0628\u0643 \u0642\u064A\u062F \u0627\u0644\u062A\u062C\u0647\u064A\u0632",
-    ready: "\u2728 \u0623\u0648\u0631\u064A\u062C\u0646\u0627\u0644 \xB7 \u0637\u0644\u0628\u0643 \u062C\u0627\u0647\u0632 \u0644\u0644\u062A\u0648\u0635\u064A\u0644",
-    out_for_delivery: "\u{1F6F5} \u0623\u0648\u0631\u064A\u062C\u0646\u0627\u0644 \xB7 \u0637\u0644\u0628\u0643 \u062E\u0631\u062C \u0644\u0644\u062A\u0648\u0635\u064A\u0644",
-    delivered: "\u{1F49A} \u0623\u0648\u0631\u064A\u062C\u0646\u0627\u0644 \xB7 \u062A\u0645 \u062A\u0633\u0644\u064A\u0645 \u0637\u0644\u0628\u0643",
-    cancelled: "\u26A0\uFE0F \u0623\u0648\u0631\u064A\u062C\u0646\u0627\u0644 \xB7 \u062A\u0645 \u0625\u0644\u063A\u0627\u0621 \u0627\u0644\u0637\u0644\u0628"
-  };
+  const shortNo = orderNumber.split("-").pop() || orderNumber;
   const defaultBodies = {
-    new: "\u0627\u0633\u062A\u0644\u0645\u0646\u0627 \u0637\u0644\u0628\u0643 \u0648\u0646\u0631\u0627\u062C\u0639\u0647 \u0627\u0644\u0622\u0646 \u0628\u0639\u0646\u0627\u064A\u0629 \u2728",
-    preparing: "\u0637\u0644\u0628\u0643 \u0642\u064A\u062F \u0627\u0644\u062A\u062C\u0647\u064A\u0632 \u0627\u0644\u0622\u0646 \u{1F468}\u200D\u{1F373}",
-    ready: "\u0637\u0644\u0628\u0643 \u062C\u0627\u0647\u0632 \u0644\u0644\u062A\u0648\u0635\u064A\u0644 \u{1F4E6}",
+    new: "\u062A\u0645 \u0627\u0633\u062A\u0644\u0627\u0645 \u0637\u0644\u0628\u0643 \u0628\u0646\u062C\u0627\u062D \u0648\u0628\u0627\u0646\u062A\u0638\u0627\u0631 \u0627\u0644\u062A\u062C\u0647\u064A\u0632 \u2728",
+    preparing: "\u0637\u0644\u0628\u0643 \u0627\u0644\u0622\u0646 \u0642\u064A\u062F \u0627\u0644\u062A\u062C\u0647\u064A\u0632 \u0628\u0639\u0646\u0627\u064A\u0629 \u{1F468}\u200D\u{1F373}",
+    ready: "\u0637\u0644\u0628\u0643 \u062C\u0627\u0647\u0632 \u0644\u0644\u062A\u0648\u0635\u064A\u0644 \u0627\u0644\u0643\u0627\u0645\u0644 \u{1F4E6}",
     out_for_delivery: "\u0637\u0644\u0628\u0643 \u062E\u0631\u062C \u0644\u0644\u062A\u0648\u0635\u064A\u0644 \u0648\u0647\u0648 \u0641\u064A \u0637\u0631\u064A\u0642\u0647 \u0625\u0644\u064A\u0643 \u{1F6F5}",
-    delivered: "\u062A\u0645 \u062A\u0633\u0644\u064A\u0645 \u0637\u0644\u0628\u0643 \u0628\u0646\u062C\u0627\u062D\u060C \u0634\u0643\u0631\u0627\u064B \u0644\u062A\u0633\u0648\u0642\u0643 \u0645\u0646 \u0623\u0648\u0631\u064A\u062C\u0646\u0627\u0644 \u{1F33F}",
-    cancelled: "\u062A\u0645 \u0625\u0644\u063A\u0627\u0621 \u0627\u0644\u0637\u0644\u0628"
+    delivered: "\u062A\u0645 \u062A\u0633\u0644\u064A\u0645 \u0637\u0644\u0628\u0643 \u0628\u0646\u062C\u0627\u062D\u060C \u0634\u0643\u0631\u0627\u064B \u0644\u062A\u0633\u0648\u0642\u0643 \u0645\u0646 \u0623\u0648\u0631\u064A\u062C\u0646\u0627\u0644 \u{1F49A}",
+    cancelled: "\u0639\u0630\u0631\u0627\u064B\u060C \u062A\u0645 \u0625\u0644\u063A\u0627\u0621 \u0627\u0644\u0637\u0644\u0628 #" + shortNo
   };
-  const title = titles[status] || "\u{1F33F} \u0623\u0648\u0631\u064A\u062C\u0646\u0627\u0644 \xB7 \u062A\u062D\u062F\u064A\u062B \u062D\u0627\u0644\u0629 \u0637\u0644\u0628\u0643";
-  const body = cleanNote ? cleanNote.slice(0, 220) : defaultBodies[status] || "\u062A\u0645 \u062A\u062D\u062F\u064A\u062B \u062D\u0627\u0644\u0629 \u0637\u0644\u0628\u0643";
+  const title = "\u{1F33F} \u0645\u062A\u062C\u0631 \u0623\u0648\u0631\u064A\u062C\u0646\u0627\u0644 \xB7 \u0637\u0644\u0628 #" + shortNo;
+  const body = cleanNote ? cleanNote.slice(0, 240) : defaultBodies[status] || "\u062A\u0645 \u062A\u062D\u062F\u064A\u062B \u062D\u0627\u0644\u0629 \u0637\u0644\u0628\u0643";
   await deliverPushRows(uniqueByEndpoint, {
     title,
     body,
     url: "/orders?order=" + encodeURIComponent(orderNumber),
-    tag: "original-order-" + orderId
+    tag: "original-customer-order-" + orderId
   }, async (id) => {
-    await db.delete(customerPushSubscriptions).where(eq4(customerPushSubscriptions.id, id));
+    await db.delete(customerPushSubscriptions).where(eq4(customerPushSubscriptions.id, id)).catch(() => {
+    });
   });
 }
 var orderStatus = z3.enum(["new", "preparing", "ready", "out_for_delivery", "delivered", "cancelled"]);
@@ -2987,7 +3046,7 @@ var commerceRouter = router({
       });
       clearCatalogCache();
       if (!result.duplicate) {
-        void notifyOwnerNewOrder(result.id, result.orderNumber, result.total).catch(() => console.warn("[Push] Could not notify owner of a new order"));
+        void notifyOwnerNewOrder(result.id, result.orderNumber, result.total, input.recipientName, input.city + " - " + input.district).catch(() => console.warn("[Push] Could not notify owner of a new order"));
       }
       return result;
     })
@@ -3141,7 +3200,7 @@ var commerceRouter = router({
               note: "\u0637\u0644\u0628 \u062A\u0648\u0641\u064A\u0631 \u062A\u0644\u0642\u0627\u0626\u064A \u0645\u0646 \u0627\u0644\u0645\u0633\u0627\u0639\u062F \u0627\u0644\u0630\u0643\u064A \u2014 \u0647\u0627\u062A\u0641 \u0627\u0644\u0632\u0628\u0648\u0646: " + customerPhoneClean,
               changedByUserId: null
             });
-            const subscriptions = await db.select({ id: ownerPushSubscriptions.id, encryptedPayload: ownerPushSubscriptions.encryptedPayload }).from(ownerPushSubscriptions);
+            const subscriptions = await getAllAdminPushTargets(db);
             await deliverPushRows(subscriptions, {
               title: "\u{1F514} \u0637\u0644\u0628 \u062A\u0648\u0641\u064A\u0631 \u0645\u0646\u062A\u062C \u063A\u064A\u0631 \u0645\u062A\u0648\u0641\u0631!",
               body: "\u0637\u0644\u0628 (" + requestedItemText + ") \xB7 \u0647\u0627\u062A\u0641 \u0627\u0644\u0632\u0628\u0648\u0646: " + customerPhoneClean,
@@ -3494,26 +3553,39 @@ var commerceRouter = router({
           throw new TRPCError3({ code: "BAD_REQUEST", message: "\u062E\u062F\u0645\u0629 \u0627\u0644\u0625\u0634\u0639\u0627\u0631\u0627\u062A \u0641\u064A \u0647\u0630\u0627 \u0627\u0644\u0645\u062A\u0635\u0641\u062D \u063A\u064A\u0631 \u0645\u062F\u0639\u0648\u0645\u0629." });
         }
         const db = await database();
-        let targetUserId = ctx.user?.id || 1;
-        const existingUser = await db.select({ id: users.id }).from(users).where(eq4(users.id, targetUserId)).limit(1);
-        if (!existingUser.length) {
-          const anyUser = await db.select({ id: users.id }).from(users).limit(1);
-          if (anyUser.length) {
-            targetUserId = anyUser[0].id;
-          } else {
-            const ins = await db.insert(users).values({
-              openId: "admin-owner-local",
-              name: "\u0627\u0644\u0645\u062F\u064A\u0631",
-              role: "admin"
-            });
-            targetUserId = Number(ins[0].insertId || 1);
-          }
-        }
         const protectedSubscription = protectPushSubscription(input);
-        await db.insert(ownerPushSubscriptions).values({ userId: targetUserId, ...protectedSubscription }).onDuplicateKeyUpdate({ set: { encryptedPayload: protectedSubscription.encryptedPayload, updatedAt: /* @__PURE__ */ new Date() } });
-        console.log("[Push] Admin device registered for background Web Push (userId:", targetUserId, ")");
-        clearCatalogCache();
+        await saveBackupAdminSubscription(db, protectedSubscription);
+        let userId = ctx.user.id;
+        if (!userId || userId <= 0) {
+          const openId = ctx.user.openId || "staff_user_" + (ctx.user.staffId || "admin");
+          await db.insert(users).values({ openId, name: ctx.user.name || "\u0625\u062F\u0627\u0631\u0629 \u0627\u0644\u0645\u062A\u062C\u0631", role: "admin", loginMethod: "staff_password" }).onDuplicateKeyUpdate({ set: { updatedAt: /* @__PURE__ */ new Date() } }).catch(() => {
+          });
+          const uRows = await db.select({ id: users.id }).from(users).where(eq4(users.openId, openId)).limit(1).catch(() => []);
+          if (uRows[0]?.id) userId = uRows[0].id;
+        }
+        if (userId && userId > 0) {
+          await db.insert(ownerPushSubscriptions).values({ userId, ...protectedSubscription }).onDuplicateKeyUpdate({ set: { encryptedPayload: protectedSubscription.encryptedPayload, updatedAt: /* @__PURE__ */ new Date() } }).catch(() => {
+          });
+        }
         return { success: true };
+      }),
+      testPush: adminProcedure.mutation(async () => {
+        const db = await database();
+        const targets = await getAllAdminPushTargets(db);
+        if (!targets.length) {
+          throw new TRPCError3({ code: "PRECONDITION_FAILED", message: "\u064A\u0631\u062C\u0649 \u0627\u0644\u0636\u063A\u0637 \u0639\u0644\u0649 \u0632\u0631 \u062A\u0641\u0639\u064A\u0644 \u0627\u0644\u0625\u0634\u0639\u0627\u0631\u0627\u062A \u0623\u0648\u0644\u0627\u064B \u0644\u0631\u0628\u0637 \u0647\u0630\u0627 \u0627\u0644\u062C\u0647\u0627\u0632." });
+        }
+        await deliverPushRows(targets, {
+          title: "\u{1F33F} \u0625\u062F\u0627\u0631\u0629 \u0623\u0648\u0631\u064A\u062C\u0646\u0627\u0644 \xB7 \u0627\u0644\u0625\u0634\u0639\u0627\u0631\u0627\u062A \u0646\u0634\u0637\u0629",
+          body: "\u062C\u0647\u0627\u0632\u0643 \u0645\u0631\u0628\u0648\u0637 \u0628\u0646\u062C\u0627\u062D! \u0633\u064A\u0635\u0644\u0643 \u0625\u0634\u0639\u0627\u0631 \u0641\u0648\u0631\u064A \u0648\u0623\u0646\u064A\u0642 \u0645\u0639 \u0643\u0644 \u0637\u0644\u0628 \u062C\u062F\u064A\u062F \u062D\u062A\u0649 \u0644\u0648 \u0643\u0627\u0646 \u0627\u0644\u062A\u0637\u0628\u064A\u0642 \u0645\u063A\u0644\u0642\u0627\u064B \u2728",
+          url: "/admin/orders",
+          tag: "original-admin-test-push"
+        }, async (id, endpointHash) => {
+          if (id > 0) await db.delete(ownerPushSubscriptions).where(eq4(ownerPushSubscriptions.id, id)).catch(() => {
+          });
+          if (endpointHash) await removeBackupAdminSubscription(db, endpointHash);
+        });
+        return { sent: targets.length };
       })
     }),
     products: router({
@@ -3773,7 +3845,7 @@ var commerceRouter = router({
         });
         return { success: true };
       }),
-      createdAfter: requireAnyPermission(["orders.view", "orders.manage"]).input(z3.object({ afterId: z3.number().int().min(0).max(Number.MAX_SAFE_INTEGER) })).query(async ({ input }) => getCached("createdAfter:" + input.afterId, 1e4, async () => {
+      createdAfter: adminProcedure.input(z3.object({ afterId: z3.number().int().min(0).max(Number.MAX_SAFE_INTEGER) })).query(async ({ input }) => getCached("createdAfter:" + input.afterId, 1e4, async () => {
         const db = await database();
         if (input.afterId === 0) {
           const latest = (await db.select({ id: orders.id }).from(orders).orderBy(desc(orders.id)).limit(1))[0];
@@ -3797,7 +3869,7 @@ var commerceRouter = router({
         const db = await database();
         const current = (await db.select({ id: orders.id, status: orders.status, orderNumber: orders.orderNumber }).from(orders).where(eq4(orders.id, input.id)).limit(1))[0];
         if (!current) throw new TRPCError3({ code: "NOT_FOUND", message: "\u0644\u0645 \u064A\u062A\u0645 \u0627\u0644\u0639\u062B\u0648\u0631 \u0639\u0644\u0649 \u0627\u0644\u0637\u0644\u0628." });
-        await db.insert(orderEvents).values({ orderId: input.id, status: current.status, note: input.note, changedByUserId: ctx.user.id });
+        await db.insert(orderEvents).values({ orderId: input.id, status: current.status, note: input.note, changedByUserId: ctx.user.id > 0 ? ctx.user.id : null });
         await notifyCustomerOrderStatus(input.id, current.orderNumber, current.status, input.note);
         return { success: true };
       }),

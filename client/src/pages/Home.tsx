@@ -1239,13 +1239,20 @@ function OrdersPage() {
   useEffect(() => {
     if (!refs.length || getPushPermissionState() !== "granted") return;
     let active = true;
-    void getExistingBrowserPushSubscription().then(async subscription => {
-      if (!subscription || !active) return;
-      const result = await subscribe.mutateAsync({ refs, subscription });
-      if (active) setPushEnabled(result.subscribed > 0);
-    }).catch(() => undefined);
+    void (async () => {
+      try {
+        let subscription = await getExistingBrowserPushSubscription();
+        if (!subscription) {
+          const key = publicKey.data ?? (await publicKey.refetch()).data;
+          if (key) subscription = await ensureBrowserPushSubscription(key);
+        }
+        if (!subscription || !active) return;
+        const result = await subscribe.mutateAsync({ refs, subscription });
+        if (active) setPushEnabled(result.subscribed > 0);
+      } catch {}
+    })();
     return () => { active = false; };
-  }, [refs, subscribe.mutateAsync]);
+  }, [refs.length]);
 
   const enableNotifications = async () => {
     if (!refs.length || pushPending) return;
@@ -1261,7 +1268,7 @@ function OrdersPage() {
       const result = await subscribe.mutateAsync({ refs, subscription });
       if (!result.subscribed) throw new Error("لم نعثر على طلب محفوظ صالح لهذا المتصفح.");
       setPushEnabled(true);
-      toast.success("تم تفعيل إشعارات تتبع الطلب بنجاح! سيصلك تنبيه فوري عند كل تحديث.");
+      toast.success("تم تفعيل إشعارات تتبع الطلب بنجاح! سيصلك إشعار واحد أنيق عند كل تحديث.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "تعذر تفعيل الإشعارات الآن.");
     } finally {
@@ -1335,7 +1342,7 @@ function OrdersPage() {
                 {permission === "denied"
                   ? "الإشعارات محظورة من إعدادات المتصفح؛ يرجى السماح بها من قفل الموقع أعلى المتصفح."
                   : pushEnabled
-                  ? "سيصلك إشعار أنيق ومباشر فور تجهيز طلبك أو خروجه للتوصيل حتى لو أغلقت الموقع أو التطبيق."
+                  ? "سيصلك إشعار واحد أنيق ومباشر بشعار أوريجنال فور تجهيز طلبك أو خروجه للتوصيل حتى لو أغلقت التطبيق."
                   : "اضغط زر التفعيل ليصلك إشعار فوري على شاشة جوالك عندما يصبح طلبك قيد التجهيز أو يخرج للتوصيل."}
               </small>
             </div>
@@ -1435,69 +1442,27 @@ function OrdersPage() {
 
 function useGuestPushSubscriptionSync() {
   const customer = useCustomer();
-  const [ready, setReady] = useState(false);
-  useEffect(() => {
-    const t = window.setTimeout(() => setReady(true), 4000);
-    return () => window.clearTimeout(t);
-  }, []);
-  const refs = useMemo(
-    () => customer.orders.slice(0, 50).map(({ orderNumber, idempotencyKey }) => ({ orderNumber, idempotencyKey })),
-    [customer.orders]
-  );
-  const publicKey = trpc.commerce.notifications.publicKey.useQuery(undefined, { enabled: false, retry: 1 });
+  const refs = useMemo(() => customer.orders.slice(0, 50).map(({ orderNumber, idempotencyKey }) => ({ orderNumber, idempotencyKey })), [customer.orders]);
   const subscribe = trpc.commerce.orders.subscribeToStatus.useMutation();
-  const tracked = trpc.commerce.orders.trackMany.useQuery(
-    { refs },
-    { enabled: ready && refs.length > 0, retry: 1, staleTime: 8000, refetchInterval: ready && refs.length ? 10000 : false, refetchIntervalInBackground: true }
-  );
-  useEffect(() => {
-    if ("serviceWorker" in navigator && refs.length > 0) {
-      void navigator.serviceWorker.ready.then(reg => {
-        reg.active?.postMessage({ type: "SYNC_SW_STATE", refs });
-        if ("periodicSync" in reg) {
-          void (reg as any).periodicSync.register("original-order-sync", { minInterval: 60000 }).catch(() => {});
-        }
-      }).catch(() => {});
-    }
-  }, [refs]);
-  useEffect(() => {
-    if (!tracked.data?.length) return;
-    let map: Record<string, string> = {};
-    try { map = JSON.parse(localStorage.getItem(CUSTOMER_STATUS_MAP_KEY) || "{}"); } catch {}
-    let changed = false;
-    for (const order of tracked.data) {
-      const prev = map[order.orderNumber];
-      const latestNote = order.events?.[order.events.length - 1]?.note || "";
-      const sig = `${order.status}:${latestNote}`;
-      if (prev && prev !== sig) {
-        const statusLabel = stateLabels[order.status] || order.status;
-        playCustomerOrderSound();
-        toast.info(`🔔 تحديث الطلب ${order.orderNumber}: ${statusLabel}${latestNote ? " · " + latestNote : ""}`);
-        void showCustomerPhoneNotification(
-          `تحديث الطلب ${order.orderNumber} 🔔`,
-          `${statusLabel}${latestNote ? " · " + latestNote : ""}`,
-          `original-order-status-${order.orderNumber}-${order.status}`
-        );
-      }
-      if (prev !== sig) { map[order.orderNumber] = sig; changed = true; }
-    }
-    if (changed) { try { localStorage.setItem(CUSTOMER_STATUS_MAP_KEY, JSON.stringify(map)); } catch {} }
-  }, [tracked.data]);
+  const publicKey = trpc.commerce.notifications.publicKey.useQuery(undefined, { enabled: false, retry: 1 });
   useEffect(() => {
     if (!refs.length || getPushPermissionState() !== "granted") return;
     let active = true;
     void (async () => {
       try {
-        const key = publicKey.data ?? (await publicKey.refetch()).data;
-        if (!key || !active) return;
-        const subscription = await ensureBrowserPushSubscription(key);
-        if (!active) return;
+        let subscription = await getExistingBrowserPushSubscription();
+        if (!subscription) {
+          const key = publicKey.data ?? (await publicKey.refetch()).data;
+          if (key) subscription = await ensureBrowserPushSubscription(key);
+        }
+        if (!subscription || !active) return;
         await subscribe.mutateAsync({ refs, subscription });
       } catch {}
     })();
     return () => { active = false; };
-  }, [refs, subscribe.mutateAsync]);
+  }, [refs.length]);
 }
+
 
 function AccountPage() {
   const customer = useCustomer();

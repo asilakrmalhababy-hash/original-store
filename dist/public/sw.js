@@ -1,6 +1,6 @@
-const CACHE = "original-shell-v14";
+const CACHE = "original-shell-v15";
 const APP_MANIFEST = "/api/app-manifest.webmanifest";
-const PRECACHE = ["/", "/offline.html", "/manifest.webmanifest", "/app-icon-180-v2.png", "/app-icon-192-v2.png", "/app-icon-512-v2.png", "/notif-icon-v2.png", "/notif-badge-v2.png", APP_MANIFEST];
+const PRECACHE = ["/", "/offline.html", "/manifest.webmanifest", "/app-icon-180-v2.png", "/app-icon-192-v2.png", "/app-icon-512-v2.png", "/notif-icon-v3.png", "/notif-badge-v3.png", APP_MANIFEST];
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(PRECACHE)).then(() => self.skipWaiting()));
 });
@@ -48,20 +48,21 @@ self.addEventListener("push", event => {
   event.waitUntil((async () => {
     try {
       const payload = event.data.json();
-      const title = typeof payload.title === "string" ? payload.title.slice(0, 100) : "🌿 أوريجنال";
+      const title = typeof payload.title === "string" ? payload.title.slice(0, 100) : "🌿 متجر أوريجنال";
       const body = typeof payload.body === "string" ? payload.body.slice(0, 300) : "تم تحديث حالة طلبك";
       const requestedUrl = typeof payload.url === "string" ? payload.url : "/orders";
       const url = requestedUrl.startsWith("/") && !requestedUrl.startsWith("//") ? requestedUrl : "/orders";
       const tag = typeof payload.tag === "string" ? payload.tag.slice(0, 100) : "original-order-update";
+      const isAdminUrl = url.startsWith("/admin");
       await self.registration.showNotification(title, {
         body,
-        icon: "/notif-icon-v2.png",
-        badge: "/notif-badge-v2.png",
+        icon: "/notif-icon-v3.png",
+        badge: "/notif-badge-v3.png",
         tag,
         renotify: true,
-        requireInteraction: false,
-        vibrate: [180, 80, 180],
-        actions: [{ action: "open_order", title: "📦 عرض الطلب الآن" }],
+        requireInteraction: isAdminUrl,
+        vibrate: isAdminUrl ? [220, 100, 220, 100, 260] : [180, 80, 180],
+        actions: [{ action: "open_order", title: isAdminUrl ? "📋 فتح الطلب في الإدارة" : "📦 تتبع حالة الطلب" }],
         data: { url },
         dir: "rtl",
         lang: "ar",

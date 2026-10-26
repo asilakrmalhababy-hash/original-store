@@ -61,7 +61,7 @@ export function getWebPushPublicKey() {
 function configureVapid() {
   if (vapidConfigured) return;
   const keys = getVapidKeys();
-  setVapidDetails("mailto:admin@original.store", keys.publicKey, keys.privateKey);
+  setVapidDetails("mailto:admin@original-store.com", keys.publicKey, keys.privateKey);
   vapidConfigured = true;
 }
 
@@ -106,8 +106,10 @@ export function unprotectPushSubscription(encryptedPayload: string): PushSubscri
 
 export async function sendWebPush(subscription: PushSubscription, message: PushMessage) {
   configureVapid();
+  const rawTopic = (message.tag || "").replace(/[^A-Za-z0-9_-]/g, "").slice(0, 32);
   return sendNotification(subscription, JSON.stringify(message), {
     TTL: 60 * 60 * 24,
     urgency: "high",
+    ...(rawTopic ? { topic: rawTopic } : {}),
   });
 }
