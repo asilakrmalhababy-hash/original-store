@@ -1863,6 +1863,245 @@ function shouldShowFooterDescription(description: string | null | undefined) {
   return text !== "كل ماتحتاجه باب بيتك بضغطه زر" && text !== "كل ما تحتاجه باب بيتك بضغطه زر";
 }
 
+type StoreRewardCfg = {
+  rewardMode: "custom_gift" | "free_delivery" | "discount_percent" | "discount_fixed";
+  giftName: string;
+  fixedDiscount: number;
+  endsAt: string;
+  audience: "all" | "new_customers" | "returning_customers" | "vip_customers" | "specific_phones";
+  allowedPhones: string;
+  placement: "everywhere" | "home_and_cart" | "cart_only";
+};
+
+function unpackStoreRewardCfg(rawMsg?: string | null, fallbackType?: string): { cleanMessage: string; cfg: StoreRewardCfg } {
+  const defaultCfg: StoreRewardCfg = {
+    rewardMode: fallbackType === "discount_percent" ? "discount_percent" : "free_delivery",
+    giftName: "",
+    fixedDiscount: 0,
+    endsAt: "",
+    audience: "all",
+    allowedPhones: "",
+    placement: "everywhere",
+  };
+  const raw = String(rawMsg || "");
+  const match = raw.match(/\[\[rcfg:(\{[\s\S]*?\})\]\]/);
+  if (!match) return { cleanMessage: raw.trim(), cfg: defaultCfg };
+  try {
+    const parsed = JSON.parse(match[1]);
+    const cleanMessage = (raw.slice(0, match.index) + raw.slice((match.index || 0) + match[0].length)).trim();
+    return {
+      cleanMessage,
+      cfg: {
+        rewardMode: ["custom_gift", "free_delivery", "discount_percent", "discount_fixed"].includes(parsed.rewardMode) ? parsed.rewardMode : defaultCfg.rewardMode,
+        giftName: typeof parsed.giftName === "string" ? parsed.giftName.trim() : "",
+        fixedDiscount: Number.isFinite(Number(parsed.fixedDiscount)) ? Math.max(0, Math.floor(Number(parsed.fixedDiscount))) : 0,
+        endsAt: typeof parsed.endsAt === "string" ? parsed.endsAt.trim() : "",
+        audience: ["all", "new_customers", "returning_customers", "vip_customers", "specific_phones"].includes(parsed.audience) ? parsed.audience : "all",
+        allowedPhones: typeof parsed.allowedPhones === "string" ? parsed.allowedPhones.trim() : "",
+        placement: ["everywhere", "home_and_cart", "cart_only"].includes(parsed.placement) ? parsed.placement : "everywhere",
+      },
+    };
+  } catch {
+    return { cleanMessage: raw.trim(), cfg: defaultCfg };
+  }
+}
+
+function formatCountdownLeft(ms: number): string {
+  if (ms <= 0) return "";
+  const totalSec = Math.floor(ms / 1000);
+  const days = Math.floor(totalSec / 86400);
+  const hrs = Math.floor((totalSec % 86400) / 3600);
+  const mins = Math.floor((totalSec % 3600) / 60);
+  const secs = totalSec % 60;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  if (days > 0) return days + " يوم و " + pad(hrs) + ":" + pad(mins) + ":" + pad(secs);
+  return pad(hrs) + ":" + pad(mins) + ":" + pad(secs);
+}
+
+function GamifiedRewardBar({ settings, location }: { settings: Record<string, string | undefined>; location: string }) {
+  const { cart } = useStore();
+  const customer = useCustomer();
+  const [, navigate] = useLocation();
+  const enabled = settings?.rewardEnabled === "true";
+  const threshold = Number(settings?.rewardsThreshold || 0);
+  const { cleanMessage, cfg } = useMemo(() => unpackStoreRewardCfg(settings?.rewardsMessage, settings?.rewardType), [settings?.rewardsMessage, settings?.rewardType]);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!enabled || !cfg.endsAt) return;
+    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [enabled, cfg.endsAt]);
+
+  if (!enabled || !Number.isFinite(threshold) || threshold <= 0) return null;
+
+  const endMs = cfg.endsAt ? new Date(cfg.endsAt).getTime() : 0;
+  if (endMs && Number.isFinite(endMs) && nowMs > endMs) return null;
+  const countdownText = endMs && Number.isFinite(endMs) ? formatCountdownLeft(endMs - nowMs) : "";
+
+  const orderCount = customer.orders?.length || 0;
+  if (cfg.audience === "new_customers" && orderCount > 0) return null;
+  if (cfg.audience === "returning_customers" && orderCount < 1) return null;
+  if (cfg.audience === "vip_customers" && orderCount < 3) return null;
+  if (cfg.audience === "specific_phones") {
+    const allowed = cfg.allowedPhones.split(/[\s,،;]+/).map(s => s.replace(/\D/g, "")).filter(Boolean);
+    const myPhones = [customer.phone, ...(customer.addresses || []).map(a => a.phone)].map(s => String(s || "").replace(/\D/g, "")).filter(Boolean);
+    const matched = allowed.some(ap => myPhones.some(mp => mp.endsWith(ap) || ap.endsWith(mp)));
+    if (!matched) return null;
+  }
+
+  const isHome = location === "/";
+  const isCart = location === "/cart";
+  const isCatalog = location.startsWith("/products") || location.startsWith("/categories") || location.startsWith("/product/");
+  const showMainCard =
+    cfg.placement === "everywhere" ? (isHome || isCart || isCatalog) :
+    cfg.placement === "home_and_cart" ? (isHome || isCart) :
+    isCart;
+
+  const subtotal = cart.reduce((sum, line) => sum + line.price * line.quantity, 0);
+  const remaining = Math.max(0, threshold - subtotal);
+  const pct = Math.min(100, Math.max(0, Math.round((subtotal / threshold) * 100)));
+  const unlocked = subtotal >= threshold;
+
+  const giftLabel = cfg.giftName || (
+    cfg.rewardMode === "free_delivery" ? "توصيل مجاني بالكامل 🛵" :
+    cfg.rewardMode === "discount_percent" ? ("خصم فوري " + (settings?.rewardValue || "10") + "% 🏷️") :
+    cfg.rewardMode === "discount_fixed" ? ("خصم نقدي " + formatPrice(cfg.fixedDiscount || Number(settings?.rewardValue || 0)) + " 💸") :
+    "هدية مجانية من أورجنال 🎁"
+  );
+
+  const headline = unlocked
+    ? ("🎉 مبروك! فتحت الهدية: «" + giftLabel + "» — تُضاف تلقائياً مع طلبك!")
+    : subtotal === 0
+    ? ("🎁 عرض حماسي! تسوّق بقيمة " + formatPrice(threshold) + " واحصل فوراً على «" + giftLabel + "»")
+    : pct >= 60
+    ? ("⚡ اقتربت جداً! باقي لك " + formatPrice(remaining) + " فقط لتربح «" + giftLabel + "»!")
+    : ("🔥 أضف منتجات بقيمة " + formatPrice(remaining) + " لفتح الهدية: «" + giftLabel + "»");
+
+  const showFloatingMini = cfg.placement === "everywhere" && !isCart && subtotal > 0 && !location.startsWith("/assistant") && !location.startsWith("/orders") && !location.startsWith("/account");
+
+  return (
+    <>
+      {showMainCard && (
+        <div className="page-shell" style={{ paddingTop: "10px", paddingBottom: "4px" }}>
+          <section
+            style={{
+              position: "relative",
+              overflow: "hidden",
+              borderRadius: "20px",
+              padding: "14px 16px",
+              background: unlocked
+                ? "linear-gradient(135deg, #10462f 0%, #1d6b47 55%, #b5851f 100%)"
+                : "linear-gradient(135deg, #0e3322 0%, #185138 60%, #113c29 100%)",
+              color: "#ffffff",
+              border: unlocked ? "2px solid #f7dc8b" : "1.5px solid rgba(241, 216, 151, 0.45)",
+              boxShadow: unlocked ? "0 14px 32px rgba(24, 81, 56, 0.28)" : "0 10px 24px rgba(14, 51, 34, 0.18)",
+              transition: "all 0.35s ease",
+            }}
+          >
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: "8px", marginBottom: "8px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", flex: "1 1 220px" }}>
+                <span
+                  style={{
+                    width: "36px",
+                    height: "36px",
+                    borderRadius: "12px",
+                    background: unlocked ? "#f7dc8b" : "rgba(241, 216, 151, 0.18)",
+                    color: unlocked ? "#103b28" : "#f7dc8b",
+                    display: "grid",
+                    placeItems: "center",
+                    fontSize: "19px",
+                    flexShrink: 0,
+                    boxShadow: unlocked ? "0 4px 14px rgba(247, 220, 139, 0.45)" : "none",
+                  }}
+                >
+                  {unlocked ? "🏆" : "🎁"}
+                </span>
+                <div style={{ lineHeight: 1.4 }}>
+                  <strong style={{ display: "block", fontSize: "13px", color: "#fff9e6" }}>{headline}</strong>
+                  {cleanMessage && <small style={{ display: "block", fontSize: "11px", color: "#d7ecdf", opacity: 0.95 }}>{cleanMessage}</small>}
+                </div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                {countdownText && (
+                  <span style={{ fontSize: "10.5px", fontWeight: 800, padding: "3px 9px", borderRadius: "99px", background: "rgba(0,0,0,0.28)", color: "#ffe596", border: "1px solid rgba(255,229,150,0.35)" }} dir="ltr">
+                    ⏳ {countdownText}
+                  </span>
+                )}
+                <span style={{ fontSize: "11px", fontWeight: 800, padding: "3px 10px", borderRadius: "99px", background: unlocked ? "#f7dc8b" : "rgba(255,255,255,0.14)", color: unlocked ? "#0f3826" : "#f7dc8b" }}>
+                  {unlocked ? "مكتمل 100% ✨" : (pct + "%")}
+                </span>
+              </div>
+            </div>
+
+            <div style={{ height: "11px", borderRadius: "99px", background: "rgba(255,255,255,0.16)", padding: "2px", overflow: "hidden" }}>
+              <div
+                style={{
+                  width: Math.max(subtotal > 0 ? 6 : 0, pct) + "%",
+                  height: "100%",
+                  borderRadius: "99px",
+                  background: unlocked
+                    ? "linear-gradient(90deg, #ffe58f 0%, #4ade80 50%, #f7dc8b 100%)"
+                    : "linear-gradient(90deg, #f3c65f 0%, #ffe699 65%, #6ee7b7 100%)",
+                  transition: "width 0.45s cubic-bezier(0.22, 1, 0.36, 1)",
+                }}
+              />
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "7px", fontSize: "11px", color: "#d8eee1" }}>
+              <span>سلتك الآن: <b style={{ color: "#ffffff" }}>{formatPrice(subtotal)}</b></span>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <span>الهدف: <b style={{ color: "#f7dc8b" }}>{formatPrice(threshold)}</b></span>
+                {!isCart && subtotal > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => navigate("/cart")}
+                    style={{ padding: "3px 10px", borderRadius: "99px", border: "none", background: "#f7dc8b", color: "#0e3322", fontSize: "10.5px", fontWeight: 800, cursor: "pointer" }}
+                  >
+                    {unlocked ? "استلم هديتك في السلة 🎁" : "عرض السلة 🛒"}
+                  </button>
+                )}
+              </div>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {showFloatingMini && (
+        <div
+          onClick={() => navigate("/cart")}
+          style={{
+            position: "fixed",
+            left: "12px",
+            right: "12px",
+            bottom: "74px",
+            zIndex: 45,
+            maxWidth: "560px",
+            margin: "0 auto",
+            padding: "9px 13px",
+            borderRadius: "16px",
+            background: unlocked ? "linear-gradient(135deg, #114a32, #1e6e4a)" : "rgba(15, 54, 37, 0.96)",
+            color: "#ffffff",
+            border: unlocked ? "1.5px solid #f7dc8b" : "1px solid rgba(247, 220, 139, 0.4)",
+            boxShadow: "0 10px 26px rgba(0, 0, 0, 0.25)",
+            cursor: "pointer",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", fontSize: "11.5px", fontWeight: 800, marginBottom: "5px" }}>
+            <span style={{ color: "#fff8e1" }}>
+              {unlocked ? ("🎉 مبروك! ربحت «" + giftLabel + "» — اضغط لإتمام الطلب") : ("🔥 باقي " + formatPrice(remaining) + " لتربح «" + giftLabel + "»")}
+            </span>
+            <span style={{ color: "#f7dc8b", fontSize: "11px", flexShrink: 0 }}>{pct}%</span>
+          </div>
+          <div style={{ height: "6px", borderRadius: "99px", background: "rgba(255,255,255,0.18)", overflow: "hidden" }}>
+            <div style={{ width: Math.max(6, pct) + "%", height: "100%", borderRadius: "99px", background: "linear-gradient(90deg, #f3c65f, #4ade80)", transition: "width 0.4s ease" }} />
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 export default function Home() {
   const storeCtx = useStore();
   const trpcUtils = trpc.useUtils();
@@ -1898,6 +2137,6 @@ export default function Home() {
     if (location === "/assistant") return <AssistantPage />;
     return <HomePage data={data} onOpen={openProduct} onAiRecipe={setActiveAiProduct} />;
   }, [location, productId, productPath, data]);
-  return <div className="store-app" dir="rtl"><Header data={data} onSearch={text => navigate(`/products${text ? `?search=${encodeURIComponent(text)}` : ""}`)} />{home.isError && <div className="connection-strip"><span>الاتصال بالخدمة غير متاح مؤقتًا</span><button onClick={() => void home.refetch()}>إعادة المحاولة</button></div>}{home.isError && !home.data ? <main className="page-shell inner-page"><LoadError onRetry={() => void home.refetch()} /></main> : content}<footer className="store-footer"><div className="footer-brand"><span className={`brand-mark ${data.settings.storeIconUrl ? "has-brand-image" : ""}`}>{data.settings.storeIconUrl ? <img src={data.settings.storeIconUrl} alt="" /> : <Leaf size={18} />}</span><span><b>ORIGINAL</b><small>{data.settings.storeName === "ORIGINAL – أورجنال" || !data.settings.storeName ? "أورجنال" : data.settings.storeName}</small></span></div>{shouldShowFooterDescription(data.settings.storeDescription) && <span>{data.settings.storeDescription}</span>}<small>© {new Date().getFullYear()} {data.settings.storeName || "ORIGINAL"}</small></footer>{activeAiProduct && <AiRecipeModal product={activeAiProduct} onClose={() => setActiveAiProduct(null)} />}
+  return <div className="store-app" dir="rtl"><Header data={data} onSearch={text => navigate(`/products${text ? `?search=${encodeURIComponent(text)}` : ""}`)} /><GamifiedRewardBar settings={data.settings} location={location} />{home.isError && <div className="connection-strip"><span>الاتصال بالخدمة غير متاح مؤقتًا</span><button onClick={() => void home.refetch()}>إعادة المحاولة</button></div>}{home.isError && !home.data ? <main className="page-shell inner-page"><LoadError onRetry={() => void home.refetch()} /></main> : content}<footer className="store-footer"><div className="footer-brand"><span className={`brand-mark ${data.settings.storeIconUrl ? "has-brand-image" : ""}`}>{data.settings.storeIconUrl ? <img src={data.settings.storeIconUrl} alt="" /> : <Leaf size={18} />}</span><span><b>ORIGINAL</b><small>{data.settings.storeName === "ORIGINAL – أورجنال" || !data.settings.storeName ? "أورجنال" : data.settings.storeName}</small></span></div>{shouldShowFooterDescription(data.settings.storeDescription) && <span>{data.settings.storeDescription}</span>}<small>© {new Date().getFullYear()} {data.settings.storeName || "ORIGINAL"}</small></footer>{activeAiProduct && <AiRecipeModal product={activeAiProduct} onClose={() => setActiveAiProduct(null)} />}
     <BottomNav active={currentNav} /></div>;
 }

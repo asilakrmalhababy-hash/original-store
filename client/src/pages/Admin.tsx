@@ -1321,37 +1321,289 @@ function UsersPanel() {
   </div>;
 }
 
+type AdminRewardCfg = {
+  rewardMode: "custom_gift" | "free_delivery" | "discount_percent" | "discount_fixed";
+  giftName: string;
+  fixedDiscount: number;
+  endsAt: string;
+  audience: "all" | "new_customers" | "returning_customers" | "vip_customers" | "specific_phones";
+  allowedPhones: string;
+  placement: "everywhere" | "home_and_cart" | "cart_only";
+};
+
+function unpackAdminRewardCfg(rawMsg?: string | null, fallbackType?: string): { cleanMessage: string; cfg: AdminRewardCfg } {
+  const defaultCfg: AdminRewardCfg = {
+    rewardMode: fallbackType === "discount_percent" ? "discount_percent" : "custom_gift",
+    giftName: "",
+    fixedDiscount: 0,
+    endsAt: "",
+    audience: "all",
+    allowedPhones: "",
+    placement: "everywhere",
+  };
+  const raw = String(rawMsg || "");
+  const match = raw.match(/\[\[rcfg:(\{[\s\S]*?\})\]\]/);
+  if (!match) return { cleanMessage: raw.trim(), cfg: defaultCfg };
+  try {
+    const parsed = JSON.parse(match[1]);
+    const cleanMessage = (raw.slice(0, match.index) + raw.slice((match.index || 0) + match[0].length)).trim();
+    return {
+      cleanMessage,
+      cfg: {
+        rewardMode: ["custom_gift", "free_delivery", "discount_percent", "discount_fixed"].includes(parsed.rewardMode) ? parsed.rewardMode : defaultCfg.rewardMode,
+        giftName: typeof parsed.giftName === "string" ? parsed.giftName.trim() : "",
+        fixedDiscount: Number.isFinite(Number(parsed.fixedDiscount)) ? Math.max(0, Math.floor(Number(parsed.fixedDiscount))) : 0,
+        endsAt: typeof parsed.endsAt === "string" ? parsed.endsAt.trim() : "",
+        audience: ["all", "new_customers", "returning_customers", "vip_customers", "specific_phones"].includes(parsed.audience) ? parsed.audience : "all",
+        allowedPhones: typeof parsed.allowedPhones === "string" ? parsed.allowedPhones.trim() : "",
+        placement: ["everywhere", "home_and_cart", "cart_only"].includes(parsed.placement) ? parsed.placement : "everywhere",
+      },
+    };
+  } catch {
+    return { cleanMessage: raw.trim(), cfg: defaultCfg };
+  }
+}
+
+function packAdminRewardCfg(cleanMessage: string, cfg: AdminRewardCfg): string {
+  const clean = cleanMessage.trim();
+  return (clean ? clean + " " : "") + "[[rcfg:" + JSON.stringify(cfg) + "]]";
+}
+
 function SettingsPanel() {
   const utils = trpc.useUtils();
   const query = trpc.commerce.admin.settings.get.useQuery(undefined, { retry: 1 });
   const [ready, setReady] = useState(false);
-  const [values, setValues] = useState({ storeName: "ORIGINAL – أورجنال", storeDescription: "", contactPhone: "", currency: "ر.ي", storeIconUrl: "", deliveryEnabled: true, deliveryFee: "0", minOrderAmount: "0", deliveryZones: [] as Array<{ name: string; fee: number; enabled: boolean }>, orderPaused: false, pausedMessage: "", rewardEnabled: false, rewardsThreshold: "", rewardType: "free_delivery" as "free_delivery" | "discount_percent", rewardValue: "0", rewardsMessage: "" });
+  const [values, setValues] = useState({
+    storeName: "ORIGINAL – أورجنال",
+    storeDescription: "",
+    contactPhone: "",
+    currency: "ر.ي",
+    storeIconUrl: "",
+    deliveryEnabled: false,
+    deliveryFee: "",
+    deliveryZones: [] as Array<{ name: string; fee: number; enabled: boolean }>,
+    orderPaused: false,
+    pausedMessage: "",
+    rewardEnabled: false,
+    rewardsThreshold: "5000",
+    rewardType: "free_delivery" as "free_delivery" | "discount_percent",
+    rewardValue: "0",
+    rewardsMessage: "",
+  });
+  const [rcfg, setRcfg] = useState<AdminRewardCfg>({
+    rewardMode: "custom_gift",
+    giftName: "هدية مجانية مميزة من أورجنال 🎁",
+    fixedDiscount: 500,
+    endsAt: "",
+    audience: "all",
+    allowedPhones: "",
+    placement: "everywhere",
+  });
+
   useEffect(() => {
     if (!query.data || ready) return;
     const raw = query.data;
     let zones: Array<{ name: string; fee: number; enabled: boolean }> = [];
-    try { const parsed = JSON.parse(raw.deliveryZones || "[]"); if (Array.isArray(parsed)) zones = parsed; } catch { /* malformed saved settings can be replaced in the editor */ }
-    setValues({ storeName: raw.storeName || "ORIGINAL – أورجنال", storeDescription: raw.storeDescription || "", contactPhone: raw.contactPhone || "", currency: raw.currency || "ر.ي", storeIconUrl: raw.storeIconUrl || "", deliveryEnabled: raw.deliveryEnabled !== "false", deliveryFee: raw.deliveryFee ?? "0", minOrderAmount: raw.minOrderAmount ?? "0", deliveryZones: zones, orderPaused: raw.orderPaused === "true", pausedMessage: raw.pausedMessage || "", rewardEnabled: raw.rewardEnabled === "true", rewardsThreshold: raw.rewardsThreshold || "", rewardType: raw.rewardType === "discount_percent" ? "discount_percent" : "free_delivery", rewardValue: raw.rewardValue || "0", rewardsMessage: raw.rewardsMessage || "" });
+    try { const parsed = JSON.parse(raw.deliveryZones || "[]"); if (Array.isArray(parsed)) zones = parsed; } catch {}
+    const unpacked = unpackAdminRewardCfg(raw.rewardsMessage, raw.rewardType);
+    setValues({
+      storeName: raw.storeName || "ORIGINAL – أورجنال",
+      storeDescription: raw.storeDescription || "",
+      contactPhone: raw.contactPhone || "",
+      currency: raw.currency || "ر.ي",
+      storeIconUrl: raw.storeIconUrl || "",
+      deliveryEnabled: raw.deliveryEnabled === "true",
+      deliveryFee: raw.deliveryFee || "",
+      deliveryZones: zones,
+      orderPaused: raw.orderPaused === "true",
+      pausedMessage: raw.pausedMessage || "",
+      rewardEnabled: raw.rewardEnabled === "true",
+      rewardsThreshold: raw.rewardsThreshold || "5000",
+      rewardType: raw.rewardType === "discount_percent" ? "discount_percent" : "free_delivery",
+      rewardValue: raw.rewardValue || "0",
+      rewardsMessage: unpacked.cleanMessage,
+    });
+    setRcfg(unpacked.cfg);
     setReady(true);
   }, [query.data, ready]);
-  const save = trpc.commerce.admin.settings.save.useMutation({ onSuccess: async () => { toast.success("تم حفظ إعدادات المتجر"); await utils.commerce.admin.settings.get.invalidate(); await utils.commerce.catalog.home.invalidate(); }, onError: error => toast.error(error.message) });
+
+  const save = trpc.commerce.admin.settings.save.useMutation({
+    onSuccess: async () => {
+      toast.success("تم حفظ إعدادات المتجر وشريط الهدايا التفاعلي بنجاح!");
+      await utils.commerce.admin.settings.get.invalidate();
+      await utils.commerce.catalog.home.invalidate();
+    },
+    onError: error => toast.error(error.message),
+  });
+
   const update = <K extends keyof typeof values>(key: K, value: (typeof values)[K]) => setValues(current => ({ ...current, [key]: value }));
+  const updateRcfg = <K extends keyof AdminRewardCfg>(key: K, value: AdminRewardCfg[K]) => setRcfg(current => ({ ...current, [key]: value }));
+
+  const setDurationHours = (hours: number | null) => {
+    if (!hours) { updateRcfg("endsAt", ""); return; }
+    const d = new Date(Date.now() + hours * 3600 * 1000);
+    const isoLocal = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    updateRcfg("endsAt", isoLocal);
+  };
+
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
     if (values.deliveryZones.some(zone => !zone.name.trim() || !Number.isInteger(zone.fee) || zone.fee < 0)) { toast.error("أكمل اسم كل منطقة وتأكد أن رسومها رقم صحيح غير سالب."); return; }
-    /* allow 0 default delivery fee */
+    if (values.deliveryEnabled && values.deliveryFee === "" && !values.deliveryZones.some(zone => zone.enabled)) { toast.error("حدد رسومًا أساسية أو فعّل منطقة توصيل واحدة على الأقل قبل استقبال الطلبات."); return; }
     if (values.deliveryFee !== "" && (!Number.isInteger(Number(values.deliveryFee)) || Number(values.deliveryFee) < 0)) { toast.error("الرسوم الأساسية يجب أن تكون عددًا صحيحًا غير سالب."); return; }
-    save.mutate({ storeName: values.storeName, storeDescription: values.storeDescription, contactPhone: values.contactPhone, currency: values.currency, storeIconUrl: values.storeIconUrl || null, deliveryEnabled: values.deliveryEnabled, deliveryFee: values.deliveryFee === "" ? null : Number(values.deliveryFee), minOrderAmount: values.minOrderAmount === "" ? 0 : Math.max(0, Math.floor(Number(values.minOrderAmount) || 0)), deliveryZones: values.deliveryZones, orderPaused: values.orderPaused, pausedMessage: values.pausedMessage, rewardEnabled: values.rewardEnabled, rewardsThreshold: values.rewardsThreshold === "" ? null : Number(values.rewardsThreshold), rewardType: values.rewardType, rewardValue: Number(values.rewardValue), rewardsMessage: values.rewardsMessage });
+    const mappedRewardType = rcfg.rewardMode === "discount_percent" ? "discount_percent" : "free_delivery";
+    const packedMessage = packAdminRewardCfg(values.rewardsMessage, rcfg);
+    save.mutate({
+      storeName: values.storeName,
+      storeDescription: values.storeDescription,
+      contactPhone: values.contactPhone,
+      currency: values.currency,
+      storeIconUrl: values.storeIconUrl || null,
+      deliveryEnabled: values.deliveryEnabled,
+      deliveryFee: values.deliveryFee === "" ? null : Number(values.deliveryFee),
+      deliveryZones: values.deliveryZones,
+      orderPaused: values.orderPaused,
+      pausedMessage: values.pausedMessage,
+      rewardEnabled: values.rewardEnabled,
+      rewardsThreshold: values.rewardsThreshold === "" ? null : Number(values.rewardsThreshold),
+      rewardType: mappedRewardType,
+      rewardValue: Math.min(100, Math.max(0, Number(values.rewardValue) || 0)),
+      rewardsMessage: packedMessage,
+    });
   };
+
   const addZone = () => update("deliveryZones", [...values.deliveryZones, { name: "", fee: 0, enabled: true }]);
   const patchZone = (index: number, patch: Partial<(typeof values.deliveryZones)[number]>) => update("deliveryZones", values.deliveryZones.map((zone, i) => i === index ? { ...zone, ...patch } : zone));
-  return <div className="admin-content"><AdminHeading eyebrow="مركز التحكم" title="إعدادات المتجر" text="اضبط هوية المتجر ورسومه ومناطق التوصيل دون إدخال بيانات افتراضية." icon={Settings2} />{query.isLoading ? <AdminLoading /> : query.error ? <AdminError message={query.error.message} retry={() => void query.refetch()} /> : <form className="settings-form" onSubmit={submit}>
+
+  const previewThreshold = Number(values.rewardsThreshold) || 5000;
+  const previewGiftLabel = rcfg.giftName.trim() || (rcfg.rewardMode === "free_delivery" ? "توصيل مجاني بالكامل 🛵" : rcfg.rewardMode === "discount_percent" ? ("خصم فوري " + (values.rewardValue || 10) + "% 🏷️") : rcfg.rewardMode === "discount_fixed" ? ("خصم نقدي " + rcfg.fixedDiscount + " ر.ي 💸") : "هدية مجانية من أورجنال 🎁");
+
+  return <div className="admin-content"><AdminHeading eyebrow="مركز التحكم" title="إعدادات المتجر وشريط الهدايا الحماسي" text="اضبط هوية المتجر ومناطق التوصيل وشريط المكافآت التفاعلي لرفع حماس ومشتريات الزبائن." icon={Settings2} />{query.isLoading ? <AdminLoading /> : query.error ? <AdminError message={query.error.message} retry={() => void query.refetch()} /> : <form className="settings-form" onSubmit={submit}>
     <section className="admin-form-card"><div className="form-card-heading"><span className="form-card-number">01</span><div><h2>بيانات المتجر وهويته</h2><p>المعلومات والشعار الذي تختاره بنفسك.</p></div></div><div className="settings-brand-layout"><div className="form-fields-grid"><label>اسم المتجر<input required maxLength={100} value={values.storeName} onChange={e => update("storeName", e.target.value)} /></label><label>هاتف التواصل<input type="tel" value={values.contactPhone} onChange={e => update("contactPhone", e.target.value)} placeholder="أضف رقم المتجر" /></label><label>رمز العملة<input maxLength={20} value={values.currency} onChange={e => update("currency", e.target.value)} /></label><label className="field-wide">وصف المتجر<textarea rows={2} value={values.storeDescription} onChange={e => update("storeDescription", e.target.value)} /></label></div><ImageField title="قص شعار وأيقونة أورجنال" value={values.storeIconUrl} onChange={value => update("storeIconUrl", value)} kind="icon" aspect={1} /></div></section>
-    <section className="admin-form-card"><div className="form-card-heading"><span className="form-card-number">02</span><div><h2>التوصيل واستقبال الطلبات</h2><p>لا يُفتح الشراء حتى تحدد منطقة أو رسومًا قابلة للتطبيق.</p></div></div><div className="form-fields-grid"><label className="toggle-field"><input type="checkbox" checked={values.deliveryEnabled} onChange={e => update("deliveryEnabled", e.target.checked)} /> تفعيل استقبال طلبات التوصيل</label><label>رسوم أساسية (ر.ي)<input type="number" min="0" step="1" value={values.deliveryFee} onChange={e => update("deliveryFee", e.target.value)} placeholder="0" /></label><label>الحد الأدنى للطلب من المتجر (ر.ي)<input type="number" min="0" step="1" value={values.minOrderAmount} onChange={e => update("minOrderAmount", e.target.value)} placeholder="مثال: 1000 (0 = بدون حد أدنى)" /></label><div className="field-wide settings-zone-editor"><div className="admin-section-heading"><div><h3>مناطق التوصيل</h3><p>يمكن وضع رسوم مختلفة لكل مدينة أو منطقة.</p></div><button type="button" className="small-button" onClick={addZone}><Plus size={14} /> إضافة منطقة</button></div>{!values.deliveryZones.length ? <p className="subtle-note">لم تُضف مناطق بعد؛ سيُستخدم الرسم الأساسي إذا حُدد.</p> : values.deliveryZones.map((zone, index) => <div className="delivery-zone-row" key={index}><label>الاسم<input value={zone.name} onChange={e => patchZone(index, { name: e.target.value })} placeholder="اسم المنطقة" /></label><label>الرسم (ر.ي)<input type="number" min="0" step="1" value={zone.fee} onChange={e => patchZone(index, { fee: Number(e.target.value) })} /></label><label className="toggle-field"><input type="checkbox" checked={zone.enabled} onChange={e => patchZone(index, { enabled: e.target.checked })} /> مفعّلة</label><button type="button" className="small-button danger-soft" onClick={() => update("deliveryZones", values.deliveryZones.filter((_, i) => i !== index))}>حذف</button></div>)}</div><label className="toggle-field"><input type="checkbox" checked={values.orderPaused} onChange={e => update("orderPaused", e.target.checked)} /> إيقاف استقبال الطلبات مؤقتًا</label><label className="field-wide">رسالة الإيقاف<textarea value={values.pausedMessage} onChange={e => update("pausedMessage", e.target.value)} placeholder="اكتب الرسالة التي يراها العميل" /></label></div></section>
-    <section className="admin-form-card"><div className="form-card-heading"><span className="form-card-number">03</span><div><h2>المكافآت</h2><p>تُحسب القاعدة على الخادم بعد مطابقة المجموع.</p></div></div><div className="form-fields-grid"><label className="toggle-field"><input type="checkbox" checked={values.rewardEnabled} onChange={e => update("rewardEnabled", e.target.checked)} /> تفعيل المكافأة</label><label>حد السلة (ر.ي)<input type="number" min="0" value={values.rewardsThreshold} onChange={e => update("rewardsThreshold", e.target.value)} /></label><label>نوع المكافأة<select value={values.rewardType} onChange={e => update("rewardType", e.target.value as typeof values.rewardType)}><option value="free_delivery">توصيل مجاني</option><option value="discount_percent">خصم بنسبة</option></select></label><label>قيمة الخصم %<input type="number" min="0" max="100" value={values.rewardValue} onChange={e => update("rewardValue", e.target.value)} /></label><label className="field-wide">رسالة المكافأة<textarea value={values.rewardsMessage} onChange={e => update("rewardsMessage", e.target.value)} /></label></div></section>
+    <section className="admin-form-card"><div className="form-card-heading"><span className="form-card-number">02</span><div><h2>التوصيل واستقبال الطلبات</h2><p>لا يُفتح الشراء حتى تحدد منطقة أو رسومًا قابلة للتطبيق.</p></div></div><div className="form-fields-grid"><label className="toggle-field"><input type="checkbox" checked={values.deliveryEnabled} onChange={e => update("deliveryEnabled", e.target.checked)} /> تفعيل استقبال طلبات التوصيل</label><label>رسوم أساسية (ر.ي)<input type="number" min="0" step="1" value={values.deliveryFee} onChange={e => update("deliveryFee", e.target.value)} placeholder="غير محدد" /></label><div className="field-wide settings-zone-editor"><div className="admin-section-heading"><div><h3>مناطق التوصيل</h3><p>يمكن وضع رسوم مختلفة لكل مدينة أو منطقة.</p></div><button type="button" className="small-button" onClick={addZone}><Plus size={14} /> إضافة منطقة</button></div>{!values.deliveryZones.length ? <p className="subtle-note">لم تُضف مناطق بعد؛ سيُستخدم الرسم الأساسي إذا حُدد.</p> : values.deliveryZones.map((zone, index) => <div className="delivery-zone-row" key={index}><label>الاسم<input value={zone.name} onChange={e => patchZone(index, { name: e.target.value })} placeholder="اسم المنطقة" /></label><label>الرسم (ر.ي)<input type="number" min="0" step="1" value={zone.fee} onChange={e => patchZone(index, { fee: Number(e.target.value) })} /></label><label className="toggle-field"><input type="checkbox" checked={zone.enabled} onChange={e => patchZone(index, { enabled: e.target.checked })} /> مفعّلة</label><button type="button" className="small-button danger-soft" onClick={() => update("deliveryZones", values.deliveryZones.filter((_, i) => i !== index))}>حذف</button></div>)}</div><label className="toggle-field"><input type="checkbox" checked={values.orderPaused} onChange={e => update("orderPaused", e.target.checked)} /> إيقاف استقبال الطلبات مؤقتًا</label><label className="field-wide">رسالة الإيقاف<textarea value={values.pausedMessage} onChange={e => update("pausedMessage", e.target.value)} placeholder="اكتب الرسالة التي يراها العميل" /></label></div></section>
+
+    <section className="admin-form-card" style={{ border: "2px solid #e3c472", background: "linear-gradient(180deg, #fffdf7 0%, #ffffff 100%)" }}>
+      <div className="form-card-heading">
+        <span className="form-card-number" style={{ background: "#174b36", color: "#f1d897" }}>03</span>
+        <div>
+          <h2>🎁 شريط المكافآت والهدايا التفاعلي الحماسي</h2>
+          <p>شريط تفاعلي يتحرك أمام الزبون كلما أضاف منتجاً للسلة ليحفّزه على إكمال المبلغ المحدد والفوز بالهدية.</p>
+        </div>
+      </div>
+
+      <div className="form-fields-grid">
+        <label className="toggle-field field-wide" style={{ padding: "12px 14px", borderRadius: "12px", background: values.rewardEnabled ? "#eaf6ee" : "#f5f5f2", border: values.rewardEnabled ? "1.5px solid #2e8555" : "1px solid #dcdcd4", fontWeight: 800 }}>
+          <input type="checkbox" checked={values.rewardEnabled} onChange={e => update("rewardEnabled", e.target.checked)} />
+          <span>{values.rewardEnabled ? "✅ شريط الهدايا التفاعلي الحماسي مفعّل ويظهر للزبائن الآن" : "تفعيل شريط الهدايا والمكافآت التفاعلي في المتجر"}</span>
+        </label>
+
+        <div className="field-wide" style={{ display: "grid", gap: "8px" }}>
+          <label>💰 المبلغ المطلوب للحصول على الهدية (ر.ي)
+            <input type="number" min="100" step="100" value={values.rewardsThreshold} onChange={e => update("rewardsThreshold", e.target.value)} placeholder="مثلاً: 5000" />
+          </label>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+            {[2000, 3000, 5000, 7500, 10000, 15000].map(amt => (
+              <button key={amt} type="button" className={"small-button" + (Number(values.rewardsThreshold) === amt ? " selected" : "")} onClick={() => update("rewardsThreshold", String(amt))}>
+                {amt.toLocaleString("en-US")} ر.ي
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <label>🎯 نوع المكافأة عند بلوغ المبلغ
+          <select value={rcfg.rewardMode} onChange={e => updateRcfg("rewardMode", e.target.value as AdminRewardCfg["rewardMode"])}>
+            <option value="custom_gift">🎁 هدية مجانية يحددها المتجر (تُضاف تلقائياً لفاتورة الطلب)</option>
+            <option value="free_delivery">🛵 توصيل مجاني بالكامل (+ هدية اختيارية)</option>
+            <option value="discount_percent">🏷️ خصم نسبة مئوية % من السلة (+ هدية اختيارية)</option>
+            <option value="discount_fixed">💸 خصم مبلغ نقدي ثابت بالريال (+ هدية اختيارية)</option>
+          </select>
+        </label>
+
+        {rcfg.rewardMode === "discount_percent" && (
+          <label>نسبة الخصم %
+            <input type="number" min="1" max="100" value={values.rewardValue} onChange={e => update("rewardValue", e.target.value)} placeholder="مثلاً: 10" />
+          </label>
+        )}
+
+        {rcfg.rewardMode === "discount_fixed" && (
+          <label>قيمة الخصم النقدي الثابت (ر.ي)
+            <input type="number" min="50" step="50" value={rcfg.fixedDiscount} onChange={e => updateRcfg("fixedDiscount", Number(e.target.value) || 0)} placeholder="مثلاً: 500" />
+          </label>
+        )}
+
+        <div className="field-wide" style={{ display: "grid", gap: "8px" }}>
+          <label>🎁 اسم الهدية التي تظهر للزبون في الشريط وفي الطلب
+            <input maxLength={140} value={rcfg.giftName} onChange={e => updateRcfg("giftName", e.target.value)} placeholder="مثلاً: علبة زبادي الهناء مجاناً 🥣 أو عصير طبيعي هدية 🧃" />
+          </label>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+            {["علبة زبادي مجاناً 🥣", "عصير طبيعي بارد هدية 🧃", "مشروب غازي عائلي هدية 🥤", "هدية مفاجأة من أورجنال 🎁", "توصيل مجاني + هدية فورية 🚀"].map(preset => (
+              <button key={preset} type="button" className={"small-button" + (rcfg.giftName === preset ? " selected" : "")} style={{ fontSize: "11px" }} onClick={() => updateRcfg("giftName", preset)}>
+                {preset}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="field-wide" style={{ display: "grid", gap: "8px", padding: "12px", borderRadius: "12px", background: "#f8faf8", border: "1px solid #e1eae4" }}>
+          <label style={{ margin: 0 }}>⏳ مدة العرض والعدّاد التنازلي الحماسي (اختياري)
+            <input type="datetime-local" value={rcfg.endsAt} onChange={e => updateRcfg("endsAt", e.target.value)} />
+          </label>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+            <button type="button" className={"small-button" + (!rcfg.endsAt ? " selected" : "")} onClick={() => setDurationHours(null)}>♾️ مفتوح بدون انتهاء</button>
+            <button type="button" className="small-button" onClick={() => setDurationHours(3)}>🔥 لمدة 3 ساعات</button>
+            <button type="button" className="small-button" onClick={() => setDurationHours(12)}>⚡ لمدة 12 ساعة</button>
+            <button type="button" className="small-button" onClick={() => setDurationHours(24)}>⏳ لمدة 24 ساعة</button>
+            <button type="button" className="small-button" onClick={() => setDurationHours(72)}>📅 لمدة 3 أيام</button>
+            <button type="button" className="small-button" onClick={() => setDurationHours(168)}>🗓️ لمدة أسبوع</button>
+          </div>
+        </div>
+
+        <label>👥 لمن يظهر هذا العرض؟
+          <select value={rcfg.audience} onChange={e => updateRcfg("audience", e.target.value as AdminRewardCfg["audience"])}>
+            <option value="all">🌟 جميع زوار المتجر (الكل)</option>
+            <option value="new_customers">🆕 الزبائن الجدد فقط (من لم يطلبوا سابقاً)</option>
+            <option value="returning_customers">💎 الزبائن الدائمون فقط (من لديهم طلب سابق أو أكثر)</option>
+            <option value="vip_customers">👑 كبار العملاء VIP (من لديهم 3 طلبات فأكثر)</option>
+            <option value="specific_phones">📱 أرقام هواتف محددة فقط</option>
+          </select>
+        </label>
+
+        <label>📍 مكان ظهور الشريط التفاعلي
+          <select value={rcfg.placement} onChange={e => updateRcfg("placement", e.target.value as AdminRewardCfg["placement"])}>
+            <option value="everywhere">🔥 في كل مكان (أعلى المتجر + المنتجات + السلة + شريط عائم سفلي)</option>
+            <option value="home_and_cart">🏠 الصفحة الرئيسية + السلة فقط</option>
+            <option value="cart_only">🛒 صفحة السلة فقط</option>
+          </select>
+        </label>
+
+        {rcfg.audience === "specific_phones" && (
+          <label className="field-wide">📱 أرقام الهواتف المسموح لها برؤية العرض (افصل بينها بفاصلة)
+            <input value={rcfg.allowedPhones} onChange={e => updateRcfg("allowedPhones", e.target.value)} placeholder="مثلاً: 770731619, 771234567" dir="ltr" />
+          </label>
+        )}
+
+        <label className="field-wide">✨ عبارة تشويقية إضافية تحت الشريط (اختياري)
+          <input maxLength={220} value={values.rewardsMessage} onChange={e => update("rewardsMessage", e.target.value)} placeholder="مثلاً: تسوّق الآن واستمتع بهدايا أورجنال اليومية!" />
+        </label>
+
+        <div className="field-wide" style={{ padding: "14px", borderRadius: "16px", background: "linear-gradient(135deg, #0f3826 0%, #1d5c41 100%)", color: "#ffffff", boxShadow: "0 10px 24px rgba(15, 56, 38, 0.2)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px", fontSize: "12px" }}>
+            <strong style={{ color: "#f5dc98" }}>👀 معاينة حية لشكل الشريط أمام الزبون:</strong>
+            <span style={{ background: "rgba(241, 216, 151, 0.2)", color: "#f5dc98", padding: "2px 8px", borderRadius: "99px", fontSize: "10px", fontWeight: 800 }}>65% مكتمل</span>
+          </div>
+          <div style={{ fontSize: "13px", fontWeight: 800, marginBottom: "8px" }}>
+            ⚡ اقتربت جداً! أضف بقيمة {Math.round(previewThreshold * 0.35).toLocaleString("en-US")} ر.ي فقط لتربح «{previewGiftLabel}»!
+          </div>
+          <div style={{ height: "11px", borderRadius: "99px", background: "rgba(255,255,255,0.16)", overflow: "hidden", padding: "2px" }}>
+            <div style={{ width: "65%", height: "100%", borderRadius: "99px", background: "linear-gradient(90deg, #f3c65f, #ffe89e, #4ade80)" }} />
+          </div>
+        </div>
+      </div>
+    </section>
     <button className="button button-primary settings-save" disabled={save.isPending}>{save.isPending ? <LoaderCircle className="spin" size={16} /> : <Save size={17} />}{save.isPending ? "جارٍ الحفظ..." : "حفظ كل الإعدادات"}</button>
   </form>}</div>;
 }
+
 
 function AdminHeading({ eyebrow, title, text, icon: Icon }: { eyebrow: string; title: string; text: string; icon: typeof Package }) { return <div className="admin-page-heading"><div><span className="eyebrow">{eyebrow}</span><h1>{title}</h1><p>{text}</p></div><span className="admin-heading-mark"><Icon size={25} /></span></div>; }
 function AdminEmpty({ title, text }: { title: string; text: string }) { return <div className="admin-empty"><span><Box size={22} /></span><strong>{title}</strong><small>{text}</small></div>; }

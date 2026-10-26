@@ -2514,7 +2514,7 @@ var settingSchema = z3.object({
   orderPaused: z3.boolean().optional(),
   pausedMessage: z3.string().trim().max(300).optional(),
   rewardsThreshold: z3.number().int().min(0).max(1e8).nullable().optional(),
-  rewardsMessage: z3.string().trim().max(300).optional(),
+  rewardsMessage: z3.string().trim().max(2e3).optional(),
   rewardEnabled: z3.boolean().optional(),
   rewardType: z3.enum(["free_delivery", "discount_percent"]).optional(),
   rewardValue: z3.number().int().min(0).max(100).optional()
@@ -2549,20 +2549,71 @@ function deliveryFeeForCity(settings, city) {
   const baseFee = Number(settings.deliveryFee);
   return Number.isInteger(baseFee) && baseFee >= 0 ? baseFee : 0;
 }
+function unpackServerRewardConfig(rawMsg, fallbackType) {
+  const defaultCfg = {
+    rewardMode: fallbackType === "discount_percent" ? "discount_percent" : "free_delivery",
+    giftName: "",
+    fixedDiscount: 0,
+    endsAt: "",
+    audience: "all",
+    allowedPhones: "",
+    placement: "everywhere"
+  };
+  const raw = String(rawMsg || "");
+  const match = raw.match(/\[\[rcfg:(\{[\s\S]*?\})\]\]/);
+  if (!match) return { cleanMessage: raw.trim(), cfg: defaultCfg };
+  try {
+    const parsed = JSON.parse(match[1]);
+    const cleanMessage = (raw.slice(0, match.index) + raw.slice((match.index || 0) + match[0].length)).trim();
+    return {
+      cleanMessage,
+      cfg: {
+        rewardMode: ["custom_gift", "free_delivery", "discount_percent", "discount_fixed"].includes(parsed.rewardMode) ? parsed.rewardMode : defaultCfg.rewardMode,
+        giftName: typeof parsed.giftName === "string" ? parsed.giftName.trim().slice(0, 140) : "",
+        fixedDiscount: Number.isFinite(Number(parsed.fixedDiscount)) ? Math.max(0, Math.floor(Number(parsed.fixedDiscount))) : 0,
+        endsAt: typeof parsed.endsAt === "string" ? parsed.endsAt.trim() : "",
+        audience: ["all", "new_customers", "returning_customers", "vip_customers", "specific_phones"].includes(parsed.audience) ? parsed.audience : "all",
+        allowedPhones: typeof parsed.allowedPhones === "string" ? parsed.allowedPhones.trim() : "",
+        placement: ["everywhere", "home_and_cart", "cart_only"].includes(parsed.placement) ? parsed.placement : "everywhere"
+      }
+    };
+  } catch {
+    return { cleanMessage: raw.trim(), cfg: defaultCfg };
+  }
+}
+function isRewardCurrentlyActive(settings, subtotal) {
+  const threshold = Number(settings.rewardsThreshold ?? "");
+  const { cleanMessage, cfg } = unpackServerRewardConfig(settings.rewardsMessage, settings.rewardType);
+  if (settings.rewardEnabled !== "true" || !Number.isFinite(threshold) || threshold <= 0 || subtotal < threshold) {
+    return { active: false, cfg, cleanMessage, threshold: Number.isFinite(threshold) ? threshold : 0 };
+  }
+  if (cfg.endsAt) {
+    const endMs = new Date(cfg.endsAt).getTime();
+    if (Number.isFinite(endMs) && endMs > 0 && Date.now() > endMs) {
+      return { active: false, cfg, cleanMessage, threshold };
+    }
+  }
+  return { active: true, cfg, cleanMessage, threshold };
+}
 function orderTotals(subtotal, deliveryFee, offer, settings) {
   let discount = 0;
   if (offer) {
-    if (subtotal < offer.minimumOrder) throw new TRPCError3({ code: "PRECONDITION_FAILED", message: `\u0627\u0644\u062D\u062F \u0627\u0644\u0623\u062F\u0646\u0649 \u0644\u0647\u0630\u0627 \u0627\u0644\u0639\u0631\u0636 ${offer.minimumOrder.toLocaleString("en-US")} \u0631.\u064A.` });
+    if (subtotal < offer.minimumOrder) throw new TRPCError3({ code: "PRECONDITION_FAILED", message: "\u0627\u0644\u062D\u062F \u0627\u0644\u0623\u062F\u0646\u0649 \u0644\u0647\u0630\u0627 \u0627\u0644\u0639\u0631\u0636 " + offer.minimumOrder.toLocaleString("en-US") + " \u0631.\u064A." });
     discount = offer.discountType === "percent" ? Math.floor(subtotal * offer.discountValue / 100) : offer.discountValue;
     discount = Math.min(discount, subtotal);
   }
   let effectiveDeliveryFee = deliveryFee;
-  const threshold = Number(settings.rewardsThreshold ?? "");
-  if (settings.rewardEnabled === "true" && Number.isFinite(threshold) && threshold > 0 && subtotal >= threshold) {
-    if (settings.rewardType === "free_delivery") effectiveDeliveryFee = 0;
-    if (settings.rewardType === "discount_percent") {
+  const rewardCheck = isRewardCurrentlyActive(settings, subtotal);
+  if (rewardCheck.active) {
+    const mode = rewardCheck.cfg.rewardMode;
+    if (mode === "free_delivery" || settings.rewardType === "free_delivery" && mode !== "custom_gift" && mode !== "discount_percent" && mode !== "discount_fixed") {
+      effectiveDeliveryFee = 0;
+    } else if (mode === "discount_percent") {
       const percent = Number(settings.rewardValue ?? "");
       if (Number.isFinite(percent) && percent > 0) discount = Math.min(subtotal, discount + Math.floor(subtotal * Math.min(percent, 100) / 100));
+    } else if (mode === "discount_fixed") {
+      const fixed = rewardCheck.cfg.fixedDiscount || Number(settings.rewardValue ?? "");
+      if (Number.isFinite(fixed) && fixed > 0) discount = Math.min(subtotal, discount + Math.floor(fixed));
     }
   }
   return { subtotal, deliveryFee: effectiveDeliveryFee, discount, total: subtotal + effectiveDeliveryFee - discount };
@@ -3035,6 +3086,20 @@ var commerceRouter = router({
           if (line.product.stock !== null) {
             await tx.update(products).set({ stock: line.product.stock - line.quantity }).where(eq4(products.id, line.product.id));
           }
+        }
+        const rewardStatus = isRewardCurrentlyActive(settings, subtotal);
+        if (rewardStatus.active && (rewardStatus.cfg.giftName || rewardStatus.cfg.rewardMode === "custom_gift")) {
+          const giftLabel = rewardStatus.cfg.giftName || rewardStatus.cleanMessage || "\u0647\u062F\u064A\u0629 \u0645\u062C\u0627\u0646\u064A\u0629 \u0645\u0646 \u0623\u0648\u0631\u062C\u0646\u0627\u0644";
+          await tx.insert(orderItems).values({
+            orderId,
+            productId: null,
+            productName: ("\u{1F381} \u0647\u062F\u064A\u0629 \u0627\u0644\u0639\u0631\u0636 \u0627\u0644\u0645\u062C\u0627\u0646\u064A\u0629: " + giftLabel).slice(0, 180),
+            productImage: null,
+            unit: "\u0647\u062F\u064A\u0629 \u0645\u062C\u0627\u0646\u064A\u0629",
+            unitPrice: 0,
+            quantity: 1,
+            lineTotal: 0
+          });
         }
         await tx.insert(orderEvents).values({ orderId, status: "new", note: "\u062A\u0645 \u0627\u0633\u062A\u0644\u0627\u0645 \u0627\u0644\u0637\u0644\u0628", changedByUserId: null });
         return { id: orderId, orderNumber, total: totals.total, duplicate: false };

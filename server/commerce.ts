@@ -331,7 +331,7 @@ const settingSchema = z.object({
   orderPaused: z.boolean().optional(),
   pausedMessage: z.string().trim().max(300).optional(),
   rewardsThreshold: z.number().int().min(0).max(100000000).nullable().optional(),
-  rewardsMessage: z.string().trim().max(300).optional(),
+  rewardsMessage: z.string().trim().max(2000).optional(),
   rewardEnabled: z.boolean().optional(),
   rewardType: z.enum(["free_delivery", "discount_percent"]).optional(),
   rewardValue: z.number().int().min(0).max(100).optional(),
@@ -363,20 +363,83 @@ function deliveryFeeForCity(settings: Record<string, string>, city: string): num
   return Number.isInteger(baseFee) && baseFee >= 0 ? baseFee : 0;
 }
 
+type RewardConfigMeta = {
+  rewardMode: "custom_gift" | "free_delivery" | "discount_percent" | "discount_fixed";
+  giftName: string;
+  fixedDiscount: number;
+  endsAt: string;
+  audience: "all" | "new_customers" | "returning_customers" | "vip_customers" | "specific_phones";
+  allowedPhones: string;
+  placement: "everywhere" | "home_and_cart" | "cart_only";
+};
+
+function unpackServerRewardConfig(rawMsg?: string | null, fallbackType?: string): { cleanMessage: string; cfg: RewardConfigMeta } {
+  const defaultCfg: RewardConfigMeta = {
+    rewardMode: fallbackType === "discount_percent" ? "discount_percent" : "free_delivery",
+    giftName: "",
+    fixedDiscount: 0,
+    endsAt: "",
+    audience: "all",
+    allowedPhones: "",
+    placement: "everywhere",
+  };
+  const raw = String(rawMsg || "");
+  const match = raw.match(/\[\[rcfg:(\{[\s\S]*?\})\]\]/);
+  if (!match) return { cleanMessage: raw.trim(), cfg: defaultCfg };
+  try {
+    const parsed = JSON.parse(match[1]);
+    const cleanMessage = (raw.slice(0, match.index) + raw.slice((match.index || 0) + match[0].length)).trim();
+    return {
+      cleanMessage,
+      cfg: {
+        rewardMode: ["custom_gift", "free_delivery", "discount_percent", "discount_fixed"].includes(parsed.rewardMode) ? parsed.rewardMode : defaultCfg.rewardMode,
+        giftName: typeof parsed.giftName === "string" ? parsed.giftName.trim().slice(0, 140) : "",
+        fixedDiscount: Number.isFinite(Number(parsed.fixedDiscount)) ? Math.max(0, Math.floor(Number(parsed.fixedDiscount))) : 0,
+        endsAt: typeof parsed.endsAt === "string" ? parsed.endsAt.trim() : "",
+        audience: ["all", "new_customers", "returning_customers", "vip_customers", "specific_phones"].includes(parsed.audience) ? parsed.audience : "all",
+        allowedPhones: typeof parsed.allowedPhones === "string" ? parsed.allowedPhones.trim() : "",
+        placement: ["everywhere", "home_and_cart", "cart_only"].includes(parsed.placement) ? parsed.placement : "everywhere",
+      },
+    };
+  } catch {
+    return { cleanMessage: raw.trim(), cfg: defaultCfg };
+  }
+}
+
+function isRewardCurrentlyActive(settings: Record<string, string>, subtotal: number): { active: boolean; cfg: RewardConfigMeta; cleanMessage: string; threshold: number } {
+  const threshold = Number(settings.rewardsThreshold ?? "");
+  const { cleanMessage, cfg } = unpackServerRewardConfig(settings.rewardsMessage, settings.rewardType);
+  if (settings.rewardEnabled !== "true" || !Number.isFinite(threshold) || threshold <= 0 || subtotal < threshold) {
+    return { active: false, cfg, cleanMessage, threshold: Number.isFinite(threshold) ? threshold : 0 };
+  }
+  if (cfg.endsAt) {
+    const endMs = new Date(cfg.endsAt).getTime();
+    if (Number.isFinite(endMs) && endMs > 0 && Date.now() > endMs) {
+      return { active: false, cfg, cleanMessage, threshold };
+    }
+  }
+  return { active: true, cfg, cleanMessage, threshold };
+}
+
 function orderTotals(subtotal: number, deliveryFee: number, offer: typeof offers.$inferSelect | null, settings: Record<string, string>) {
   let discount = 0;
   if (offer) {
-    if (subtotal < offer.minimumOrder) throw new TRPCError({ code: "PRECONDITION_FAILED", message: `الحد الأدنى لهذا العرض ${offer.minimumOrder.toLocaleString("en-US")} ر.ي.` });
+    if (subtotal < offer.minimumOrder) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "الحد الأدنى لهذا العرض " + offer.minimumOrder.toLocaleString("en-US") + " ر.ي." });
     discount = offer.discountType === "percent" ? Math.floor(subtotal * offer.discountValue / 100) : offer.discountValue;
     discount = Math.min(discount, subtotal);
   }
   let effectiveDeliveryFee = deliveryFee;
-  const threshold = Number(settings.rewardsThreshold ?? "");
-  if (settings.rewardEnabled === "true" && Number.isFinite(threshold) && threshold > 0 && subtotal >= threshold) {
-    if (settings.rewardType === "free_delivery") effectiveDeliveryFee = 0;
-    if (settings.rewardType === "discount_percent") {
+  const rewardCheck = isRewardCurrentlyActive(settings, subtotal);
+  if (rewardCheck.active) {
+    const mode = rewardCheck.cfg.rewardMode;
+    if (mode === "free_delivery" || (settings.rewardType === "free_delivery" && mode !== "custom_gift" && mode !== "discount_percent" && mode !== "discount_fixed")) {
+      effectiveDeliveryFee = 0;
+    } else if (mode === "discount_percent") {
       const percent = Number(settings.rewardValue ?? "");
       if (Number.isFinite(percent) && percent > 0) discount = Math.min(subtotal, discount + Math.floor(subtotal * Math.min(percent, 100) / 100));
+    } else if (mode === "discount_fixed") {
+      const fixed = rewardCheck.cfg.fixedDiscount || Number(settings.rewardValue ?? "");
+      if (Number.isFinite(fixed) && fixed > 0) discount = Math.min(subtotal, discount + Math.floor(fixed));
     }
   }
   return { subtotal, deliveryFee: effectiveDeliveryFee, discount, total: subtotal + effectiveDeliveryFee - discount };
@@ -839,6 +902,20 @@ export const commerceRouter = router({
           if (line.product.stock !== null) {
             await tx.update(products).set({ stock: line.product.stock - line.quantity }).where(eq(products.id, line.product.id));
           }
+        }
+        const rewardStatus = isRewardCurrentlyActive(settings, subtotal);
+        if (rewardStatus.active && (rewardStatus.cfg.giftName || rewardStatus.cfg.rewardMode === "custom_gift")) {
+          const giftLabel = rewardStatus.cfg.giftName || rewardStatus.cleanMessage || "هدية مجانية من أورجنال";
+          await tx.insert(orderItems).values({
+            orderId,
+            productId: null,
+            productName: ("🎁 هدية العرض المجانية: " + giftLabel).slice(0, 180),
+            productImage: null,
+            unit: "هدية مجانية",
+            unitPrice: 0,
+            quantity: 1,
+            lineTotal: 0,
+          });
         }
         await tx.insert(orderEvents).values({ orderId, status: "new", note: "تم استلام الطلب", changedByUserId: null });
         return { id: orderId, orderNumber, total: totals.total, duplicate: false };
