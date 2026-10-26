@@ -668,7 +668,7 @@ export const commerceRouter = router({
       const now = Date.now();
       const g = globalThis as any;
       if (g.__fastHomeData) {
-        if (now - (g.__fastHomeTime || 0) > 25000) {
+        if (now - (g.__fastHomeTime || 0) > 600000) {
           void refreshHomeCatalogCache().catch(() => {});
         }
         return g.__fastHomeData;

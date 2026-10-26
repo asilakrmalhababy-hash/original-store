@@ -2821,7 +2821,7 @@ var commerceRouter = router({
       const now = Date.now();
       const g = globalThis;
       if (g.__fastHomeData) {
-        if (now - (g.__fastHomeTime || 0) > 25e3) {
+        if (now - (g.__fastHomeTime || 0) > 6e5) {
           void refreshHomeCatalogCache().catch(() => {
           });
         }

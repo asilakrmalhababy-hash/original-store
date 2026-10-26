@@ -758,7 +758,7 @@ function CategoryStrip({ data, onSelect }: { data: HomeData["categories"]; onSel
 function HomePage({ data, onOpen, onAiRecipe }: { data: HomeData; onOpen: (id: number) => void; onAiRecipe?: (p: PublicProduct) => void }) {
   const [, navigate] = useLocation();
   const [sort, setSort] = useState<"featured" | "price-asc" | "price-desc">("featured");
-  const { data: products, isLoading: productsLoading } = trpc.commerce.catalog.listProducts.useQuery({ sort, limit: 24 }, { enabled: sort !== "featured", retry: 1, staleTime: 2500, refetchInterval: sort !== "featured" ? 3000 : false, refetchOnWindowFocus: true });
+  const { data: products, isLoading: productsLoading } = trpc.commerce.catalog.listProducts.useQuery({ sort, limit: 24 }, { enabled: sort !== "featured", retry: 1, staleTime: 15000, refetchInterval: false, refetchOnWindowFocus: true });
   const featured = sort === "featured" ? (data.products?.length ? data.products : (products ?? [])) : (products ?? data.products);
   const changeCategory = (id: number) => { navigate("/products?category=" + id); };
 
@@ -2112,7 +2112,7 @@ export default function Home() {
   const [instantStoreData, setInstantStoreData] = useState<HomeData>(getInstantLocalCatalog);
   const home = trpc.commerce.catalog.home.useQuery(undefined, {
     retry: 1,
-    staleTime: 2000, refetchInterval: 2500,
+    staleTime: 15000, refetchInterval: 20000,
     refetchOnWindowFocus: true,
   });
   useEffect(() => {
