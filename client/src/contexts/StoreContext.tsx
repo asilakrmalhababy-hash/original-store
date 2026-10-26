@@ -10,6 +10,7 @@ type StoreProduct = {
   quantityStep?: number;
   stock?: number | null;
   variant?: string;
+  customAmount?: number;
 };
 export type CartLine = StoreProduct & { quantity: number };
 
@@ -39,7 +40,7 @@ function readCart(): CartLine[] {
     if (!value) return [];
     const parsed: unknown = JSON.parse(value);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter((item): item is CartLine => item && Number.isInteger(item.id) && Number.isInteger(item.quantity) && item.quantity > 0 && typeof item.name === "string" && Number.isInteger(item.price));
+    return parsed.filter((item): item is CartLine => Boolean(item && Number.isInteger(item.id) && Number.isInteger(item.quantity) && item.quantity > 0 && typeof item.name === "string" && Number.isInteger(item.price)));
   } catch { return []; }
 }
 
@@ -72,6 +73,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const targetKey = getLineKey(product.id, product.variant);
       const found = current.find(line => getLineKey(line.id, line.variant) === targetKey);
       if (!found) return [...current, { ...product, quantity }];
+      if (product.customAmount && found.customAmount) {
+        const combinedAmt = found.customAmount * found.quantity + product.customAmount * quantity;
+        return current.map(line => getLineKey(line.id, line.variant) === targetKey ? { ...line, ...product, price: combinedAmt, customAmount: combinedAmt, quantity: 1 } : line);
+      }
       return current.map(line => getLineKey(line.id, line.variant) === targetKey ? { ...line, ...product, quantity: line.quantity + quantity } : line);
     }),
     setQuantity: (id, quantity, variant) => setCart(current => {
@@ -93,6 +98,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const next = current.map(line => {
           const fresh = byId.get(line.id);
           if (!fresh) return line;
+          if (line.customAmount && line.customAmount > 0) {
+            if (fresh.imageUrl !== line.imageUrl || fresh.stock !== line.stock) {
+              changed = true;
+              return { ...line, imageUrl: fresh.imageUrl, stock: fresh.stock };
+            }
+            return line;
+          }
           const expectedName = line.variant ? fresh.name + " (" + line.variant + ")" : fresh.name;
           if (fresh.price !== line.price || expectedName !== line.name || fresh.unit !== line.unit || fresh.imageUrl !== line.imageUrl || fresh.stock !== line.stock) {
             changed = true;

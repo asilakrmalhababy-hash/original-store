@@ -490,10 +490,41 @@ function orderTotals(subtotal: number, deliveryFee: number, offer: typeof offers
   return { subtotal, deliveryFee: effectiveDeliveryFee, discount, total: subtotal + effectiveDeliveryFee - discount };
 }
 
-function aggregateItems(items: Array<{ productId: number; quantity: number }>) {
-  const quantities = new Map<number, number>();
-  for (const item of items) quantities.set(item.productId, (quantities.get(item.productId) ?? 0) + item.quantity);
-  return [...quantities.entries()].map(([productId, quantity]) => ({ productId, quantity })).sort((a, b) => a.productId - b.productId);
+function unpackServerProductWeightCfg(rawDesc?: string | null): { enabled: boolean; minAmount: number } {
+  const raw = String(rawDesc || "");
+  const m = raw.match(/\[\[wcfg:(\{[\s\S]*?\})\]\]/);
+  if (!m) return { enabled: false, minAmount: 100 };
+  try {
+    const parsed = JSON.parse(m[1]);
+    return {
+      enabled: Boolean(parsed.enabled),
+      minAmount: Number.isFinite(Number(parsed.minAmount)) && Number(parsed.minAmount) > 0 ? Math.floor(Number(parsed.minAmount)) : 100,
+    };
+  } catch {
+    return { enabled: false, minAmount: 100 };
+  }
+}
+
+function formatServerWeightGrams(grams: number): string {
+  if (grams === 125) return "125 جرام (ثمن كيلو)";
+  if (grams === 250) return "250 جرام (ربع كيلو)";
+  if (grams === 500) return "500 جرام (نصف كيلو)";
+  if (grams === 1000) return "1 كيلو كامل (1000 جرام)";
+  if (grams > 1000) return (grams / 1000).toFixed(2).replace(/\.?0+$/, "") + " كيلو (" + grams + " جرام)";
+  return grams + " جرام";
+}
+
+function aggregateItems(items: Array<{ productId: number; quantity: number; variant?: string; customAmount?: number }>) {
+  const map = new Map<number, { quantity: number; customAmountTotal: number }>();
+  for (const item of items) {
+    const cur = map.get(item.productId) ?? { quantity: 0, customAmountTotal: 0 };
+    cur.quantity += item.quantity;
+    if (item.customAmount && item.customAmount > 0) {
+      cur.customAmountTotal += Math.floor(item.customAmount) * item.quantity;
+    }
+    map.set(item.productId, cur);
+  }
+  return [...map.entries()].map(([productId, v]) => ({ productId, quantity: v.quantity, customAmountTotal: v.customAmountTotal })).sort((a, b) => a.productId - b.productId);
 }
 
 function quoteFingerprint(lines: Array<{ productId: number; name: string; quantity: number; unit: string; price: number; lineTotal: number }>, totals: { subtotal: number; deliveryFee: number; discount: number; total: number }, currency: string, offerId: number | null) {
@@ -782,7 +813,7 @@ export const commerceRouter = router({
 
   orders: router({
     quote: publicProcedure.input(z.object({
-      items: z.array(z.object({ productId: safeId, quantity: z.number().int().min(1).max(10000), variant: z.string().trim().max(100).optional() })).min(1).max(100),
+      items: z.array(z.object({ productId: safeId, quantity: z.number().int().min(1).max(10000), variant: z.string().trim().max(120).optional(), customAmount: z.number().int().min(1).max(100000000).optional() })).min(1).max(100),
       city: z.string().trim().min(1).max(100), offerCode: z.string().trim().max(40).optional(),
     })).mutation(async ({ input }) => {
       const db = await database();
@@ -797,8 +828,20 @@ export const commerceRouter = router({
       if (currentProducts.length !== productIds.length) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "أحد المنتجات لم يعد متاحًا. حدّث السلة ثم حاول مجددًا." });
       const lines = requested.map(item => {
         const product = currentProducts.find(row => row.id === item.productId)!;
-        if (item.quantity < product.minQuantity || (item.quantity - product.minQuantity) % product.quantityStep !== 0) throw new TRPCError({ code: "BAD_REQUEST", message: `الكمية المطلوبة من «${product.name}» لا توافق وحدة البيع.` });
-        if (product.stock !== null && product.stock < item.quantity) throw new TRPCError({ code: "PRECONDITION_FAILED", message: `الكمية المتوفرة من «${product.name}» لا تكفي.` });
+        const wcfg = unpackServerProductWeightCfg(product.description);
+        if (wcfg.enabled && item.customAmountTotal > 0) {
+          if (item.customAmountTotal < wcfg.minAmount) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: "أقل مبلغ مسموح لشراء «" + product.name + "» هو " + wcfg.minAmount.toLocaleString("en-US") + " ر.ي." });
+          }
+          if (product.stock !== null && product.stock < 1) {
+            throw new TRPCError({ code: "PRECONDITION_FAILED", message: "الكمية المتوفرة من «" + product.name + "» لا تكفي." });
+          }
+          const grams = Math.max(1, Math.round((item.customAmountTotal / Math.max(1, product.price)) * 1000));
+          const weightUnit = formatServerWeightGrams(grams);
+          return { productId: product.id, name: product.name, quantity: 1, unit: weightUnit, price: item.customAmountTotal, lineTotal: item.customAmountTotal };
+        }
+        if (item.quantity < product.minQuantity || (item.quantity - product.minQuantity) % product.quantityStep !== 0) throw new TRPCError({ code: "BAD_REQUEST", message: "الكمية المطلوبة من «" + product.name + "» لا توافق وحدة البيع." });
+        if (product.stock !== null && product.stock < item.quantity) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "الكمية المتوفرة من «" + product.name + "» لا تكفي." });
         return { productId: product.id, name: product.name, quantity: item.quantity, unit: product.unit, price: product.price, lineTotal: product.price * item.quantity };
       });
       const subtotal = lines.reduce((sum, line) => sum + line.lineTotal, 0);
@@ -887,7 +930,7 @@ export const commerceRouter = router({
       idempotencyKey: z.string().uuid(),
       expectedTotal: z.number().int().min(0).max(100000000000),
       expectedQuoteHash: z.string().length(64).regex(/^[a-f0-9]+$/),
-      items: z.array(z.object({ productId: safeId, quantity: z.number().int().min(1).max(10000), variant: z.string().trim().max(100).optional() })).min(1).max(100),
+      items: z.array(z.object({ productId: safeId, quantity: z.number().int().min(1).max(10000), variant: z.string().trim().max(120).optional(), customAmount: z.number().int().min(1).max(100000000).optional() })).min(1).max(100),
       offerCode: z.string().trim().max(40).optional(),
       recipientName: z.string().trim().min(2).max(160), phone: z.string().trim().min(7).max(32).refine(isValidGuestPhone, "أدخل رقم هاتف صحيحًا ليتمكن المتجر من الاتصال بك."),
       city: z.string().trim().min(1).max(100), district: z.string().trim().min(1).max(120), addressDetails: z.string().trim().max(1000).optional(), customerNote: z.string().trim().max(1000).optional(),
@@ -898,7 +941,7 @@ export const commerceRouter = router({
       const storedIdempotencyKey = hashGuestOrderKey(input.idempotencyKey);
       const existing = (await db.select().from(orders).where(inArray(orders.idempotencyKey, [storedIdempotencyKey, input.idempotencyKey])).limit(1))[0];
       if (existing) return { id: existing.id, orderNumber: existing.orderNumber, total: existing.total, duplicate: true };
-      enforceOrderCreateRateLimit(getClientIp(ctx.req));
+      if (typeof enforceOrderCreateRateLimit === "function") enforceOrderCreateRateLimit(getClientIp(ctx.req));
       const settings = await readSettings(db);
       if (settings.orderPaused === "true") throw new TRPCError({ code: "PRECONDITION_FAILED", message: settings.pausedMessage || "استقبال الطلبات متوقف مؤقتًا." });
       const deliveryFee = deliveryFeeForCity(settings, input.city);
@@ -912,25 +955,39 @@ export const commerceRouter = router({
       }
 
       const result = await db.transaction(async tx => {
-        const orderLines: Array<{ product: typeof products.$inferSelect; quantity: number }> = [];
+        const orderLines: Array<{ product: typeof products.$inferSelect; quantity: number; effectiveUnit: string; effectivePrice: number; effectiveLineTotal: number; isWeighed: boolean }> = [];
         let subtotal = 0;
         for (const item of requested) {
           const product = (await tx.select().from(products).where(and(eq(products.id, item.productId), eq(products.isPublished, true), eq(products.isAvailable, true))).limit(1).for("update"))[0];
           if (!product) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "أحد المنتجات لم يعد متاحًا. حدّث السلة ثم حاول مجددًا." });
-          if (item.quantity < product.minQuantity || (item.quantity - product.minQuantity) % product.quantityStep !== 0) {
-            throw new TRPCError({ code: "BAD_REQUEST", message: `الكمية المطلوبة من «${product.name}» لا توافق وحدة البيع.` });
+          const wcfg = unpackServerProductWeightCfg(product.description);
+          if (wcfg.enabled && item.customAmountTotal > 0) {
+            if (item.customAmountTotal < wcfg.minAmount) {
+              throw new TRPCError({ code: "BAD_REQUEST", message: "أقل مبلغ مسموح لشراء «" + product.name + "» هو " + wcfg.minAmount.toLocaleString("en-US") + " ر.ي." });
+            }
+            if (product.stock !== null && product.stock < 1) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "الكمية المتوفرة من «" + product.name + "» لا تكفي." });
+            const grams = Math.max(1, Math.round((item.customAmountTotal / Math.max(1, product.price)) * 1000));
+            const weightUnit = formatServerWeightGrams(grams);
+            subtotal += item.customAmountTotal;
+            if (!Number.isSafeInteger(subtotal) || subtotal > 100000000000) throw new TRPCError({ code: "BAD_REQUEST", message: "إجمالي السلة يتجاوز الحد المسموح." });
+            orderLines.push({ product, quantity: 1, effectiveUnit: weightUnit, effectivePrice: item.customAmountTotal, effectiveLineTotal: item.customAmountTotal, isWeighed: true });
+          } else {
+            if (item.quantity < product.minQuantity || (item.quantity - product.minQuantity) % product.quantityStep !== 0) {
+              throw new TRPCError({ code: "BAD_REQUEST", message: "الكمية المطلوبة من «" + product.name + "» لا توافق وحدة البيع." });
+            }
+            if (product.stock !== null && product.stock < item.quantity) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "الكمية المتوفرة من «" + product.name + "» لا تكفي." });
+            const lineTotal = product.price * item.quantity;
+            subtotal += lineTotal;
+            if (!Number.isSafeInteger(subtotal) || subtotal > 100000000000) throw new TRPCError({ code: "BAD_REQUEST", message: "إجمالي السلة يتجاوز الحد المسموح." });
+            orderLines.push({ product, quantity: item.quantity, effectiveUnit: product.unit, effectivePrice: product.price, effectiveLineTotal: lineTotal, isWeighed: false });
           }
-          if (product.stock !== null && product.stock < item.quantity) throw new TRPCError({ code: "PRECONDITION_FAILED", message: `الكمية المتوفرة من «${product.name}» لا تكفي.` });
-          subtotal += product.price * item.quantity;
-          if (!Number.isSafeInteger(subtotal) || subtotal > 100000000000) throw new TRPCError({ code: "BAD_REQUEST", message: "إجمالي السلة يتجاوز الحد المسموح." });
-          orderLines.push({ product, quantity: item.quantity });
         }
         const totals = orderTotals(subtotal, deliveryFee, appliedOffer, settings);
         const currency = settings.currency || "ر.ي";
-        const currentLines = orderLines.map(line => ({ productId: line.product.id, name: line.product.name, quantity: line.quantity, unit: line.product.unit, price: line.product.price, lineTotal: line.product.price * line.quantity }));
+        const currentLines = orderLines.map(line => ({ productId: line.product.id, name: line.product.name, quantity: line.quantity, unit: line.effectiveUnit, price: line.effectivePrice, lineTotal: line.effectiveLineTotal }));
         const currentQuoteHash = quoteFingerprint(currentLines, totals, currency, appliedOffer?.id ?? null);
         if (totals.total !== input.expectedTotal || currentQuoteHash !== input.expectedQuoteHash) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "تغيّر السعر أو التوفر أو رسوم التوصيل بعد المعاينة. اعرض الملخص المحدّث قبل تأكيد الطلب." });
-        const orderNumber = `OR-${Date.now().toString(36).toUpperCase()}-${nanoid(5).toUpperCase()}`;
+        const orderNumber = "OR-" + Date.now().toString(36).toUpperCase() + "-" + nanoid(5).toUpperCase();
         const inserted = await tx.insert(orders).values({
           orderNumber, idempotencyKey: storedIdempotencyKey, userId: null, offerId: appliedOffer?.id ?? null,
           recipientName: input.recipientName, phone: input.phone, city: input.city, district: input.district,
@@ -939,29 +996,26 @@ export const commerceRouter = router({
         });
         const orderId = Number(inserted[0].insertId);
         for (const line of orderLines) {
-          const vParts = input.items.filter(i => i.productId === line.product.id && i.variant && i.variant.trim()).map(i => i.quantity > 1 ? (i.variant!.trim() + " × " + i.quantity) : i.variant!.trim());
-          const finalProdName = vParts.length > 0 ? (line.product.name + " (" + vParts.join("، ") + ")").slice(0, 180) : line.product.name;
+          const vParts = input.items.filter(i => i.productId === line.product.id && i.variant && i.variant.trim()).map(i => (!line.isWeighed && i.quantity > 1) ? (i.variant!.trim() + " × " + i.quantity) : i.variant!.trim());
+          const baseTitle = vParts.length > 0 ? (line.product.name + " (" + vParts.join("، ") + ")") : (line.isWeighed ? (line.product.name + " (⚖️ " + line.effectiveUnit + ")") : line.product.name);
+          const finalProdName = baseTitle.slice(0, 180);
           await tx.insert(orderItems).values({
             orderId, productId: line.product.id, productName: finalProdName, productImage: line.product.imageUrl,
-            unit: line.product.unit, unitPrice: line.product.price, quantity: line.quantity, lineTotal: line.product.price * line.quantity,
+            unit: line.effectiveUnit, unitPrice: line.effectivePrice, quantity: line.quantity, lineTotal: line.effectiveLineTotal,
           });
           if (line.product.stock !== null) {
-            await tx.update(products).set({ stock: line.product.stock - line.quantity }).where(eq(products.id, line.product.id));
+            await tx.update(products).set({ stock: Math.max(0, line.product.stock - line.quantity) }).where(eq(products.id, line.product.id));
           }
         }
-        const rewardStatus = isRewardCurrentlyActive(settings, subtotal);
-        if (rewardStatus.active && (rewardStatus.cfg.giftName || rewardStatus.cfg.rewardMode === "custom_gift")) {
-          const giftLabel = rewardStatus.cfg.giftName || rewardStatus.cleanMessage || "هدية مجانية من أورجنال";
-          await tx.insert(orderItems).values({
-            orderId,
-            productId: null,
-            productName: ("🎁 هدية العرض المجانية: " + giftLabel).slice(0, 180),
-            productImage: null,
-            unit: "هدية مجانية",
-            unitPrice: 0,
-            quantity: 1,
-            lineTotal: 0,
-          });
+        if (typeof isRewardCurrentlyActive === "function") {
+          const rewardStatus = isRewardCurrentlyActive(settings, subtotal);
+          if (rewardStatus.active && (rewardStatus.cfg.giftName || rewardStatus.cfg.rewardMode === "custom_gift")) {
+            const giftLabel = rewardStatus.cfg.giftName || rewardStatus.cleanMessage || "هدية مجانية من أورجنال";
+            await tx.insert(orderItems).values({
+              orderId, productId: null, productName: ("🎁 هدية العرض المجانية: " + giftLabel).slice(0, 180),
+              productImage: null, unit: "هدية مجانية", unitPrice: 0, quantity: 1, lineTotal: 0,
+            });
+          }
         }
         await tx.insert(orderEvents).values({ orderId, status: "new", note: "تم استلام الطلب", changedByUserId: null });
         return { id: orderId, orderNumber, total: totals.total, duplicate: false };
@@ -971,7 +1025,6 @@ export const commerceRouter = router({
         if (!concurrent) throw error;
         return { id: concurrent.id, orderNumber: concurrent.orderNumber, total: concurrent.total, duplicate: true };
       });
-      clearCatalogCache();
       if (!result.duplicate) {
         void notifyOwnerNewOrder(result.id, result.orderNumber, result.total, input.recipientName, input.city + " - " + input.district)
           .catch(() => console.warn("[Push] Could not notify owner of a new order"));

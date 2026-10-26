@@ -2653,10 +2653,39 @@ function orderTotals(subtotal, deliveryFee, offer, settings) {
   }
   return { subtotal, deliveryFee: effectiveDeliveryFee, discount, total: subtotal + effectiveDeliveryFee - discount };
 }
+function unpackServerProductWeightCfg(rawDesc) {
+  const raw = String(rawDesc || "");
+  const m = raw.match(/\[\[wcfg:(\{[\s\S]*?\})\]\]/);
+  if (!m) return { enabled: false, minAmount: 100 };
+  try {
+    const parsed = JSON.parse(m[1]);
+    return {
+      enabled: Boolean(parsed.enabled),
+      minAmount: Number.isFinite(Number(parsed.minAmount)) && Number(parsed.minAmount) > 0 ? Math.floor(Number(parsed.minAmount)) : 100
+    };
+  } catch {
+    return { enabled: false, minAmount: 100 };
+  }
+}
+function formatServerWeightGrams(grams) {
+  if (grams === 125) return "125 \u062C\u0631\u0627\u0645 (\u062B\u0645\u0646 \u0643\u064A\u0644\u0648)";
+  if (grams === 250) return "250 \u062C\u0631\u0627\u0645 (\u0631\u0628\u0639 \u0643\u064A\u0644\u0648)";
+  if (grams === 500) return "500 \u062C\u0631\u0627\u0645 (\u0646\u0635\u0641 \u0643\u064A\u0644\u0648)";
+  if (grams === 1e3) return "1 \u0643\u064A\u0644\u0648 \u0643\u0627\u0645\u0644 (1000 \u062C\u0631\u0627\u0645)";
+  if (grams > 1e3) return (grams / 1e3).toFixed(2).replace(/\.?0+$/, "") + " \u0643\u064A\u0644\u0648 (" + grams + " \u062C\u0631\u0627\u0645)";
+  return grams + " \u062C\u0631\u0627\u0645";
+}
 function aggregateItems(items) {
-  const quantities = /* @__PURE__ */ new Map();
-  for (const item of items) quantities.set(item.productId, (quantities.get(item.productId) ?? 0) + item.quantity);
-  return [...quantities.entries()].map(([productId, quantity]) => ({ productId, quantity })).sort((a, b) => a.productId - b.productId);
+  const map = /* @__PURE__ */ new Map();
+  for (const item of items) {
+    const cur = map.get(item.productId) ?? { quantity: 0, customAmountTotal: 0 };
+    cur.quantity += item.quantity;
+    if (item.customAmount && item.customAmount > 0) {
+      cur.customAmountTotal += Math.floor(item.customAmount) * item.quantity;
+    }
+    map.set(item.productId, cur);
+  }
+  return [...map.entries()].map(([productId, v]) => ({ productId, quantity: v.quantity, customAmountTotal: v.customAmountTotal })).sort((a, b) => a.productId - b.productId);
 }
 function quoteFingerprint(lines, totals, currency, offerId) {
   return createHash4("sha256").update(JSON.stringify({ lines, totals, currency, offerId })).digest("hex");
@@ -2939,7 +2968,7 @@ var commerceRouter = router({
   }),
   orders: router({
     quote: publicProcedure.input(z3.object({
-      items: z3.array(z3.object({ productId: safeId, quantity: z3.number().int().min(1).max(1e4), variant: z3.string().trim().max(100).optional() })).min(1).max(100),
+      items: z3.array(z3.object({ productId: safeId, quantity: z3.number().int().min(1).max(1e4), variant: z3.string().trim().max(120).optional(), customAmount: z3.number().int().min(1).max(1e8).optional() })).min(1).max(100),
       city: z3.string().trim().min(1).max(100),
       offerCode: z3.string().trim().max(40).optional()
     })).mutation(async ({ input }) => {
@@ -2955,8 +2984,20 @@ var commerceRouter = router({
       if (currentProducts.length !== productIds.length) throw new TRPCError3({ code: "PRECONDITION_FAILED", message: "\u0623\u062D\u062F \u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A \u0644\u0645 \u064A\u0639\u062F \u0645\u062A\u0627\u062D\u064B\u0627. \u062D\u062F\u0651\u062B \u0627\u0644\u0633\u0644\u0629 \u062B\u0645 \u062D\u0627\u0648\u0644 \u0645\u062C\u062F\u062F\u064B\u0627." });
       const lines = requested.map((item) => {
         const product = currentProducts.find((row) => row.id === item.productId);
-        if (item.quantity < product.minQuantity || (item.quantity - product.minQuantity) % product.quantityStep !== 0) throw new TRPCError3({ code: "BAD_REQUEST", message: `\u0627\u0644\u0643\u0645\u064A\u0629 \u0627\u0644\u0645\u0637\u0644\u0648\u0628\u0629 \u0645\u0646 \xAB${product.name}\xBB \u0644\u0627 \u062A\u0648\u0627\u0641\u0642 \u0648\u062D\u062F\u0629 \u0627\u0644\u0628\u064A\u0639.` });
-        if (product.stock !== null && product.stock < item.quantity) throw new TRPCError3({ code: "PRECONDITION_FAILED", message: `\u0627\u0644\u0643\u0645\u064A\u0629 \u0627\u0644\u0645\u062A\u0648\u0641\u0631\u0629 \u0645\u0646 \xAB${product.name}\xBB \u0644\u0627 \u062A\u0643\u0641\u064A.` });
+        const wcfg = unpackServerProductWeightCfg(product.description);
+        if (wcfg.enabled && item.customAmountTotal > 0) {
+          if (item.customAmountTotal < wcfg.minAmount) {
+            throw new TRPCError3({ code: "BAD_REQUEST", message: "\u0623\u0642\u0644 \u0645\u0628\u0644\u063A \u0645\u0633\u0645\u0648\u062D \u0644\u0634\u0631\u0627\u0621 \xAB" + product.name + "\xBB \u0647\u0648 " + wcfg.minAmount.toLocaleString("en-US") + " \u0631.\u064A." });
+          }
+          if (product.stock !== null && product.stock < 1) {
+            throw new TRPCError3({ code: "PRECONDITION_FAILED", message: "\u0627\u0644\u0643\u0645\u064A\u0629 \u0627\u0644\u0645\u062A\u0648\u0641\u0631\u0629 \u0645\u0646 \xAB" + product.name + "\xBB \u0644\u0627 \u062A\u0643\u0641\u064A." });
+          }
+          const grams = Math.max(1, Math.round(item.customAmountTotal / Math.max(1, product.price) * 1e3));
+          const weightUnit = formatServerWeightGrams(grams);
+          return { productId: product.id, name: product.name, quantity: 1, unit: weightUnit, price: item.customAmountTotal, lineTotal: item.customAmountTotal };
+        }
+        if (item.quantity < product.minQuantity || (item.quantity - product.minQuantity) % product.quantityStep !== 0) throw new TRPCError3({ code: "BAD_REQUEST", message: "\u0627\u0644\u0643\u0645\u064A\u0629 \u0627\u0644\u0645\u0637\u0644\u0648\u0628\u0629 \u0645\u0646 \xAB" + product.name + "\xBB \u0644\u0627 \u062A\u0648\u0627\u0641\u0642 \u0648\u062D\u062F\u0629 \u0627\u0644\u0628\u064A\u0639." });
+        if (product.stock !== null && product.stock < item.quantity) throw new TRPCError3({ code: "PRECONDITION_FAILED", message: "\u0627\u0644\u0643\u0645\u064A\u0629 \u0627\u0644\u0645\u062A\u0648\u0641\u0631\u0629 \u0645\u0646 \xAB" + product.name + "\xBB \u0644\u0627 \u062A\u0643\u0641\u064A." });
         return { productId: product.id, name: product.name, quantity: item.quantity, unit: product.unit, price: product.price, lineTotal: product.price * item.quantity };
       });
       const subtotal = lines.reduce((sum, line) => sum + line.lineTotal, 0);
@@ -3042,7 +3083,7 @@ var commerceRouter = router({
       idempotencyKey: z3.string().uuid(),
       expectedTotal: z3.number().int().min(0).max(1e11),
       expectedQuoteHash: z3.string().length(64).regex(/^[a-f0-9]+$/),
-      items: z3.array(z3.object({ productId: safeId, quantity: z3.number().int().min(1).max(1e4), variant: z3.string().trim().max(100).optional() })).min(1).max(100),
+      items: z3.array(z3.object({ productId: safeId, quantity: z3.number().int().min(1).max(1e4), variant: z3.string().trim().max(120).optional(), customAmount: z3.number().int().min(1).max(1e8).optional() })).min(1).max(100),
       offerCode: z3.string().trim().max(40).optional(),
       recipientName: z3.string().trim().min(2).max(160),
       phone: z3.string().trim().min(7).max(32).refine(isValidGuestPhone, "\u0623\u062F\u062E\u0644 \u0631\u0642\u0645 \u0647\u0627\u062A\u0641 \u0635\u062D\u064A\u062D\u064B\u0627 \u0644\u064A\u062A\u0645\u0643\u0646 \u0627\u0644\u0645\u062A\u062C\u0631 \u0645\u0646 \u0627\u0644\u0627\u062A\u0635\u0627\u0644 \u0628\u0643."),
@@ -3057,7 +3098,7 @@ var commerceRouter = router({
       const storedIdempotencyKey = hashGuestOrderKey(input.idempotencyKey);
       const existing = (await db.select().from(orders).where(inArray(orders.idempotencyKey, [storedIdempotencyKey, input.idempotencyKey])).limit(1))[0];
       if (existing) return { id: existing.id, orderNumber: existing.orderNumber, total: existing.total, duplicate: true };
-      enforceOrderCreateRateLimit(getClientIp(ctx.req));
+      if (typeof enforceOrderCreateRateLimit === "function") enforceOrderCreateRateLimit(getClientIp(ctx.req));
       const settings = await readSettings(db);
       if (settings.orderPaused === "true") throw new TRPCError3({ code: "PRECONDITION_FAILED", message: settings.pausedMessage || "\u0627\u0633\u062A\u0642\u0628\u0627\u0644 \u0627\u0644\u0637\u0644\u0628\u0627\u062A \u0645\u062A\u0648\u0642\u0641 \u0645\u0624\u0642\u062A\u064B\u0627." });
       const deliveryFee = deliveryFeeForCity(settings, input.city);
@@ -3074,20 +3115,34 @@ var commerceRouter = router({
         for (const item of requested) {
           const product = (await tx.select().from(products).where(and2(eq4(products.id, item.productId), eq4(products.isPublished, true), eq4(products.isAvailable, true))).limit(1).for("update"))[0];
           if (!product) throw new TRPCError3({ code: "PRECONDITION_FAILED", message: "\u0623\u062D\u062F \u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A \u0644\u0645 \u064A\u0639\u062F \u0645\u062A\u0627\u062D\u064B\u0627. \u062D\u062F\u0651\u062B \u0627\u0644\u0633\u0644\u0629 \u062B\u0645 \u062D\u0627\u0648\u0644 \u0645\u062C\u062F\u062F\u064B\u0627." });
-          if (item.quantity < product.minQuantity || (item.quantity - product.minQuantity) % product.quantityStep !== 0) {
-            throw new TRPCError3({ code: "BAD_REQUEST", message: `\u0627\u0644\u0643\u0645\u064A\u0629 \u0627\u0644\u0645\u0637\u0644\u0648\u0628\u0629 \u0645\u0646 \xAB${product.name}\xBB \u0644\u0627 \u062A\u0648\u0627\u0641\u0642 \u0648\u062D\u062F\u0629 \u0627\u0644\u0628\u064A\u0639.` });
+          const wcfg = unpackServerProductWeightCfg(product.description);
+          if (wcfg.enabled && item.customAmountTotal > 0) {
+            if (item.customAmountTotal < wcfg.minAmount) {
+              throw new TRPCError3({ code: "BAD_REQUEST", message: "\u0623\u0642\u0644 \u0645\u0628\u0644\u063A \u0645\u0633\u0645\u0648\u062D \u0644\u0634\u0631\u0627\u0621 \xAB" + product.name + "\xBB \u0647\u0648 " + wcfg.minAmount.toLocaleString("en-US") + " \u0631.\u064A." });
+            }
+            if (product.stock !== null && product.stock < 1) throw new TRPCError3({ code: "PRECONDITION_FAILED", message: "\u0627\u0644\u0643\u0645\u064A\u0629 \u0627\u0644\u0645\u062A\u0648\u0641\u0631\u0629 \u0645\u0646 \xAB" + product.name + "\xBB \u0644\u0627 \u062A\u0643\u0641\u064A." });
+            const grams = Math.max(1, Math.round(item.customAmountTotal / Math.max(1, product.price) * 1e3));
+            const weightUnit = formatServerWeightGrams(grams);
+            subtotal += item.customAmountTotal;
+            if (!Number.isSafeInteger(subtotal) || subtotal > 1e11) throw new TRPCError3({ code: "BAD_REQUEST", message: "\u0625\u062C\u0645\u0627\u0644\u064A \u0627\u0644\u0633\u0644\u0629 \u064A\u062A\u062C\u0627\u0648\u0632 \u0627\u0644\u062D\u062F \u0627\u0644\u0645\u0633\u0645\u0648\u062D." });
+            orderLines.push({ product, quantity: 1, effectiveUnit: weightUnit, effectivePrice: item.customAmountTotal, effectiveLineTotal: item.customAmountTotal, isWeighed: true });
+          } else {
+            if (item.quantity < product.minQuantity || (item.quantity - product.minQuantity) % product.quantityStep !== 0) {
+              throw new TRPCError3({ code: "BAD_REQUEST", message: "\u0627\u0644\u0643\u0645\u064A\u0629 \u0627\u0644\u0645\u0637\u0644\u0648\u0628\u0629 \u0645\u0646 \xAB" + product.name + "\xBB \u0644\u0627 \u062A\u0648\u0627\u0641\u0642 \u0648\u062D\u062F\u0629 \u0627\u0644\u0628\u064A\u0639." });
+            }
+            if (product.stock !== null && product.stock < item.quantity) throw new TRPCError3({ code: "PRECONDITION_FAILED", message: "\u0627\u0644\u0643\u0645\u064A\u0629 \u0627\u0644\u0645\u062A\u0648\u0641\u0631\u0629 \u0645\u0646 \xAB" + product.name + "\xBB \u0644\u0627 \u062A\u0643\u0641\u064A." });
+            const lineTotal = product.price * item.quantity;
+            subtotal += lineTotal;
+            if (!Number.isSafeInteger(subtotal) || subtotal > 1e11) throw new TRPCError3({ code: "BAD_REQUEST", message: "\u0625\u062C\u0645\u0627\u0644\u064A \u0627\u0644\u0633\u0644\u0629 \u064A\u062A\u062C\u0627\u0648\u0632 \u0627\u0644\u062D\u062F \u0627\u0644\u0645\u0633\u0645\u0648\u062D." });
+            orderLines.push({ product, quantity: item.quantity, effectiveUnit: product.unit, effectivePrice: product.price, effectiveLineTotal: lineTotal, isWeighed: false });
           }
-          if (product.stock !== null && product.stock < item.quantity) throw new TRPCError3({ code: "PRECONDITION_FAILED", message: `\u0627\u0644\u0643\u0645\u064A\u0629 \u0627\u0644\u0645\u062A\u0648\u0641\u0631\u0629 \u0645\u0646 \xAB${product.name}\xBB \u0644\u0627 \u062A\u0643\u0641\u064A.` });
-          subtotal += product.price * item.quantity;
-          if (!Number.isSafeInteger(subtotal) || subtotal > 1e11) throw new TRPCError3({ code: "BAD_REQUEST", message: "\u0625\u062C\u0645\u0627\u0644\u064A \u0627\u0644\u0633\u0644\u0629 \u064A\u062A\u062C\u0627\u0648\u0632 \u0627\u0644\u062D\u062F \u0627\u0644\u0645\u0633\u0645\u0648\u062D." });
-          orderLines.push({ product, quantity: item.quantity });
         }
         const totals = orderTotals(subtotal, deliveryFee, appliedOffer, settings);
         const currency = settings.currency || "\u0631.\u064A";
-        const currentLines = orderLines.map((line) => ({ productId: line.product.id, name: line.product.name, quantity: line.quantity, unit: line.product.unit, price: line.product.price, lineTotal: line.product.price * line.quantity }));
+        const currentLines = orderLines.map((line) => ({ productId: line.product.id, name: line.product.name, quantity: line.quantity, unit: line.effectiveUnit, price: line.effectivePrice, lineTotal: line.effectiveLineTotal }));
         const currentQuoteHash = quoteFingerprint(currentLines, totals, currency, appliedOffer?.id ?? null);
         if (totals.total !== input.expectedTotal || currentQuoteHash !== input.expectedQuoteHash) throw new TRPCError3({ code: "PRECONDITION_FAILED", message: "\u062A\u063A\u064A\u0651\u0631 \u0627\u0644\u0633\u0639\u0631 \u0623\u0648 \u0627\u0644\u062A\u0648\u0641\u0631 \u0623\u0648 \u0631\u0633\u0648\u0645 \u0627\u0644\u062A\u0648\u0635\u064A\u0644 \u0628\u0639\u062F \u0627\u0644\u0645\u0639\u0627\u064A\u0646\u0629. \u0627\u0639\u0631\u0636 \u0627\u0644\u0645\u0644\u062E\u0635 \u0627\u0644\u0645\u062D\u062F\u0651\u062B \u0642\u0628\u0644 \u062A\u0623\u0643\u064A\u062F \u0627\u0644\u0637\u0644\u0628." });
-        const orderNumber = `OR-${Date.now().toString(36).toUpperCase()}-${nanoid(5).toUpperCase()}`;
+        const orderNumber = "OR-" + Date.now().toString(36).toUpperCase() + "-" + nanoid(5).toUpperCase();
         const inserted = await tx.insert(orders).values({
           orderNumber,
           idempotencyKey: storedIdempotencyKey,
@@ -3107,35 +3162,38 @@ var commerceRouter = router({
         });
         const orderId = Number(inserted[0].insertId);
         for (const line of orderLines) {
-          const vParts = input.items.filter((i) => i.productId === line.product.id && i.variant && i.variant.trim()).map((i) => i.quantity > 1 ? i.variant.trim() + " \xD7 " + i.quantity : i.variant.trim());
-          const finalProdName = vParts.length > 0 ? (line.product.name + " (" + vParts.join("\u060C ") + ")").slice(0, 180) : line.product.name;
+          const vParts = input.items.filter((i) => i.productId === line.product.id && i.variant && i.variant.trim()).map((i) => !line.isWeighed && i.quantity > 1 ? i.variant.trim() + " \xD7 " + i.quantity : i.variant.trim());
+          const baseTitle = vParts.length > 0 ? line.product.name + " (" + vParts.join("\u060C ") + ")" : line.isWeighed ? line.product.name + " (\u2696\uFE0F " + line.effectiveUnit + ")" : line.product.name;
+          const finalProdName = baseTitle.slice(0, 180);
           await tx.insert(orderItems).values({
             orderId,
             productId: line.product.id,
             productName: finalProdName,
             productImage: line.product.imageUrl,
-            unit: line.product.unit,
-            unitPrice: line.product.price,
+            unit: line.effectiveUnit,
+            unitPrice: line.effectivePrice,
             quantity: line.quantity,
-            lineTotal: line.product.price * line.quantity
+            lineTotal: line.effectiveLineTotal
           });
           if (line.product.stock !== null) {
-            await tx.update(products).set({ stock: line.product.stock - line.quantity }).where(eq4(products.id, line.product.id));
+            await tx.update(products).set({ stock: Math.max(0, line.product.stock - line.quantity) }).where(eq4(products.id, line.product.id));
           }
         }
-        const rewardStatus = isRewardCurrentlyActive(settings, subtotal);
-        if (rewardStatus.active && (rewardStatus.cfg.giftName || rewardStatus.cfg.rewardMode === "custom_gift")) {
-          const giftLabel = rewardStatus.cfg.giftName || rewardStatus.cleanMessage || "\u0647\u062F\u064A\u0629 \u0645\u062C\u0627\u0646\u064A\u0629 \u0645\u0646 \u0623\u0648\u0631\u062C\u0646\u0627\u0644";
-          await tx.insert(orderItems).values({
-            orderId,
-            productId: null,
-            productName: ("\u{1F381} \u0647\u062F\u064A\u0629 \u0627\u0644\u0639\u0631\u0636 \u0627\u0644\u0645\u062C\u0627\u0646\u064A\u0629: " + giftLabel).slice(0, 180),
-            productImage: null,
-            unit: "\u0647\u062F\u064A\u0629 \u0645\u062C\u0627\u0646\u064A\u0629",
-            unitPrice: 0,
-            quantity: 1,
-            lineTotal: 0
-          });
+        if (typeof isRewardCurrentlyActive === "function") {
+          const rewardStatus = isRewardCurrentlyActive(settings, subtotal);
+          if (rewardStatus.active && (rewardStatus.cfg.giftName || rewardStatus.cfg.rewardMode === "custom_gift")) {
+            const giftLabel = rewardStatus.cfg.giftName || rewardStatus.cleanMessage || "\u0647\u062F\u064A\u0629 \u0645\u062C\u0627\u0646\u064A\u0629 \u0645\u0646 \u0623\u0648\u0631\u062C\u0646\u0627\u0644";
+            await tx.insert(orderItems).values({
+              orderId,
+              productId: null,
+              productName: ("\u{1F381} \u0647\u062F\u064A\u0629 \u0627\u0644\u0639\u0631\u0636 \u0627\u0644\u0645\u062C\u0627\u0646\u064A\u0629: " + giftLabel).slice(0, 180),
+              productImage: null,
+              unit: "\u0647\u062F\u064A\u0629 \u0645\u062C\u0627\u0646\u064A\u0629",
+              unitPrice: 0,
+              quantity: 1,
+              lineTotal: 0
+            });
+          }
         }
         await tx.insert(orderEvents).values({ orderId, status: "new", note: "\u062A\u0645 \u0627\u0633\u062A\u0644\u0627\u0645 \u0627\u0644\u0637\u0644\u0628", changedByUserId: null });
         return { id: orderId, orderNumber, total: totals.total, duplicate: false };
@@ -3145,7 +3203,6 @@ var commerceRouter = router({
         if (!concurrent) throw error;
         return { id: concurrent.id, orderNumber: concurrent.orderNumber, total: concurrent.total, duplicate: true };
       });
-      clearCatalogCache();
       if (!result.duplicate) {
         void notifyOwnerNewOrder(result.id, result.orderNumber, result.total, input.recipientName, input.city + " - " + input.district).catch(() => console.warn("[Push] Could not notify owner of a new order"));
       }

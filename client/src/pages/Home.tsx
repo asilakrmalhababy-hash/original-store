@@ -588,96 +588,260 @@ function AiRecipeModal({ product, onClose }: { product: PublicProduct; onClose: 
   );
 }
 
-function unpackProductVariants(rawDescription?: string | null): { cleanDescription: string; variants: string[] } {
-  const raw = String(rawDescription || "");
-  const m = raw.match(/\[\[variants:(\[[\s\S]*?\])\]\]/);
-  if (!m) return { cleanDescription: raw.trim(), variants: [] };
-  const cleanDescription = raw.replace(m[0], "").trim();
-  try {
-    const parsed = JSON.parse(m[1]);
-    if (Array.isArray(parsed)) {
-      return { cleanDescription, variants: parsed.map(v => String(v || "").trim()).filter(Boolean).slice(0, 25) };
-    }
-  } catch {}
-  return { cleanDescription, variants: [] };
+function unpackProductVariants(rawDescription?: string | null): { cleanDescription: string; variants: string[]; weightEnabled: boolean; minWeightAmount: number } {
+  let raw = String(rawDescription || "");
+  let variants: string[] = [];
+  let weightEnabled = false;
+  let minWeightAmount = 100;
+  const vm = raw.match(/\[\[variants:(\[[\s\S]*?\])\]\]/);
+  if (vm) {
+    raw = (raw.slice(0, vm.index) + raw.slice((vm.index || 0) + vm[0].length)).trim();
+    try {
+      const parsed = JSON.parse(vm[1]);
+      if (Array.isArray(parsed)) variants = parsed.map(x => String(x || "").trim()).filter(Boolean).slice(0, 25);
+    } catch {}
+  }
+  const wm = raw.match(/\[\[wcfg:(\{[\s\S]*?\})\]\]/);
+  if (wm) {
+    raw = (raw.slice(0, wm.index) + raw.slice((wm.index || 0) + wm[0].length)).trim();
+    try {
+      const parsed = JSON.parse(wm[1]);
+      weightEnabled = Boolean(parsed.enabled);
+      if (Number.isFinite(Number(parsed.minAmount)) && Number(parsed.minAmount) > 0) {
+        minWeightAmount = Math.floor(Number(parsed.minAmount));
+      }
+    } catch {}
+  }
+  return { cleanDescription: raw.trim(), variants, weightEnabled, minWeightAmount };
 }
 
-function VariantPickerModal({ product, variants, initialVariant, initialQty, onClose }: { product: PublicProduct; variants: string[]; initialVariant?: string; initialQty?: number; onClose: () => void }) {
+function formatWeightLabel(grams: number): string {
+  if (grams <= 0) return "0 جرام";
+  if (grams === 125) return "125 جرام (ثمن كيلو)";
+  if (grams === 250) return "250 جرام (ربع كيلو)";
+  if (grams === 500) return "500 جرام (نصف كيلو)";
+  if (grams === 1000) return "1 كيلو كامل (1000 جرام)";
+  if (grams > 1000) return (grams / 1000).toFixed(2).replace(/\.?0+$/, "") + " كيلو (" + grams.toLocaleString("en-US") + " جرام)";
+  return grams.toLocaleString("en-US") + " جرام";
+}
+
+function VariantPickerModal({
+  product,
+  variants,
+  weightEnabled = false,
+  minWeightAmount = 100,
+  initialVariant,
+  initialQty,
+  onClose,
+}: {
+  product: PublicProduct;
+  variants: string[];
+  weightEnabled?: boolean;
+  minWeightAmount?: number;
+  initialVariant?: string;
+  initialQty?: number;
+  onClose: () => void;
+}) {
   const { add } = useStore();
   const [selected, setSelected] = useState<string>(initialVariant && variants.includes(initialVariant) ? initialVariant : (variants[0] || ""));
   const [qty, setQty] = useState<number>(initialQty || product.minQuantity || 1);
+  const defaultAmount = Math.max(minWeightAmount, Math.min(product.price, Math.round(product.price * 0.25) || 500));
+  const [amountStr, setAmountStr] = useState<string>(String(defaultAmount));
   const step = product.quantityStep || 1;
   const minQ = product.minQuantity || 1;
   const maxQ = product.stock === null ? 9999 : product.stock;
 
+  const pricePerKg = Math.max(1, product.price);
+  const enteredAmount = Math.max(0, Math.floor(Number(amountStr) || 0));
+  const calculatedGrams = weightEnabled ? Math.max(0, Math.round((enteredAmount / pricePerKg) * 1000)) : 0;
+  const weightText = formatWeightLabel(calculatedGrams);
+  const isAmountValid = !weightEnabled || enteredAmount >= minWeightAmount;
+
   const confirmAdd = () => {
-    if (!selected) return;
-    add({ ...product, name: product.name + " (" + selected + ")", variant: selected }, qty);
-    toast.success("تمت إضافة «" + product.name + " (" + selected + ")» إلى السلة");
+    if (variants.length > 0 && !selected) return;
+    if (weightEnabled) {
+      if (enteredAmount < minWeightAmount) {
+        toast.error("أقل مبلغ للشراء من هذا الصنف هو " + formatPrice(minWeightAmount));
+        return;
+      }
+      const vLabel = selected ? (selected + " · ⚖️ " + weightText) : ("⚖️ " + weightText);
+      const displayTitle = product.name + " (" + vLabel + ")";
+      add({
+        ...product,
+        name: displayTitle,
+        price: enteredAmount,
+        unit: weightText,
+        variant: vLabel,
+        customAmount: enteredAmount,
+      }, 1);
+      toast.success("تمت إضافة «" + displayTitle + "» بمبلغ " + formatPrice(enteredAmount) + " إلى السلة");
+      onClose();
+      return;
+    }
+    if (selected) {
+      add({ ...product, name: product.name + " (" + selected + ")", variant: selected }, qty);
+      toast.success("تمت إضافة «" + product.name + " (" + selected + ")» إلى السلة");
+    } else {
+      add(product, qty);
+      toast.success("أُضيف المنتج إلى السلة");
+    }
     onClose();
   };
 
+  const quickMoneyOptions = [200, 300, 500, 1000, 1500, 2000].filter(a => a >= minWeightAmount);
+  const quickWeightFractions = [
+    { label: "ثمن كيلو (125 جرام)", factor: 0.125 },
+    { label: "ربع كيلو (250 جرام)", factor: 0.25 },
+    { label: "نصف كيلو (500 جرام)", factor: 0.5 },
+    { label: "كيلو كامل (1000 جرام)", factor: 1 },
+  ];
+
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" onClick={onClose} style={{ zIndex: 140 }}>
-      <section className="checkout-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: "420px", padding: "20px" }}>
+      <section className="checkout-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: "440px", padding: "20px" }}>
         <div className="modal-heading" style={{ marginBottom: "12px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            {product.imageUrl && <img src={product.imageUrl} alt="" style={{ width: "48px", height: "48px", borderRadius: "12px", objectFit: "cover" }} />}
+            {product.imageUrl && <img src={product.imageUrl} alt="" style={{ width: "50px", height: "50px", borderRadius: "12px", objectFit: "cover" }} />}
             <div>
-              <span className="eyebrow">اختر النوع المطلوب</span>
+              <span className="eyebrow">{weightEnabled ? "⚖️ حدد المبلغ وسيظهر لك الوزن فوراً" : "اختر النوع المطلوب"}</span>
               <h2 style={{ fontSize: "18px", margin: "2px 0" }}>{product.name}</h2>
-              <small style={{ color: "#174b36", fontWeight: 700 }}>{formatPrice(product.price)} / {product.unit}</small>
+              <small style={{ color: "#174b36", fontWeight: 800 }}>
+                {weightEnabled ? ("سعر الكيلو (1000 جرام): " + formatPrice(product.price)) : (formatPrice(product.price) + " / " + product.unit)}
+              </small>
             </div>
           </div>
           <button type="button" className="icon-button" onClick={onClose} aria-label="إغلاق"><X size={18} /></button>
         </div>
 
-        <div style={{ display: "grid", gap: "8px", marginBottom: "16px" }}>
-          <strong style={{ fontSize: "12px", color: "#344c3b" }}>حدد النوع الذي تريده من الخيارات المتاحة:</strong>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(105px, 1fr))", gap: "8px" }}>
-            {variants.map(v => {
-              const isSel = selected === v;
-              return (
-                <button
-                  key={v}
-                  type="button"
-                  onClick={() => setSelected(v)}
-                  style={{
-                    padding: "11px 12px",
-                    borderRadius: "12px",
-                    border: isSel ? "2px solid #174b36" : "1px solid #d5e2d8",
-                    background: isSel ? "#174b36" : "#f7faf8",
-                    color: isSel ? "#ffffff" : "#1b3829",
-                    fontWeight: 700,
-                    fontSize: "13px",
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: "6px",
-                    boxShadow: isSel ? "0 6px 16px rgba(23, 75, 54, 0.22)" : "none",
-                    transition: "0.15s",
-                  }}
-                >
-                  {isSel && <Check size={15} />}
-                  <span>{v}</span>
-                </button>
-              );
-            })}
+        {variants.length > 0 && (
+          <div style={{ display: "grid", gap: "8px", marginBottom: "14px" }}>
+            <strong style={{ fontSize: "12px", color: "#344c3b" }}>حدد النوع المطلوب:</strong>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))", gap: "7px" }}>
+              {variants.map(v => {
+                const isSel = selected === v;
+                return (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => setSelected(v)}
+                    style={{
+                      padding: "10px",
+                      borderRadius: "12px",
+                      border: isSel ? "2px solid #174b36" : "1px solid #d5e2d8",
+                      background: isSel ? "#174b36" : "#f7faf8",
+                      color: isSel ? "#ffffff" : "#1b3829",
+                      fontWeight: 700,
+                      fontSize: "12.5px",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "5px",
+                    }}
+                  >
+                    {isSel && <Check size={14} />}
+                    <span>{v}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
-        </div>
+        )}
 
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px", padding: "10px 12px", borderRadius: "12px", background: "#f4f7f3" }}>
-          <span style={{ fontSize: "12px", fontWeight: 700, color: "#2b4736" }}>الكمية ({product.unit}):</span>
-          <div className="quantity-compact">
-            <button type="button" aria-label="تقليل" onClick={() => setQty(q => Math.max(minQ, q - step))}><Minus size={14} /></button>
-            <b>{qty}</b>
-            <button type="button" aria-label="زيادة" disabled={qty + step > maxQ} onClick={() => setQty(q => Math.min(maxQ, q + step))}><Plus size={14} /></button>
+        {weightEnabled ? (
+          <div style={{ display: "grid", gap: "12px", marginBottom: "16px" }}>
+            <div style={{ padding: "12px 14px", borderRadius: "14px", background: "#f2f8f4", border: "1.5px solid #b9dac5" }}>
+              <label style={{ display: "block", fontSize: "12px", fontWeight: 800, color: "#174b36", marginBottom: "6px" }}>
+                💰 اكتب المبلغ الذي تريد الشراء به (بالريال):
+              </label>
+              <input
+                type="number"
+                min={minWeightAmount}
+                step="50"
+                value={amountStr}
+                onChange={e => setAmountStr(e.target.value)}
+                placeholder={"مثلاً: 500 (الحد الأدنى " + minWeightAmount + " ر.ي)"}
+                style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1.5px solid #174b36", fontSize: "16px", fontWeight: 800, textAlign: "center", background: "#ffffff", color: "#113a28" }}
+              />
+              {!isAmountValid && (
+                <small style={{ display: "block", color: "#b42318", fontWeight: 700, marginTop: "5px", textAlign: "center" }}>
+                  يرجى إدخال مبلغ لا يقل عن {formatPrice(minWeightAmount)}
+                </small>
+              )}
+            </div>
+
+            <div style={{ display: "grid", gap: "6px" }}>
+              <small style={{ fontSize: "11px", fontWeight: 700, color: "#526659" }}>اختيار سريع بالمبلغ أو بالوزن:</small>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
+                {quickMoneyOptions.map(amt => (
+                  <button
+                    key={amt}
+                    type="button"
+                    onClick={() => setAmountStr(String(amt))}
+                    style={{ padding: "5px 10px", borderRadius: "99px", border: enteredAmount === amt ? "1.5px solid #174b36" : "1px solid #cfe0d5", background: enteredAmount === amt ? "#174b36" : "#ffffff", color: enteredAmount === amt ? "#ffffff" : "#174b36", fontSize: "11px", fontWeight: 800, cursor: "pointer" }}
+                  >
+                    بـ {amt.toLocaleString("en-US")} ر.ي
+                  </button>
+                ))}
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px", marginTop: "2px" }}>
+                {quickWeightFractions.map(wf => {
+                  const targetAmt = Math.max(minWeightAmount, Math.round(pricePerKg * wf.factor));
+                  const active = enteredAmount === targetAmt;
+                  return (
+                    <button
+                      key={wf.label}
+                      type="button"
+                      onClick={() => setAmountStr(String(targetAmt))}
+                      style={{ padding: "7px 8px", borderRadius: "10px", border: active ? "1.5px solid #174b36" : "1px solid #d5e3da", background: active ? "#eaf5ee" : "#f9fbf9", color: "#174b36", fontSize: "11px", fontWeight: 700, cursor: "pointer", textAlign: "center" }}
+                    >
+                      {wf.label} ({formatPrice(targetAmt)})
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div
+              style={{
+                padding: "13px 15px",
+                borderRadius: "16px",
+                background: "linear-gradient(135deg, #103e2a 0%, #1d5e41 100%)",
+                color: "#ffffff",
+                border: "1.5px solid #f1d897",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: "8px",
+              }}
+            >
+              <div>
+                <span style={{ fontSize: "11px", color: "#d8eee1", display: "block" }}>⚖️ الوزن الصافي الذي ستحصل عليه:</span>
+                <strong style={{ fontSize: "16px", color: "#f9e5a7" }}>{weightText}</strong>
+              </div>
+              <div style={{ textAlign: "left" }}>
+                <span style={{ fontSize: "11px", color: "#d8eee1", display: "block" }}>💰 المبلغ المطلوب:</span>
+                <strong style={{ fontSize: "16px", color: "#ffffff" }}>{formatPrice(enteredAmount)}</strong>
+              </div>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px", padding: "10px 12px", borderRadius: "12px", background: "#f4f7f3" }}>
+            <span style={{ fontSize: "12px", fontWeight: 700, color: "#2b4736" }}>الكمية ({product.unit}):</span>
+            <div className="quantity-compact">
+              <button type="button" aria-label="تقليل" onClick={() => setQty(q => Math.max(minQ, q - step))}><Minus size={14} /></button>
+              <b>{qty}</b>
+              <button type="button" aria-label="زيادة" disabled={qty + step > maxQ} onClick={() => setQty(q => Math.min(maxQ, q + step))}><Plus size={14} /></button>
+            </div>
+          </div>
+        )}
 
-        <button type="button" className="button button-primary full-button" onClick={confirmAdd}>
-          <ShoppingCart size={17} /> إضافة «{selected}» إلى السلة ({formatPrice(product.price * qty)})
+        <button type="button" className="button button-primary full-button" disabled={!isAmountValid} onClick={confirmAdd}>
+          <ShoppingCart size={17} />
+          {weightEnabled
+            ? ("إضافة " + weightText + " بمبلغ " + formatPrice(enteredAmount))
+            : ("إضافة «" + (selected || product.name) + "» إلى السلة (" + formatPrice(product.price * qty) + ")")}
         </button>
       </section>
     </div>
@@ -688,14 +852,16 @@ function ProductCard({ product, onOpen, onAiRecipe, priority = false }: { produc
   const { add, isFavorite, toggleFavorite } = useStore();
   const favorite = isFavorite(product.id);
   const disabled = product.stock !== null && product.stock < (product.minQuantity || 1);
-  const { variants } = useMemo(() => unpackProductVariants(product.description), [product.description]);
-  const [pickerVariant, setPickerVariant] = useState<string | null>(null);
+  const { variants, weightEnabled, minWeightAmount } = useMemo(() => unpackProductVariants(product.description), [product.description]);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerVariant, setPickerVariant] = useState<string>("");
 
   const handleAddClick = (e: React.MouseEvent, preferredVariant?: string) => {
     e.stopPropagation();
     if (disabled) return;
-    if (variants.length > 0) {
-      setPickerVariant(preferredVariant || variants[0]);
+    if (variants.length > 0 || weightEnabled) {
+      setPickerVariant(preferredVariant || variants[0] || "");
+      setPickerOpen(true);
       return;
     }
     add(product, product.minQuantity || 1);
@@ -710,38 +876,47 @@ function ProductCard({ product, onOpen, onAiRecipe, priority = false }: { produc
         {onAiRecipe && <button type="button" className="ai-recipe-toggle" aria-label="أفكار وتحضير بالذكاء الاصطناعي" title="أفكار ووصفات تحضير" onClick={event => { event.stopPropagation(); onAiRecipe(product); }}><Sparkles size={16} /></button>}
         {disabled && <span className="product-sold-out">غير متوفر</span>}
       </div>
-      {variants.length > 0 && (
+      {(variants.length > 0 || weightEnabled) && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", padding: "6px 4px 0" }}>
+          {weightEnabled && (
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={e => handleAddClick(e)}
+              style={{ fontSize: "10px", fontWeight: 800, padding: "3px 8px", borderRadius: "99px", border: "1px solid #e0c170", background: "#fff8e5", color: "#5e4304", cursor: disabled ? "not-allowed" : "pointer" }}
+            >
+              ⚖️ حدد المبلغ والوزن
+            </button>
+          )}
           {variants.map(v => (
             <button
               key={v}
               type="button"
               disabled={disabled}
               onClick={e => handleAddClick(e, v)}
-              style={{
-                fontSize: "10px",
-                fontWeight: 700,
-                padding: "3px 8px",
-                borderRadius: "99px",
-                border: "1px solid #c8dfd0",
-                background: "#eef6f1",
-                color: "#174b36",
-                cursor: disabled ? "not-allowed" : "pointer",
-              }}
+              style={{ fontSize: "10px", fontWeight: 700, padding: "3px 8px", borderRadius: "99px", border: "1px solid #c8dfd0", background: "#eef6f1", color: "#174b36", cursor: disabled ? "not-allowed" : "pointer" }}
             >
               {v}
             </button>
           ))}
         </div>
       )}
-      <button type="button" className="product-title-button" onClick={onOpen}><strong>{product.name}</strong><span>{product.unit}</span></button>
-      <div className="product-card-bottom"><div><b>{formatPrice(product.price)}</b><small> / {product.unit}</small></div><button type="button" className="add-button" disabled={disabled} onClick={e => handleAddClick(e)} aria-label={"إضافة " + product.name + " للسلة"}><Plus size={18} /></button></div>
+      <button type="button" className="product-title-button" onClick={onOpen}><strong>{product.name}</strong><span>{weightEnabled ? "سعر الكيلو (يباع بأي مبلغ)" : product.unit}</span></button>
+      <div className="product-card-bottom"><div><b>{formatPrice(product.price)}</b><small> / {weightEnabled ? "كيلو" : product.unit}</small></div><button type="button" className="add-button" disabled={disabled} onClick={e => handleAddClick(e)} aria-label={"إضافة " + product.name + " للسلة"}><Plus size={18} /></button></div>
     </article>
-    {pickerVariant !== null && variants.length > 0 && (
-      <VariantPickerModal product={product} variants={variants} initialVariant={pickerVariant} onClose={() => setPickerVariant(null)} />
+    {pickerOpen && (
+      <VariantPickerModal
+        product={product}
+        variants={variants}
+        weightEnabled={weightEnabled}
+        minWeightAmount={minWeightAmount}
+        initialVariant={pickerVariant}
+        onClose={() => setPickerOpen(false)}
+      />
     )}
   </>;
 }
+
 
 function ProductGrid({ items, onOpen, onAiRecipe }: { items: PublicProduct[]; onOpen: (id: number) => void; onAiRecipe?: (p: PublicProduct) => void }) {
   if (!items.length) return <EmptyState icon={ShoppingBag} title="المتجر ينتظر منتجاته الأولى" description="لا توجد منتجات منشورة بعد. ستظهر الأصناف هنا بعد أن تضيفها من لوحة الإدارة." action="تصفح الأقسام" href="/categories" />;
@@ -867,8 +1042,8 @@ function ProductDetail({ id, allProducts = [], onSelectProduct, onBack, onAiReci
   const stockLimit = product.stock === null ? 9999 : product.stock;
 
   const handleDetailAdd = () => {
-    if (unpackedDetail.variants.length > 0) {
-      if (selectedDetailVariant) {
+    if (unpackedDetail.weightEnabled || unpackedDetail.variants.length > 0) {
+      if (!unpackedDetail.weightEnabled && selectedDetailVariant) {
         add({ ...product, name: product.name + " (" + selectedDetailVariant + ")", variant: selectedDetailVariant }, quantity);
         toast.success("تمت إضافة «" + product.name + " (" + selectedDetailVariant + ")» إلى السلة");
       } else {
@@ -955,8 +1130,8 @@ function ProductDetail({ id, allProducts = [], onSelectProduct, onBack, onAiReci
           <div className="detail-meta"><span><Package size={15} /> الوحدة: {product.unit}</span><span>{product.stock === null ? "التوفر يحدده المتجر" : "المتاح: " + product.stock}</span></div>
           <div className="quantity-control"><button type="button" aria-label="تقليل" onClick={() => setQuantity(value => Math.max(product.minQuantity || 1, value - (product.quantityStep || 1)))}><Minus size={16} /></button><strong>{quantity}</strong><button type="button" aria-label="زيادة" disabled={quantity + (product.quantityStep || 1) > stockLimit} onClick={() => setQuantity(value => Math.min(stockLimit, value + (product.quantityStep || 1)))}><Plus size={16} /></button><small>{product.unit}</small></div>
           {onAiRecipe && <button type="button" className="button button-outline full-button" style={{ marginBottom: "8px", borderColor: "#286a48", color: "#174b36" }} onClick={() => onAiRecipe(product as PublicProduct)}><Sparkles size={16} /> أفكار وطرق تحضير بالذكاء الاصطناعي</button>}
-          <button type="button" className="button button-primary full-button" disabled={stockLimit < (product.minQuantity || 1)} onClick={handleDetailAdd}><ShoppingCart size={17} /> {unpackedDetail.variants.length > 0 ? (selectedDetailVariant ? "أضف «" + selectedDetailVariant + "» إلى السلة" : "اختر النوع وأضف إلى السلة") : "أضف إلى السلة"}</button>
-          {detailPickerOpen && unpackedDetail.variants.length > 0 && <VariantPickerModal product={product as PublicProduct} variants={unpackedDetail.variants} initialQty={quantity} onClose={() => setDetailPickerOpen(false)} />}
+          <button type="button" className="button button-primary full-button" disabled={stockLimit < (product.minQuantity || 1)} onClick={handleDetailAdd}><ShoppingCart size={17} /> {unpackedDetail.weightEnabled ? "⚖️ حدد المبلغ والوزن وأضف للسلة" : unpackedDetail.variants.length > 0 ? (selectedDetailVariant ? "أضف «" + selectedDetailVariant + "» إلى السلة" : "اختر النوع وأضف إلى السلة") : "أضف إلى السلة"}</button>
+          {detailPickerOpen && (unpackedDetail.variants.length > 0 || unpackedDetail.weightEnabled) && <VariantPickerModal product={product as PublicProduct} variants={unpackedDetail.variants} weightEnabled={unpackedDetail.weightEnabled} minWeightAmount={unpackedDetail.minWeightAmount} initialVariant={selectedDetailVariant} initialQty={quantity} onClose={() => setDetailPickerOpen(false)} />}
         </div>
       </div>
       {!!product.recommendations?.length && <section className="store-section"><div className="section-heading"><div><span className="eyebrow">قد يناسبك أيضًا</span><h2>منتجات مقترحة</h2></div></div><ProductGrid items={product.recommendations as PublicProduct[]} onOpen={nextId => onSelectProduct ? onSelectProduct(nextId) : window.location.assign("/product/" + nextId)} onAiRecipe={onAiRecipe} /></section>}
@@ -1083,7 +1258,7 @@ function Checkout({ onClose, onSuccess, cart }: { onClose: () => void; onSuccess
   const [saveDeliveryAddress, setSaveDeliveryAddress] = useState(false);
   const [makeDefaultAddress, setMakeDefaultAddress] = useState(customer.addresses.length === 0);
   const [addressLabel, setAddressLabel] = useState("المنزل");
-  const items = cart.map(item => ({ productId: item.id, quantity: item.quantity, ...(item.variant ? { variant: item.variant } : {}) }));
+  const items = cart.map(item => ({ productId: item.id, quantity: item.quantity, ...(item.variant ? { variant: item.variant } : {}), ...(item.customAmount ? { customAmount: item.customAmount } : {}) }));
   const signature = JSON.stringify({ form, items });
   const keyRef = useRef<{ signature: string; key: string }>({ signature: "", key: "" });
   if (keyRef.current.signature !== signature) keyRef.current = { signature, key: getPendingOrderIdempotencyKey(signature) };

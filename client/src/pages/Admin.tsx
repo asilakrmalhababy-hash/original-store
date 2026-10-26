@@ -29,36 +29,83 @@ const sections: Array<{ id: Section; label: string; icon: typeof LayoutDashboard
   { id: "settings", label: "إعدادات المتجر", icon: Settings2 },
 ];
 
+async function quickCompressImageFile(file: File, kind: "product" | "category" | "banner" | "icon"): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      try {
+        URL.revokeObjectURL(url);
+        const maxDim = kind === "banner" ? 1080 : kind === "icon" ? 384 : 680;
+        let w = img.naturalWidth || img.width || 600;
+        let h = img.naturalHeight || img.height || 600;
+        if (w > maxDim || h > maxDim) {
+          const ratio = Math.min(maxDim / w, maxDim / h);
+          w = Math.max(1, Math.round(w * ratio));
+          h = Math.max(1, Math.round(h * ratio));
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) { reject(new Error("تعذر معالجة الصورة")); return; }
+        ctx.drawImage(img, 0, 0, w, h);
+        const out = canvas.toDataURL("image/webp", 0.78);
+        resolve(out);
+      } catch (e) {
+        reject(e);
+      }
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("تعذر قراءة ملف الصورة"));
+    };
+    img.src = url;
+  });
+}
+
 function ImageField({ value, onChange, kind, aspect, title }: { value: string; onChange: (value: string) => void; kind: "product" | "category" | "banner" | "icon"; aspect: number; title: string }) {
   const [open, setOpen] = useState(false);
-  const latestValRef = useRef(value);
-  latestValRef.current = value;
-  const upload = trpc.commerce.admin.uploadImage.useMutation({
-    onSuccess: (result, vars) => {
-      if (latestValRef.current === vars.dataUrl && result?.imageUrl) {
-        onChange(result.imageUrl);
-      }
-    },
-    onError: () => {},
-  });
+  const [compressing, setCompressing] = useState(false);
+  const quickInputRef = useRef<HTMLInputElement>(null);
+
+  const handleQuickFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setCompressing(true);
+    try {
+      const compressed = await quickCompressImageFile(file, kind);
+      onChange(compressed);
+      toast.success("تم تجهيز وضغط الصورة فوراً بنجاح ⚡");
+    } catch {
+      toast.error("تعذر قراءة الصورة، جرب صورة أخرى.");
+    } finally {
+      setCompressing(false);
+    }
+  };
+
   const handleCropSave = (dataUrl: string) => {
-    latestValRef.current = dataUrl;
     onChange(dataUrl);
     setOpen(false);
-    toast.success("تم اعتماد قص الصورة وتجهيزها للحفظ");
-    upload.mutate({ dataUrl, kind });
+    toast.success("تم اعتماد قص الصورة فوراً ⚡");
   };
+
   return (
     <div className="admin-image-field">
-      <div className="admin-image-preview">
-        {value ? <img src={value} alt="معاينة الصورة" /> : <span><ImagePlus size={22} /><small>لم تُرفع صورة</small></span>}
+      <input ref={quickInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={e => void handleQuickFile(e)} />
+      <div className="admin-image-preview" onClick={() => quickInputRef.current?.click()} style={{ cursor: "pointer" }} title="اضغط لاختيار صورة سريعة">
+        {value ? <img src={value} alt="معاينة الصورة" /> : <span><ImagePlus size={22} /><small>{compressing ? "جارٍ الضغط السريع..." : "اضغط لاختيار صورة فوراً"}</small></span>}
       </div>
-      <div className="admin-image-buttons">
+      <div className="admin-image-buttons" style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+        <button type="button" className="small-button selected" disabled={compressing} onClick={e => { e.preventDefault(); e.stopPropagation(); quickInputRef.current?.click(); }}>
+          <ImagePlus size={15} />{compressing ? "جارٍ التجهيز..." : value ? "تغيير سريع ⚡" : "رفع صورة سريع ⚡"}
+        </button>
         <button type="button" className="small-button" onClick={e => { e.preventDefault(); e.stopPropagation(); setOpen(true); }}>
-          <ImagePlus size={15} />{value ? "قص / تغيير الصورة" : "رفع وقص صورة"}
+          ✂️ قص وتعديل
         </button>
         {value && (
-          <button type="button" className="small-button danger-soft" onClick={e => { e.preventDefault(); e.stopPropagation(); latestValRef.current = ""; onChange(""); }}>
+          <button type="button" className="small-button danger-soft" onClick={e => { e.preventDefault(); e.stopPropagation(); onChange(""); }}>
             <X size={14} />إزالة
           </button>
         )}
@@ -73,10 +120,10 @@ function ImageField({ value, onChange, kind, aspect, title }: { value: string; o
           onSave={handleCropSave}
         />
       )}
-      {upload.isPending && <small className="upload-status"><LoaderCircle size={14} className="spin" /> جارٍ حفظ الصورة...</small>}
     </div>
   );
 }
+
 
 function AdminLoginGate({ reason, onLogout, onSuccess }: { reason: "login" | "forbidden" | "suspended"; onLogout?: () => void | Promise<void>; onSuccess?: () => void }) {
   const [username, setUsername] = useState("");
@@ -231,34 +278,90 @@ function Overview() {
   </div>;
 }
 
-function unpackProductVariants(rawDescription?: string | null): { cleanDescription: string; variants: string[] } {
-  const raw = String(rawDescription || "");
-  const m = raw.match(/\[\[variants:(\[[\s\S]*?\])\]\]/);
-  if (!m) return { cleanDescription: raw.trim(), variants: [] };
-  const cleanDescription = raw.replace(m[0], "").trim();
-  try {
-    const parsed = JSON.parse(m[1]);
-    if (Array.isArray(parsed)) {
-      return { cleanDescription, variants: parsed.map(v => String(v || "").trim()).filter(Boolean).slice(0, 25) };
-    }
-  } catch {}
-  return { cleanDescription, variants: [] };
+function unpackProductVariants(rawDescription?: string | null): { cleanDescription: string; variants: string[]; weightEnabled: boolean; minWeightAmount: number } {
+  let raw = String(rawDescription || "");
+  let variants: string[] = [];
+  let weightEnabled = false;
+  let minWeightAmount = 100;
+  const vm = raw.match(/\[\[variants:(\[[\s\S]*?\])\]\]/);
+  if (vm) {
+    raw = (raw.slice(0, vm.index) + raw.slice((vm.index || 0) + vm[0].length)).trim();
+    try {
+      const parsed = JSON.parse(vm[1]);
+      if (Array.isArray(parsed)) variants = parsed.map(x => String(x || "").trim()).filter(Boolean).slice(0, 25);
+    } catch {}
+  }
+  const wm = raw.match(/\[\[wcfg:(\{[\s\S]*?\})\]\]/);
+  if (wm) {
+    raw = (raw.slice(0, wm.index) + raw.slice((wm.index || 0) + wm[0].length)).trim();
+    try {
+      const parsed = JSON.parse(wm[1]);
+      weightEnabled = Boolean(parsed.enabled);
+      if (Number.isFinite(Number(parsed.minAmount)) && Number(parsed.minAmount) > 0) {
+        minWeightAmount = Math.floor(Number(parsed.minAmount));
+      }
+    } catch {}
+  }
+  return { cleanDescription: raw.trim(), variants, weightEnabled, minWeightAmount };
 }
 
-function packProductVariants(cleanDescription: string, variants: string[]): string | null {
-  const clean = cleanDescription.trim();
+function packProductVariants(cleanDescription: string, variants: string[], weightEnabled = false, minWeightAmount = 100): string | null {
+  let out = cleanDescription.trim();
   const valid = [...new Set(variants.map(v => v.trim()).filter(Boolean))].slice(0, 25);
-  if (!valid.length) return clean || null;
-  return (clean ? clean + "\n" : "") + "[[variants:" + JSON.stringify(valid) + "]]";
+  if (valid.length > 0) {
+    out = (out ? out + "\n" : "") + "[[variants:" + JSON.stringify(valid) + "]]";
+  }
+  if (weightEnabled) {
+    out = (out ? out + "\n" : "") + "[[wcfg:" + JSON.stringify({ enabled: true, minAmount: Math.max(50, Number(minWeightAmount) || 100) }) + "]]";
+  }
+  return out || null;
 }
 
-type ProductFormState = { name: string; description: string; variants: string[]; variantDraft: string; imageUrl: string; categoryId: number | null; price: string; unit: string; stock: string; minQuantity: string; quantityStep: string; isPublished: boolean; isAvailable: boolean; sortOrder: string };
-const blankProduct: ProductFormState = { name: "", description: "", variants: [], variantDraft: "", imageUrl: "", categoryId: null, price: "", unit: "حبة", stock: "", minQuantity: "1", quantityStep: "1", isPublished: true, isAvailable: true, sortOrder: "0" };
+type ProductFormState = {
+  name: string;
+  description: string;
+  variants: string[];
+  variantDraft: string;
+  weightEnabled: boolean;
+  minWeightAmount: string;
+  imageUrl: string;
+  categoryId: number | null;
+  price: string;
+  unit: string;
+  stock: string;
+  minQuantity: string;
+  quantityStep: string;
+  isPublished: boolean;
+  isAvailable: boolean;
+  sortOrder: string;
+};
+
+const blankProduct: ProductFormState = {
+  name: "",
+  description: "",
+  variants: [],
+  variantDraft: "",
+  weightEnabled: false,
+  minWeightAmount: "100",
+  imageUrl: "",
+  categoryId: null,
+  price: "",
+  unit: "حبة",
+  stock: "",
+  minQuantity: "1",
+  quantityStep: "1",
+  isPublished: true,
+  isAvailable: true,
+  sortOrder: "0",
+};
 
 function ProductsPanel() {
   const utils = trpc.useUtils();
   const [form, setForm] = useState(blankProduct);
   const [editing, setEditing] = useState<number | null>(null);
+  const [showVariantsModal, setShowVariantsModal] = useState(false);
+  const [showWeightModal, setShowWeightModal] = useState(false);
+  const [showAdvancedFields, setShowAdvancedFields] = useState(false);
   const [recommended, setRecommended] = useState<number | null>(null);
   const [recommendedIds, setRecommendedIds] = useState<number[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -277,8 +380,11 @@ function ProductsPanel() {
 
   const create = trpc.commerce.admin.products.create.useMutation({
     onSuccess: async () => {
-      toast.success("تمت إضافة المنتج بنجاح");
+      toast.success("تمت إضافة المنتج بنجاح ⚡");
       setForm(blankProduct);
+      setShowVariantsModal(false);
+      setShowWeightModal(false);
+      setShowAdvancedFields(false);
       await Promise.all([utils.commerce.admin.products.list.invalidate(), utils.commerce.admin.overview.invalidate(), refreshCatalog()]);
     },
     onError: error => toast.error(error.message),
@@ -286,9 +392,12 @@ function ProductsPanel() {
 
   const update = trpc.commerce.admin.products.update.useMutation({
     onSuccess: async () => {
-      toast.success("تم حفظ تعديلات المنتج بنجاح");
+      toast.success("تم حفظ تعديلات المنتج بنجاح ⚡");
       setEditing(null);
       setForm(blankProduct);
+      setShowVariantsModal(false);
+      setShowWeightModal(false);
+      setShowAdvancedFields(false);
       await Promise.all([utils.commerce.admin.products.list.invalidate(), refreshCatalog()]);
     },
     onError: error => toast.error(error.message),
@@ -330,6 +439,8 @@ function ProductsPanel() {
       description: unpacked.cleanDescription,
       variants: unpacked.variants,
       variantDraft: "",
+      weightEnabled: unpacked.weightEnabled,
+      minWeightAmount: String(unpacked.minWeightAmount || 100),
       imageUrl: item.imageUrl ?? "",
       categoryId: item.categoryId,
       price: String(item.price),
@@ -354,20 +465,21 @@ function ProductsPanel() {
     event.preventDefault();
     const extraParts = form.variantDraft.split(/[,،\n]+/).map(s => s.trim()).filter(Boolean);
     const allVariants = [...new Set([...form.variants, ...extraParts])];
-    const packedDesc = packProductVariants(form.description, allVariants);
+    const packedDesc = packProductVariants(form.description, allVariants, form.weightEnabled, Number(form.minWeightAmount) || 100);
+    const effectiveUnit = form.weightEnabled && (form.unit === "حبة" || !form.unit.trim()) ? "كيلو" : (form.unit.trim() || "حبة");
     const values = {
       name: form.name,
       description: packedDesc,
       imageUrl: form.imageUrl || null,
       categoryId: form.categoryId,
       price: Number(form.price),
-      unit: form.unit,
+      unit: effectiveUnit,
       stock: form.stock === "" ? null : Number(form.stock),
-      minQuantity: Number(form.minQuantity),
-      quantityStep: Number(form.quantityStep),
+      minQuantity: Number(form.minQuantity) || 1,
+      quantityStep: Number(form.quantityStep) || 1,
       isPublished: form.isPublished,
       isAvailable: form.isAvailable,
-      sortOrder: Number(form.sortOrder),
+      sortOrder: Number(form.sortOrder) || 0,
     };
     if (editing) update.mutate({ id: editing, values });
     else create.mutate(values);
@@ -385,65 +497,172 @@ function ProductsPanel() {
     return true;
   });
 
+  const samplePricePerKg = Number(form.price) || 4000;
+
   return (
     <div className="admin-content">
       <div className="admin-page-heading">
-        <div><span className="eyebrow">كتالوج متجرك</span><h1>إدارة المنتجات</h1><p>أضف وعدّل واحذف منتجاتك بحرية كاملة مع قص احترافي للصور.</p></div>
+        <div><span className="eyebrow">كتالوج متجرك السريع</span><h1>إدارة المنتجات</h1><p>واجهة مبسطة وسريعة جداً لرفع المنتجات بالقطعة أو بالوزن والمبلغ (بهارات، حلاوة، خضروات).</p></div>
         <span className="admin-heading-mark"><Package size={25} /></span>
       </div>
       <section className="admin-form-card">
         <div className="form-card-heading">
           <span className="form-card-number">{editing ? "✳" : "01"}</span>
-          <div><h2>{editing ? "تعديل المنتج: " + form.name : "إضافة منتج جديد"}</h2><p>بعد قص الصورة ستظهر هنا فوراً ولن يُحفظ المنتج إلا عند ضغطك على زر الحفظ بالأسفل.</p></div>
+          <div><h2>{editing ? "تعديل المنتج: " + form.name : "إضافة منتج جديد"}</h2><p>أدخل الاسم والسعر والقسم والصورة فقط، واستخدم الأزرار السفلية عند الحاجة لإضافة خيارات أو بيع بالوزن.</p></div>
           {editing && <button type="button" className="small-button" onClick={() => { setEditing(null); setForm(blankProduct); }}>إلغاء التعديل<X size={14} /></button>}
         </div>
         <form onSubmit={submit} className="admin-form">
           <div className="product-form-layout">
             <div className="form-fields-grid">
-              <label className="field-wide">اسم المنتج<input required maxLength={180} value={form.name} onChange={e => setField("name", e.target.value)} placeholder="اكتب اسم المنتج" /></label>
-              <label className="field-wide">الوصف<textarea rows={2} value={form.description} onChange={e => setField("description", e.target.value)} placeholder="وصف واضح للمنتج" /></label>
-              <div className="field-wide" style={{ padding: "12px", borderRadius: "12px", background: "#f4f8f5", border: "1px solid #dce8df", display: "grid", gap: "8px" }}>
-                <div>
-                  <strong style={{ fontSize: "11px", color: "#174b36", display: "block" }}>أنواع / خيارات المنتج في نفس البطاقة (اختياري — مثل: الهناء، نعناع، الرعوي)</strong>
-                  <small style={{ fontSize: "10px", color: "#66786c" }}>أضف الأنواع هنا لتظهر كأزرار تحت صورة المنتج وبنافذة منبثقة يختار منها الزبون عند الضغط على إضافة للسلة.</small>
-                </div>
-                <div style={{ display: "flex", gap: "6px" }}>
-                  <input
-                    value={form.variantDraft}
-                    onChange={e => setField("variantDraft", e.target.value)}
-                    onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addDraftVariants(); } }}
-                    placeholder="اكتب الأنواع مفصولة بفاصلة (مثال: الهناء، نعناع، الرعوي) ثم اضغط إضافة"
-                    style={{ flex: 1 }}
-                  />
-                  <button type="button" className="small-button selected" onClick={addDraftVariants}><Plus size={14} /> إضافة نوع</button>
-                </div>
-                {form.variants.length > 0 && (
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "2px" }}>
-                    {form.variants.map(v => (
-                      <span key={v} style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "4px 10px", borderRadius: "99px", background: "#174b36", color: "#ffffff", fontSize: "11px", fontWeight: 700 }}>
-                        {v}
-                        <button type="button" onClick={() => setField("variants", form.variants.filter(x => x !== v))} style={{ border: 0, background: "transparent", color: "#f1d897", cursor: "pointer", padding: 0, display: "grid", placeItems: "center" }} aria-label={"حذف " + v}><X size={13} /></button>
-                      </span>
-                    ))}
-                  </div>
-                )}
+              <label className="field-wide">اسم المنتج *<input required maxLength={180} value={form.name} onChange={e => setField("name", e.target.value)} placeholder="مثلاً: كمون بلدي، حلاوة طحينية، زبادي..." /></label>
+              <label>{form.weightEnabled ? "سعر الكيلو الواحد (1000 جرام) بالريال *" : "السعر بالريال اليمني *"}<input required type="number" min="0" value={form.price} onChange={e => setField("price", e.target.value)} placeholder={form.weightEnabled ? "مثلاً: 4000 (سعر الكيلو)" : "0"} /></label>
+              <label>القسم<select value={form.categoryId ?? ""} onChange={e => setField("categoryId", e.target.value ? Number(e.target.value) : null)}><option value="">اختر القسم...</option>{cats.data?.map(category => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
+              <label className="field-wide">الوصف (اختياري)<textarea rows={2} value={form.description} onChange={e => setField("description", e.target.value)} placeholder="وصف مختصر للمنتج..." /></label>
+
+              <div className="field-wide" style={{ display: "flex", flexWrap: "wrap", gap: "8px", paddingTop: "4px" }}>
+                <button
+                  type="button"
+                  className={"small-button" + (form.weightEnabled ? " selected" : "")}
+                  onClick={() => setShowWeightModal(true)}
+                  style={{ padding: "8px 13px", borderRadius: "12px", fontWeight: 800, border: form.weightEnabled ? "1.5px solid #174b36" : "1px solid #cbd8cf" }}
+                >
+                  ⚖️ {form.weightEnabled ? "البيع بالوزن والمبلغ: مفعّل ✅" : "تفعيل البيع بالوزن والمبلغ (بهارات / حلاوة / خضروات)"}
+                </button>
+
+                <button
+                  type="button"
+                  className={"small-button" + (form.variants.length > 0 ? " selected" : "")}
+                  onClick={() => setShowVariantsModal(true)}
+                  style={{ padding: "8px 13px", borderRadius: "12px", fontWeight: 800, border: form.variants.length > 0 ? "1.5px solid #174b36" : "1px solid #cbd8cf" }}
+                >
+                  🔀 {form.variants.length > 0 ? ("الأنواع المضافة (" + form.variants.length + "): " + form.variants.slice(0, 3).join("، ")) : "إضافة أنواع / خيارات للمنتج"}
+                </button>
+
+                <button
+                  type="button"
+                  className={"small-button" + (showAdvancedFields ? " selected" : "")}
+                  onClick={() => setShowAdvancedFields(v => !v)}
+                  style={{ padding: "8px 13px", borderRadius: "12px" }}
+                >
+                  ⚙️ {showAdvancedFields ? "إخفاء الخيارات الإضافية" : "خيارات إضافية (الوحدة / المخزون)"}
+                </button>
               </div>
-              <label>السعر بالريال اليمني<input required type="number" min="0" value={form.price} onChange={e => setField("price", e.target.value)} placeholder="0" /></label>
-              <label>وحدة البيع<input required value={form.unit} onChange={e => setField("unit", e.target.value)} placeholder="حبة، كيلو، عبوة..." /></label>
-              <label>القسم<select value={form.categoryId ?? ""} onChange={e => setField("categoryId", e.target.value ? Number(e.target.value) : null)}><option value="">بلا قسم</option>{cats.data?.map(category => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
-              <label>الكمية المتوفرة<input type="number" min="0" value={form.stock} onChange={e => setField("stock", e.target.value)} placeholder="اتركه فارغًا إذا غير محدد" /></label>
-              <label>الحد الأدنى للكمية<input required type="number" min="1" value={form.minQuantity} onChange={e => setField("minQuantity", e.target.value)} /></label>
-              <label>خطوة الزيادة<input required type="number" min="1" value={form.quantityStep} onChange={e => setField("quantityStep", e.target.value)} /></label>
-              <label>ترتيب العرض<input type="number" value={form.sortOrder} onChange={e => setField("sortOrder", e.target.value)} /></label>
-              <label className="toggle-field"><input type="checkbox" checked={form.isPublished} onChange={e => setField("isPublished", e.target.checked)} /> نشر المنتج في المتجر</label>
-              <label className="toggle-field"><input type="checkbox" checked={form.isAvailable} onChange={e => setField("isAvailable", e.target.checked)} /> متاح للشراء</label>
+
+              {showAdvancedFields && (
+                <div className="field-wide form-fields-grid" style={{ padding: "12px", borderRadius: "14px", background: "#f7faf8", border: "1px solid #dce6df" }}>
+                  <label>وحدة البيع<input required value={form.unit} onChange={e => setField("unit", e.target.value)} placeholder="حبة، كيلو، عبوة..." /></label>
+                  <label>الكمية المتوفرة بالمخزون<input type="number" min="0" value={form.stock} onChange={e => setField("stock", e.target.value)} placeholder="اتركه فارغًا إذا مفتوح" /></label>
+                  <label>الحد الأدنى للكمية<input required type="number" min="1" value={form.minQuantity} onChange={e => setField("minQuantity", e.target.value)} /></label>
+                  <label>ترتيب العرض<input type="number" value={form.sortOrder} onChange={e => setField("sortOrder", e.target.value)} /></label>
+                  <label className="toggle-field"><input type="checkbox" checked={form.isPublished} onChange={e => setField("isPublished", e.target.checked)} /> نشر المنتج في المتجر</label>
+                  <label className="toggle-field"><input type="checkbox" checked={form.isAvailable} onChange={e => setField("isAvailable", e.target.checked)} /> متاح للشراء</label>
+                </div>
+              )}
             </div>
             <ImageField title="قص وتجهيز صورة المنتج" value={form.imageUrl} onChange={imageUrl => setField("imageUrl", imageUrl)} kind="product" aspect={1} />
           </div>
+
+          {showWeightModal && (
+            <div className="modal-backdrop" role="dialog" aria-modal="true" onClick={() => setShowWeightModal(false)} style={{ zIndex: 180 }}>
+              <section className="checkout-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: "460px", padding: "20px" }}>
+                <div className="modal-heading" style={{ marginBottom: "12px" }}>
+                  <div>
+                    <span className="eyebrow">للبهارات والحلاوة الطحينية والخضروات</span>
+                    <h2 style={{ fontSize: "18px", margin: "2px 0" }}>⚖️ إعداد البيع بالوزن والمبلغ</h2>
+                  </div>
+                  <button type="button" className="icon-button" onClick={() => setShowWeightModal(false)}><X size={18} /></button>
+                </div>
+                <div style={{ display: "grid", gap: "12px" }}>
+                  <label className="toggle-field" style={{ padding: "12px", borderRadius: "12px", background: form.weightEnabled ? "#eaf6ee" : "#f5f5f2", border: form.weightEnabled ? "1.5px solid #174b36" : "1px solid #dcdcd4", fontWeight: 800 }}>
+                    <input
+                      type="checkbox"
+                      checked={form.weightEnabled}
+                      onChange={e => {
+                        const checked = e.target.checked;
+                        setForm(curr => ({ ...curr, weightEnabled: checked, unit: checked && curr.unit === "حبة" ? "كيلو" : curr.unit }));
+                      }}
+                    />
+                    <span>تفعيل شراء هذا المنتج بالمبلغ والوزن (يكتب الزبون المبلغ ويظهر له الوزن تلقائياً)</span>
+                  </label>
+
+                  <label style={{ display: "grid", gap: "6px", fontSize: "12px", fontWeight: 700, color: "#174b36" }}>
+                    <span>سعر الكيلو الواحد (1000 جرام) بالريال اليمني:</span>
+                    <input type="number" min="100" step="50" value={form.price} onChange={e => setField("price", e.target.value)} placeholder="مثلاً: 4000" />
+                  </label>
+
+                  <label style={{ display: "grid", gap: "6px", fontSize: "12px", fontWeight: 700, color: "#174b36" }}>
+                    <span>أقل مبلغ مسموح للزبون أن يشتري به (ر.ي):</span>
+                    <input type="number" min="50" step="50" value={form.minWeightAmount} onChange={e => setField("minWeightAmount", e.target.value)} placeholder="مثلاً: 100 أو 200" />
+                  </label>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                    {[100, 200, 300, 500, 1000].map(mAmt => (
+                      <button key={mAmt} type="button" className={"small-button" + (Number(form.minWeightAmount) === mAmt ? " selected" : "")} onClick={() => setField("minWeightAmount", String(mAmt))}>
+                        أقل مبلغ: {mAmt} ر.ي
+                      </button>
+                    ))}
+                  </div>
+
+                  <div style={{ padding: "12px", borderRadius: "12px", background: "#f2f8f4", border: "1px solid #cbe0d2", fontSize: "12px", lineHeight: 1.6, color: "#174b36" }}>
+                    <strong>كيف يظهر للزبون في المتجر؟</strong>
+                    <div>• إذا كتب الزبون <b>{Math.round(samplePricePerKg * 0.125).toLocaleString("en-US")} ر.ي</b> ← يظهر له الوزن: <b>125 جرام (ثمن كيلو)</b></div>
+                    <div>• إذا كتب الزبون <b>{Math.round(samplePricePerKg * 0.25).toLocaleString("en-US")} ر.ي</b> ← يظهر له الوزن: <b>250 جرام (ربع كيلو)</b></div>
+                    <div>• إذا كتب الزبون <b>{Math.round(samplePricePerKg * 0.5).toLocaleString("en-US")} ر.ي</b> ← يظهر له الوزن: <b>500 جرام (نصف كيلو)</b></div>
+                  </div>
+
+                  <button type="button" className="button button-primary full-button" onClick={() => setShowWeightModal(false)}>
+                    <Check size={16} /> اعتماد إعدادات الوزن والمبلغ
+                  </button>
+                </div>
+              </section>
+            </div>
+          )}
+
+          {showVariantsModal && (
+            <div className="modal-backdrop" role="dialog" aria-modal="true" onClick={() => setShowVariantsModal(false)} style={{ zIndex: 180 }}>
+              <section className="checkout-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: "460px", padding: "20px" }}>
+                <div className="modal-heading" style={{ marginBottom: "12px" }}>
+                  <div>
+                    <span className="eyebrow">خيارات المنتج المتعددة</span>
+                    <h2 style={{ fontSize: "18px", margin: "2px 0" }}>🔀 إضافة أنواع أو نكهات للمنتج</h2>
+                    <small style={{ color: "#5e7165" }}>مثل: الهناء، الرعوي، نعناع، حار، عادي، بالمكسرات...</small>
+                  </div>
+                  <button type="button" className="icon-button" onClick={() => setShowVariantsModal(false)}><X size={18} /></button>
+                </div>
+                <div style={{ display: "grid", gap: "12px" }}>
+                  <div style={{ display: "flex", gap: "6px" }}>
+                    <input
+                      value={form.variantDraft}
+                      onChange={e => setField("variantDraft", e.target.value)}
+                      onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addDraftVariants(); } }}
+                      placeholder="اكتب النوع (أو عدة أنواع بفاصلة) ثم اضغط إضافة"
+                      style={{ flex: 1 }}
+                    />
+                    <button type="button" className="small-button selected" onClick={addDraftVariants}><Plus size={14} /> إضافة</button>
+                  </div>
+                  {form.variants.length > 0 ? (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", padding: "10px", borderRadius: "12px", background: "#f4f8f5" }}>
+                      {form.variants.map(v => (
+                        <span key={v} style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "5px 11px", borderRadius: "99px", background: "#174b36", color: "#ffffff", fontSize: "12px", fontWeight: 700 }}>
+                          {v}
+                          <button type="button" onClick={() => setField("variants", form.variants.filter(x => x !== v))} style={{ border: 0, background: "transparent", color: "#f1d897", cursor: "pointer", padding: 0, display: "grid", placeItems: "center" }}><X size={13} /></button>
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="subtle-note">لم تُضف أنواع بعد لهذا المنتج.</p>
+                  )}
+                  <button type="button" className="button button-primary full-button" onClick={() => { addDraftVariants(); setShowVariantsModal(false); }}>
+                    <Check size={16} /> اعتماد الأنواع وإغلاق النافذة
+                  </button>
+                </div>
+              </section>
+            </div>
+          )}
+
           <div className="form-submit-row" style={{ gap: "8px" }}>
             <button type="submit" className="button button-primary" disabled={create.isPending || update.isPending}>
               {create.isPending || update.isPending ? <LoaderCircle size={16} className="spin" /> : editing ? <Save size={16} /> : <Plus size={17} />}
-              {editing ? "حفظ التعديلات" : "إضافة المنتج"}
+              {editing ? "حفظ التعديلات" : "إضافة المنتج الآن"}
             </button>
             {editing && (
               <button type="button" className="button button-quiet" onClick={() => { setEditing(null); setForm(blankProduct); }}>
@@ -479,61 +698,68 @@ function ProductsPanel() {
 
       {query.isLoading ? <AdminLoading /> : query.error ? <AdminError message={query.error.message} retry={() => void query.refetch()} /> : !filteredProducts.length ? <AdminEmpty title="لا توجد منتجات مطابقة" text="أضف منتجاً جديداً أو غيّر خيارات البحث والفلترة." /> : (
         <div className="entity-list">
-          {filteredProducts.map(item => (
-            <article className="entity-row" key={item.id}>
-              <div className="entity-image">{item.imageUrl ? <img src={item.imageUrl} alt="" /> : <Leaf size={19} />}</div>
-              <div className="entity-main">
-                <strong>{item.name}</strong>
-                <small>{cats.data?.find(cat => cat.id === item.categoryId)?.name || "بلا قسم"} · {item.unit} · {item.stock === null ? "المخزون مفتوح" : "المخزون " + item.stock}{unpackProductVariants(item.description).variants.length > 0 ? " · الأنواع: " + unpackProductVariants(item.description).variants.join(" / ") : ""}</small>
-              </div>
-              <div className="entity-price">{money(item.price)}</div>
-              <span className={"visibility-tag " + (item.isPublished ? "visible" : "hidden")}>{item.isPublished ? "منشور" : "مخفي"}</span>
-              <div className="entity-actions">
-                <button type="button" className="small-button" onClick={() => selectEdit(item)}>تعديل</button>
-                <button
-                  type="button"
-                  className={"small-button " + (item.isPublished ? "" : "selected")}
-                  onClick={() => toggleVisibility.mutate({ id: item.id, values: { isPublished: !item.isPublished, isAvailable: !item.isPublished ? true : item.isAvailable } })}
-                >
-                  {item.isPublished ? "إخفاء" : "نشر الآن"}
-                </button>
-                <button type="button" className="small-button" onClick={() => { setRecommended(recommended === item.id ? null : item.id); setRecommendedIds([]); }}>شبيه</button>
-                <button
-                  type="button"
-                  className="small-button danger-soft"
-                  onClick={() => {
-                    if (window.confirm("هل أنت متأكد من حذف المنتج «" + item.name + "» نهائياً من المتجر؟")) {
-                      deleteProduct.mutate({ id: item.id });
-                    }
-                  }}
-                >
-                  <Trash2 size={14} /> حذف
-                </button>
-              </div>
-              {recommended === item.id && (
-                <div className="recommendation-editor">
-                  <strong>اختر منتجات مقترحة تظهر مع «{item.name}»</strong>
-                  <div className="recommendation-options">
-                    {(query.data ?? []).filter(other => other.id !== item.id).map(other => (
-                      <label key={other.id}>
-                        <input type="checkbox" checked={recommendedIds.includes(other.id)} onChange={e => setRecommendedIds(current => e.target.checked ? [...current, other.id] : current.filter(id => id !== other.id))} />
-                        {other.name}
-                      </label>
-                    ))}
-                  </div>
-                  <div style={{ display: "flex", gap: "6px" }}>
-                    <button type="button" className="small-button selected" onClick={() => saveRecommendations.mutate({ productId: item.id, recommendedIds })}>حفظ التوصيات</button>
-                    <button type="button" className="small-button" onClick={() => setRecommended(null)}>إغلاق</button>
-                  </div>
+          {filteredProducts.map(item => {
+            const meta = unpackProductVariants(item.description);
+            return (
+              <article className="entity-row" key={item.id}>
+                <div className="entity-image">{item.imageUrl ? <img src={item.imageUrl} alt="" /> : <Leaf size={19} />}</div>
+                <div className="entity-main">
+                  <strong>{item.name}</strong>
+                  <small>
+                    {cats.data?.find(cat => cat.id === item.categoryId)?.name || "بلا قسم"} · {meta.weightEnabled ? "⚖️ يباع بالوزن والمبلغ (سعر الكيلو)" : item.unit} · {item.stock === null ? "المخزون مفتوح" : "المخزون " + item.stock}
+                    {meta.variants.length > 0 ? " · الأنواع: " + meta.variants.join(" / ") : ""}
+                  </small>
                 </div>
-              )}
-            </article>
-          ))}
+                <div className="entity-price">{money(item.price)}{meta.weightEnabled ? <small style={{ display: "block", fontSize: "10px", color: "#174b36" }}>لكل كيلو</small> : null}</div>
+                <span className={"visibility-tag " + (item.isPublished ? "visible" : "hidden")}>{item.isPublished ? "منشور" : "مخفي"}</span>
+                <div className="entity-actions">
+                  <button type="button" className="small-button" onClick={() => selectEdit(item)}>تعديل</button>
+                  <button
+                    type="button"
+                    className={"small-button " + (item.isPublished ? "" : "selected")}
+                    onClick={() => toggleVisibility.mutate({ id: item.id, values: { isPublished: !item.isPublished, isAvailable: !item.isPublished ? true : item.isAvailable } })}
+                  >
+                    {item.isPublished ? "إخفاء" : "نشر الآن"}
+                  </button>
+                  <button type="button" className="small-button" onClick={() => { setRecommended(recommended === item.id ? null : item.id); setRecommendedIds([]); }}>شبيه</button>
+                  <button
+                    type="button"
+                    className="small-button danger-soft"
+                    onClick={() => {
+                      if (window.confirm("هل أنت متأكد من حذف المنتج «" + item.name + "» نهائياً من المتجر؟")) {
+                        deleteProduct.mutate({ id: item.id });
+                      }
+                    }}
+                  >
+                    <Trash2 size={14} /> حذف
+                  </button>
+                </div>
+                {recommended === item.id && (
+                  <div className="recommendation-editor">
+                    <strong>اختر منتجات مقترحة تظهر مع «{item.name}»</strong>
+                    <div className="recommendation-options">
+                      {(query.data ?? []).filter(other => other.id !== item.id).map(other => (
+                        <label key={other.id}>
+                          <input type="checkbox" checked={recommendedIds.includes(other.id)} onChange={e => setRecommendedIds(current => e.target.checked ? [...current, other.id] : current.filter(id => id !== other.id))} />
+                          {other.name}
+                        </label>
+                      ))}
+                    </div>
+                    <div style={{ display: "flex", gap: "6px" }}>
+                      <button type="button" className="small-button selected" onClick={() => saveRecommendations.mutate({ productId: item.id, recommendedIds })}>حفظ التوصيات</button>
+                      <button type="button" className="small-button" onClick={() => setRecommended(null)}>إغلاق</button>
+                    </div>
+                  </div>
+                )}
+              </article>
+            );
+          })}
         </div>
       )}
     </div>
   );
 }
+
 
 function CategoriesPanel() {
   const utils = trpc.useUtils();
