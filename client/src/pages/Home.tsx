@@ -645,24 +645,30 @@ function VariantPickerModal({
   const { add } = useStore();
   const [selected, setSelected] = useState<string>(initialVariant && variants.includes(initialVariant) ? initialVariant : (variants[0] || ""));
   const [qty, setQty] = useState<number>(initialQty || product.minQuantity || 1);
+  const [buyMode, setBuyMode] = useState<"price" | "weight">("price");
   const pricePerKg = Math.max(1, product.price);
   const effectiveMin = Math.min(minWeightAmount, Math.max(50, Math.round(pricePerKg * 0.125)));
   const defaultAmount = Math.max(effectiveMin, Math.round(pricePerKg * 0.25) || 200);
   const [amountStr, setAmountStr] = useState<string>(String(defaultAmount));
+  const [gramsStr, setGramsStr] = useState<string>("250");
   const step = product.quantityStep || 1;
   const minQ = product.minQuantity || 1;
   const maxQ = product.stock === null ? 9999 : product.stock;
 
-  const enteredAmount = Math.max(0, Math.floor(Number(amountStr) || 0));
-  const calculatedGrams = weightEnabled ? Math.max(0, Math.round((enteredAmount / pricePerKg) * 1000)) : 0;
-  const weightText = formatWeightLabel(calculatedGrams);
-  const isAmountValid = !weightEnabled || enteredAmount >= effectiveMin;
+  const finalGrams = buyMode === "price"
+    ? Math.max(0, Math.round(((Math.max(0, Number(amountStr) || 0)) / pricePerKg) * 1000))
+    : Math.max(0, Math.round(Number(gramsStr) || 0));
+  const finalAmount = buyMode === "price"
+    ? Math.max(0, Math.floor(Number(amountStr) || 0))
+    : Math.max(0, Math.round((finalGrams / 1000) * pricePerKg));
+  const weightText = formatWeightLabel(finalGrams);
+  const isAmountValid = !weightEnabled || (finalAmount >= effectiveMin && finalGrams > 0);
 
   const confirmAdd = () => {
     if (variants.length > 0 && !selected) return;
     if (weightEnabled) {
-      if (enteredAmount < effectiveMin) {
-        toast.error("أقل مبلغ للشراء من هذا الصنف هو " + formatPrice(effectiveMin));
+      if (!isAmountValid) {
+        toast.error("أقل مبلغ للشراء هو " + formatPrice(effectiveMin));
         return;
       }
       const vLabel = selected ? (selected + " · " + weightText) : weightText;
@@ -670,12 +676,12 @@ function VariantPickerModal({
       add({
         ...product,
         name: displayTitle,
-        price: enteredAmount,
+        price: finalAmount,
         unit: weightText,
         variant: vLabel,
-        customAmount: enteredAmount,
+        customAmount: finalAmount,
       }, 1);
-      toast.success("أُضيف «" + displayTitle + "» بمبلغ " + formatPrice(enteredAmount));
+      toast.success("أُضيف «" + displayTitle + "» بمبلغ " + formatPrice(finalAmount));
       onClose();
       return;
     }
@@ -689,21 +695,14 @@ function VariantPickerModal({
     onClose();
   };
 
-  const quickWeightFractions = [
-    { label: "ثمن كيلو", sub: "125 جرام", factor: 0.125 },
-    { label: "ربع كيلو", sub: "250 جرام", factor: 0.25 },
-    { label: "نصف كيلو", sub: "500 جرام", factor: 0.5 },
-    { label: "كيلو كامل", sub: "1000 جرام", factor: 1 },
-  ];
-
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" onClick={onClose} style={{ zIndex: 140 }}>
-      <section className="checkout-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: "400px", padding: "18px" }}>
-        <div className="modal-heading" style={{ marginBottom: "10px" }}>
+      <section className="checkout-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: "370px", padding: "18px", borderRadius: "22px" }}>
+        <div className="modal-heading" style={{ marginBottom: "12px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            {product.imageUrl && <img src={product.imageUrl} alt="" style={{ width: "46px", height: "46px", borderRadius: "12px", objectFit: "cover" }} />}
+            {product.imageUrl && <img src={product.imageUrl} alt="" style={{ width: "44px", height: "44px", borderRadius: "12px", objectFit: "cover" }} />}
             <div>
-              <h2 style={{ fontSize: "17px", margin: "0 0 2px" }}>{product.name}</h2>
+              <h2 style={{ fontSize: "16px", margin: "0 0 2px" }}>{product.name}</h2>
               <small style={{ color: "#174b36", fontWeight: 800 }}>
                 {weightEnabled ? ("سعر الكيلو: " + formatPrice(product.price)) : (formatPrice(product.price) + " / " + product.unit)}
               </small>
@@ -714,8 +713,7 @@ function VariantPickerModal({
 
         {variants.length > 0 && (
           <div style={{ display: "grid", gap: "6px", marginBottom: "12px" }}>
-            <strong style={{ fontSize: "12px", color: "#344c3b" }}>اختر النوع:</strong>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(95px, 1fr))", gap: "6px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(90px, 1fr))", gap: "6px" }}>
               {variants.map(v => {
                 const isSel = selected === v;
                 return (
@@ -723,16 +721,7 @@ function VariantPickerModal({
                     key={v}
                     type="button"
                     onClick={() => setSelected(v)}
-                    style={{
-                      padding: "9px",
-                      borderRadius: "10px",
-                      border: isSel ? "2px solid #174b36" : "1px solid #d5e2d8",
-                      background: isSel ? "#174b36" : "#f7faf8",
-                      color: isSel ? "#ffffff" : "#1b3829",
-                      fontWeight: 700,
-                      fontSize: "12px",
-                      cursor: "pointer",
-                    }}
+                    style={{ padding: "9px", borderRadius: "11px", border: isSel ? "2px solid #174b36" : "1px solid #d5e2d8", background: isSel ? "#174b36" : "#f7faf8", color: isSel ? "#ffffff" : "#1b3829", fontWeight: 700, fontSize: "12px", cursor: "pointer" }}
                   >
                     {v}
                   </button>
@@ -743,46 +732,64 @@ function VariantPickerModal({
         )}
 
         {weightEnabled ? (
-          <div style={{ display: "grid", gap: "10px", marginBottom: "14px" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "6px" }}>
-              {quickWeightFractions.map(wf => {
-                const targetAmt = Math.max(50, Math.round(pricePerKg * wf.factor));
-                const active = enteredAmount === targetAmt;
-                return (
-                  <button
-                    key={wf.label}
-                    type="button"
-                    onClick={() => setAmountStr(String(targetAmt))}
-                    style={{ padding: "8px 4px", borderRadius: "11px", border: active ? "2px solid #174b36" : "1px solid #d5e3da", background: active ? "#174b36" : "#f7faf8", color: active ? "#ffffff" : "#174b36", cursor: "pointer", textAlign: "center", display: "grid", gap: "2px" }}
-                  >
-                    <strong style={{ fontSize: "11px" }}>{wf.label}</strong>
-                    <small style={{ fontSize: "9.5px", opacity: 0.85 }}>{formatPrice(targetAmt)}</small>
-                  </button>
-                );
-              })}
+          <div style={{ display: "grid", gap: "12px", marginBottom: "14px" }}>
+            {/* الزران المختصران والواضحان: الشراء بالسعر | الشراء بالوزن */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", background: "#f2f6f3", padding: "5px", borderRadius: "14px" }}>
+              <button
+                type="button"
+                onClick={() => setBuyMode("price")}
+                style={{ padding: "10px 8px", borderRadius: "10px", border: "none", background: buyMode === "price" ? "#174b36" : "transparent", color: buyMode === "price" ? "#ffffff" : "#174b36", fontWeight: 800, fontSize: "12.5px", cursor: "pointer", transition: "0.15s" }}
+              >
+                💰 الشراء بالسعر
+              </button>
+              <button
+                type="button"
+                onClick={() => setBuyMode("weight")}
+                style={{ padding: "10px 8px", borderRadius: "10px", border: "none", background: buyMode === "weight" ? "#174b36" : "transparent", color: buyMode === "weight" ? "#ffffff" : "#174b36", fontWeight: 800, fontSize: "12.5px", cursor: "pointer", transition: "0.15s" }}
+              >
+                ⚖️ الشراء بالوزن
+              </button>
             </div>
 
-            <div style={{ padding: "10px 12px", borderRadius: "12px", background: "#f4f8f5", border: "1px solid #cde0d3", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px" }}>
-              <span style={{ fontSize: "12px", fontWeight: 800, color: "#174b36" }}>أو اكتب المبلغ (ر.ي):</span>
-              <input
-                type="number"
-                min={effectiveMin}
-                step="50"
-                value={amountStr}
-                onChange={e => setAmountStr(e.target.value)}
-                style={{ width: "120px", padding: "7px 10px", borderRadius: "9px", border: "1.5px solid #174b36", fontSize: "15px", fontWeight: 800, textAlign: "center", background: "#ffffff", color: "#113a28" }}
-              />
-            </div>
+            {buyMode === "price" ? (
+              <div style={{ display: "grid", gap: "6px" }}>
+                <label style={{ fontSize: "12px", fontWeight: 700, color: "#2b4736", textAlign: "center" }}>اكتب المبلغ الذي تريد الشراء به (ر.ي):</label>
+                <input
+                  type="number"
+                  min={effectiveMin}
+                  step="50"
+                  value={amountStr}
+                  onChange={e => setAmountStr(e.target.value)}
+                  placeholder="مثلاً: 500"
+                  style={{ width: "100%", padding: "10px", borderRadius: "12px", border: "1.5px solid #174b36", fontSize: "17px", fontWeight: 800, textAlign: "center", background: "#ffffff", color: "#113a28" }}
+                />
+              </div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "6px" }}>
+                {[
+                  { label: "ثمن كيلو", g: 125 },
+                  { label: "ربع كيلو", g: 250 },
+                  { label: "نصف كيلو", g: 500 },
+                  { label: "كيلو كامل", g: 1000 },
+                ].map(w => {
+                  const active = finalGrams === w.g;
+                  return (
+                    <button
+                      key={w.g}
+                      type="button"
+                      onClick={() => setGramsStr(String(w.g))}
+                      style={{ padding: "10px 4px", borderRadius: "11px", border: active ? "2px solid #174b36" : "1px solid #d5e3da", background: active ? "#eaf5ee" : "#ffffff", color: "#174b36", fontWeight: 800, fontSize: "11.5px", cursor: "pointer" }}
+                    >
+                      {w.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
 
-            <div style={{ padding: "11px 14px", borderRadius: "14px", background: "linear-gradient(135deg, #103e2a 0%, #1d5e41 100%)", color: "#ffffff", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div>
-                <span style={{ fontSize: "10.5px", color: "#d8eee1", display: "block" }}>الوزن الصافي:</span>
-                <strong style={{ fontSize: "14.5px", color: "#f9e5a7" }}>{weightText}</strong>
-              </div>
-              <div style={{ textAlign: "left" }}>
-                <span style={{ fontSize: "10.5px", color: "#d8eee1", display: "block" }}>المبلغ:</span>
-                <strong style={{ fontSize: "14.5px", color: "#ffffff" }}>{formatPrice(enteredAmount)}</strong>
-              </div>
+            <div style={{ padding: "10px 14px", borderRadius: "12px", background: "#f4f8f5", border: "1px solid #cde0d3", display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "13px", fontWeight: 800, color: "#174b36" }}>
+              <span>الوزن: {weightText}</span>
+              <span>المبلغ: {formatPrice(finalAmount)}</span>
             </div>
           </div>
         ) : (
@@ -799,7 +806,7 @@ function VariantPickerModal({
         <button type="button" className="button button-primary full-button" disabled={!isAmountValid} onClick={confirmAdd}>
           <ShoppingCart size={17} />
           {weightEnabled
-            ? ("إضافة للسلة (" + weightText + " · " + formatPrice(enteredAmount) + ")")
+            ? ("تأكيد الإضافة (" + formatPrice(finalAmount) + ")")
             : ("إضافة إلى السلة (" + formatPrice(product.price * qty) + ")")}
         </button>
       </section>
@@ -835,23 +842,8 @@ function ProductCard({ product, onOpen, onAiRecipe, priority = false }: { produc
         {onAiRecipe && <button type="button" className="ai-recipe-toggle" aria-label="أفكار وتحضير بالذكاء الاصطناعي" title="أفكار ووصفات تحضير" onClick={event => { event.stopPropagation(); onAiRecipe(product); }}><Sparkles size={16} /></button>}
         {disabled && <span className="product-sold-out">غير متوفر</span>}
       </div>
-      {variants.length > 0 && (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", padding: "6px 4px 0" }}>
-          {variants.map(v => (
-            <button
-              key={v}
-              type="button"
-              disabled={disabled}
-              onClick={e => handleAddClick(e, v)}
-              style={{ fontSize: "10px", fontWeight: 700, padding: "3px 8px", borderRadius: "99px", border: "1px solid #c8dfd0", background: "#eef6f1", color: "#174b36", cursor: disabled ? "not-allowed" : "pointer" }}
-            >
-              {v}
-            </button>
-          ))}
-        </div>
-      )}
-      <button type="button" className="product-title-button" onClick={onOpen}><strong>{product.name}</strong><span>{weightEnabled ? "بالوزن أو الكيلو" : product.unit}</span></button>
-      <div className="product-card-bottom"><div><b>{formatPrice(product.price)}</b><small> / {weightEnabled ? "كيلو" : product.unit}</small></div><button type="button" className="add-button" disabled={disabled} onClick={e => handleAddClick(e)} aria-label={"إضافة " + product.name + " للسلة"}><Plus size={18} /></button></div>
+      <button type="button" className="product-title-button" onClick={onOpen}><strong>{product.name}</strong><span>{product.unit}</span></button>
+      <div className="product-card-bottom"><div><b>{formatPrice(product.price)}</b><small> / {product.unit}</small></div><button type="button" className="add-button" disabled={disabled} onClick={e => handleAddClick(e)} aria-label={"إضافة " + product.name + " للسلة"}><Plus size={18} /></button></div>
     </article>
     {pickerOpen && (
       <VariantPickerModal
