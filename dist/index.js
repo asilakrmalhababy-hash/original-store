@@ -3616,7 +3616,7 @@ var commerceRouter = router({
       create: adminProcedure.use(async ({ next }) => {
         clearLiveHomeCache();
         return next();
-      }).input(z3.object({ title: z3.string().trim().min(1).max(160), body: z3.string().trim().max(1e3).optional(), imageUrl: z3.string().max(85e5).optional(), actionText: z3.string().trim().max(60).optional(), actionUrl: z3.string().trim().max(500).optional(), isActive: z3.boolean().default(false), sortOrder: z3.number().int().min(-1e4).max(1e4).default(0) })).mutation(async ({ input }) => {
+      }).input(z3.object({ title: z3.string().trim().min(1).max(160), body: z3.string().trim().max(1e3).optional(), imageUrl: z3.string().max(85e5).optional(), actionText: z3.string().trim().max(60).optional(), actionUrl: z3.string().trim().max(2e3).optional(), isActive: z3.boolean().default(false), sortOrder: z3.number().int().min(-1e4).max(1e4).default(0) })).mutation(async ({ input }) => {
         const db = await database();
         const result = await db.insert(banners).values({ ...input, body: input.body ?? null, imageUrl: input.imageUrl ?? null, actionText: input.actionText ?? null, actionUrl: input.actionUrl ?? null });
         clearCatalogCache();
@@ -3625,7 +3625,7 @@ var commerceRouter = router({
       update: adminProcedure.use(async ({ next }) => {
         clearLiveHomeCache();
         return next();
-      }).input(z3.object({ id: safeId, values: z3.object({ title: z3.string().trim().min(1).max(160).optional(), body: z3.string().max(1e3).nullable().optional(), imageUrl: z3.string().max(85e5).nullable().optional(), actionText: z3.string().max(60).nullable().optional(), actionUrl: z3.string().max(500).nullable().optional(), isActive: z3.boolean().optional(), sortOrder: z3.number().int().min(-1e4).max(1e4).optional() }) })).mutation(async ({ input }) => {
+      }).input(z3.object({ id: safeId, values: z3.object({ title: z3.string().trim().min(1).max(160).optional(), body: z3.string().max(1e3).nullable().optional(), imageUrl: z3.string().max(85e5).nullable().optional(), actionText: z3.string().max(60).nullable().optional(), actionUrl: z3.string().max(2e3).nullable().optional(), isActive: z3.boolean().optional(), sortOrder: z3.number().int().min(-1e4).max(1e4).optional() }) })).mutation(async ({ input }) => {
         const db = await database();
         const cleanBanVals = { ...input.values };
         if (typeof cleanBanVals.imageUrl === "string" && cleanBanVals.imageUrl.startsWith("/api/fast-img/")) delete cleanBanVals.imageUrl;

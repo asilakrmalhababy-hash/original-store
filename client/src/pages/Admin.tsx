@@ -605,24 +605,430 @@ function CategoriesPanel() {
   );
 }
 
+type AdminBannerCfg = {
+  placement: "top" | "middle" | "bottom" | "popup";
+  size: "auto" | "small" | "medium" | "large";
+  clickMode: "full" | "hotspot" | "none";
+  hx: number;
+  hy: number;
+  hw: number;
+  hh: number;
+  shade: boolean;
+  showTitle: boolean;
+  showBtn: boolean;
+  popupOnce: boolean;
+};
+
+const blankBannerCfg: AdminBannerCfg = {
+  placement: "top",
+  size: "auto",
+  clickMode: "full",
+  hx: 8,
+  hy: 44,
+  hw: 34,
+  hh: 24,
+  shade: false,
+  showTitle: false,
+  showBtn: false,
+  popupOnce: true,
+};
+
+function unpackAdminBannerUrl(rawActionUrl?: string | null): { targetUrl: string; cfg: AdminBannerCfg } {
+  const raw = String(rawActionUrl || "").trim();
+  const marker = "#bcfg=";
+  const idx = raw.indexOf(marker);
+  if (idx === -1) {
+    return { targetUrl: raw, cfg: { ...blankBannerCfg, clickMode: raw ? "full" : "full" } };
+  }
+  const targetUrl = raw.slice(0, idx).trim();
+  try {
+    const parsed = JSON.parse(decodeURIComponent(raw.slice(idx + marker.length)));
+    return {
+      targetUrl,
+      cfg: {
+        placement: ["top", "middle", "bottom", "popup"].includes(parsed.placement) ? parsed.placement : "top",
+        size: ["auto", "small", "medium", "large"].includes(parsed.size) ? parsed.size : "auto",
+        clickMode: ["full", "hotspot", "none"].includes(parsed.clickMode) ? parsed.clickMode : "full",
+        hx: typeof parsed.hx === "number" ? Math.max(0, Math.min(95, parsed.hx)) : 8,
+        hy: typeof parsed.hy === "number" ? Math.max(0, Math.min(95, parsed.hy)) : 44,
+        hw: typeof parsed.hw === "number" ? Math.max(5, Math.min(100, parsed.hw)) : 34,
+        hh: typeof parsed.hh === "number" ? Math.max(5, Math.min(100, parsed.hh)) : 24,
+        shade: Boolean(parsed.shade),
+        showTitle: Boolean(parsed.showTitle),
+        showBtn: Boolean(parsed.showBtn),
+        popupOnce: parsed.popupOnce !== false,
+      },
+    };
+  } catch {
+    return { targetUrl, cfg: { ...blankBannerCfg } };
+  }
+}
+
+function packAdminBannerUrl(targetUrl: string, cfg: AdminBannerCfg): string {
+  const cleanTarget = targetUrl.trim();
+  return cleanTarget + "#bcfg=" + encodeURIComponent(JSON.stringify(cfg));
+}
+
 function BannersPanel() {
-  const utils = trpc.useUtils(); const query = trpc.commerce.admin.banners.list.useQuery(undefined, { retry: 1 });
-  const blank = { title: "", body: "", imageUrl: "", actionText: "", actionUrl: "", isActive: true, sortOrder: "0" };
+  const utils = trpc.useUtils();
+  const query = trpc.commerce.admin.banners.list.useQuery(undefined, { retry: 1 });
+  const cats = trpc.commerce.admin.categories.list.useQuery(undefined, { retry: 1 });
+  const prods = trpc.commerce.admin.products.list.useQuery(undefined, { retry: 1 });
+
+  const blank = { title: "", body: "", imageUrl: "", actionText: "", targetUrl: "/products", isActive: true, sortOrder: "0" };
   const [editing, setEditing] = useState<number | null>(null);
   const [form, setForm] = useState(blank);
-  const reset = () => { setEditing(null); setForm(blank); };
-  const refresh = async () => { await utils.commerce.admin.banners.list.invalidate(); await utils.commerce.catalog.home.invalidate(); };
-  const create = trpc.commerce.admin.banners.create.useMutation({ onSuccess: async () => { toast.success("تم حفظ الإعلان"); reset(); await refresh(); }, onError: error => toast.error(error.message) });
-  const update = trpc.commerce.admin.banners.update.useMutation({ onSuccess: async () => { toast.success("تم تحديث الإعلان"); reset(); await refresh(); }, onError: error => toast.error(error.message) });
-  const remove = trpc.commerce.admin.banners.delete.useMutation({ onSuccess: () => { toast.success("حُذف الإعلان نهائياً"); void utils.commerce.admin.banners.list.invalidate(); void utils.commerce.catalog.home.invalidate(); } });
+  const [cfg, setCfg] = useState<AdminBannerCfg>(blankBannerCfg);
+  const [destType, setDestType] = useState<"category" | "product" | "all_products" | "assistant" | "custom">("all_products");
+
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const dragHotRef = useRef<{ mode: "move" | "resize"; startX: number; startY: number; startCfg: AdminBannerCfg; rectW: number; rectH: number } | null>(null);
+
+  const reset = () => {
+    setEditing(null);
+    setForm(blank);
+    setCfg(blankBannerCfg);
+    setDestType("all_products");
+  };
+
+  const refresh = async () => {
+    await Promise.all([utils.commerce.admin.banners.list.invalidate(), utils.commerce.catalog.home.invalidate()]);
+  };
+
+  const create = trpc.commerce.admin.banners.create.useMutation({
+    onSuccess: async () => { toast.success("تم حفظ الإعلان بنجاح"); reset(); await refresh(); },
+    onError: error => toast.error(error.message),
+  });
+  const update = trpc.commerce.admin.banners.update.useMutation({
+    onSuccess: async () => { toast.success("تم تحديث إعدادات الإعلان بنجاح"); reset(); await refresh(); },
+    onError: error => toast.error(error.message),
+  });
+  const remove = trpc.commerce.admin.banners.delete.useMutation({
+    onSuccess: () => {
+      toast.success("حُذف الإعلان نهائياً");
+      void utils.commerce.admin.banners.list.invalidate();
+      void utils.commerce.catalog.home.invalidate();
+    },
+  });
+
+  const startHotspotDrag = (mode: "move" | "resize", e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!stageRef.current) return;
+    const r = stageRef.current.getBoundingClientRect();
+    if (!r.width || !r.height) return;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    dragHotRef.current = { mode, startX: e.clientX, startY: e.clientY, startCfg: { ...cfg }, rectW: r.width, rectH: r.height };
+  };
+
+  const moveHotspotDrag = (e: React.PointerEvent) => {
+    const d = dragHotRef.current;
+    if (!d) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const dx = ((e.clientX - d.startX) / d.rectW) * 100;
+    const dy = ((e.clientY - d.startY) / d.rectH) * 100;
+    if (d.mode === "move") {
+      const nx = Math.round(Math.max(0, Math.min(100 - d.startCfg.hw, d.startCfg.hx + dx)));
+      const ny = Math.round(Math.max(0, Math.min(100 - d.startCfg.hh, d.startCfg.hy + dy)));
+      setCfg(c => ({ ...c, hx: nx, hy: ny }));
+    } else {
+      const nw = Math.round(Math.max(8, Math.min(100 - d.startCfg.hx, d.startCfg.hw + dx)));
+      const nh = Math.round(Math.max(8, Math.min(100 - d.startCfg.hy, d.startCfg.hh + dy)));
+      setCfg(c => ({ ...c, hw: nw, hh: nh }));
+    }
+  };
+
+  const endHotspotDrag = () => { dragHotRef.current = null; };
+
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
-    const values = { title: form.title, body: form.body || null, imageUrl: form.imageUrl || null, actionText: form.actionText || null, actionUrl: form.actionUrl || null, isActive: form.isActive, sortOrder: Number(form.sortOrder) };
+    const finalTitle = form.title.trim() || "إعلان المتجر";
+    const packedActionUrl = packAdminBannerUrl(cfg.clickMode === "none" ? "" : form.targetUrl, cfg);
+    const values = {
+      title: finalTitle,
+      body: form.body || null,
+      imageUrl: form.imageUrl || null,
+      actionText: form.actionText || null,
+      actionUrl: packedActionUrl,
+      isActive: form.isActive,
+      sortOrder: Number(form.sortOrder),
+    };
     if (editing) update.mutate({ id: editing, values });
-    else create.mutate({ ...form, imageUrl: form.imageUrl || undefined, body: form.body || undefined, actionText: form.actionText || undefined, actionUrl: form.actionUrl || undefined, sortOrder: Number(form.sortOrder) });
+    else create.mutate({ title: finalTitle, imageUrl: form.imageUrl || undefined, body: form.body || undefined, actionText: form.actionText || undefined, actionUrl: packedActionUrl, isActive: form.isActive, sortOrder: Number(form.sortOrder) });
   };
-  const edit = (item: NonNullable<typeof query.data>[number]) => { setEditing(item.id); setForm({ title: item.title, body: item.body ?? "", imageUrl: item.imageUrl ?? "", actionText: item.actionText ?? "", actionUrl: item.actionUrl ?? "", isActive: item.isActive, sortOrder: String(item.sortOrder) }); window.scrollTo({ top: 0, behavior: "smooth" }); };
-  return <div className="admin-content"><AdminHeading eyebrow="واجهة المتجر" title="الإعلانات الرئيسية" text="أضف صورك بنفسك. الإعلان يظهر للعميل عند تفعيل حالة النشر." icon={Megaphone} /><section className="admin-form-card"><div className="form-card-heading"><span className="form-card-number">{editing ? "✳" : "01"}</span><div><h2>{editing ? "تعديل الإعلان" : "إعلان جديد"}</h2><p>قص الصورة بحرية ثم اضغط حفظ الإعلان.</p></div>{editing && <button type="button" className="small-button" onClick={reset}>إلغاء التعديل<X size={14} /></button>}</div><form className="admin-form" onSubmit={submit}><div className="product-form-layout"><div className="form-fields-grid"><label className="field-wide">العنوان<input required value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} /></label><label className="field-wide">النص فوق الصورة<textarea rows={2} value={form.body} onChange={e => setForm({ ...form, body: e.target.value })} /></label><label>نص الزر (اختياري)<input value={form.actionText} onChange={e => setForm({ ...form, actionText: e.target.value })} /></label><label>وجهة الزر<input value={form.actionUrl} onChange={e => setForm({ ...form, actionUrl: e.target.value })} placeholder="/products" /></label><label>ترتيب العرض<input type="number" value={form.sortOrder} onChange={e => setForm({ ...form, sortOrder: e.target.value })} /></label><label className="toggle-field"><input type="checkbox" checked={form.isActive} onChange={e => setForm({ ...form, isActive: e.target.checked })} /> نشر الإعلان في الواجهة</label></div><ImageField title="قص صورة الإعلان" value={form.imageUrl} onChange={imageUrl => setForm(curr => ({ ...curr, imageUrl }))} kind="banner" aspect={2.65} /></div><div className="form-submit-row"><button type="submit" className="button button-primary" disabled={create.isPending || update.isPending}>{create.isPending || update.isPending ? <LoaderCircle className="spin" size={16} /> : editing ? <Save size={16} /> : <Plus size={16} />}{editing ? "حفظ تعديل الإعلان" : "حفظ الإعلان"}</button></div></form></section><div className="admin-section-heading"><div><h2>الإعلانات المحفوظة</h2><p>يمكن تفعيل عدة إعلانات وترتيبها أو حذفها.</p></div></div>{!query.data?.length ? <AdminEmpty title="لا توجد إعلانات" text="ستبقى واجهة المتجر نظيفة حتى ترفع إعلانك الأول." /> : <div className="entity-list">{query.data.map(item => <article className="entity-row" key={item.id}><div className="entity-image">{item.imageUrl ? <img src={item.imageUrl} alt="" /> : <Megaphone size={19} />}</div><div className="entity-main"><strong>{item.title}</strong><small>{item.body || "لا يوجد نص"} · ترتيب {item.sortOrder}</small></div><label className="toggle-field compact-toggle"><input type="checkbox" checked={item.isActive} onChange={e => update.mutate({ id: item.id, values: { isActive: e.target.checked } })} /> نشط</label><div className="entity-actions"><button type="button" className="small-button" onClick={() => edit(item)}>تعديل</button><button type="button" className="small-button danger-soft" onClick={() => { if (window.confirm("هل أنت متأكد من حذف الإعلان «" + item.title + "» نهائياً؟")) remove.mutate({ id: item.id }); }}><Trash2 size={14} /> حذف</button></div></article>)}</div>}</div>;
+
+  const edit = (item: NonNullable<typeof query.data>[number]) => {
+    setEditing(item.id);
+    const unpacked = unpackAdminBannerUrl(item.actionUrl);
+    setForm({
+      title: item.title,
+      body: item.body ?? "",
+      imageUrl: item.imageUrl ?? "",
+      actionText: item.actionText ?? "",
+      targetUrl: unpacked.targetUrl || "/products",
+      isActive: item.isActive,
+      sortOrder: String(item.sortOrder),
+    });
+    setCfg(unpacked.cfg);
+    if (unpacked.targetUrl.startsWith("/products?category=")) setDestType("category");
+    else if (unpacked.targetUrl.startsWith("/product/")) setDestType("product");
+    else if (unpacked.targetUrl === "/assistant") setDestType("assistant");
+    else if (!unpacked.targetUrl || unpacked.targetUrl === "/products") setDestType("all_products");
+    else setDestType("custom");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const placementLabels: Record<AdminBannerCfg["placement"], string> = {
+    top: "أعلى الصفحة الرئيسية",
+    middle: "وسط الصفحة (بين الأقسام والمنتجات)",
+    bottom: "أسفل الصفحة (بعد المنتجات)",
+    popup: "إعلان منبثق عند فتح الموقع (Popup)",
+  };
+
+  const sizeLabels: Record<AdminBannerCfg["size"], string> = {
+    auto: "المقاس الكامل الطبيعي للصورة (بدون قص)",
+    small: "صغير مدمج",
+    medium: "متوسط متناسق",
+    large: "كبير سينمائي",
+  };
+
+  return (
+    <div className="admin-content">
+      <AdminHeading
+        eyebrow="استوديو الإعلانات الاحترافي"
+        title="الإعلانات والنوافذ الترويجية"
+        text="تحكم كامل في صفاء الصورة بدون ضبابية أو نصوص مزعجة، مع تحديد مكان الزر المرسوم داخل الصورة باليد واختيار القسم وحجم ومكان الإعلان."
+        icon={Megaphone}
+      />
+      <section className="admin-form-card">
+        <div className="form-card-heading">
+          <span className="form-card-number">{editing ? "✳" : "01"}</span>
+          <div>
+            <h2>{editing ? "تعديل الإعلان وإعداداته" : "إضافة إعلان احترافي جديد"}</h2>
+            <p>الصورة تظهر صافية 100% بدون ضبابية ولا كلام يغطي عليها، ويمكنك تحديد الزر المرسوم داخل صورتك مباشرة.</p>
+          </div>
+          {editing && <button type="button" className="small-button" onClick={reset}>إلغاء التعديل<X size={14} /></button>}
+        </div>
+
+        <form className="admin-form" onSubmit={submit}>
+          <div className="product-form-layout">
+            <div className="form-fields-grid">
+              <label>
+                اسم الإعلان (مرجع لك في الإدارة)
+                <input required value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} placeholder="مثال: إعلان الخضار الطازجة" />
+              </label>
+              <label>
+                مكان ظهور الإعلان في الموقع
+                <select value={cfg.placement} onChange={e => setCfg({ ...cfg, placement: e.target.value as AdminBannerCfg["placement"] })}>
+                  <option value="top">أعلى الصفحة الرئيسية (السلايدر الرئيسي)</option>
+                  <option value="middle">وسط الصفحة (بين الأقسام والمنتجات)</option>
+                  <option value="bottom">أسفل الصفحة (بعد المنتجات)</option>
+                  <option value="popup">نافذة منبثقة أول ما يفتح الزبون الموقع (Popup)</option>
+                </select>
+              </label>
+              <label>
+                حجم الإعلان على الشاشة
+                <select value={cfg.size} onChange={e => setCfg({ ...cfg, size: e.target.value as AdminBannerCfg["size"] })}>
+                  <option value="auto">المقاس الكامل الطبيعي للصورة (بدون قص أي جزء)</option>
+                  <option value="medium">متوسط متناسق (القياسي)</option>
+                  <option value="large">كبير وبارز</option>
+                  <option value="small">صغير مدمج (شريط إعلاني)</option>
+                </select>
+              </label>
+              <label>
+                طريقة تفاعل الزبون عند لمس الإعلان
+                <select value={cfg.clickMode} onChange={e => setCfg({ ...cfg, clickMode: e.target.value as AdminBannerCfg["clickMode"] })}>
+                  <option value="full">الضغط على أي مكان في صورة الإعلان بالكامل</option>
+                  <option value="hotspot">تحديد مكان الزر المرسوم داخل الصورة فقط (مثل: تسوق الخضار)</option>
+                  <option value="none">بدون ضغط (عرض الصورة فقط)</option>
+                </select>
+              </label>
+
+              {cfg.clickMode !== "none" && (
+                <>
+                  <label>
+                    عند الضغط يتوجه الزبون إلى:
+                    <select
+                      value={destType}
+                      onChange={e => {
+                        const next = e.target.value as typeof destType;
+                        setDestType(next);
+                        if (next === "all_products") setForm(f => ({ ...f, targetUrl: "/products" }));
+                        else if (next === "assistant") setForm(f => ({ ...f, targetUrl: "/assistant" }));
+                        else if (next === "category" && cats.data?.[0]) setForm(f => ({ ...f, targetUrl: "/products?category=" + cats.data![0].id }));
+                        else if (next === "product" && prods.data?.[0]) setForm(f => ({ ...f, targetUrl: "/product/" + prods.data![0].id }));
+                      }}
+                    >
+                      <option value="category">قسم معين من أقسام المتجر</option>
+                      <option value="product">منتج معين في المتجر</option>
+                      <option value="all_products">صفحة جميع المنتجات</option>
+                      <option value="assistant">المساعد الذكي والشيف</option>
+                      <option value="custom">رابط مخصص</option>
+                    </select>
+                  </label>
+
+                  {destType === "category" && (
+                    <label>
+                      اختر القسم الذي يفتحه الإعلان
+                      <select
+                        value={form.targetUrl.replace("/products?category=", "")}
+                        onChange={e => setForm({ ...form, targetUrl: e.target.value ? "/products?category=" + e.target.value : "/products" })}
+                      >
+                        <option value="">-- اختر القسم --</option>
+                        {cats.data?.map(c => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
+                      </select>
+                    </label>
+                  )}
+
+                  {destType === "product" && (
+                    <label>
+                      اختر المنتج الذي يفتحه الإعلان
+                      <select
+                        value={form.targetUrl.replace("/product/", "")}
+                        onChange={e => setForm({ ...form, targetUrl: e.target.value ? "/product/" + e.target.value : "/products" })}
+                      >
+                        <option value="">-- اختر المنتج --</option>
+                        {prods.data?.map(p => <option key={p.id} value={String(p.id)}>{p.name} ({money(p.price)})</option>)}
+                      </select>
+                    </label>
+                  )}
+
+                  {destType === "custom" && (
+                    <label>
+                      الرابط المخصص
+                      <input value={form.targetUrl} onChange={e => setForm({ ...form, targetUrl: e.target.value })} placeholder="/products?category=1" dir="ltr" />
+                    </label>
+                  )}
+                </>
+              )}
+
+              <label>ترتيب العرض<input type="number" value={form.sortOrder} onChange={e => setForm({ ...form, sortOrder: e.target.value })} /></label>
+              <label className="toggle-field"><input type="checkbox" checked={form.isActive} onChange={e => setForm({ ...form, isActive: e.target.checked })} /> تفعيل ونشر الإعلان في المتجر</label>
+
+              {cfg.placement === "popup" && (
+                <label className="toggle-field field-wide">
+                  <input type="checkbox" checked={cfg.popupOnce} onChange={e => setCfg({ ...cfg, popupOnce: e.target.checked })} />
+                  إظهار الإعلان المنبثق مرة واحدة فقط لكل زيارة (حتى لا يتكرر إزعاج الزبون)
+                </label>
+              )}
+
+              <div className="field-wide" style={{ padding: "12px", borderRadius: "12px", background: "#f6f9f6", border: "1px solid #e1ebe3", display: "grid", gap: "8px" }}>
+                <strong style={{ fontSize: "11px", color: "#174b36" }}>خيارات النصوص والتظليل فوق الصورة (مطفأة افتراضياً لتبقى صورتك صافية 100%):</strong>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "14px" }}>
+                  <label className="toggle-field"><input type="checkbox" checked={cfg.showTitle} onChange={e => setCfg({ ...cfg, showTitle: e.target.checked })} /> إظهار عنوان ونص فوق الصورة</label>
+                  <label className="toggle-field"><input type="checkbox" checked={cfg.shade} onChange={e => setCfg({ ...cfg, shade: e.target.checked })} /> إضافة ضبابية / تظليل داكن</label>
+                  <label className="toggle-field"><input type="checkbox" checked={cfg.showBtn} onChange={e => setCfg({ ...cfg, showBtn: e.target.checked })} /> إظهار زر نظام إضافي فوق الصورة</label>
+                </div>
+                {(cfg.showTitle || cfg.showBtn) && (
+                  <div className="form-fields-grid" style={{ marginTop: "6px" }}>
+                    {cfg.showTitle && <label className="field-wide">النص الإضافي فوق الصورة<textarea rows={2} value={form.body} onChange={e => setForm({ ...form, body: e.target.value })} /></label>}
+                    {cfg.showBtn && <label>نص الزر الإضافي<input value={form.actionText} onChange={e => setForm({ ...form, actionText: e.target.value })} placeholder="اطلب الآن" /></label>}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <ImageField title="رفع وقص صورة الإعلان" value={form.imageUrl} onChange={imageUrl => setForm(curr => ({ ...curr, imageUrl }))} kind="banner" aspect={2.2} />
+          </div>
+
+          {form.imageUrl && cfg.clickMode === "hotspot" && (
+            <div style={{ padding: "14px", borderRadius: "16px", background: "#12221a", color: "#fff", display: "grid", gap: "10px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
+                <div>
+                  <strong style={{ fontSize: "12px", color: "#f1d897", display: "block" }}>تحديد مكان الزر المرسوم داخل الصورة (منطقة ضغط الزبون):</strong>
+                  <small style={{ fontSize: "10px", color: "#cfe0d5" }}>اسحب المستطيل الذهبي وضعه فوق الزر المرسوم في صورتك (مثل: تسوق الخضار أو اطلب الآن)، واسحب الدائرة الصفراء لتغيير حجمه.</small>
+                </div>
+              </div>
+              <div
+                ref={stageRef}
+                onPointerMove={moveHotspotDrag}
+                onPointerUp={endHotspotDrag}
+                onPointerCancel={endHotspotDrag}
+                style={{ position: "relative", width: "100%", maxWidth: "620px", margin: "0 auto", borderRadius: "14px", overflow: "hidden", userSelect: "none", touchAction: "none", lineHeight: 0 }}
+              >
+                <img src={form.imageUrl} alt="معاينة الإعلان" draggable={false} style={{ width: "100%", height: "auto", display: "block", pointerEvents: "none" }} />
+                <div
+                  onPointerDown={e => startHotspotDrag("move", e)}
+                  style={{
+                    position: "absolute",
+                    left: cfg.hx + "%",
+                    top: cfg.hy + "%",
+                    width: cfg.hw + "%",
+                    height: cfg.hh + "%",
+                    border: "2.5px dashed #f1d897",
+                    background: "rgba(241, 216, 151, 0.28)",
+                    borderRadius: "12px",
+                    cursor: "move",
+                    touchAction: "none",
+                    display: "grid",
+                    placeItems: "center",
+                    boxShadow: "0 0 0 9999px rgba(0, 0, 0, 0.32)",
+                  }}
+                >
+                  <span style={{ background: "rgba(15, 45, 30, 0.88)", color: "#f1d897", padding: "3px 8px", borderRadius: "99px", fontSize: "10px", fontWeight: 700, pointerEvents: "none", whiteSpace: "nowrap" }}>
+                    👆 منطقة ضغط الزبون
+                  </span>
+                  <span
+                    onPointerDown={e => startHotspotDrag("resize", e)}
+                    style={{
+                      position: "absolute",
+                      bottom: "-12px",
+                      right: "-12px",
+                      width: "26px",
+                      height: "26px",
+                      borderRadius: "50%",
+                      background: "#f1d897",
+                      border: "2.5px solid #0f5c3a",
+                      cursor: "nwse-resize",
+                      touchAction: "none",
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="form-submit-row" style={{ gap: "8px" }}>
+            <button type="submit" className="button button-primary" disabled={create.isPending || update.isPending}>
+              {create.isPending || update.isPending ? <LoaderCircle className="spin" size={16} /> : editing ? <Save size={16} /> : <Plus size={16} />}
+              {editing ? "حفظ تعديلات الإعلان" : "حفظ الإعلان ونشره"}
+            </button>
+            {editing && <button type="button" className="button button-quiet" onClick={reset}>إلغاء</button>}
+          </div>
+        </form>
+      </section>
+
+      <div className="admin-section-heading">
+        <div><h2>الإعلانات المحفوظة</h2><p>تحكم في مكان وحجم وحالة كل إعلان بضغطة واحدة.</p></div>
+      </div>
+      {!query.data?.length ? <AdminEmpty title="لا توجد إعلانات" text="ستبقى واجهة المتجر نظيفة حتى ترفع إعلانك الأول." /> : (
+        <div className="entity-list">
+          {query.data.map(item => {
+            const meta = unpackAdminBannerUrl(item.actionUrl);
+            return (
+              <article className="entity-row" key={item.id}>
+                <div className="entity-image">{item.imageUrl ? <img src={item.imageUrl} alt="" /> : <Megaphone size={19} />}</div>
+                <div className="entity-main">
+                  <strong>{item.title}</strong>
+                  <small>
+                    {placementLabels[meta.cfg.placement]} · {sizeLabels[meta.cfg.size]} · {meta.cfg.clickMode === "hotspot" ? "زر محدد داخل الصورة" : meta.cfg.clickMode === "full" ? "كامل الصورة قابلة للضغط" : "عرض فقط"}
+                  </small>
+                </div>
+                <label className="toggle-field compact-toggle">
+                  <input type="checkbox" checked={item.isActive} onChange={e => update.mutate({ id: item.id, values: { isActive: e.target.checked } })} /> نشط
+                </label>
+                <div className="entity-actions">
+                  <button type="button" className="small-button" onClick={() => edit(item)}>تعديل الإعدادات</button>
+                  <button type="button" className="small-button danger-soft" onClick={() => { if (window.confirm("هل أنت متأكد من حذف الإعلان «" + item.title + "» نهائياً؟")) remove.mutate({ id: item.id }); }}><Trash2 size={14} /> حذف</button>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function OffersPanel() {

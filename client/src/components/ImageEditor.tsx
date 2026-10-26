@@ -208,7 +208,7 @@ export default function ImageEditor({ aspect, title, format = "webp", initialSou
       let outW = maxDim;
       let outH = Math.round(maxDim / (aspect || 1));
 
-      if (!fitPadding && cropMode === "free") {
+      if (fitPadding || cropMode === "free") {
         const cropRatio = sw / sh;
         if (cropRatio >= 1) {
           outW = maxDim;
@@ -225,18 +225,7 @@ export default function ImageEditor({ aspect, title, format = "webp", initialSou
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
 
-      if (fitPadding) {
-        ctx.fillStyle = "#f6f8f4";
-        ctx.fillRect(0, 0, outW, outH);
-        const scale = Math.min(outW / sw, outH / sh);
-        const dw = Math.round(sw * scale);
-        const dh = Math.round(sh * scale);
-        const dx = Math.round((outW - dw) / 2);
-        const dy = Math.round((outH - dh) / 2);
-        ctx.drawImage(image, sx, sy, sw, sh, dx, dy, dw, dh);
-      } else {
-        ctx.drawImage(image, sx, sy, sw, sh, 0, 0, outW, outH);
-      }
+      ctx.drawImage(image, sx, sy, sw, sh, 0, 0, outW, outH);
 
       const mime = format === "png" ? "image/png" : "image/webp";
       let data = canvas.toDataURL(mime, 0.72);

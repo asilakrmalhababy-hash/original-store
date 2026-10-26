@@ -91,8 +91,69 @@ function EmptyState({ icon: Icon = Package, title, description, action, href }: 
   return <div className="empty-state"><span className="empty-icon"><Icon size={25} strokeWidth={1.6} /></span><h3>{title}</h3><p>{description}</p>{action && href && <Link href={href} className="button button-primary">{action}<ArrowLeft size={16} /></Link>}</div>;
 }
 
+type BannerConfig = {
+  placement: "top" | "middle" | "bottom" | "popup";
+  size: "auto" | "small" | "medium" | "large";
+  clickMode: "full" | "hotspot" | "none";
+  hx: number;
+  hy: number;
+  hw: number;
+  hh: number;
+  shade: boolean;
+  showTitle: boolean;
+  showBtn: boolean;
+  popupOnce: boolean;
+};
+
+const defaultBannerCfg: BannerConfig = {
+  placement: "top",
+  size: "auto",
+  clickMode: "full",
+  hx: 8,
+  hy: 44,
+  hw: 34,
+  hh: 24,
+  shade: false,
+  showTitle: false,
+  showBtn: false,
+  popupOnce: true,
+};
+
+function parseBannerMeta(rawActionUrl?: string | null): { targetUrl: string; cfg: BannerConfig } {
+  const raw = String(rawActionUrl || "").trim();
+  const marker = "#bcfg=";
+  const idx = raw.indexOf(marker);
+  if (idx === -1) {
+    return { targetUrl: raw, cfg: { ...defaultBannerCfg, clickMode: raw ? "full" : "none" } };
+  }
+  const targetUrl = raw.slice(0, idx).trim();
+  try {
+    const parsed = JSON.parse(decodeURIComponent(raw.slice(idx + marker.length)));
+    return {
+      targetUrl,
+      cfg: {
+        placement: ["top", "middle", "bottom", "popup"].includes(parsed.placement) ? parsed.placement : "top",
+        size: ["auto", "small", "medium", "large"].includes(parsed.size) ? parsed.size : "auto",
+        clickMode: ["full", "hotspot", "none"].includes(parsed.clickMode) ? parsed.clickMode : (targetUrl ? "full" : "none"),
+        hx: typeof parsed.hx === "number" ? Math.max(0, Math.min(95, parsed.hx)) : 8,
+        hy: typeof parsed.hy === "number" ? Math.max(0, Math.min(95, parsed.hy)) : 44,
+        hw: typeof parsed.hw === "number" ? Math.max(5, Math.min(100, parsed.hw)) : 34,
+        hh: typeof parsed.hh === "number" ? Math.max(5, Math.min(100, parsed.hh)) : 24,
+        shade: Boolean(parsed.shade),
+        showTitle: Boolean(parsed.showTitle),
+        showBtn: Boolean(parsed.showBtn),
+        popupOnce: parsed.popupOnce !== false,
+      },
+    };
+  } catch {
+    return { targetUrl, cfg: { ...defaultBannerCfg, clickMode: targetUrl ? "full" : "none" } };
+  }
+}
+
 function BannerCarousel({ banners }: { banners: HomeData["banners"] }) {
+  const [, navigate] = useLocation();
   const [index, setIndex] = useState(0);
+  const touchStartX = useRef<number | null>(null);
   useEffect(() => {
     if (banners.length < 2) return;
     const timer = window.setInterval(() => setIndex(value => (value + 1) % banners.length), 5200);
@@ -101,12 +162,223 @@ function BannerCarousel({ banners }: { banners: HomeData["banners"] }) {
   if (!banners.length) return null;
   const banner = banners[index % banners.length];
   if (!banner?.imageUrl) return null;
-  return <section className="banner-frame" aria-label="إعلانات المتجر">
-    <img src={banner.imageUrl} alt={banner.title} loading="eager" fetchPriority="high" decoding="async" />
-    <div className="banner-shade" />
-    <div className="banner-copy"><span className="eyebrow eyebrow-light">من أوريجنال إليك</span><h2>{banner.title}</h2>{banner.body && <p>{banner.body}</p>}{banner.actionText && banner.actionUrl && <a href={banner.actionUrl} className="button button-light">{banner.actionText}<ArrowLeft size={16} /></a>}</div>
-    {banners.length > 1 && <div className="banner-dots">{banners.map((item, dot) => <button key={item.id} className={dot === index ? "active" : ""} aria-label={`الإعلان ${dot + 1}`} onClick={() => setIndex(dot)} />)}</div>}
-  </section>;
+  const { targetUrl, cfg } = parseBannerMeta(banner.actionUrl);
+
+  const goTarget = () => {
+    if (!targetUrl) return;
+    if (targetUrl.startsWith("/")) navigate(targetUrl);
+    else window.location.href = targetUrl;
+  };
+
+  const sizeHeights: Record<BannerConfig["size"], string | undefined> = {
+    auto: undefined,
+    small: "clamp(115px, 18vw, 180px)",
+    medium: "clamp(175px, 25vw, 275px)",
+    large: "clamp(235px, 34vw, 380px)",
+  };
+  const isAutoSize = cfg.size === "auto";
+  const isFullClick = Boolean(targetUrl && cfg.clickMode === "full");
+  const isHotspotClick = Boolean(targetUrl && cfg.clickMode === "hotspot");
+
+  return (
+    <section
+      className="banner-frame"
+      aria-label="إعلانات المتجر"
+      onClick={isFullClick ? goTarget : undefined}
+      onTouchStart={e => { touchStartX.current = e.touches[0]?.clientX ?? null; }}
+      onTouchEnd={e => {
+        if (touchStartX.current === null || banners.length < 2) return;
+        const diff = (e.changedTouches[0]?.clientX ?? touchStartX.current) - touchStartX.current;
+        touchStartX.current = null;
+        if (Math.abs(diff) > 40) {
+          setIndex(v => diff > 0 ? (v + 1) % banners.length : (v - 1 + banners.length) % banners.length);
+        }
+      }}
+      style={{
+        position: "relative",
+        height: isAutoSize ? "auto" : sizeHeights[cfg.size],
+        minHeight: isAutoSize ? 0 : sizeHeights[cfg.size],
+        borderRadius: "20px",
+        overflow: "hidden",
+        margin: "6px 0 24px",
+        background: "transparent",
+        cursor: isFullClick ? "pointer" : "default",
+        boxShadow: "0 10px 26px rgba(15, 45, 30, 0.08)",
+      }}
+    >
+      <img
+        src={banner.imageUrl}
+        alt={banner.title || "إعلان المتجر"}
+        loading="eager"
+        decoding="async"
+        fetchPriority="high"
+        style={isAutoSize ? {
+          position: "relative",
+          width: "100%",
+          height: "auto",
+          display: "block",
+          objectFit: "contain",
+          zIndex: 1,
+        } : {
+          position: "absolute",
+          inset: 0,
+          width: "100%",
+          height: "100%",
+          objectFit: "cover",
+          zIndex: 1,
+        }}
+      />
+      {cfg.shade && <div className="banner-shade" style={{ zIndex: 2 }} />}
+      {(cfg.showTitle || (cfg.showBtn && banner.actionText && targetUrl)) && (
+        <div className="banner-copy" style={{ zIndex: 3 }}>
+          {cfg.showTitle && banner.title && <h2>{banner.title}</h2>}
+          {cfg.showTitle && banner.body && <p>{banner.body}</p>}
+          {cfg.showBtn && banner.actionText && targetUrl && (
+            <button type="button" onClick={e => { e.stopPropagation(); goTarget(); }} className="button button-light">
+              {banner.actionText}<ArrowLeft size={16} />
+            </button>
+          )}
+        </div>
+      )}
+      {isHotspotClick && (
+        <button
+          type="button"
+          aria-label={banner.actionText || banner.title || "انتقال للعرض"}
+          onClick={e => { e.stopPropagation(); goTarget(); }}
+          style={{
+            position: "absolute",
+            left: cfg.hx + "%",
+            top: cfg.hy + "%",
+            width: cfg.hw + "%",
+            height: cfg.hh + "%",
+            background: "transparent",
+            border: "none",
+            cursor: "pointer",
+            zIndex: 5,
+            padding: 0,
+          }}
+        />
+      )}
+      {banners.length > 1 && (
+        <div className="banner-dots" style={{ zIndex: 6 }}>
+          {banners.map((item, dot) => (
+            <button key={item.id} type="button" className={dot === index ? "active" : ""} aria-label={"الإعلان " + (dot + 1)} onClick={e => { e.stopPropagation(); setIndex(dot); }} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function PromoPopupModal({ banners }: { banners: HomeData["banners"] }) {
+  const [, navigate] = useLocation();
+  const [openBanner, setOpenBanner] = useState<HomeData["banners"][number] | null>(null);
+
+  useEffect(() => {
+    if (!banners.length) return;
+    const candidate = banners[0];
+    if (!candidate?.imageUrl) return;
+    const { cfg } = parseBannerMeta(candidate.actionUrl);
+    const storageKey = "original-popup-seen-" + candidate.id;
+    if (cfg.popupOnce) {
+      try {
+        if (sessionStorage.getItem(storageKey) === "1") return;
+      } catch {}
+    }
+    setOpenBanner(candidate);
+  }, [banners]);
+
+  if (!openBanner || !openBanner.imageUrl) return null;
+  const { targetUrl, cfg } = parseBannerMeta(openBanner.actionUrl);
+
+  const closePopup = () => {
+    try { sessionStorage.setItem("original-popup-seen-" + openBanner.id, "1"); } catch {}
+    setOpenBanner(null);
+  };
+
+  const goTarget = () => {
+    closePopup();
+    if (!targetUrl) return;
+    if (targetUrl.startsWith("/")) navigate(targetUrl);
+    else window.location.href = targetUrl;
+  };
+
+  const isFullClick = Boolean(targetUrl && cfg.clickMode === "full");
+  const isHotspotClick = Boolean(targetUrl && cfg.clickMode === "hotspot");
+
+  return (
+    <div
+      className="modal-backdrop"
+      role="dialog"
+      aria-modal="true"
+      onClick={closePopup}
+      style={{ zIndex: 120, background: "rgba(8, 22, 15, 0.72)", padding: "18px" }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          position: "relative",
+          width: "min(460px, 94vw)",
+          borderRadius: "22px",
+          overflow: "hidden",
+          background: "transparent",
+          boxShadow: "0 24px 60px rgba(0,0,0,0.45)",
+        }}
+      >
+        <button
+          type="button"
+          onClick={closePopup}
+          aria-label="إغلاق الإعلان"
+          style={{
+            position: "absolute",
+            top: "10px",
+            right: "10px",
+            width: "34px",
+            height: "34px",
+            borderRadius: "50%",
+            border: "none",
+            background: "rgba(15, 38, 26, 0.82)",
+            color: "#ffffff",
+            display: "grid",
+            placeItems: "center",
+            cursor: "pointer",
+            zIndex: 10,
+            boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
+          }}
+        >
+          <X size={18} />
+        </button>
+        <div
+          onClick={isFullClick ? goTarget : undefined}
+          style={{ position: "relative", cursor: isFullClick ? "pointer" : "default", lineHeight: 0 }}
+        >
+          <img
+            src={openBanner.imageUrl}
+            alt={openBanner.title || "عرض خاص"}
+            style={{ width: "100%", height: "auto", maxHeight: "82vh", objectFit: "contain", display: "block", borderRadius: "22px" }}
+          />
+          {isHotspotClick && (
+            <button
+              type="button"
+              aria-label="انتقال للعرض"
+              onClick={e => { e.stopPropagation(); goTarget(); }}
+              style={{
+                position: "absolute",
+                left: cfg.hx + "%",
+                top: cfg.hy + "%",
+                width: cfg.hw + "%",
+                height: cfg.hh + "%",
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
+                zIndex: 5,
+              }}
+            />
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 
@@ -347,19 +619,23 @@ function CategoryStrip({ data, onSelect }: { data: HomeData["categories"]; onSel
 function HomePage({ data, onOpen, onAiRecipe }: { data: HomeData; onOpen: (id: number) => void; onAiRecipe?: (p: PublicProduct) => void }) {
   const [, navigate] = useLocation();
   const [sort, setSort] = useState<"featured" | "price-asc" | "price-desc">("featured");
-  const [visibleCount, setVisibleCount] = useState(8);
-  const { data: products, isLoading: productsLoading } = trpc.commerce.catalog.listProducts.useQuery({ sort, limit: 100 }, { enabled: true, retry: 1, staleTime: 2500, refetchInterval: sort !== "featured" ? 3000 : false, refetchOnWindowFocus: true });
-  const featured = products ?? data.products;
-  const changeCategory = (id: number) => { navigate(`/products?category=${id}`); };
+  const { data: products, isLoading: productsLoading } = trpc.commerce.catalog.listProducts.useQuery({ sort, limit: 24 }, { enabled: sort !== "featured", retry: 1, staleTime: 2500, refetchInterval: sort !== "featured" ? 3000 : false, refetchOnWindowFocus: true });
+  const featured = sort === "featured" ? (data.products?.length ? data.products : (products ?? [])) : (products ?? data.products);
+  const changeCategory = (id: number) => { navigate("/products?category=" + id); };
+
+  const topBanners = useMemo(() => (data.banners ?? []).filter(b => parseBannerMeta(b.actionUrl).cfg.placement === "top"), [data.banners]);
+  const middleBanners = useMemo(() => (data.banners ?? []).filter(b => parseBannerMeta(b.actionUrl).cfg.placement === "middle"), [data.banners]);
+  const bottomBanners = useMemo(() => (data.banners ?? []).filter(b => parseBannerMeta(b.actionUrl).cfg.placement === "bottom"), [data.banners]);
+  const popupBanners = useMemo(() => (data.banners ?? []).filter(b => parseBannerMeta(b.actionUrl).cfg.placement === "popup"), [data.banners]);
+
   return <main className="page-shell">
-    <BannerCarousel banners={data.banners} />
-    {data.offers.length > 0 && <section className="offers-row"><div className="section-heading compact"><div><span className="eyebrow">عروض المتجر</span><h2>فرص تستحق الانتباه</h2></div><BadgePercent size={22} /></div><div className="offer-strip">{data.offers.map(offer => <div className="offer-chip" key={offer.id}><span className="offer-chip-icon"><BadgePercent size={18} /></span><div><strong>{offer.title}</strong><small>{offer.description || (offer.discountType === "percent" ? `خصم ${offer.discountValue}%` : `خصم ${formatPrice(offer.discountValue)}`)}</small></div><code>{offer.code}</code></div>)}</div></section>}
-    <section className="store-section categories-section"><div className="section-heading"><div><span className="eyebrow"></span><h2>ابدأ من الأقسام</h2></div><Link className="text-link" href="/categories">كل الأقسام <ArrowLeft size={15} /></Link></div><CategoryStrip data={data.categories} onSelect={changeCategory} /></section>
-    <section className="store-section products-section"><div className="section-heading"><div><span className="eyebrow"></span><h2>منتجات المتجر</h2></div><div className="section-tools"><label className="sort-select"><ArrowUpDown size={15} /><select aria-label="ترتيب المنتجات" value={sort} onChange={event => { setSort(event.target.value as typeof sort); setVisibleCount(8); }}><option value="featured">الأبرز</option><option value="price-asc">السعر: الأقل أولًا</option><option value="price-desc">السعر: الأعلى أولًا</option></select></label><Link className="text-link" href="/products">عرض الكل <ArrowLeft size={15} /></Link></div></div>{productsLoading && !featured.length ? <Loading /> : <><ProductGrid items={featured.slice(0, visibleCount)} onOpen={onOpen} onAiRecipe={onAiRecipe} />
-    {(featured.length > visibleCount && visibleCount < 24) || visibleCount >= 24 || featured.length <= visibleCount ? <div style={{ display: "flex", justifyContent: "center", padding: "24px 0 12px" }}>
-      {featured.length > visibleCount && visibleCount < 24 && <button type="button" onClick={() => setVisibleCount(count => Math.min(count + 8, 24))} style={{ minWidth: 180, padding: "13px 28px", border: "1px solid #174b38", borderRadius: 14, background: "#174b38", color: "#fff", fontWeight: 700, fontSize: 15, cursor: "pointer", boxShadow: "0 5px 16px rgba(23,75,56,.15)" }}>عرض المزيد</button>}
-      {(visibleCount >= 24 || featured.length <= visibleCount) && <Link href="/products" className="text-link" style={{ minWidth: 180, padding: "13px 28px", border: "1px solid #174b38", borderRadius: 14, background: "#174b38", color: "#fff", fontWeight: 700, fontSize: 15, textAlign: "center", justifyContent: "center", boxShadow: "0 5px 16px rgba(23,75,56,.15)" }}>عرض جميع المنتجات <ArrowLeft size={16} /></Link>}
-    </div> : null}</>}</section>
+    <PromoPopupModal banners={popupBanners} />
+    <BannerCarousel banners={topBanners} />
+    {data.offers.length > 0 && <section className="offers-row"><div className="section-heading compact"><div><span className="eyebrow">عروض المتجر</span><h2>فرص تستحق الانتباه</h2></div><BadgePercent size={22} /></div><div className="offer-strip">{data.offers.map(offer => <div className="offer-chip" key={offer.id}><span className="offer-chip-icon"><BadgePercent size={18} /></span><div><strong>{offer.title}</strong><small>{offer.description || (offer.discountType === "percent" ? "خصم " + offer.discountValue + "%" : "خصم " + formatPrice(offer.discountValue))}</small></div><code>{offer.code}</code></div>)}</div></section>}
+    <section className="store-section categories-section"><div className="section-heading"><div><span className="eyebrow">على طريقتك</span><h2>ابدأ من الأقسام</h2></div><Link className="text-link" href="/categories">كل الأقسام <ArrowLeft size={15} /></Link></div><CategoryStrip data={data.categories} onSelect={changeCategory} /></section>
+    {middleBanners.length > 0 && <BannerCarousel banners={middleBanners} />}
+    <section className="store-section products-section"><div className="section-heading"><div><span className="eyebrow">اختيارات أوريجنال</span><h2>منتجات المتجر</h2></div><div className="section-tools"><label className="sort-select"><ArrowUpDown size={15} /><select aria-label="ترتيب المنتجات" value={sort} onChange={event => setSort(event.target.value as typeof sort)}><option value="featured">الأبرز</option><option value="price-asc">السعر: الأقل أولًا</option><option value="price-desc">السعر: الأعلى أولًا</option></select></label><Link className="text-link" href="/products">عرض الكل <ArrowLeft size={15} /></Link></div></div>{productsLoading && !featured.length ? <Loading /> : <ProductGrid items={featured} onOpen={onOpen} onAiRecipe={onAiRecipe} />}</section>
+    {bottomBanners.length > 0 && <BannerCarousel banners={bottomBanners} />}
   </main>;
 }
 
