@@ -1116,8 +1116,28 @@ function OrdersPanel() {
   const query = trpc.commerce.admin.orders.list.useQuery(undefined, { retry: 1 });
   const nextStates: Record<string, string[]> = { new: ["preparing", "cancelled"], preparing: ["ready", "cancelled"], ready: ["out_for_delivery", "cancelled"], out_for_delivery: ["delivered"], delivered: [], cancelled: [] };
   const [deliveryNotes, setDeliveryNotes] = useState<Record<number, string>>({});
-  const change = trpc.commerce.admin.orders.setStatus.useMutation({ onSuccess: async () => { toast.success("تم تحديث حالة الطلب"); await Promise.all([utils.commerce.admin.orders.list.invalidate(), utils.commerce.admin.overview.invalidate(), utils.commerce.orders.mine.invalidate(), utils.commerce.catalog.home.invalidate(), utils.commerce.catalog.listProducts.invalidate()]); }, onError: error => toast.error(error.message) });
-  const deleteOrder = trpc.commerce.admin.orders.delete.useMutation({ onSuccess: async () => { toast.success("تم حذف الطلب نهائياً"); await Promise.all([utils.commerce.admin.orders.list.invalidate(), utils.commerce.admin.overview.invalidate()]); }, onError: error => toast.error(error.message) });
+  const change = trpc.commerce.admin.orders.setStatus.useMutation({
+    onSuccess: async () => {
+      toast.success("تم تحديث حالة الطلب وإرسال إشعار فوري للعميل");
+      await Promise.all([utils.commerce.admin.orders.list.invalidate(), utils.commerce.admin.overview.invalidate(), utils.commerce.orders.mine.invalidate(), utils.commerce.catalog.home.invalidate(), utils.commerce.catalog.listProducts.invalidate()]);
+    },
+    onError: error => toast.error(error.message),
+  });
+  const sendNoteMut = trpc.commerce.admin.orders.sendNote.useMutation({
+    onSuccess: async (_res, vars) => {
+      toast.success("تم إرسال الإشعار الفوري لجوال العميل بنجاح");
+      setDeliveryNotes(current => ({ ...current, [vars.id]: "" }));
+      await utils.commerce.admin.orders.list.invalidate();
+    },
+    onError: error => toast.error(error.message),
+  });
+  const deleteOrder = trpc.commerce.admin.orders.delete.useMutation({
+    onSuccess: async () => {
+      toast.success("تم حذف الطلب نهائياً");
+      await Promise.all([utils.commerce.admin.orders.list.invalidate(), utils.commerce.admin.overview.invalidate()]);
+    },
+    onError: error => toast.error(error.message),
+  });
   const exportOrders = () => {
     if (!query.data?.length) return;
     const quote = (value: string | number | null | undefined) => "\"" + String(value ?? "").replace(/"/g, "\"\"") + "\"";
@@ -1129,20 +1149,33 @@ function OrdersPanel() {
     const url = URL.createObjectURL(blob); const link = document.createElement("a");
     link.href = url; link.download = "original-orders-" + new Date().toISOString().slice(0, 10) + ".csv"; link.click(); URL.revokeObjectURL(url);
   };
+  const quickNotes = ["طلبك قيد التجهيز الآن 👨‍🍳", "طلبك جاهز للتوصيل ✨", "طلبك خرج للتوصيل 🛵", "المندوب قريب من موقعك 📍"];
   return <div className="admin-content">
-    <AdminHeading eyebrow="من لحظة الطلب حتى التسليم" title="إدارة الطلبات" text="حدّث الحالة بالتسلسل، أو احذف الطلبات التجريبية والتنبيهات المنتهية." icon={ClipboardList} />
+    <AdminHeading eyebrow="من لحظة الطلب حتى التسليم" title="إدارة الطلبات وإشعارات العملاء" text="حدّث الحالة أو أرسل رسالة إشعار مخصصة تصل فوراً لشاشة جوال العميل." icon={ClipboardList} />
     <OwnerNotificationControl />
     {query.data?.length ? <div className="admin-actions-row admin-export-row"><span className="subtle-note">{query.data.length} طلبًا · التصدير يشمل البيانات التي حمّلتها اللوحة</span><button type="button" className="small-button" onClick={exportOrders}><Download size={15} />تصدير CSV</button></div> : null}
     {query.isLoading ? <AdminLoading /> : query.error ? <AdminError message={query.error.message} retry={() => void query.refetch()} /> : !query.data?.length ? <AdminEmpty title="لا توجد طلبات" text="ستظهر الطلبات الجديدة هنا بعد تفعيل إعدادات التوصيل." /> : <div className="admin-orders">{query.data.map(order => {
       const allowedStatuses = [order.status, ...(nextStates[order.status] ?? [])];
+      const noteVal = deliveryNotes[order.id] ?? "";
       return <article className="admin-order-card" key={order.id}>
         <div className="admin-order-top"><div><strong className="order-number">{order.orderNumber}</strong><small>{new Date(order.createdAt).toLocaleString("ar-YE")}</small></div><div style={{ display: "flex", gap: "6px", alignItems: "center" }}><span className={"status-pill status-" + order.status}>{labels[order.status]}</span><button type="button" className="small-button danger-soft" onClick={() => { if (window.confirm("هل أنت متأكد من حذف الطلب «" + order.orderNumber + "» نهائياً؟")) deleteOrder.mutate({ id: order.id }); }}><Trash2 size={14} /> حذف</button></div></div>
-        <div className="admin-order-customer"><strong>{order.recipientName}</strong><span>{order.phone}</span><span>{order.city}، {order.district}</span>{order.addressDetails && <small>{order.addressDetails}</small>}{order.customerNote && <small>ملاحظة العميل: {order.customerNote}</small>}</div>
+        <div className="admin-order-customer"><strong>{order.recipientName}</strong><span dir="ltr">{order.phone}</span><span>{order.city}، {order.district}</span>{order.addressDetails && <small>{order.addressDetails}</small>}{order.customerNote && <small>ملاحظة العميل: {order.customerNote}</small>}</div>
         <div className="admin-order-lines">{order.items.map(item => <span key={item.id}>{item.productName} × {item.quantity} · {money(item.lineTotal)}</span>)}</div>
         <div className="admin-order-total"><span>فرعي {money(order.subtotal)} · توصيل {money(order.deliveryFee)}{order.discount ? " · خصم " + money(order.discount) : ""}</span><strong>{money(order.total)}</strong></div>
-        <div className="admin-order-controls"><label>حالة الطلب<select value={order.status} disabled={order.status === "delivered" || order.status === "cancelled" || change.isPending} onChange={e => change.mutate({ id: order.id, status: e.target.value as "new" | "preparing" | "ready" | "out_for_delivery" | "delivered" | "cancelled", note: deliveryNotes[order.id]?.trim() || undefined }, { onSuccess: () => setDeliveryNotes(current => ({ ...current, [order.id]: "" })) })}>{Object.entries(labels).filter(([value]) => allowedStatuses.includes(value)).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><span className="cod-note small"><Truck size={15} /> نقدًا عند الاستلام</span></div>
-        <label className="admin-order-delivery-note"><span>ملاحظة للعميل (اختياري)</span><input maxLength={500} value={deliveryNotes[order.id] ?? ""} onChange={e => setDeliveryNotes(current => ({ ...current, [order.id]: e.target.value }))} placeholder="مثال: خرج للتوصيل باتجاه الحي..." disabled={order.status === "delivered" || order.status === "cancelled"} /><small>تُرسل مع إشعار تغيير الحالة وتظهر في سجل طلباتي.</small></label>
-        {order.events.length ? <details className="order-history"><summary>سجل تغييرات الحالة</summary><ol>{order.events.map(event => <li key={event.id}><span className={"status-pill status-" + event.status}>{labels[event.status]}</span><time>{new Date(event.createdAt).toLocaleString("ar-YE")}</time>{event.note && <small>{event.note}</small>}</li>)}</ol></details> : null}
+        <div className="admin-order-controls"><label>حالة الطلب<select value={order.status} disabled={order.status === "delivered" || order.status === "cancelled" || change.isPending} onChange={e => change.mutate({ id: order.id, status: e.target.value as "new" | "preparing" | "ready" | "out_for_delivery" | "delivered" | "cancelled", note: noteVal.trim() || undefined }, { onSuccess: () => setDeliveryNotes(current => ({ ...current, [order.id]: "" })) })}>{Object.entries(labels).filter(([value]) => allowedStatuses.includes(value)).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><span className="cod-note small"><Truck size={15} /> نقدًا عند الاستلام</span></div>
+        <div className="admin-order-delivery-note" style={{ display: "grid", gap: "6px", marginTop: "8px" }}>
+          <span style={{ fontSize: "11px", fontWeight: 700, color: "#174b36" }}>رسالة الإشعار للعميل (يصل النص الذي تكتبه هنا فقط دون إضافات):</span>
+          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+            <input maxLength={500} value={noteVal} onChange={e => setDeliveryNotes(current => ({ ...current, [order.id]: e.target.value }))} placeholder="اكتب رسالتك للعميل (مثلاً: طلبك خرج للتوصيل)..." style={{ flex: "1 1 200px" }} />
+            <button type="button" className="small-button selected" disabled={!noteVal.trim() || sendNoteMut.isPending} onClick={() => sendNoteMut.mutate({ id: order.id, note: noteVal.trim() })}><BellRing size={14} /> إرسال إشعار فوري</button>
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
+            {quickNotes.map(qn => (
+              <button key={qn} type="button" className="small-button" style={{ fontSize: "10px", minHeight: "26px", padding: "0 8px" }} onClick={() => setDeliveryNotes(current => ({ ...current, [order.id]: qn }))}>{qn}</button>
+            ))}
+          </div>
+        </div>
+        {order.events.length ? <details className="order-history"><summary>سجل تغييرات الحالة والإشعارات</summary><ol>{order.events.map(event => <li key={event.id}><span className={"status-pill status-" + event.status}>{labels[event.status] || event.status}</span><time>{new Date(event.createdAt).toLocaleString("ar-YE")}</time>{event.note && <small>{event.note}</small>}</li>)}</ol></details> : null}
       </article>;
     })}</div>}
   </div>;

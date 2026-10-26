@@ -1067,6 +1067,7 @@ function CartRow({ line, onQuantity, onRemove }: { line: CartLine; onQuantity: (
 
 function Checkout({ onClose, onSuccess, cart }: { onClose: () => void; onSuccess: () => void; cart: CartLine[] }) {
   const utils = trpc.useUtils();
+  const [, navigate] = useLocation();
   const customer = useCustomer();
   const defaultAddress = customer.addresses.find(address => address.isDefault) ?? customer.addresses[0];
   const [selectedAddressId, setSelectedAddressId] = useState(defaultAddress?.id ?? "new");
@@ -1119,8 +1120,9 @@ function Checkout({ onClose, onSuccess, cart }: { onClose: () => void; onSuccess
       }
       onSuccess();
       void utils.commerce.orders.trackMany.invalidate();
-      toast.success(`تم استلام طلبك رقم ${result.orderNumber}. سيتواصل المتجر معك لتأكيده.`);
+      toast.success("تم استلام طلبك رقم " + result.orderNumber + "! فعّل الإشعارات لمتابعة حالة طلبك لحظة بلحظة.");
       onClose();
+      navigate("/orders?order=" + encodeURIComponent(result.orderNumber) + "&justOrdered=1");
     },
     onError: error => { setQuoteSignature(""); quoteMutation.reset(); toast.error(error.message || "تعذر إرسال الطلب. لم تُفرغ السلة؛ راجع البيانات وحاول مجددًا."); },
   });
@@ -1220,8 +1222,12 @@ async function showCustomerPhoneNotification(title: string, body: string, tag: s
 function OrdersPage() {
   const customer = useCustomer();
   const { add } = useStore();
+  const searchStr = useSearch();
+  const searchParams = new URLSearchParams(searchStr);
+  const focusedOrderNumber = searchParams.get("order");
+  const justOrdered = searchParams.get("justOrdered") === "1";
   const refs = useMemo(() => customer.orders.slice(0, 50).map(({ orderNumber, idempotencyKey }) => ({ orderNumber, idempotencyKey })), [customer.orders]);
-  const query = trpc.commerce.orders.trackMany.useQuery({ refs }, { enabled: refs.length > 0, retry: 1, staleTime: 10_000, refetchInterval: refs.length ? 30_000 : false });
+  const query = trpc.commerce.orders.trackMany.useQuery({ refs }, { enabled: refs.length > 0, retry: 1, staleTime: 5_000, refetchInterval: refs.length ? 8_000 : false });
   const publicKey = trpc.commerce.notifications.publicKey.useQuery(undefined, { enabled: false, retry: 1 });
   const subscribe = trpc.commerce.orders.subscribeToStatus.useMutation();
   const [permission, setPermission] = useState(getPushPermissionState);
@@ -1229,6 +1235,7 @@ function OrdersPage() {
   const [pushPending, setPushPending] = useState(false);
   const [reorder, setReorder] = useState<Array<{ productId: number; quantity: number }> | null>(null);
   const reorderQuery = trpc.commerce.catalog.productsForReorder.useQuery({ ids: reorder?.map(item => item.productId) ?? [1] }, { enabled: Boolean(reorder), retry: 1 });
+
   useEffect(() => {
     if (!refs.length || getPushPermissionState() !== "granted") return;
     let active = true;
@@ -1239,41 +1246,29 @@ function OrdersPage() {
     }).catch(() => undefined);
     return () => { active = false; };
   }, [refs, subscribe.mutateAsync]);
+
   const enableNotifications = async () => {
     if (!refs.length || pushPending) return;
     setPushPending(true);
     try {
       const requestedPermission = await requestPushPermission();
       setPermission(requestedPermission);
-      if (requestedPermission === "unsupported") {
-        throw new Error("متصفحك لا يدعم الإشعارات لهذا التطبيق.");
-      }
-      if (requestedPermission !== "granted") {
-        throw new Error("لم تسمح بإشعارات المتصفح. فعلها من أيقونة القفل بجانب الرابط.");
-      }
-      try { localStorage.setItem(CUSTOMER_PUSH_KEY, "true"); } catch {}
+      if (requestedPermission === "unsupported") throw new Error("متصفحك لا يدعم إشعارات Push لهذا التطبيق.");
+      if (requestedPermission !== "granted") throw new Error("يرجى السماح بالإشعارات من نافذة المتصفح لتتبع طلبك.");
+      const key = publicKey.data ?? (await publicKey.refetch()).data;
+      if (!key) throw new Error("تعذر الاتصال بخدمة الإشعارات. أعد المحاولة بعد قليل.");
+      const subscription = await ensureBrowserPushSubscription(key);
+      const result = await subscribe.mutateAsync({ refs, subscription });
+      if (!result.subscribed) throw new Error("لم نعثر على طلب محفوظ صالح لهذا المتصفح.");
       setPushEnabled(true);
-      playCustomerOrderSound();
-      await showCustomerPhoneNotification(
-        "تم تفعيل إشعارات طلباتك 🔔",
-        "سيصلك إشعار فوري في شريط الهاتف عند كل تحديث لحالة طلبك!",
-        "original-customer-push-test"
-      );
-      toast.success("تم تفعيل إشعارات حالة طلباتك على هذا الجهاز بنجاح 🔔");
-      void (async () => {
-        try {
-          const key = publicKey.data ?? (await publicKey.refetch()).data;
-          if (!key) return;
-          const subscription = await ensureBrowserPushSubscription(key);
-          await subscribe.mutateAsync({ refs, subscription });
-        } catch {}
-      })();
+      toast.success("تم تفعيل إشعارات تتبع الطلب بنجاح! سيصلك تنبيه فوري عند كل تحديث.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "تعذر تفعيل الإشعارات الآن.");
     } finally {
       setPushPending(false);
     }
   };
+
   useEffect(() => {
     if (!reorder || !reorderQuery.data) return;
     let added = 0; let skipped = 0;
@@ -1289,16 +1284,153 @@ function OrdersPage() {
       }
       add(product, quantity); added += 1;
     }
-    if (added) toast.success(`أُضيف ${added} منتج${skipped ? `، وتعذرت إضافة ${skipped} أصناف غير متاحة` : ""}. راجع الأسعار والكميات قبل الطلب.`);
+    if (added) toast.success("أُضيف " + added + " منتج إلى السلة.");
     else toast.error("لا توجد منتجات متاحة من هذا الطلب الآن.");
     setReorder(null);
   }, [reorder, reorderQuery.data, add]);
+
   const orders = query.data ?? [];
-  return <main className="page-shell inner-page">
-    <div className="page-title-row"><div><span className="eyebrow"></span><h1>طلباتي</h1><p></p></div><span className="page-title-icon"><Package size={23} /></span></div>
-    {refs.length > 0 && <section className="customer-push-panel"><div><strong>{pushEnabled ? "إشعارات حالة الطلب مفعّلة" : "تابع حالة طلبك بإشعار"}</strong><small>{permission === "denied" ? "الإشعارات محظورة من إعدادات المتصفح." : permission === "unsupported" ? "هذا المتصفح لا يدعم إشعارات Push." : pushEnabled ? "ستصلك الحالة وملاحظة المالك عند تحديث طلبك." : ""}</small></div><button type="button" className="small-button" onClick={() => void enableNotifications()} disabled={pushPending || permission === "denied" || permission === "unsupported"}><BellRing size={15} />{pushPending ? "جارٍ التفعيل..." : pushEnabled ? "تحديث الاشتراك" : "تفعيل الإشعارات"}</button></section>}
-    {query.isLoading ? <Loading /> : query.error ? <LoadError onRetry={() => void query.refetch()} /> : !orders.length ? <EmptyState icon={Package} title={refs.length ? "لم نعثر على طلبات محفوظة على هذا الجهاز" : "لا توجد طلبات سابقة"} description="بعد إتمام طلب من هذا المتصفح، ستظهر حالته هنا. لا يحتاج الطلب إلى حساب أو تسجيل دخول." action="تسوق الآن" href="/products" /> : <div className="orders-list">{orders.map(order => <article className="order-card" key={order.orderNumber}><div className="order-head"><div><span className="order-number">{order.orderNumber}</span><small>{new Date(order.createdAt).toLocaleDateString("ar-YE")}</small></div><span className={`status-pill status-${order.status}`}>{stateLabels[order.status] || order.status}</span></div><div className="order-items-summary">{order.items.map(item => <span key={item.id}>{item.productName} × {item.quantity}</span>)}</div><div className="order-foot"><strong>{formatPrice(order.total)}</strong><button type="button" className="small-button" disabled={reorderQuery.isFetching} onClick={() => { const items = order.items.filter(item => item.productId !== null).map(item => ({ productId: item.productId!, quantity: item.quantity })); if (!items.length) { toast.error("لم تعد منتجات هذا الطلب متاحة في المتجر."); return; } setReorder(items); }}>إضافة للسلة مجددًا <ArrowLeft size={14} /></button></div>{order.events.length > 0 && <details className="order-history"><summary>سجل حالة الطلب</summary><ol>{order.events.map(event => <li key={event.id}><span className={`status-pill status-${event.status}`}>{stateLabels[event.status] || event.status}</span><time>{new Date(event.createdAt).toLocaleString("ar-YE")}</time>{event.note && <small>{event.note}</small>}</li>)}</ol></details>}</article>)}</div>}
-  </main>;
+  const stepOrder = ["new", "preparing", "ready", "out_for_delivery", "delivered"];
+  const stepTitles: Record<string, string> = {
+    new: "تم الاستلام",
+    preparing: "قيد التجهيز",
+    ready: "جاهز",
+    out_for_delivery: "خرج للتوصيل",
+    delivered: "تم التسليم",
+  };
+
+  return (
+    <main className="page-shell inner-page">
+      <div className="page-title-row">
+        <div><span className="eyebrow">متابعة حية ومباشرة</span><h1>طلباتي</h1><p>تابع حالة طلبك خطوة بخطوة واستقبل تنبيهات التجهيز والتوصيل على جوالك.</p></div>
+        <span className="page-title-icon"><Package size={23} /></span>
+      </div>
+
+      {refs.length > 0 && (
+        <section
+          style={{
+            marginBottom: "18px",
+            padding: "16px 18px",
+            borderRadius: "18px",
+            background: pushEnabled ? "linear-gradient(135deg, #edf7f0, #f7fbf8)" : "linear-gradient(135deg, #113a28, #1d5c41)",
+            color: pushEnabled ? "#174b36" : "#ffffff",
+            border: pushEnabled ? "1.5px solid #b8dec6" : "1.5px solid #f1d897",
+            boxShadow: pushEnabled ? "0 6px 18px rgba(23, 75, 54, 0.06)" : "0 14px 30px rgba(17, 58, 40, 0.25)",
+            display: "flex",
+            flexWrap: "wrap",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "12px",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "12px", flex: "1 1 230px" }}>
+            <span style={{ width: "44px", height: "44px", borderRadius: "14px", background: pushEnabled ? "#174b36" : "#f1d897", color: pushEnabled ? "#f1d897" : "#113a28", display: "grid", placeItems: "center", flexShrink: 0 }}>
+              {pushEnabled ? <Check size={22} /> : <BellRing size={22} />}
+            </span>
+            <div>
+              <strong style={{ display: "block", fontSize: "14px", marginBottom: "3px", color: pushEnabled ? "#174b36" : "#f9e8b8" }}>
+                {pushEnabled ? "إشعارات تتبع الطلب مفعّلة على جوالك" : (justOrdered ? "تم تأكيد طلبك! فعّل الإشعارات الآن لمتابعته" : "فعّل إشعارات تتبع حالة طلبك")}
+              </strong>
+              <small style={{ fontSize: "11px", opacity: 0.92, lineHeight: 1.5, display: "block" }}>
+                {permission === "denied"
+                  ? "الإشعارات محظورة من إعدادات المتصفح؛ يرجى السماح بها من قفل الموقع أعلى المتصفح."
+                  : pushEnabled
+                  ? "سيصلك إشعار أنيق ومباشر فور تجهيز طلبك أو خروجه للتوصيل حتى لو أغلقت الموقع أو التطبيق."
+                  : "اضغط زر التفعيل ليصلك إشعار فوري على شاشة جوالك عندما يصبح طلبك قيد التجهيز أو يخرج للتوصيل."}
+              </small>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => void enableNotifications()}
+            disabled={pushPending || permission === "denied" || permission === "unsupported"}
+            style={{
+              minHeight: "42px",
+              padding: "0 18px",
+              borderRadius: "12px",
+              border: pushEnabled ? "1px solid #174b36" : "none",
+              background: pushEnabled ? "#ffffff" : "#f1d897",
+              color: "#113a28",
+              fontWeight: 800,
+              fontSize: "12px",
+              cursor: "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "7px",
+              boxShadow: pushEnabled ? "none" : "0 6px 16px rgba(0,0,0,0.2)",
+            }}
+          >
+            <BellRing size={16} />
+            {pushPending ? "جارٍ التفعيل..." : pushEnabled ? "تحديث الإشعارات" : "تفعيل الإشعارات الآن"}
+          </button>
+        </section>
+      )}
+
+      {query.isLoading ? <Loading /> : query.error ? <LoadError onRetry={() => void query.refetch()} /> : !orders.length ? (
+        <EmptyState icon={Package} title={refs.length ? "لم نعثر على طلبات محفوظة على هذا الجهاز" : "لا توجد طلبات سابقة"} description="بعد إتمام طلب من هذا المتصفح، ستظهر حالته هنا مباشرة." action="تسوق الآن" href="/products" />
+      ) : (
+        <div className="orders-list">
+          {orders.map((order, idx) => {
+            const isFocused = focusedOrderNumber ? order.orderNumber === focusedOrderNumber : idx === 0;
+            const currentStepIdx = stepOrder.indexOf(order.status);
+            const latestNoteEvent = [...(order.events || [])].reverse().find(ev => ev.note && ev.note.trim() && ev.note !== "تم استلام الطلب");
+            return (
+              <article
+                className="order-card"
+                key={order.orderNumber}
+                style={isFocused ? { border: "2px solid #174b36", boxShadow: "0 12px 28px rgba(23, 75, 54, 0.1)" } : undefined}
+              >
+                <div className="order-head">
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                    <span className="order-number">{order.orderNumber}</span>
+                    {idx === 0 && <span style={{ fontSize: "10px", fontWeight: 700, padding: "2px 8px", borderRadius: "99px", background: "#edf6f0", color: "#174b36" }}>أحدث طلب</span>}
+                    <small>{new Date(order.createdAt).toLocaleString("ar-YE")}</small>
+                  </div>
+                  <span className={"status-pill status-" + order.status}>{stateLabels[order.status] || order.status}</span>
+                </div>
+
+                {order.status !== "cancelled" && (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "4px", margin: "12px 0", padding: "10px", borderRadius: "12px", background: "#f5f8f5" }}>
+                    {stepOrder.map((st, sIdx) => {
+                      const done = currentStepIdx >= sIdx;
+                      const active = currentStepIdx === sIdx;
+                      return (
+                        <div key={st} style={{ textAlign: "center", display: "grid", gap: "4px" }}>
+                          <div style={{ height: "5px", borderRadius: "99px", background: done ? "#174b36" : "#dce5de", transition: "0.2s" }} />
+                          <span style={{ fontSize: "9px", fontWeight: active ? 800 : 600, color: done ? "#174b36" : "#8c9990" }}>{stepTitles[st]}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {latestNoteEvent?.note && (
+                  <div style={{ margin: "8px 0 12px", padding: "10px 12px", borderRadius: "12px", background: "#fff9e8", border: "1px solid #f0dc9c", color: "#574208", fontSize: "12px", fontWeight: 700, display: "flex", alignItems: "center", gap: "8px" }}>
+                    <BellRing size={15} />
+                    <span>رسالة المتجر: {latestNoteEvent.note}</span>
+                  </div>
+                )}
+
+                <div className="order-items-summary">
+                  {order.items.map(item => <span key={item.id}>{item.productName} × {item.quantity}</span>)}
+                </div>
+                <div className="order-foot">
+                  <strong>{formatPrice(order.total)}</strong>
+                  <button type="button" className="small-button" disabled={reorderQuery.isFetching} onClick={() => { const items = order.items.filter(item => item.productId !== null).map(item => ({ productId: item.productId!, quantity: item.quantity })); if (!items.length) { toast.error("لم تعد منتجات هذا الطلب متاحة في المتجر."); return; } setReorder(items); }}>إضافة للسلة مجددًا <ArrowLeft size={14} /></button>
+                </div>
+                {order.events.length > 0 && (
+                  <details className="order-history" open={isFocused}>
+                    <summary>سجل حالة الطلب ({order.events.length})</summary>
+                    <ol>{order.events.map(event => <li key={event.id}><span className={"status-pill status-" + event.status}>{stateLabels[event.status] || event.status}</span><time>{new Date(event.createdAt).toLocaleString("ar-YE")}</time>{event.note && <small>{event.note}</small>}</li>)}</ol>
+                  </details>
+                )}
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </main>
+  );
 }
 
 function useGuestPushSubscriptionSync() {

@@ -2396,22 +2396,46 @@ async function notifyOwnerNewOrder(orderId, orderNumber, total) {
     await db.delete(ownerPushSubscriptions).where(eq4(ownerPushSubscriptions.id, id));
   });
 }
+var __recentOrderPushLocks = /* @__PURE__ */ new Map();
 async function notifyCustomerOrderStatus(orderId, orderNumber, status, note) {
+  const cleanNote = (note || "").trim();
+  const lockKey = orderId + "::" + status + "::" + cleanNote;
+  const now = Date.now();
+  if (__recentOrderPushLocks.has(lockKey) && now - (__recentOrderPushLocks.get(lockKey) || 0) < 6e3) {
+    return;
+  }
+  __recentOrderPushLocks.set(lockKey, now);
   const db = await database();
-  const subscriptions = await db.select({ id: customerPushSubscriptions.id, encryptedPayload: customerPushSubscriptions.encryptedPayload }).from(customerPushSubscriptions).where(eq4(customerPushSubscriptions.orderId, orderId));
-  const labels = {
-    new: "\u062A\u0645 \u0627\u0633\u062A\u0644\u0627\u0645 \u0627\u0644\u0637\u0644\u0628",
-    preparing: "\u0637\u0644\u0628\u0643 \u0642\u064A\u062F \u0627\u0644\u062A\u062C\u0647\u064A\u0632",
-    ready: "\u0637\u0644\u0628\u0643 \u062C\u0627\u0647\u0632 \u0644\u0644\u062A\u0648\u0635\u064A\u0644",
-    out_for_delivery: "\u062E\u0631\u062C \u0637\u0644\u0628\u0643 \u0644\u0644\u062A\u0648\u0635\u064A\u0644",
-    delivered: "\u062A\u0645 \u062A\u0633\u0644\u064A\u0645 \u0637\u0644\u0628\u0643",
+  const subscriptions = await db.select({
+    id: customerPushSubscriptions.id,
+    endpointHash: customerPushSubscriptions.endpointHash,
+    encryptedPayload: customerPushSubscriptions.encryptedPayload
+  }).from(customerPushSubscriptions).where(eq4(customerPushSubscriptions.orderId, orderId));
+  const uniqueByEndpoint = [...new Map(subscriptions.map((s) => [s.endpointHash, s])).values()];
+  if (!uniqueByEndpoint.length) return;
+  const titles = {
+    new: "\u{1F33F} \u0623\u0648\u0631\u064A\u062C\u0646\u0627\u0644 \xB7 \u062A\u0645 \u0627\u0633\u062A\u0644\u0627\u0645 \u0637\u0644\u0628\u0643",
+    preparing: "\u{1F468}\u200D\u{1F373} \u0623\u0648\u0631\u064A\u062C\u0646\u0627\u0644 \xB7 \u0637\u0644\u0628\u0643 \u0642\u064A\u062F \u0627\u0644\u062A\u062C\u0647\u064A\u0632",
+    ready: "\u2728 \u0623\u0648\u0631\u064A\u062C\u0646\u0627\u0644 \xB7 \u0637\u0644\u0628\u0643 \u062C\u0627\u0647\u0632 \u0644\u0644\u062A\u0648\u0635\u064A\u0644",
+    out_for_delivery: "\u{1F6F5} \u0623\u0648\u0631\u064A\u062C\u0646\u0627\u0644 \xB7 \u0637\u0644\u0628\u0643 \u062E\u0631\u062C \u0644\u0644\u062A\u0648\u0635\u064A\u0644",
+    delivered: "\u{1F49A} \u0623\u0648\u0631\u064A\u062C\u0646\u0627\u0644 \xB7 \u062A\u0645 \u062A\u0633\u0644\u064A\u0645 \u0637\u0644\u0628\u0643",
+    cancelled: "\u26A0\uFE0F \u0623\u0648\u0631\u064A\u062C\u0646\u0627\u0644 \xB7 \u062A\u0645 \u0625\u0644\u063A\u0627\u0621 \u0627\u0644\u0637\u0644\u0628"
+  };
+  const defaultBodies = {
+    new: "\u0627\u0633\u062A\u0644\u0645\u0646\u0627 \u0637\u0644\u0628\u0643 \u0648\u0646\u0631\u0627\u062C\u0639\u0647 \u0627\u0644\u0622\u0646 \u0628\u0639\u0646\u0627\u064A\u0629 \u2728",
+    preparing: "\u0637\u0644\u0628\u0643 \u0642\u064A\u062F \u0627\u0644\u062A\u062C\u0647\u064A\u0632 \u0627\u0644\u0622\u0646 \u{1F468}\u200D\u{1F373}",
+    ready: "\u0637\u0644\u0628\u0643 \u062C\u0627\u0647\u0632 \u0644\u0644\u062A\u0648\u0635\u064A\u0644 \u{1F4E6}",
+    out_for_delivery: "\u0637\u0644\u0628\u0643 \u062E\u0631\u062C \u0644\u0644\u062A\u0648\u0635\u064A\u0644 \u0648\u0647\u0648 \u0641\u064A \u0637\u0631\u064A\u0642\u0647 \u0625\u0644\u064A\u0643 \u{1F6F5}",
+    delivered: "\u062A\u0645 \u062A\u0633\u0644\u064A\u0645 \u0637\u0644\u0628\u0643 \u0628\u0646\u062C\u0627\u062D\u060C \u0634\u0643\u0631\u0627\u064B \u0644\u062A\u0633\u0648\u0642\u0643 \u0645\u0646 \u0623\u0648\u0631\u064A\u062C\u0646\u0627\u0644 \u{1F33F}",
     cancelled: "\u062A\u0645 \u0625\u0644\u063A\u0627\u0621 \u0627\u0644\u0637\u0644\u0628"
   };
-  await deliverPushRows(subscriptions, {
-    title: `\u062A\u062D\u062F\u064A\u062B \u0627\u0644\u0637\u0644\u0628 ${orderNumber}`,
-    body: `${labels[status] ?? "\u062A\u063A\u064A\u0631\u062A \u062D\u0627\u0644\u0629 \u0637\u0644\u0628\u0643"}${note ? ` \xB7 ${note.slice(0, 220)}` : ""}`,
-    url: "/orders",
-    tag: `original-order-status-${orderId}-${status}`
+  const title = titles[status] || "\u{1F33F} \u0623\u0648\u0631\u064A\u062C\u0646\u0627\u0644 \xB7 \u062A\u062D\u062F\u064A\u062B \u062D\u0627\u0644\u0629 \u0637\u0644\u0628\u0643";
+  const body = cleanNote ? cleanNote.slice(0, 220) : defaultBodies[status] || "\u062A\u0645 \u062A\u062D\u062F\u064A\u062B \u062D\u0627\u0644\u0629 \u0637\u0644\u0628\u0643";
+  await deliverPushRows(uniqueByEndpoint, {
+    title,
+    body,
+    url: "/orders?order=" + encodeURIComponent(orderNumber),
+    tag: "original-order-" + orderId
   }, async (id) => {
     await db.delete(customerPushSubscriptions).where(eq4(customerPushSubscriptions.id, id));
   });
@@ -3768,6 +3792,14 @@ var commerceRouter = router({
           db.select().from(orderEvents).where(sql2`${orderEvents.orderId} in (${sql2.join(ids, sql2`, `)})`).orderBy(asc(orderEvents.createdAt))
         ]);
         return rows.map((order) => ({ ...order, items: items.filter((item) => item.orderId === order.id), events: events.filter((event) => event.orderId === order.id) }));
+      }),
+      sendNote: requirePermission("orders.manage").input(z3.object({ id: safeId, note: z3.string().trim().min(1).max(500) })).mutation(async ({ ctx, input }) => {
+        const db = await database();
+        const current = (await db.select({ id: orders.id, status: orders.status, orderNumber: orders.orderNumber }).from(orders).where(eq4(orders.id, input.id)).limit(1))[0];
+        if (!current) throw new TRPCError3({ code: "NOT_FOUND", message: "\u0644\u0645 \u064A\u062A\u0645 \u0627\u0644\u0639\u062B\u0648\u0631 \u0639\u0644\u0649 \u0627\u0644\u0637\u0644\u0628." });
+        await db.insert(orderEvents).values({ orderId: input.id, status: current.status, note: input.note, changedByUserId: ctx.user.id });
+        await notifyCustomerOrderStatus(input.id, current.orderNumber, current.status, input.note);
+        return { success: true };
       }),
       setStatus: requirePermission("orders.manage").input(z3.object({ id: safeId, status: orderStatus, note: z3.string().trim().max(500).optional() })).mutation(async ({ ctx, input }) => {
         const db = await database();

@@ -217,23 +217,46 @@ async function notifyOwnerNewOrder(orderId: number, orderNumber: string, total: 
   }, async id => { await db.delete(ownerPushSubscriptions).where(eq(ownerPushSubscriptions.id, id)); });
 }
 
+const __recentOrderPushLocks = new Map<string, number>();
 async function notifyCustomerOrderStatus(orderId: number, orderNumber: string, status: string, note?: string) {
+  const cleanNote = (note || "").trim();
+  const lockKey = orderId + "::" + status + "::" + cleanNote;
+  const now = Date.now();
+  if (__recentOrderPushLocks.has(lockKey) && now - (__recentOrderPushLocks.get(lockKey) || 0) < 6000) {
+    return;
+  }
+  __recentOrderPushLocks.set(lockKey, now);
   const db = await database();
-  const subscriptions = await db.select({ id: customerPushSubscriptions.id, encryptedPayload: customerPushSubscriptions.encryptedPayload })
-    .from(customerPushSubscriptions).where(eq(customerPushSubscriptions.orderId, orderId));
-  const labels: Record<string, string> = {
-    new: "تم استلام الطلب",
-    preparing: "طلبك قيد التجهيز",
-    ready: "طلبك جاهز للتوصيل",
-    out_for_delivery: "خرج طلبك للتوصيل",
-    delivered: "تم تسليم طلبك",
+  const subscriptions = await db.select({
+    id: customerPushSubscriptions.id,
+    endpointHash: customerPushSubscriptions.endpointHash,
+    encryptedPayload: customerPushSubscriptions.encryptedPayload,
+  }).from(customerPushSubscriptions).where(eq(customerPushSubscriptions.orderId, orderId));
+  const uniqueByEndpoint = [...new Map(subscriptions.map(s => [s.endpointHash, s])).values()];
+  if (!uniqueByEndpoint.length) return;
+  const titles: Record<string, string> = {
+    new: "🌿 أوريجنال · تم استلام طلبك",
+    preparing: "👨‍🍳 أوريجنال · طلبك قيد التجهيز",
+    ready: "✨ أوريجنال · طلبك جاهز للتوصيل",
+    out_for_delivery: "🛵 أوريجنال · طلبك خرج للتوصيل",
+    delivered: "💚 أوريجنال · تم تسليم طلبك",
+    cancelled: "⚠️ أوريجنال · تم إلغاء الطلب",
+  };
+  const defaultBodies: Record<string, string> = {
+    new: "استلمنا طلبك ونراجعه الآن بعناية ✨",
+    preparing: "طلبك قيد التجهيز الآن 👨‍🍳",
+    ready: "طلبك جاهز للتوصيل 📦",
+    out_for_delivery: "طلبك خرج للتوصيل وهو في طريقه إليك 🛵",
+    delivered: "تم تسليم طلبك بنجاح، شكراً لتسوقك من أوريجنال 🌿",
     cancelled: "تم إلغاء الطلب",
   };
-  await deliverPushRows(subscriptions, {
-    title: `تحديث الطلب ${orderNumber}`,
-    body: `${labels[status] ?? "تغيرت حالة طلبك"}${note ? ` · ${note.slice(0, 220)}` : ""}`,
-    url: "/orders",
-    tag: `original-order-status-${orderId}-${status}`,
+  const title = titles[status] || "🌿 أوريجنال · تحديث حالة طلبك";
+  const body = cleanNote ? cleanNote.slice(0, 220) : (defaultBodies[status] || "تم تحديث حالة طلبك");
+  await deliverPushRows(uniqueByEndpoint, {
+    title,
+    body,
+    url: "/orders?order=" + encodeURIComponent(orderNumber),
+    tag: "original-order-" + orderId,
   }, async id => { await db.delete(customerPushSubscriptions).where(eq(customerPushSubscriptions.id, id)); });
 }
 
@@ -1534,6 +1557,14 @@ export const commerceRouter = router({
           db.select().from(orderEvents).where(sql`${orderEvents.orderId} in (${sql.join(ids, sql`, `)})`).orderBy(asc(orderEvents.createdAt)),
         ]);
         return rows.map(order => ({ ...order, items: items.filter(item => item.orderId === order.id), events: events.filter(event => event.orderId === order.id) }));
+      }),
+      sendNote: requirePermission("orders.manage").input(z.object({ id: safeId, note: z.string().trim().min(1).max(500) })).mutation(async ({ ctx, input }) => {
+        const db = await database();
+        const current = (await db.select({ id: orders.id, status: orders.status, orderNumber: orders.orderNumber }).from(orders).where(eq(orders.id, input.id)).limit(1))[0];
+        if (!current) throw new TRPCError({ code: "NOT_FOUND", message: "لم يتم العثور على الطلب." });
+        await db.insert(orderEvents).values({ orderId: input.id, status: current.status, note: input.note, changedByUserId: ctx.user.id });
+        await notifyCustomerOrderStatus(input.id, current.orderNumber, current.status, input.note);
+        return { success: true };
       }),
       setStatus: requirePermission("orders.manage").input(z.object({ id: safeId, status: orderStatus, note: z.string().trim().max(500).optional() })).mutation(async ({ ctx, input }) => {
         const db = await database();
