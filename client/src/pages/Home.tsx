@@ -865,9 +865,67 @@ function ProductGrid({ items, onOpen, onAiRecipe }: { items: PublicProduct[]; on
 
 function CategoryStrip({ data, onSelect }: { data: HomeData["categories"]; onSelect: (id: number) => void }) {
   if (!data.length) return <div className="category-empty"><span className="category-empty-mark"><SlidersHorizontal size={19} /></span><div><strong>الأقسام قيد التجهيز</strong><p>أضف أقسام متجرك لتبدأ ترتيب المنتجات.</p></div><Link href="/categories"><ChevronLeft size={18} /></Link></div>;
-  return <div className="category-strip">{data.map((category, i) => <button key={category.id} className="category-tile" style={{ "--category-color": category.color } as React.CSSProperties} onClick={() => onSelect(category.id)}>
-    <span className="category-art">{category.imageUrl ? <img src={category.imageUrl} alt="" loading="eager" fetchPriority="high" decoding="async" /> : <Leaf size={23} strokeWidth={1.5} />}</span><span className="category-pill">{category.name}</span><span className="category-number">{String(i + 1).padStart(2, "0")}</span>
-  </button>)}</div>;
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(145px, 1fr))", gap: "12px" }}>
+      {data.map(category => (
+        <button
+          key={category.id}
+          type="button"
+          onClick={() => onSelect(category.id)}
+          style={{
+            position: "relative",
+            height: "152px",
+            borderRadius: "20px",
+            overflow: "hidden",
+            border: "1.5px solid rgba(23, 75, 54, 0.14)",
+            padding: 0,
+            background: category.color || "#174b36",
+            cursor: "pointer",
+            boxShadow: "0 10px 24px rgba(17, 58, 40, 0.11)",
+            display: "block",
+            width: "100%",
+          }}
+        >
+          {category.imageUrl ? (
+            <img
+              src={category.imageUrl}
+              alt={category.name}
+              loading="eager"
+              fetchPriority="high"
+              decoding="async"
+              style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+            />
+          ) : (
+            <div style={{ width: "100%", height: "100%", display: "grid", placeItems: "center", color: "#ffffff", background: "linear-gradient(135deg, #174b36, #286a48)" }}>
+              <Leaf size={38} strokeWidth={1.5} />
+            </div>
+          )}
+          <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(0,0,0,0) 35%, rgba(7, 26, 18, 0.78) 100%)" }} />
+          <div
+            style={{
+              position: "absolute",
+              bottom: "9px",
+              right: "9px",
+              left: "9px",
+              padding: "7px 10px",
+              borderRadius: "12px",
+              background: "rgba(15, 52, 35, 0.90)",
+              backdropFilter: "blur(6px)",
+              border: "1px solid rgba(241, 216, 151, 0.55)",
+              color: "#ffffff",
+              fontSize: "13px",
+              fontWeight: 800,
+              textAlign: "center",
+              lineHeight: 1.3,
+              boxShadow: "0 4px 12px rgba(0,0,0,0.25)",
+            }}
+          >
+            {category.name}
+          </div>
+        </button>
+      ))}
+    </div>
+  );
 }
 
 function HomePage({ data, onOpen, onAiRecipe }: { data: HomeData; onOpen: (id: number) => void; onAiRecipe?: (p: PublicProduct) => void }) {
@@ -886,9 +944,9 @@ function HomePage({ data, onOpen, onAiRecipe }: { data: HomeData; onOpen: (id: n
     <PromoPopupModal banners={popupBanners} />
     <BannerCarousel banners={topBanners} />
     {data.offers.length > 0 && <section className="offers-row"><div className="section-heading compact"><div><span className="eyebrow">عروض المتجر</span><h2>فرص تستحق الانتباه</h2></div><BadgePercent size={22} /></div><div className="offer-strip">{data.offers.map(offer => <div className="offer-chip" key={offer.id}><span className="offer-chip-icon"><BadgePercent size={18} /></span><div><strong>{offer.title}</strong><small>{offer.description || (offer.discountType === "percent" ? "خصم " + offer.discountValue + "%" : "خصم " + formatPrice(offer.discountValue))}</small></div><code>{offer.code}</code></div>)}</div></section>}
-    <section className="store-section categories-section"><div className="section-heading"><div><span className="eyebrow">على طريقتك</span><h2>ابدأ من الأقسام</h2></div><Link className="text-link" href="/categories">كل الأقسام <ArrowLeft size={15} /></Link></div><CategoryStrip data={data.categories} onSelect={changeCategory} /></section>
+    <section className="store-section categories-section"><div className="section-heading"><div><h2>الأقسام</h2></div><Link className="text-link" href="/categories">عرض الكل <ArrowLeft size={15} /></Link></div><CategoryStrip data={data.categories} onSelect={changeCategory} /></section>
     {middleBanners.length > 0 && <BannerCarousel banners={middleBanners} />}
-    <section className="store-section products-section"><div className="section-heading"><div><span className="eyebrow">اختيارات أورجنال</span><h2>منتجات المتجر</h2></div><div className="section-tools"><label className="sort-select"><ArrowUpDown size={15} /><select aria-label="ترتيب المنتجات" value={sort} onChange={event => setSort(event.target.value as typeof sort)}><option value="featured">الأبرز</option><option value="price-asc">السعر: الأقل أولًا</option><option value="price-desc">السعر: الأعلى أولًا</option></select></label><Link className="text-link" href="/products">عرض الكل <ArrowLeft size={15} /></Link></div></div>{productsLoading && !featured.length ? <Loading /> : <ProductGrid items={featured} onOpen={onOpen} onAiRecipe={onAiRecipe} />}</section>
+    <section className="store-section products-section"><div className="section-heading"><div><h2>منتجات المتجر</h2></div><div className="section-tools"><label className="sort-select"><ArrowUpDown size={15} /><select aria-label="ترتيب المنتجات" value={sort} onChange={event => setSort(event.target.value as typeof sort)}><option value="featured">الأبرز</option><option value="price-asc">السعر: الأقل أولًا</option><option value="price-desc">السعر: الأعلى أولًا</option></select></label><Link className="text-link" href="/products">عرض الكل <ArrowLeft size={15} /></Link></div></div>{productsLoading && !featured.length ? <Loading /> : <ProductGrid items={featured} onOpen={onOpen} onAiRecipe={onAiRecipe} />}</section>
     {bottomBanners.length > 0 && <BannerCarousel banners={bottomBanners} />}
   </main>;
 }
@@ -901,26 +959,217 @@ function ProductListPage({ data, onOpen, onAiRecipe }: { data: HomeData; onOpen:
   const routeSearch = params.get("search") ?? "";
   const [search, setSearch] = useState(routeSearch);
   const debouncedSearch = useDebouncedValue(search.trim());
-  const [sort, setSort] = useState<"featured" | "price-asc" | "price-desc" | "name">("featured");
   useEffect(() => setSearch(routeSearch), [routeSearch]);
   const categoryId = selectedCategory ? Number(selectedCategory) : undefined;
-  const cachedProducts = !debouncedSearch && sort === "featured"
+  const activeCategory = useMemo(() => data.categories.find(c => c.id === categoryId) ?? null, [data.categories, categoryId]);
+  const cachedProducts = !debouncedSearch
     ? data.products.filter(product => categoryId === undefined || product.categoryId === categoryId)
     : [];
-  const input = { search: debouncedSearch || undefined, categoryId, sort, limit: 60 };
+  const input = { search: debouncedSearch || undefined, categoryId, sort: "featured" as const, limit: 60 };
   const query = trpc.commerce.catalog.listProducts.useQuery(input, { retry: 1, staleTime: 30_000, placeholderData: cachedProducts.length ? cachedProducts : undefined });
-  return <main className="page-shell inner-page"><div className="page-title-row"><div><span className="eyebrow"></span><h1>المنتجات</h1><p></p></div><span className="page-title-icon"><ShoppingBag size={24} /></span></div>
-    <div className="filter-bar"><label className="filter-search"><Search size={17} /><input value={search} onChange={event => setSearch(event.target.value)} placeholder="ابحث باسم المنتج..." /></label><label className="filter-select"><SlidersHorizontal size={16} /><select value={selectedCategory ?? ""} onChange={event => { const value = event.target.value; setLocation(value ? `/products?category=${value}` : "/products"); }}><option value="">كل الأقسام</option>{data.categories.map(category => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label><label className="filter-select"><ArrowDownWideNarrow size={16} /><select value={sort} onChange={event => setSort(event.target.value as typeof sort)}><option value="featured">ترتيب افتراضي</option><option value="price-asc">السعر من الأقل</option><option value="price-desc">السعر من الأعلى</option><option value="name">الاسم</option></select></label></div>
-    {query.isLoading ? <Loading /> : query.error ? <LoadError onRetry={() => void query.refetch()} /> : <ProductGrid items={query.data ?? []} onOpen={onOpen} onAiRecipe={onAiRecipe} />}
-  </main>;
+
+  return (
+    <main className="page-shell inner-page" style={{ paddingTop: "12px" }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: "12px",
+          padding: "10px 14px",
+          borderRadius: "18px",
+          background: "#ffffff",
+          border: "1.5px solid #dce8df",
+          boxShadow: "0 8px 22px rgba(17, 58, 40, 0.06)",
+          marginBottom: "12px",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "11px" }}>
+          {activeCategory?.imageUrl ? (
+            <img
+              src={activeCategory.imageUrl}
+              alt={activeCategory.name}
+              style={{ width: "48px", height: "48px", borderRadius: "14px", objectFit: "cover", border: "1.5px solid #174b36", flexShrink: 0 }}
+            />
+          ) : (
+            <span style={{ width: "46px", height: "46px", borderRadius: "14px", background: "#edf6f0", color: "#174b36", display: "grid", placeItems: "center", flexShrink: 0 }}>
+              <ShoppingBag size={22} />
+            </span>
+          )}
+          <div>
+            <h1 style={{ fontSize: "19px", fontWeight: 800, color: "#123b29", margin: 0, lineHeight: 1.25 }}>
+              {activeCategory ? activeCategory.name : (debouncedSearch ? ("نتائج البحث: " + debouncedSearch) : "كل المنتجات")}
+            </h1>
+            {activeCategory?.description && (
+              <small style={{ fontSize: "11.5px", color: "#5c7063", display: "block", marginTop: "2px" }}>{activeCategory.description}</small>
+            )}
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setLocation("/categories")}
+          style={{
+            padding: "7px 12px",
+            borderRadius: "12px",
+            border: "1px solid #cfe0d4",
+            background: "#f4f9f6",
+            color: "#174b36",
+            fontSize: "12px",
+            fontWeight: 800,
+            cursor: "pointer",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "5px",
+            flexShrink: 0,
+          }}
+        >
+          <span>الأقسام</span>
+          <ArrowLeft size={14} />
+        </button>
+      </div>
+
+      {data.categories.length > 1 && (
+        <div
+          style={{
+            display: "flex",
+            gap: "8px",
+            overflowX: "auto",
+            paddingBottom: "8px",
+            marginBottom: "10px",
+            scrollbarWidth: "none",
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => setLocation("/products")}
+            style={{
+              padding: "6px 13px",
+              borderRadius: "99px",
+              border: !categoryId ? "1.5px solid #174b36" : "1px solid #d5e3da",
+              background: !categoryId ? "#174b36" : "#ffffff",
+              color: !categoryId ? "#ffffff" : "#174b36",
+              fontSize: "12px",
+              fontWeight: 800,
+              whiteSpace: "nowrap",
+              cursor: "pointer",
+              flexShrink: 0,
+            }}
+          >
+            الكل
+          </button>
+          {data.categories.map(cat => {
+            const isActive = categoryId === cat.id;
+            return (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => setLocation("/products?category=" + cat.id)}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  padding: "4px 11px 4px 6px",
+                  borderRadius: "99px",
+                  border: isActive ? "1.5px solid #174b36" : "1px solid #d5e3da",
+                  background: isActive ? "#174b36" : "#ffffff",
+                  color: isActive ? "#ffffff" : "#174b36",
+                  fontSize: "12px",
+                  fontWeight: 800,
+                  whiteSpace: "nowrap",
+                  cursor: "pointer",
+                  flexShrink: 0,
+                }}
+              >
+                {cat.imageUrl && (
+                  <img src={cat.imageUrl} alt="" style={{ width: "24px", height: "24px", borderRadius: "50%", objectFit: "cover" }} />
+                )}
+                <span>{cat.name}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {query.isLoading ? <Loading /> : query.error ? <LoadError onRetry={() => void query.refetch()} /> : <ProductGrid items={query.data ?? []} onOpen={onOpen} onAiRecipe={onAiRecipe} />}
+    </main>
+  );
 }
 
 function CategoriesPage({ data }: { data: HomeData }) {
   const [, navigate] = useLocation();
-  return <main className="page-shell inner-page"><div className="page-title-row"><div><span className="eyebrow"></span><h1>الأقسام</h1><p></p></div><span className="page-title-icon"><SlidersHorizontal size={23} /></span></div>
-    {!data.categories.length ? <EmptyState icon={SlidersHorizontal} title="لا توجد أقسام بعد" description="سيضيف صاحب المتجر الأقسام المناسبة، وستظهر لك هنا تلقائيًا." action="استكشف المتجر" href="/products" /> : <div className="category-page-grid">{data.categories.map((category, i) => <button key={category.id} className="category-large" style={{ "--category-color": category.color } as React.CSSProperties} onClick={() => navigate(`/products?category=${category.id}`)}><span className="category-large-number">{String(i + 1).padStart(2, "0")}</span><span className="category-large-art">{category.imageUrl ? <img src={category.imageUrl} alt="" loading="lazy" decoding="async" /> : <Leaf size={34} />}</span><span className="category-pill">{category.name}</span>{category.description && <small>{category.description}</small>}<ChevronLeft size={19} /></button>)}</div>}
-  </main>;
+  return (
+    <main className="page-shell inner-page" style={{ paddingTop: "12px" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "14px" }}>
+        <h1 style={{ fontSize: "21px", fontWeight: 800, color: "#123b29", margin: 0 }}>أقسام المتجر</h1>
+        <span style={{ fontSize: "12px", fontWeight: 700, color: "#556b5d", background: "#edf5ef", padding: "4px 10px", borderRadius: "99px" }}>{data.categories.length} أقسام</span>
+      </div>
+      {!data.categories.length ? (
+        <EmptyState icon={SlidersHorizontal} title="لا توجد أقسام بعد" description="سيضيف صاحب المتجر الأقسام المناسبة، وستظهر لك هنا تلقائيًا." action="استكشف المتجر" href="/products" />
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(155px, 1fr))", gap: "14px" }}>
+          {data.categories.map(category => (
+            <button
+              key={category.id}
+              type="button"
+              onClick={() => navigate("/products?category=" + category.id)}
+              style={{
+                position: "relative",
+                height: "190px",
+                borderRadius: "22px",
+                overflow: "hidden",
+                border: "1.5px solid rgba(23, 75, 54, 0.14)",
+                padding: 0,
+                background: category.color || "#174b36",
+                cursor: "pointer",
+                boxShadow: "0 12px 28px rgba(15, 52, 35, 0.13)",
+                display: "block",
+                width: "100%",
+              }}
+            >
+              {category.imageUrl ? (
+                <img
+                  src={category.imageUrl}
+                  alt={category.name}
+                  loading="eager"
+                  decoding="async"
+                  style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                />
+              ) : (
+                <div style={{ width: "100%", height: "100%", display: "grid", placeItems: "center", color: "#ffffff", background: "linear-gradient(135deg, #174b36, #286a48)" }}>
+                  <Leaf size={44} strokeWidth={1.5} />
+                </div>
+              )}
+              <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(0,0,0,0) 35%, rgba(7, 26, 18, 0.82) 100%)" }} />
+              <div
+                style={{
+                  position: "absolute",
+                  bottom: "10px",
+                  right: "10px",
+                  left: "10px",
+                  padding: "9px 10px",
+                  borderRadius: "14px",
+                  background: "rgba(15, 52, 35, 0.92)",
+                  backdropFilter: "blur(6px)",
+                  border: "1px solid rgba(241, 216, 151, 0.6)",
+                  color: "#ffffff",
+                  fontSize: "13.5px",
+                  fontWeight: 800,
+                  textAlign: "center",
+                  lineHeight: 1.3,
+                  boxShadow: "0 6px 16px rgba(0,0,0,0.28)",
+                }}
+              >
+                {category.name}
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </main>
+  );
 }
+
 
 function ProductDetail({ id, allProducts = [], onSelectProduct, onBack, onAiRecipe }: { id: number; allProducts?: PublicProduct[]; onSelectProduct?: (nextId: number) => void; onBack: () => void; onAiRecipe?: (p: PublicProduct) => void }) {
   const cachedProduct = useMemo(() => allProducts.find(p => p.id === id) ?? null, [allProducts, id]);
