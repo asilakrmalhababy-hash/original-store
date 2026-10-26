@@ -342,11 +342,56 @@ function slugify(value: string) {
   return `${slug || "item"}-${nanoid(5).toLowerCase()}`;
 }
 
+const PUBLIC_STORE_SETTING_KEYS = new Set([
+  "storeName", "storeDescription", "contactPhone", "currency", "storeIconUrl",
+  "deliveryEnabled", "deliveryFee", "deliveryZones", "orderPaused", "pausedMessage",
+  "rewardEnabled", "rewardsThreshold", "rewardType", "rewardValue", "rewardsMessage",
+]);
+
+const __orderRateBuckets = new Map<string, { count: number; resetAt: number }>();
+function enforceOrderCreateRateLimit(ip: string) {
+  const now = Date.now();
+  const key = (ip || "unknown").slice(0, 80);
+  const b = __orderRateBuckets.get(key);
+  if (!b || now > b.resetAt) {
+    __orderRateBuckets.set(key, { count: 1, resetAt: now + 10 * 60 * 1000 });
+    return;
+  }
+  if (b.count >= 6) {
+    throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: "تم إرسال عدة طلبات متتالية من هذا الجهاز. يرجى الانتظار قليلاً قبل إرسال طلب جديد." });
+  }
+  b.count += 1;
+}
+
+const __missingItemRateBuckets = new Map<string, { count: number; resetAt: number }>();
+function canCreateMissingItemOrder(ip: string): boolean {
+  const now = Date.now();
+  const key = (ip || "unknown").slice(0, 80);
+  const b = __missingItemRateBuckets.get(key);
+  if (!b || now > b.resetAt) {
+    __missingItemRateBuckets.set(key, { count: 1, resetAt: now + 15 * 60 * 1000 });
+    return true;
+  }
+  if (b.count >= 2) return false;
+  b.count += 1;
+  return true;
+}
+
 async function readSettings(db: NonNullable<Awaited<ReturnType<typeof getDb>>>) {
-  const rows = await db.select({ key: storeSettings.key, value: storeSettings.value }).from(storeSettings).catch(err => { console.error("[store_settings error]:", err); return []; });
-  const settings: Record<string, string> = {};
-  for (const row of rows) { if (row.key === "live_ai_chats_v1") continue; settings[row.key] = row.value; }
-  return settings;
+  try {
+    const rows = await db.select().from(storeSettings);
+    const settings: Record<string, string> = { deliveryEnabled: "true", deliveryFee: "0" };
+    for (const row of rows) {
+      if (!PUBLIC_STORE_SETTING_KEYS.has(row.key)) continue;
+      settings[row.key] = row.value;
+    }
+    const oldStoreNameNorm = new RegExp("أور" + "يجنال|اور" + "يجنال", "g");
+    if (settings.storeName) settings.storeName = settings.storeName.replace(oldStoreNameNorm, "أورجنال");
+    return settings;
+  } catch (err) {
+    console.warn("[Settings] Using fallback defaults:", err instanceof Error ? err.message : err);
+    return { deliveryEnabled: "true", deliveryFee: "0" };
+  }
 }
 
 function deliveryFeeForCity(settings: Record<string, string>, city: string): number | null {
@@ -853,6 +898,7 @@ export const commerceRouter = router({
       const storedIdempotencyKey = hashGuestOrderKey(input.idempotencyKey);
       const existing = (await db.select().from(orders).where(inArray(orders.idempotencyKey, [storedIdempotencyKey, input.idempotencyKey])).limit(1))[0];
       if (existing) return { id: existing.id, orderNumber: existing.orderNumber, total: existing.total, duplicate: true };
+      enforceOrderCreateRateLimit(getClientIp(ctx.req));
       const settings = await readSettings(db);
       if (settings.orderPaused === "true") throw new TRPCError({ code: "PRECONDITION_FAILED", message: settings.pausedMessage || "استقبال الطلبات متوقف مؤقتًا." });
       const deliveryFee = deliveryFeeForCity(settings, input.city);
@@ -937,10 +983,9 @@ export const commerceRouter = router({
   assistant: router({
     pollMessages: publicProcedure.input(z.object({
       sessionId: z.string().trim().min(1).max(80),
-    })).query(async ({ input, ctx }) => {
+    })).query(async ({ input }) => {
       const db = await getDb();
       await loadLiveChats(db);
-      // Security: only return messages from this exact customer's session.
       const session = liveChatsMemory.get(input.sessionId);
       return {
         aiPaused: session?.aiPaused ?? false,
@@ -1569,12 +1614,12 @@ export const commerceRouter = router({
         const db = await database();
         const rows = await db.select().from(banners).orderBy(asc(banners.sortOrder), desc(banners.createdAt)); return rows.map(r => toFastImg("banner", r));
       }),
-      create: adminProcedure.use(async ({ next }) => { clearLiveHomeCache(); return next(); }).input(z.object({ title: z.string().trim().min(1).max(160), body: z.string().trim().max(1000).optional(), imageUrl: z.string().max(8500000).optional(), actionText: z.string().trim().max(60).optional(), actionUrl: z.string().trim().max(2000).optional(), isActive: z.boolean().default(false), sortOrder: z.number().int().min(-10000).max(10000).default(0) })).mutation(async ({ input }) => {
+      create: requirePermission("banners.manage").use(async ({ next }) => { clearLiveHomeCache(); return next(); }).input(z.object({ title: z.string().trim().min(1).max(160), body: z.string().trim().max(1000).optional(), imageUrl: z.string().max(8500000).optional(), actionText: z.string().trim().max(60).optional(), actionUrl: z.string().trim().max(2000).optional(), isActive: z.boolean().default(false), sortOrder: z.number().int().min(-10000).max(10000).default(0) })).mutation(async ({ input }) => {
         const db = await database();
         const result = await db.insert(banners).values({ ...input, body: input.body ?? null, imageUrl: input.imageUrl ?? null, actionText: input.actionText ?? null, actionUrl: input.actionUrl ?? null });
         clearCatalogCache(); return { id: Number(result[0].insertId) };
       }),
-      update: adminProcedure.use(async ({ next }) => { clearLiveHomeCache(); return next(); }).input(z.object({ id: safeId, values: z.object({ title: z.string().trim().min(1).max(160).optional(), body: z.string().max(1000).nullable().optional(), imageUrl: z.string().max(8500000).nullable().optional(), actionText: z.string().max(60).nullable().optional(), actionUrl: z.string().max(2000).nullable().optional(), isActive: z.boolean().optional(), sortOrder: z.number().int().min(-10000).max(10000).optional() }) })).mutation(async ({ input }) => {
+      update: requirePermission("banners.manage").use(async ({ next }) => { clearLiveHomeCache(); return next(); }).input(z.object({ id: safeId, values: z.object({ title: z.string().trim().min(1).max(160).optional(), body: z.string().max(1000).nullable().optional(), imageUrl: z.string().max(8500000).nullable().optional(), actionText: z.string().max(60).nullable().optional(), actionUrl: z.string().max(2000).nullable().optional(), isActive: z.boolean().optional(), sortOrder: z.number().int().min(-10000).max(10000).optional() }) })).mutation(async ({ input }) => {
         const db = await database();
         const cleanBanVals = { ...input.values }; if (typeof cleanBanVals.imageUrl === "string" && cleanBanVals.imageUrl.startsWith("/api/fast-img/")) delete cleanBanVals.imageUrl; (globalThis as any).__fastImgCache?.delete("banner:" + input.id); await db.update(banners).set(cleanBanVals).where(eq(banners.id, input.id));
         clearCatalogCache(); return { success: true };
@@ -1590,7 +1635,7 @@ export const commerceRouter = router({
         const db = await database();
         return db.select().from(offers).orderBy(desc(offers.createdAt));
       }),
-      create: adminProcedure.use(async ({ next }) => { clearLiveHomeCache(); return next(); }).input(z.object({
+      create: requirePermission("offers.manage").use(async ({ next }) => { clearLiveHomeCache(); return next(); }).input(z.object({
         title: z.string().trim().min(1).max(160),
         description: z.string().trim().max(1000).nullable().optional(),
         code: z.string().trim().min(1).max(40),
@@ -1621,7 +1666,7 @@ export const commerceRouter = router({
         clearCatalogCache();
         return { id: Number(result[0].insertId || 1) };
       }),
-      update: adminProcedure.use(async ({ next }) => { clearLiveHomeCache(); return next(); }).input(z.object({
+      update: requirePermission("offers.manage").use(async ({ next }) => { clearLiveHomeCache(); return next(); }).input(z.object({
         id: safeId,
         values: z.object({
           title: z.string().trim().min(1).max(160).optional(),

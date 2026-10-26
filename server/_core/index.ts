@@ -16,12 +16,34 @@ const HTTP_PREFIX = ["ht", "tp"].join("");
 
 async function startServer() {
   const app = express();
+  app.set("trust proxy", 1);
+  app.disable("x-powered-by");
+  app.use((_req, res, next) => {
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("X-Frame-Options", "SAMEORIGIN");
+    res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+    res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+    next();
+  });
   const server = createServer(app);
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   app.get("/api/health", (_req, res) => res.json({ status: "ok" }));
 
   // --- FAST_IMG_ROUTE_START ---
+  const ALLOWED_IMG_MIMES = new Set(["image/webp", "image/png", "image/jpeg", "image/jpg", "image/gif", "image/avif"]);
+  function isSafeExternalImageUrl(rawUrl: string): boolean {
+    try {
+      const u = new URL(rawUrl);
+      if (u.protocol !== "https:") return false;
+      const h = u.hostname.toLowerCase();
+      if (h === "localhost" || h.endsWith(".local") || h.endsWith(".internal") || h === "[::1]") return false;
+      if (/^(?:127\.|10\.|192\.168\.|169\.254\.|0\.|172\.(?:1[6-9]|2\d|3[01])\.)/.test(h)) return false;
+      return true;
+    } catch {
+      return false;
+    }
+  }
   app.get("/api/fast-img/:kind/:id", async (req, res) => {
     try {
       const kind = req.params.kind;
@@ -41,25 +63,32 @@ async function startServer() {
         const raw = String(rows[0]?.imageUrl || "").trim();
         const m = raw.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,([\s\S]+)$/);
         if (m) {
-          entry = { contentType: m[1], buf: Buffer.from(m[2], "base64") };
+          const mime = m[1].toLowerCase();
+          if (!ALLOWED_IMG_MIMES.has(mime)) return res.status(415).end();
+          entry = { contentType: mime, buf: Buffer.from(m[2], "base64") };
           cacheMap.set(cacheKey, entry);
         } else if (raw.startsWith(HTTP_PREFIX)) {
+          if (!isSafeExternalImageUrl(raw)) return res.status(403).end();
           const resp = await fetch(raw);
-          if (!resp.ok) return res.redirect(302, raw);
-          const ct = resp.headers.get("content-type") || "image/webp";
+          if (!resp.ok) return res.status(404).end();
+          const ct = (resp.headers.get("content-type") || "image/webp").split(";")[0].trim().toLowerCase();
+          if (!ALLOWED_IMG_MIMES.has(ct)) return res.status(415).end();
           const ab = await resp.arrayBuffer();
+          if (ab.byteLength > 8_500_000) return res.status(413).end();
           const buf = Buffer.from(ab);
           entry = { contentType: ct, buf };
           cacheMap.set(cacheKey, entry);
           const dataUrl = "data:" + ct + ";base64," + buf.toString("base64");
           void db.update(table).set({ imageUrl: dataUrl }).where(eq(table.id, id)).catch(() => {});
-        } else if (raw.startsWith("/")) {
+        } else if (raw.startsWith("/") && !raw.startsWith("//")) {
           return res.redirect(302, raw);
         } else {
           return res.status(404).end();
         }
       }
       res.set("Content-Type", entry.contentType);
+      res.set("X-Content-Type-Options", "nosniff");
+      res.set("Content-Security-Policy", "default-src 'none'; sandbox");
       res.set("Cache-Control", "public, max-age=31536000, immutable");
       return res.send(entry.buf);
     } catch {
@@ -117,7 +146,7 @@ async function startServer() {
     if (!g.__fastHomeData && typeof g.__loadCatalogHome === "function") {
       try { await g.__loadCatalogHome(); } catch {}
     }
-    const initialJson = g.__fastHomeData ? JSON.stringify(g.__fastHomeData) : "null";
+    const initialJson = g.__fastHomeData ? JSON.stringify(g.__fastHomeData).replace(/</g, "\\u003c").replace(/>/g, "\\u003e").replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029") : "null";
     const preloadScript = [
       "window.__INITIAL_CATALOG__ = " + initialJson + ";",
       "try {",

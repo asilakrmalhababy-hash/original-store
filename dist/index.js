@@ -2523,17 +2523,52 @@ function slugify(value) {
   const slug = value.trim().toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "").slice(0, 160);
   return `${slug || "item"}-${nanoid(5).toLowerCase()}`;
 }
-async function readSettings(db) {
-  const rows = await db.select({ key: storeSettings.key, value: storeSettings.value }).from(storeSettings).catch((err) => {
-    console.error("[store_settings error]:", err);
-    return [];
-  });
-  const settings = {};
-  for (const row of rows) {
-    if (row.key === "live_ai_chats_v1") continue;
-    settings[row.key] = row.value;
+var PUBLIC_STORE_SETTING_KEYS = /* @__PURE__ */ new Set([
+  "storeName",
+  "storeDescription",
+  "contactPhone",
+  "currency",
+  "storeIconUrl",
+  "deliveryEnabled",
+  "deliveryFee",
+  "deliveryZones",
+  "orderPaused",
+  "pausedMessage",
+  "rewardEnabled",
+  "rewardsThreshold",
+  "rewardType",
+  "rewardValue",
+  "rewardsMessage"
+]);
+var __orderRateBuckets = /* @__PURE__ */ new Map();
+function enforceOrderCreateRateLimit(ip) {
+  const now = Date.now();
+  const key = (ip || "unknown").slice(0, 80);
+  const b = __orderRateBuckets.get(key);
+  if (!b || now > b.resetAt) {
+    __orderRateBuckets.set(key, { count: 1, resetAt: now + 10 * 60 * 1e3 });
+    return;
   }
-  return settings;
+  if (b.count >= 6) {
+    throw new TRPCError3({ code: "TOO_MANY_REQUESTS", message: "\u062A\u0645 \u0625\u0631\u0633\u0627\u0644 \u0639\u062F\u0629 \u0637\u0644\u0628\u0627\u062A \u0645\u062A\u062A\u0627\u0644\u064A\u0629 \u0645\u0646 \u0647\u0630\u0627 \u0627\u0644\u062C\u0647\u0627\u0632. \u064A\u0631\u062C\u0649 \u0627\u0644\u0627\u0646\u062A\u0638\u0627\u0631 \u0642\u0644\u064A\u0644\u0627\u064B \u0642\u0628\u0644 \u0625\u0631\u0633\u0627\u0644 \u0637\u0644\u0628 \u062C\u062F\u064A\u062F." });
+  }
+  b.count += 1;
+}
+async function readSettings(db) {
+  try {
+    const rows = await db.select().from(storeSettings);
+    const settings = { deliveryEnabled: "true", deliveryFee: "0" };
+    for (const row of rows) {
+      if (!PUBLIC_STORE_SETTING_KEYS.has(row.key)) continue;
+      settings[row.key] = row.value;
+    }
+    const oldStoreNameNorm = new RegExp("\u0623\u0648\u0631\u064A\u062C\u0646\u0627\u0644|\u0627\u0648\u0631\u064A\u062C\u0646\u0627\u0644", "g");
+    if (settings.storeName) settings.storeName = settings.storeName.replace(oldStoreNameNorm, "\u0623\u0648\u0631\u062C\u0646\u0627\u0644");
+    return settings;
+  } catch (err) {
+    console.warn("[Settings] Using fallback defaults:", err instanceof Error ? err.message : err);
+    return { deliveryEnabled: "true", deliveryFee: "0" };
+  }
 }
 function deliveryFeeForCity(settings, city) {
   if (settings.deliveryEnabled === "false") return null;
@@ -3022,6 +3057,7 @@ var commerceRouter = router({
       const storedIdempotencyKey = hashGuestOrderKey(input.idempotencyKey);
       const existing = (await db.select().from(orders).where(inArray(orders.idempotencyKey, [storedIdempotencyKey, input.idempotencyKey])).limit(1))[0];
       if (existing) return { id: existing.id, orderNumber: existing.orderNumber, total: existing.total, duplicate: true };
+      enforceOrderCreateRateLimit(getClientIp(ctx.req));
       const settings = await readSettings(db);
       if (settings.orderPaused === "true") throw new TRPCError3({ code: "PRECONDITION_FAILED", message: settings.pausedMessage || "\u0627\u0633\u062A\u0642\u0628\u0627\u0644 \u0627\u0644\u0637\u0644\u0628\u0627\u062A \u0645\u062A\u0648\u0642\u0641 \u0645\u0624\u0642\u062A\u064B\u0627." });
       const deliveryFee = deliveryFeeForCity(settings, input.city);
@@ -3119,7 +3155,7 @@ var commerceRouter = router({
   assistant: router({
     pollMessages: publicProcedure.input(z3.object({
       sessionId: z3.string().trim().min(1).max(80)
-    })).query(async ({ input, ctx }) => {
+    })).query(async ({ input }) => {
       const db = await getDb();
       await loadLiveChats(db);
       const session = liveChatsMemory.get(input.sessionId);
@@ -3776,7 +3812,7 @@ var commerceRouter = router({
         const rows = await db.select().from(banners).orderBy(asc(banners.sortOrder), desc(banners.createdAt));
         return rows.map((r) => toFastImg("banner", r));
       }),
-      create: adminProcedure.use(async ({ next }) => {
+      create: requirePermission("banners.manage").use(async ({ next }) => {
         clearLiveHomeCache();
         return next();
       }).input(z3.object({ title: z3.string().trim().min(1).max(160), body: z3.string().trim().max(1e3).optional(), imageUrl: z3.string().max(85e5).optional(), actionText: z3.string().trim().max(60).optional(), actionUrl: z3.string().trim().max(2e3).optional(), isActive: z3.boolean().default(false), sortOrder: z3.number().int().min(-1e4).max(1e4).default(0) })).mutation(async ({ input }) => {
@@ -3785,7 +3821,7 @@ var commerceRouter = router({
         clearCatalogCache();
         return { id: Number(result[0].insertId) };
       }),
-      update: adminProcedure.use(async ({ next }) => {
+      update: requirePermission("banners.manage").use(async ({ next }) => {
         clearLiveHomeCache();
         return next();
       }).input(z3.object({ id: safeId, values: z3.object({ title: z3.string().trim().min(1).max(160).optional(), body: z3.string().max(1e3).nullable().optional(), imageUrl: z3.string().max(85e5).nullable().optional(), actionText: z3.string().max(60).nullable().optional(), actionUrl: z3.string().max(2e3).nullable().optional(), isActive: z3.boolean().optional(), sortOrder: z3.number().int().min(-1e4).max(1e4).optional() }) })).mutation(async ({ input }) => {
@@ -3809,7 +3845,7 @@ var commerceRouter = router({
         const db = await database();
         return db.select().from(offers).orderBy(desc(offers.createdAt));
       }),
-      create: adminProcedure.use(async ({ next }) => {
+      create: requirePermission("offers.manage").use(async ({ next }) => {
         clearLiveHomeCache();
         return next();
       }).input(z3.object({
@@ -3843,7 +3879,7 @@ var commerceRouter = router({
         clearCatalogCache();
         return { id: Number(result[0].insertId || 1) };
       }),
-      update: adminProcedure.use(async ({ next }) => {
+      update: requirePermission("offers.manage").use(async ({ next }) => {
         clearLiveHomeCache();
         return next();
       }).input(z3.object({
@@ -4273,10 +4309,32 @@ var HTTPS_PREFIX = ["ht", "tps", "://"].join("");
 var HTTP_PREFIX = ["ht", "tp"].join("");
 async function startServer() {
   const app = express2();
+  app.set("trust proxy", 1);
+  app.disable("x-powered-by");
+  app.use((_req, res, next) => {
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("X-Frame-Options", "SAMEORIGIN");
+    res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+    res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+    next();
+  });
   const server = createServer(app);
   app.use(express2.json({ limit: "50mb" }));
   app.use(express2.urlencoded({ limit: "50mb", extended: true }));
   app.get("/api/health", (_req, res) => res.json({ status: "ok" }));
+  const ALLOWED_IMG_MIMES = /* @__PURE__ */ new Set(["image/webp", "image/png", "image/jpeg", "image/jpg", "image/gif", "image/avif"]);
+  function isSafeExternalImageUrl(rawUrl) {
+    try {
+      const u = new URL(rawUrl);
+      if (u.protocol !== "https:") return false;
+      const h = u.hostname.toLowerCase();
+      if (h === "localhost" || h.endsWith(".local") || h.endsWith(".internal") || h === "[::1]") return false;
+      if (/^(?:127\.|10\.|192\.168\.|169\.254\.|0\.|172\.(?:1[6-9]|2\d|3[01])\.)/.test(h)) return false;
+      return true;
+    } catch {
+      return false;
+    }
+  }
   app.get("/api/fast-img/:kind/:id", async (req, res) => {
     try {
       const kind = req.params.kind;
@@ -4295,26 +4353,33 @@ async function startServer() {
         const raw = String(rows[0]?.imageUrl || "").trim();
         const m = raw.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,([\s\S]+)$/);
         if (m) {
-          entry = { contentType: m[1], buf: Buffer.from(m[2], "base64") };
+          const mime = m[1].toLowerCase();
+          if (!ALLOWED_IMG_MIMES.has(mime)) return res.status(415).end();
+          entry = { contentType: mime, buf: Buffer.from(m[2], "base64") };
           cacheMap.set(cacheKey, entry);
         } else if (raw.startsWith(HTTP_PREFIX)) {
+          if (!isSafeExternalImageUrl(raw)) return res.status(403).end();
           const resp = await fetch(raw);
-          if (!resp.ok) return res.redirect(302, raw);
-          const ct = resp.headers.get("content-type") || "image/webp";
+          if (!resp.ok) return res.status(404).end();
+          const ct = (resp.headers.get("content-type") || "image/webp").split(";")[0].trim().toLowerCase();
+          if (!ALLOWED_IMG_MIMES.has(ct)) return res.status(415).end();
           const ab = await resp.arrayBuffer();
+          if (ab.byteLength > 85e5) return res.status(413).end();
           const buf = Buffer.from(ab);
           entry = { contentType: ct, buf };
           cacheMap.set(cacheKey, entry);
           const dataUrl = "data:" + ct + ";base64," + buf.toString("base64");
           void db.update(table).set({ imageUrl: dataUrl }).where(eq5(table.id, id)).catch(() => {
           });
-        } else if (raw.startsWith("/")) {
+        } else if (raw.startsWith("/") && !raw.startsWith("//")) {
           return res.redirect(302, raw);
         } else {
           return res.status(404).end();
         }
       }
       res.set("Content-Type", entry.contentType);
+      res.set("X-Content-Type-Options", "nosniff");
+      res.set("Content-Security-Policy", "default-src 'none'; sandbox");
       res.set("Cache-Control", "public, max-age=31536000, immutable");
       return res.send(entry.buf);
     } catch {
@@ -4370,7 +4435,7 @@ async function startServer() {
       } catch {
       }
     }
-    const initialJson = g.__fastHomeData ? JSON.stringify(g.__fastHomeData) : "null";
+    const initialJson = g.__fastHomeData ? JSON.stringify(g.__fastHomeData).replace(/</g, "\\u003c").replace(/>/g, "\\u003e").replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029") : "null";
     const preloadScript = [
       "window.__INITIAL_CATALOG__ = " + initialJson + ";",
       "try {",
