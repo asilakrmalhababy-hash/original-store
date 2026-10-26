@@ -125,7 +125,7 @@ export default function PWAInstall() {
         >
           <div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: 0 }}>
             <img
-              src="/app-icon-192-v2.png"
+              src="/app-icon-192-v3.png"
               alt=""
               style={{ width: "38px", height: "38px", borderRadius: "10px", flexShrink: 0, background: "#fff" }}
             />

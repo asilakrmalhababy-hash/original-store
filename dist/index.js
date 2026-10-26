@@ -4473,15 +4473,15 @@ async function startServer() {
     const brand = await publicBrand();
     const imagePath = brand.icon && !brand.icon.startsWith("data:") ? new URL(brand.icon, HTTPS_PREFIX + "app.invalid").pathname : "";
     const type = imagePath.endsWith(".png") ? "image/png" : imagePath.endsWith(".jpg") || imagePath.endsWith(".jpeg") ? "image/jpeg" : imagePath.endsWith(".webp") ? "image/webp" : "image/png";
-    const icons = brand.icon && !brand.icon.startsWith("data:") ? [{ src: brand.icon, sizes: "any", type, purpose: "any" }] : [
-      { src: "/app-icon-192-v2.png", sizes: "192x192", type: "image/png", purpose: "any" },
-      { src: "/app-icon-512-v2.png", sizes: "512x512", type: "image/png", purpose: "any maskable" }
+    const icons = [
+      { src: "/app-icon-192-v3.png", sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: "/app-icon-512-v3.png", sizes: "512x512", type: "image/png", purpose: "any" }
     ];
     res.set("Cache-Control", "public, max-age=300").type("application/manifest+json").send(JSON.stringify({ id: "/", name: brand.name, short_name: "\u0623\u0648\u0631\u062C\u0646\u0627\u0644", description: "\u0645\u062A\u062C\u0631 ORIGINAL \u2013 \u0623\u0648\u0631\u062C\u0646\u0627\u0644", lang: "ar", dir: "rtl", start_url: "/", scope: "/", display: "standalone", background_color: "#f8f8f2", theme_color: "#174b36", icons }));
   });
   app.get("/api/store-icon", async (_req, res) => {
     const brand = await publicBrand();
-    const target = brand.icon && !brand.icon.startsWith("data:") ? brand.icon : "/app-icon-180-v2.png";
+    const target = brand.icon && !brand.icon.startsWith("data:") ? brand.icon : "/app-icon-180-v3.png";
     res.set("Cache-Control", "public, max-age=300").redirect(302, target);
   });
   app.get("/api/platform/config.js", async (_req, res) => {

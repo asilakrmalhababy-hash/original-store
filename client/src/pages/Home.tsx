@@ -733,7 +733,6 @@ function VariantPickerModal({
 
         {weightEnabled ? (
           <div style={{ display: "grid", gap: "12px", marginBottom: "14px" }}>
-            {/* الزران المختصران والواضحان: الشراء بالسعر | الشراء بالوزن */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", background: "#f2f6f3", padding: "5px", borderRadius: "14px" }}>
               <button
                 type="button"
