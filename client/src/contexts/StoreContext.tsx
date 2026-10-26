@@ -1,18 +1,26 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 type StoreProduct = {
-  id: number; name: string; price: number; unit: string; imageUrl?: string | null;
-  minQuantity?: number; quantityStep?: number; stock?: number | null;
+  id: number;
+  name: string;
+  price: number;
+  unit: string;
+  imageUrl?: string | null;
+  minQuantity?: number;
+  quantityStep?: number;
+  stock?: number | null;
+  variant?: string;
 };
 export type CartLine = StoreProduct & { quantity: number };
+
 type StoreContextValue = {
   cart: CartLine[];
   favoriteIds: number[];
   isFavorite: (id: number) => boolean;
   toggleFavorite: (id: number) => void;
   add: (product: StoreProduct, quantity?: number) => void;
-  setQuantity: (id: number, quantity: number) => void;
-  remove: (id: number) => void;
+  setQuantity: (id: number, quantity: number, variant?: string) => void;
+  remove: (id: number, variant?: string) => void;
   clear: () => void;
   syncCatalogProducts?: (products: StoreProduct[]) => void;
 };
@@ -20,6 +28,10 @@ type StoreContextValue = {
 const StoreContext = createContext<StoreContextValue | null>(null);
 const CART_STORAGE_KEY = "original-store-cart-v1";
 const FAVORITES_STORAGE_KEY = "original-store-favorites-v1";
+
+function getLineKey(id: number, variant?: string) {
+  return variant ? id + "::" + variant : String(id);
+}
 
 function readCart(): CartLine[] {
   try {
@@ -45,10 +57,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [cart, setCart] = useState<CartLine[]>(readCart);
   const [favoriteIds, setFavoriteIds] = useState<number[]>(readFavorites);
   useEffect(() => {
-    try { localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cart)); } catch { /* storage can be unavailable */ }
+    try { localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cart)); } catch {}
   }, [cart]);
   useEffect(() => {
-    try { localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(favoriteIds)); } catch { /* storage can be unavailable */ }
+    try { localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(favoriteIds)); } catch {}
   }, [favoriteIds]);
 
   const value = useMemo<StoreContextValue>(() => ({
@@ -57,12 +69,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     isFavorite: id => favoriteIds.includes(id),
     toggleFavorite: id => setFavoriteIds(current => current.includes(id) ? current.filter(value => value !== id) : [...current, id].slice(-500)),
     add: (product, quantity = product.minQuantity ?? 1) => setCart(current => {
-      const found = current.find(line => line.id === product.id);
+      const targetKey = getLineKey(product.id, product.variant);
+      const found = current.find(line => getLineKey(line.id, line.variant) === targetKey);
       if (!found) return [...current, { ...product, quantity }];
-      return current.map(line => line.id === product.id ? { ...line, ...product, quantity: line.quantity + quantity } : line);
+      return current.map(line => getLineKey(line.id, line.variant) === targetKey ? { ...line, ...product, quantity: line.quantity + quantity } : line);
     }),
-    setQuantity: (id, quantity) => setCart(current => quantity <= 0 ? current.filter(line => line.id !== id) : current.map(line => line.id === id ? { ...line, quantity } : line)),
-    remove: id => setCart(current => current.filter(line => line.id !== id)),
+    setQuantity: (id, quantity, variant) => setCart(current => {
+      const targetKey = getLineKey(id, variant);
+      return quantity <= 0
+        ? current.filter(line => getLineKey(line.id, line.variant) !== targetKey)
+        : current.map(line => getLineKey(line.id, line.variant) === targetKey ? { ...line, quantity } : line);
+    }),
+    remove: (id, variant) => setCart(current => {
+      const targetKey = getLineKey(id, variant);
+      return current.filter(line => getLineKey(line.id, line.variant) !== targetKey);
+    }),
     clear: () => setCart([]),
     syncCatalogProducts: (catalogProducts: StoreProduct[]) => {
       if (!Array.isArray(catalogProducts) || !catalogProducts.length) return;
@@ -72,9 +93,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const next = current.map(line => {
           const fresh = byId.get(line.id);
           if (!fresh) return line;
-          if (fresh.price !== line.price || fresh.name !== line.name || fresh.unit !== line.unit || fresh.imageUrl !== line.imageUrl || fresh.stock !== line.stock) {
+          const expectedName = line.variant ? fresh.name + " (" + line.variant + ")" : fresh.name;
+          if (fresh.price !== line.price || expectedName !== line.name || fresh.unit !== line.unit || fresh.imageUrl !== line.imageUrl || fresh.stock !== line.stock) {
             changed = true;
-            return { ...line, name: fresh.name, price: fresh.price, unit: fresh.unit, imageUrl: fresh.imageUrl, stock: fresh.stock };
+            return { ...line, name: expectedName, price: fresh.price, unit: fresh.unit, imageUrl: fresh.imageUrl, stock: fresh.stock };
           }
           return line;
         });

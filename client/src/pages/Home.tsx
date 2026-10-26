@@ -588,20 +588,162 @@ function AiRecipeModal({ product, onClose }: { product: PublicProduct; onClose: 
   );
 }
 
+function unpackProductVariants(rawDescription?: string | null): { cleanDescription: string; variants: string[] } {
+  const raw = String(rawDescription || "");
+  const marker = "[[variants:";
+  const idx = raw.indexOf(marker);
+  if (idx === -1) return { cleanDescription: raw.trim(), variants: [] };
+  const cleanDescription = raw.slice(0, idx).trim();
+  const endIdx = raw.indexOf("]]", idx);
+  const jsonPart = endIdx !== -1 ? raw.slice(idx + marker.length, endIdx) : raw.slice(idx + marker.length);
+  try {
+    const parsed = JSON.parse(jsonPart);
+    if (Array.isArray(parsed)) {
+      return { cleanDescription, variants: parsed.map(v => String(v || "").trim()).filter(Boolean).slice(0, 25) };
+    }
+  } catch {}
+  return { cleanDescription, variants: [] };
+}
+
+function VariantPickerModal({ product, variants, initialVariant, onClose }: { product: PublicProduct; variants: string[]; initialVariant?: string; onClose: () => void }) {
+  const { add } = useStore();
+  const [selected, setSelected] = useState<string>(initialVariant && variants.includes(initialVariant) ? initialVariant : (variants[0] || ""));
+  const [qty, setQty] = useState<number>(product.minQuantity || 1);
+  const step = product.quantityStep || 1;
+  const minQ = product.minQuantity || 1;
+  const maxQ = product.stock === null ? 9999 : product.stock;
+
+  const confirmAdd = () => {
+    if (!selected) return;
+    add({ ...product, name: product.name + " (" + selected + ")", variant: selected }, qty);
+    toast.success("أُضيف «" + product.name + " (" + selected + ")» إلى السلة");
+    onClose();
+  };
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" onClick={onClose} style={{ zIndex: 130 }}>
+      <section className="checkout-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: "420px", padding: "20px" }}>
+        <div className="modal-heading" style={{ marginBottom: "12px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            {product.imageUrl && <img src={product.imageUrl} alt="" style={{ width: "48px", height: "48px", borderRadius: "12px", objectFit: "cover" }} />}
+            <div>
+              <span className="eyebrow">اختر النوع المطلوب</span>
+              <h2 style={{ fontSize: "18px", margin: "2px 0" }}>{product.name}</h2>
+              <small style={{ color: "#174b36", fontWeight: 700 }}>{formatPrice(product.price)} / {product.unit}</small>
+            </div>
+          </div>
+          <button type="button" className="icon-button" onClick={onClose} aria-label="إغلاق"><X size={18} /></button>
+        </div>
+
+        <div style={{ display: "grid", gap: "8px", marginBottom: "16px" }}>
+          <strong style={{ fontSize: "12px", color: "#344c3b" }}>حدد النوع الذي تريده:</strong>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: "8px" }}>
+            {variants.map(v => {
+              const isSel = selected === v;
+              return (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setSelected(v)}
+                  style={{
+                    padding: "11px 12px",
+                    borderRadius: "12px",
+                    border: isSel ? "2px solid #174b36" : "1px solid #d5e2d8",
+                    background: isSel ? "#174b36" : "#f7faf8",
+                    color: isSel ? "#ffffff" : "#1b3829",
+                    fontWeight: 700,
+                    fontSize: "13px",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "6px",
+                    boxShadow: isSel ? "0 6px 16px rgba(23, 75, 54, 0.22)" : "none",
+                    transition: "0.15s",
+                  }}
+                >
+                  {isSel && <Check size={15} />}
+                  <span>{v}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px", padding: "10px 12px", borderRadius: "12px", background: "#f4f7f3" }}>
+          <span style={{ fontSize: "12px", fontWeight: 700, color: "#2b4736" }}>الكمية المطلوبة ({product.unit}):</span>
+          <div className="quantity-compact">
+            <button type="button" aria-label="تقليل" onClick={() => setQty(q => Math.max(minQ, q - step))}><Minus size={14} /></button>
+            <b>{qty}</b>
+            <button type="button" aria-label="زيادة" disabled={qty + step > maxQ} onClick={() => setQty(q => Math.min(maxQ, q + step))}><Plus size={14} /></button>
+          </div>
+        </div>
+
+        <button type="button" className="button button-primary full-button" onClick={confirmAdd}>
+          <ShoppingCart size={17} /> إضافة «{selected}» إلى السلة ({formatPrice(product.price * qty)})
+        </button>
+      </section>
+    </div>
+  );
+}
+
 function ProductCard({ product, onOpen, onAiRecipe, priority = false }: { product: PublicProduct; onOpen: () => void; onAiRecipe?: (p: PublicProduct) => void; priority?: boolean }) {
   const { add, isFavorite, toggleFavorite } = useStore();
   const favorite = isFavorite(product.id);
   const disabled = product.stock !== null && product.stock < (product.minQuantity || 1);
-  return <article className="product-card">
-    <div className="product-visual" onClick={onOpen} role="button" tabIndex={0} onKeyDown={event => { if (event.key === "Enter") onOpen(); }}>
-      {product.imageUrl ? <img src={product.imageUrl} alt={product.name} loading={priority ? "eager" : "lazy"} fetchPriority={priority ? "high" : "auto"} decoding="async" /> : <div className="product-no-image"><Leaf size={27} strokeWidth={1.4} /><span>صورة المنتج</span></div>}
-      <button type="button" className={`favorite-toggle ${favorite ? "is-favorite" : ""}`} aria-label={favorite ? "إزالة من المفضلة" : "أضف للمفضلة"} aria-pressed={favorite} onClick={event => { event.stopPropagation(); toggleFavorite(product.id); toast.success(favorite ? "أُزيل من المفضلة" : "أُضيف إلى المفضلة على هذا الجهاز"); }}><Heart size={17} fill={favorite ? "currentColor" : "none"} /></button>
-      {onAiRecipe && <button type="button" className="ai-recipe-toggle" aria-label="أفكار وتحضير بالذكاء الاصطناعي" title="أفكار ووصفات تحضير" onClick={event => { event.stopPropagation(); onAiRecipe(product); }}><Sparkles size={16} /></button>}
-      {disabled && <span className="product-sold-out">غير متوفر</span>}
-    </div>
-    <button type="button" className="product-title-button" onClick={onOpen}><strong>{product.name}</strong><span>{product.unit}</span></button>
-    <div className="product-card-bottom"><div><b>{formatPrice(product.price)}</b><small> / {product.unit}</small></div><button className="add-button" disabled={disabled} onClick={() => { add(product, product.minQuantity || 1); toast.success("أُضيف إلى السلة"); }} aria-label={`إضافة ${product.name} للسلة`}><Plus size={18} /></button></div>
-  </article>;
+  const { variants } = useMemo(() => unpackProductVariants(product.description), [product.description]);
+  const [pickerVariant, setPickerVariant] = useState<string | null>(null);
+
+  const handleAddClick = (e: React.MouseEvent, preferredVariant?: string) => {
+    e.stopPropagation();
+    if (disabled) return;
+    if (variants.length > 0) {
+      setPickerVariant(preferredVariant || variants[0]);
+      return;
+    }
+    add(product, product.minQuantity || 1);
+    toast.success("أُضيف إلى السلة");
+  };
+
+  return <>
+    <article className="product-card">
+      <div className="product-visual" onClick={onOpen} role="button" tabIndex={0} onKeyDown={event => { if (event.key === "Enter") onOpen(); }}>
+        {product.imageUrl ? <img src={product.imageUrl} alt={product.name} loading={priority ? "eager" : "lazy"} fetchPriority={priority ? "high" : "auto"} decoding="async" /> : <div className="product-no-image"><Leaf size={27} strokeWidth={1.4} /><span>صورة المنتج</span></div>}
+        <button type="button" className={"favorite-toggle " + (favorite ? "is-favorite" : "")} aria-label={favorite ? "إزالة من المفضلة" : "أضف للمفضلة"} aria-pressed={favorite} onClick={event => { event.stopPropagation(); toggleFavorite(product.id); toast.success(favorite ? "أُزيل من المفضلة" : "أُضيف إلى المفضلة على هذا الجهاز"); }}><Heart size={17} fill={favorite ? "currentColor" : "none"} /></button>
+        {onAiRecipe && <button type="button" className="ai-recipe-toggle" aria-label="أفكار وتحضير بالذكاء الاصطناعي" title="أفكار ووصفات تحضير" onClick={event => { event.stopPropagation(); onAiRecipe(product); }}><Sparkles size={16} /></button>}
+        {disabled && <span className="product-sold-out">غير متوفر</span>}
+      </div>
+      {variants.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", padding: "6px 4px 0" }}>
+          {variants.map(v => (
+            <button
+              key={v}
+              type="button"
+              disabled={disabled}
+              onClick={e => handleAddClick(e, v)}
+              style={{
+                fontSize: "10px",
+                fontWeight: 700,
+                padding: "3px 8px",
+                borderRadius: "99px",
+                border: "1px solid #c8dfd0",
+                background: "#eef6f1",
+                color: "#174b36",
+                cursor: disabled ? "not-allowed" : "pointer",
+              }}
+            >
+              {v}
+            </button>
+          ))}
+        </div>
+      )}
+      <button type="button" className="product-title-button" onClick={onOpen}><strong>{product.name}</strong><span>{product.unit}</span></button>
+      <div className="product-card-bottom"><div><b>{formatPrice(product.price)}</b><small> / {product.unit}</small></div><button type="button" className="add-button" disabled={disabled} onClick={e => handleAddClick(e)} aria-label={"إضافة " + product.name + " للسلة"}><Plus size={18} /></button></div>
+    </article>
+    {pickerVariant !== null && variants.length > 0 && (
+      <VariantPickerModal product={product} variants={variants} initialVariant={pickerVariant} onClose={() => setPickerVariant(null)} />
+    )}
+  </>;
 }
 
 function ProductGrid({ items, onOpen, onAiRecipe }: { items: PublicProduct[]; onOpen: (id: number) => void; onAiRecipe?: (p: PublicProduct) => void }) {
@@ -672,6 +814,10 @@ function ProductDetail({ id, allProducts, onSelectProduct, onBack, onAiRecipe }:
   const { data: product, isLoading, error } = trpc.commerce.catalog.product.useQuery({ id }, { retry: 1, staleTime: 30000 });
   const { add } = useStore();
   const [quantity, setQuantity] = useState(1);
+  const [detailPickerOpen, setDetailPickerOpen] = useState(false);
+  const [selectedDetailVariant, setSelectedDetailVariant] = useState<string>("");
+  const unpackedDetail = useMemo(() => unpackProductVariants(product?.description), [product?.description]);
+  useEffect(() => { setSelectedDetailVariant(""); }, [id]);
   const touchStartX = useRef<number | null>(null);
   const index = allProducts.findIndex(item => item.id === id);
   const previous = index > 0 ? allProducts[index - 1] : undefined;
@@ -719,7 +865,17 @@ function ProductDetail({ id, allProducts, onSelectProduct, onBack, onAiRecipe }:
       <div className="detail-copy">
         <span className="eyebrow">من متجر أوريجنال</span>
         <h1>{product.name}</h1>
-        <p className="detail-description">{product.description || "لا يوجد وصف مضاف لهذا المنتج حتى الآن."}</p>
+        <p className="detail-description">{unpackedDetail.cleanDescription || "لا يوجد وصف مضاف لهذا المنتج حتى الآن."}</p>
+          {unpackedDetail.variants.length > 0 && (
+            <div style={{ margin: "10px 0 14px", display: "grid", gap: "6px" }}>
+              <strong style={{ fontSize: "12px", color: "#174b36" }}>الأنواع المتوفرة (اضغط لاختيار النوع):</strong>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "7px" }}>
+                {unpackedDetail.variants.map(v => (
+                  <button key={v} type="button" onClick={() => setSelectedDetailVariant(v)} style={{ padding: "7px 14px", borderRadius: "99px", border: selectedDetailVariant === v ? "2px solid #174b36" : "1px solid #cce0d2", background: selectedDetailVariant === v ? "#174b36" : "#f2f8f4", color: selectedDetailVariant === v ? "#fff" : "#174b36", fontWeight: 700, fontSize: "12px", cursor: "pointer" }}>{v}</button>
+                ))}
+              </div>
+            </div>
+          )}
         <div className="detail-price">{formatPrice(product.price)} <small>/ {product.unit}</small></div>
         <div className="detail-meta"><span><Package size={15} /> الوحدة: {product.unit}</span><span>{product.stock === null ? "التوفر يحدده المتجر" : `المتاح: ${product.stock}`}</span></div>
         <div className="quantity-control">
@@ -728,7 +884,8 @@ function ProductDetail({ id, allProducts, onSelectProduct, onBack, onAiRecipe }:
           <button aria-label="زيادة" disabled={quantity + (product.quantityStep || 1) > stockLimit} onClick={() => setQuantity(value => Math.min(stockLimit, value + (product.quantityStep || 1)))}><Plus size={16} /></button>
           <small>{product.unit}</small>
         </div>
-        <button className="button button-primary full-button" disabled={stockLimit < (product.minQuantity || 1)} onClick={() => { add(product, quantity); toast.success("أُضيف المنتج إلى السلة"); }}><ShoppingCart size={17} /> أضف إلى السلة</button>
+        <button type="button" className="button button-primary full-button" disabled={stockLimit < (product.minQuantity || 1)} onClick={() => { if (unpackedDetail.variants.length > 0) { if (selectedDetailVariant) { add({ ...product, name: product.name + " (" + selectedDetailVariant + ")", variant: selectedDetailVariant }, quantity); toast.success("أُضيف «" + product.name + " (" + selectedDetailVariant + ")» إلى السلة"); } else { setDetailPickerOpen(true); } } else { add(product, quantity); toast.success("أُضيف المنتج إلى السلة"); } }}><ShoppingCart size={17} /> {unpackedDetail.variants.length > 0 ? (selectedDetailVariant ? "أضف «" + selectedDetailVariant + "» إلى السلة" : "اختر النوع وأضف إلى السلة") : "أضف إلى السلة"}</button>
+          {detailPickerOpen && unpackedDetail.variants.length > 0 && <VariantPickerModal product={product as PublicProduct} variants={unpackedDetail.variants} onClose={() => setDetailPickerOpen(false)} />}
       </div>
     </div>
     {!!product.recommendations.length && <section className="store-section"><div className="section-heading"><div><span className="eyebrow">قد يناسبك أيضًا</span><h2>منتجات مقترحة</h2></div></div><ProductGrid items={product.recommendations as PublicProduct[]} onOpen={onSelectProduct} /></section>}
@@ -852,7 +1009,7 @@ function Checkout({ onClose, onSuccess, cart }: { onClose: () => void; onSuccess
   const [saveDeliveryAddress, setSaveDeliveryAddress] = useState(false);
   const [makeDefaultAddress, setMakeDefaultAddress] = useState(customer.addresses.length === 0);
   const [addressLabel, setAddressLabel] = useState("المنزل");
-  const items = cart.map(item => ({ productId: item.id, quantity: item.quantity }));
+  const items = cart.map(item => ({ productId: item.id, quantity: item.quantity, ...(item.variant ? { variant: item.variant } : {}) }));
   const signature = JSON.stringify({ form, items });
   const keyRef = useRef<{ signature: string; key: string }>({ signature: "", key: "" });
   if (keyRef.current.signature !== signature) keyRef.current = { signature, key: getPendingOrderIdempotencyKey(signature) };

@@ -2770,7 +2770,7 @@ var commerceRouter = router({
   }),
   orders: router({
     quote: publicProcedure.input(z3.object({
-      items: z3.array(z3.object({ productId: safeId, quantity: z3.number().int().min(1).max(1e4) })).min(1).max(100),
+      items: z3.array(z3.object({ productId: safeId, quantity: z3.number().int().min(1).max(1e4), variant: z3.string().trim().max(100).optional() })).min(1).max(100),
       city: z3.string().trim().min(1).max(100),
       offerCode: z3.string().trim().max(40).optional()
     })).mutation(async ({ input }) => {
@@ -2873,7 +2873,7 @@ var commerceRouter = router({
       idempotencyKey: z3.string().uuid(),
       expectedTotal: z3.number().int().min(0).max(1e11),
       expectedQuoteHash: z3.string().length(64).regex(/^[a-f0-9]+$/),
-      items: z3.array(z3.object({ productId: safeId, quantity: z3.number().int().min(1).max(1e4) })).min(1).max(100),
+      items: z3.array(z3.object({ productId: safeId, quantity: z3.number().int().min(1).max(1e4), variant: z3.string().trim().max(100).optional() })).min(1).max(100),
       offerCode: z3.string().trim().max(40).optional(),
       recipientName: z3.string().trim().min(2).max(160),
       phone: z3.string().trim().min(7).max(32).refine(isValidGuestPhone, "\u0623\u062F\u062E\u0644 \u0631\u0642\u0645 \u0647\u0627\u062A\u0641 \u0635\u062D\u064A\u062D\u064B\u0627 \u0644\u064A\u062A\u0645\u0643\u0646 \u0627\u0644\u0645\u062A\u062C\u0631 \u0645\u0646 \u0627\u0644\u0627\u062A\u0635\u0627\u0644 \u0628\u0643."),
@@ -2937,10 +2937,12 @@ var commerceRouter = router({
         });
         const orderId = Number(inserted[0].insertId);
         for (const line of orderLines) {
+          const vParts = input.items.filter((i) => i.productId === line.product.id && i.variant && i.variant.trim()).map((i) => i.quantity > 1 ? i.variant.trim() + " \xD7 " + i.quantity : i.variant.trim());
+          const finalProdName = vParts.length > 0 ? (line.product.name + " (" + vParts.join("\u060C ") + ")").slice(0, 180) : line.product.name;
           await tx.insert(orderItems).values({
             orderId,
             productId: line.product.id,
-            productName: line.product.name,
+            productName: finalProdName,
             productImage: line.product.imageUrl,
             unit: line.product.unit,
             unitPrice: line.product.price,

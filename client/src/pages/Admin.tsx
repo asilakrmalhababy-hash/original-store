@@ -231,8 +231,32 @@ function Overview() {
   </div>;
 }
 
-type ProductFormState = { name: string; description: string; imageUrl: string; categoryId: number | null; price: string; unit: string; stock: string; minQuantity: string; quantityStep: string; isPublished: boolean; isAvailable: boolean; sortOrder: string };
-const blankProduct: ProductFormState = { name: "", description: "", imageUrl: "", categoryId: null, price: "", unit: "حبة", stock: "", minQuantity: "1", quantityStep: "1", isPublished: true, isAvailable: true, sortOrder: "0" };
+function unpackProductVariants(rawDescription?: string | null): { cleanDescription: string; variants: string[] } {
+  const raw = String(rawDescription || "");
+  const marker = "[[variants:";
+  const idx = raw.indexOf(marker);
+  if (idx === -1) return { cleanDescription: raw.trim(), variants: [] };
+  const cleanDescription = raw.slice(0, idx).trim();
+  const endIdx = raw.indexOf("]]", idx);
+  const jsonPart = endIdx !== -1 ? raw.slice(idx + marker.length, endIdx) : raw.slice(idx + marker.length);
+  try {
+    const parsed = JSON.parse(jsonPart);
+    if (Array.isArray(parsed)) {
+      return { cleanDescription, variants: parsed.map(v => String(v || "").trim()).filter(Boolean).slice(0, 25) };
+    }
+  } catch {}
+  return { cleanDescription, variants: [] };
+}
+
+function packProductVariants(cleanDescription: string, variants: string[]): string | null {
+  const clean = cleanDescription.trim();
+  const valid = [...new Set(variants.map(v => v.trim()).filter(Boolean))].slice(0, 25);
+  if (!valid.length) return clean || null;
+  return (clean ? clean + "\n" : "") + "[[variants:" + JSON.stringify(valid) + "]]";
+}
+
+type ProductFormState = { name: string; description: string; variants: string[]; variantDraft: string; imageUrl: string; categoryId: number | null; price: string; unit: string; stock: string; minQuantity: string; quantityStep: string; isPublished: boolean; isAvailable: boolean; sortOrder: string };
+const blankProduct: ProductFormState = { name: "", description: "", variants: [], variantDraft: "", imageUrl: "", categoryId: null, price: "", unit: "حبة", stock: "", minQuantity: "1", quantityStep: "1", isPublished: true, isAvailable: true, sortOrder: "0" };
 
 function ProductsPanel() {
   const utils = trpc.useUtils();
@@ -302,10 +326,13 @@ function ProductsPanel() {
   const setField = <K extends keyof ProductFormState>(key: K, value: ProductFormState[K]) => setForm(current => ({ ...current, [key]: value }));
 
   const selectEdit = (item: NonNullable<typeof query.data>[number]) => {
+    const unpacked = unpackProductVariants(item.description);
     setEditing(item.id);
     setForm({
       name: item.name,
-      description: item.description ?? "",
+      description: unpacked.cleanDescription,
+      variants: unpacked.variants,
+      variantDraft: "",
       imageUrl: item.imageUrl ?? "",
       categoryId: item.categoryId,
       price: String(item.price),
@@ -320,11 +347,20 @@ function ProductsPanel() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
+  const addDraftVariants = () => {
+    const parts = form.variantDraft.split(/[,،\n]+/).map(s => s.trim()).filter(Boolean);
+    if (!parts.length) return;
+    setForm(curr => ({ ...curr, variants: [...new Set([...curr.variants, ...parts])], variantDraft: "" }));
+  };
+
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
+    const extraParts = form.variantDraft.split(/[,،\n]+/).map(s => s.trim()).filter(Boolean);
+    const allVariants = [...new Set([...form.variants, ...extraParts])];
+    const packedDesc = packProductVariants(form.description, allVariants);
     const values = {
       name: form.name,
-      description: form.description || null,
+      description: packedDesc,
       imageUrl: form.imageUrl || null,
       categoryId: form.categoryId,
       price: Number(form.price),
@@ -368,7 +404,33 @@ function ProductsPanel() {
           <div className="product-form-layout">
             <div className="form-fields-grid">
               <label className="field-wide">اسم المنتج<input required maxLength={180} value={form.name} onChange={e => setField("name", e.target.value)} placeholder="اكتب اسم المنتج" /></label>
-              <label className="field-wide">الوصف<textarea rows={3} value={form.description} onChange={e => setField("description", e.target.value)} placeholder="وصف واضح للمنتج" /></label>
+              <label className="field-wide">الوصف<textarea rows={2} value={form.description} onChange={e => setField("description", e.target.value)} placeholder="وصف واضح للمنتج" /></label>
+              <div className="field-wide" style={{ padding: "12px", borderRadius: "12px", background: "#f4f8f5", border: "1px solid #dce8df", display: "grid", gap: "8px" }}>
+                <div>
+                  <strong style={{ fontSize: "11px", color: "#174b36", display: "block" }}>أنواع / خيارات المنتج في نفس البطاقة (اختياري — مثل: الهناء، نعناع، الرعوي)</strong>
+                  <small style={{ fontSize: "10px", color: "#66786c" }}>أضف الأنواع هنا لتظهر كأزرار تحت صورة المنتج وبنافذة منبثقة يختار منها الزبون عند الضغط على إضافة للسلة.</small>
+                </div>
+                <div style={{ display: "flex", gap: "6px" }}>
+                  <input
+                    value={form.variantDraft}
+                    onChange={e => setField("variantDraft", e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addDraftVariants(); } }}
+                    placeholder="اكتب الأنواع مفصولة بفاصلة (مثال: الهناء، نعناع، الرعوي) ثم اضغط إضافة"
+                    style={{ flex: 1 }}
+                  />
+                  <button type="button" className="small-button selected" onClick={addDraftVariants}><Plus size={14} /> إضافة نوع</button>
+                </div>
+                {form.variants.length > 0 && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "2px" }}>
+                    {form.variants.map(v => (
+                      <span key={v} style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "4px 10px", borderRadius: "99px", background: "#174b36", color: "#ffffff", fontSize: "11px", fontWeight: 700 }}>
+                        {v}
+                        <button type="button" onClick={() => setField("variants", form.variants.filter(x => x !== v))} style={{ border: 0, background: "transparent", color: "#f1d897", cursor: "pointer", padding: 0, display: "grid", placeItems: "center" }} aria-label={"حذف " + v}><X size={13} /></button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
               <label>السعر بالريال اليمني<input required type="number" min="0" value={form.price} onChange={e => setField("price", e.target.value)} placeholder="0" /></label>
               <label>وحدة البيع<input required value={form.unit} onChange={e => setField("unit", e.target.value)} placeholder="حبة، كيلو، عبوة..." /></label>
               <label>القسم<select value={form.categoryId ?? ""} onChange={e => setField("categoryId", e.target.value ? Number(e.target.value) : null)}><option value="">بلا قسم</option>{cats.data?.map(category => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
@@ -425,7 +487,7 @@ function ProductsPanel() {
               <div className="entity-image">{item.imageUrl ? <img src={item.imageUrl} alt="" /> : <Leaf size={19} />}</div>
               <div className="entity-main">
                 <strong>{item.name}</strong>
-                <small>{cats.data?.find(cat => cat.id === item.categoryId)?.name || "بلا قسم"} · {item.unit} · {item.stock === null ? "المخزون مفتوح" : "المخزون " + item.stock}</small>
+                <small>{cats.data?.find(cat => cat.id === item.categoryId)?.name || "بلا قسم"} · {item.unit} · {item.stock === null ? "المخزون مفتوح" : "المخزون " + item.stock}{unpackProductVariants(item.description).variants.length > 0 ? " · الأنواع: " + unpackProductVariants(item.description).variants.join(" / ") : ""}</small>
               </div>
               <div className="entity-price">{money(item.price)}</div>
               <span className={"visibility-tag " + (item.isPublished ? "visible" : "hidden")}>{item.isPublished ? "منشور" : "مخفي"}</span>

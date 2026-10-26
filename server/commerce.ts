@@ -595,7 +595,7 @@ export const commerceRouter = router({
 
   orders: router({
     quote: publicProcedure.input(z.object({
-      items: z.array(z.object({ productId: safeId, quantity: z.number().int().min(1).max(10000) })).min(1).max(100),
+      items: z.array(z.object({ productId: safeId, quantity: z.number().int().min(1).max(10000), variant: z.string().trim().max(100).optional() })).min(1).max(100),
       city: z.string().trim().min(1).max(100), offerCode: z.string().trim().max(40).optional(),
     })).mutation(async ({ input }) => {
       const db = await database();
@@ -700,7 +700,7 @@ export const commerceRouter = router({
       idempotencyKey: z.string().uuid(),
       expectedTotal: z.number().int().min(0).max(100000000000),
       expectedQuoteHash: z.string().length(64).regex(/^[a-f0-9]+$/),
-      items: z.array(z.object({ productId: safeId, quantity: z.number().int().min(1).max(10000) })).min(1).max(100),
+      items: z.array(z.object({ productId: safeId, quantity: z.number().int().min(1).max(10000), variant: z.string().trim().max(100).optional() })).min(1).max(100),
       offerCode: z.string().trim().max(40).optional(),
       recipientName: z.string().trim().min(2).max(160), phone: z.string().trim().min(7).max(32).refine(isValidGuestPhone, "أدخل رقم هاتف صحيحًا ليتمكن المتجر من الاتصال بك."),
       city: z.string().trim().min(1).max(100), district: z.string().trim().min(1).max(120), addressDetails: z.string().trim().max(1000).optional(), customerNote: z.string().trim().max(1000).optional(),
@@ -751,8 +751,10 @@ export const commerceRouter = router({
         });
         const orderId = Number(inserted[0].insertId);
         for (const line of orderLines) {
+          const vParts = input.items.filter(i => i.productId === line.product.id && i.variant && i.variant.trim()).map(i => i.quantity > 1 ? (i.variant!.trim() + " × " + i.quantity) : i.variant!.trim());
+          const finalProdName = vParts.length > 0 ? (line.product.name + " (" + vParts.join("، ") + ")").slice(0, 180) : line.product.name;
           await tx.insert(orderItems).values({
-            orderId, productId: line.product.id, productName: line.product.name, productImage: line.product.imageUrl,
+            orderId, productId: line.product.id, productName: finalProdName, productImage: line.product.imageUrl,
             unit: line.product.unit, unitPrice: line.product.price, quantity: line.quantity, lineTotal: line.product.price * line.quantity,
           });
           if (line.product.stock !== null) {
