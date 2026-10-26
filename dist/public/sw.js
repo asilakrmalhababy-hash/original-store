@@ -1,4 +1,4 @@
-const CACHE = "original-shell-v15";
+const CACHE = "original-shell-v16";
 const APP_MANIFEST = "/api/app-manifest.webmanifest";
 const PRECACHE = ["/", "/offline.html", "/manifest.webmanifest", "/app-icon-180-v2.png", "/app-icon-192-v2.png", "/app-icon-512-v2.png", "/notif-icon-v3.png", "/notif-badge-v3.png", APP_MANIFEST];
 self.addEventListener("install", event => {
@@ -48,7 +48,7 @@ self.addEventListener("push", event => {
   event.waitUntil((async () => {
     try {
       const payload = event.data.json();
-      const title = typeof payload.title === "string" ? payload.title.slice(0, 100) : "🌿 متجر أوريجنال";
+      const title = typeof payload.title === "string" ? payload.title.slice(0, 100) : "🌿 متجر أورجنال";
       const body = typeof payload.body === "string" ? payload.body.slice(0, 300) : "تم تحديث حالة طلبك";
       const requestedUrl = typeof payload.url === "string" ? payload.url : "/orders";
       const url = requestedUrl.startsWith("/") && !requestedUrl.startsWith("//") ? requestedUrl : "/orders";

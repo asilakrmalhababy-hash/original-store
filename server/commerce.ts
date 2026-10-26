@@ -148,7 +148,7 @@ async function generateAndCacheProductAiRecipe(
   if (__aiProductRecipes[cacheKey]) return __aiProductRecipes[cacheKey];
 
   const compactCatalog = catalog.slice(0, 50).map(p => ({ id: p.id, name: p.name, price: p.price, unit: p.unit }));
-  const sys = "أنت المساعد الذكي لمتجر أوريجنال في اليمن. حلل طبيعة المنتج أولاً بلهجة يمنية راقية وودودة، وإذا لم يكن منتج طبخ قدم معلومات ذكية عنه ولا تفرض وصفات طبخ، ثم اعرض في النهاية اقتراحات تفاعلية في حقل suggestedQuestions.";
+  const sys = "أنت المساعد الذكي لمتجر أورجنال في اليمن. حلل طبيعة المنتج أولاً بلهجة يمنية راقية وودودة، وإذا لم يكن منتج طبخ قدم معلومات ذكية عنه ولا تفرض وصفات طبخ، ثم اعرض في النهاية اقتراحات تفاعلية في حقل suggestedQuestions.";
   const usr = [
     `الصنف الأساسي: «${productName}»`,
     customModification ? `طلب التعديل الخاص من الزبون: ${customModification}` : "المطلوب: تحليل ذكي للمنتج ومعلومات عنه مع اقتراحات تفاعلية.",
@@ -303,10 +303,10 @@ async function notifyCustomerOrderStatus(orderId: number, orderNumber: string, s
     preparing: "طلبك الآن قيد التجهيز بعناية 👨‍🍳",
     ready: "طلبك جاهز للتوصيل الكامل 📦",
     out_for_delivery: "طلبك خرج للتوصيل وهو في طريقه إليك 🛵",
-    delivered: "تم تسليم طلبك بنجاح، شكراً لتسوقك من أوريجنال 💚",
+    delivered: "تم تسليم طلبك بنجاح، شكراً لتسوقك من أورجنال 💚",
     cancelled: "عذراً، تم إلغاء الطلب #" + shortNo,
   };
-  const title = "🌿 متجر أوريجنال · طلب #" + shortNo;
+  const title = "🌿 متجر أورجنال · طلب #" + shortNo;
   const body = cleanNote ? cleanNote.slice(0, 240) : (defaultBodies[status] || "تم تحديث حالة طلبك");
   await deliverPushRows(uniqueByEndpoint, {
     title,
@@ -956,7 +956,7 @@ export const commerceRouter = router({
       try {
         const response = await invokeLLM({
           messages: [
-            { role: "system", content: "أنت بائع يمني ذكي وأمين في متجر أوريجنال." },
+            { role: "system", content: "أنت بائع يمني ذكي وأمين في متجر أورجنال." },
             { role: "user", content: userPrompt },
           ],
           response_format: { type: "json_object" },
@@ -1399,7 +1399,7 @@ export const commerceRouter = router({
           throw new TRPCError({ code: "PRECONDITION_FAILED", message: "يرجى الضغط على زر تفعيل الإشعارات أولاً لربط هذا الجهاز." });
         }
         await deliverPushRows(targets, {
-          title: "🌿 إدارة أوريجنال · الإشعارات نشطة",
+          title: "🌿 إدارة أورجنال · الإشعارات نشطة",
           body: "جهازك مربوط بنجاح! سيصلك إشعار فوري وأنيق مع كل طلب جديد حتى لو كان التطبيق مغلقاً ✨",
           url: "/admin/orders",
           tag: "original-admin-test-push",

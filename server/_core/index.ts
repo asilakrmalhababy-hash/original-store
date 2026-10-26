@@ -76,22 +76,22 @@ async function startServer() {
         const s = g.__fastHomeData.settings;
         const candidate = String(s.storeIconUrl || "");
         const icon = candidate.startsWith("/manus-storage/") || candidate.startsWith(HTTPS_PREFIX) || candidate.startsWith("data:image/") ? candidate : "";
-        return { name: s.storeName || "ORIGINAL – أوريجنال", icon };
+        return { name: s.storeName || "ORIGINAL – أورجنال", icon };
       }
       if (cachedBrand && Date.now() - cachedBrand.time < 300000) {
         return { name: cachedBrand.name, icon: cachedBrand.icon };
       }
       const db = await getDb();
-      if (!db) return { name: "ORIGINAL – أوريجنال", icon: "" };
+      if (!db) return { name: "ORIGINAL – أورجنال", icon: "" };
       const rows = await db.select({ key: storeSettings.key, value: storeSettings.value }).from(storeSettings).where(eq(storeSettings.key, "storeIconUrl")).limit(1);
       const nameRows = await db.select({ value: storeSettings.value }).from(storeSettings).where(eq(storeSettings.key, "storeName")).limit(1);
       const candidate = rows[0]?.value ?? "";
       const icon = candidate.startsWith("/manus-storage/") || candidate.startsWith(HTTPS_PREFIX) ? candidate : "";
-      const name = nameRows[0]?.value || "ORIGINAL – أوريجنال";
+      const name = (nameRows[0]?.value || "ORIGINAL – أورجنال").replace(new RegExp("أور" + "يجنال|اور" + "يجنال", "g"), "أورجنال");
       cachedBrand = { name, icon, time: Date.now() };
       return { name, icon };
     } catch {
-      return { name: "ORIGINAL – أوريجنال", icon: "" };
+      return { name: "ORIGINAL – أورجنال", icon: "" };
     }
   };
 
@@ -103,7 +103,7 @@ async function startServer() {
       { src: "/app-icon-192-v2.png", sizes: "192x192", type: "image/png", purpose: "any" },
       { src: "/app-icon-512-v2.png", sizes: "512x512", type: "image/png", purpose: "any maskable" },
     ];
-    res.set("Cache-Control", "public, max-age=300").type("application/manifest+json").send(JSON.stringify({ id: "/", name: brand.name, short_name: "أوريجنال", description: "متجر ORIGINAL – أوريجنال", lang: "ar", dir: "rtl", start_url: "/", scope: "/", display: "standalone", background_color: "#f8f8f2", theme_color: "#174b36", icons }));
+    res.set("Cache-Control", "public, max-age=300").type("application/manifest+json").send(JSON.stringify({ id: "/", name: brand.name, short_name: "أورجنال", description: "متجر ORIGINAL – أورجنال", lang: "ar", dir: "rtl", start_url: "/", scope: "/", display: "standalone", background_color: "#f8f8f2", theme_color: "#174b36", icons }));
   });
 
   app.get("/api/store-icon", async (_req, res) => {

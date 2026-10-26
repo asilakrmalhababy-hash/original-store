@@ -102,7 +102,7 @@ export default function PWAInstall() {
       {!dismissed && (
         <div
           role="region"
-          aria-label="تثبيت تطبيق أوريجنال"
+          aria-label="تثبيت تطبيق أورجنال"
           style={{
             position: "fixed",
             bottom: "74px",
@@ -131,7 +131,7 @@ export default function PWAInstall() {
             />
             <div style={{ minWidth: 0 }}>
               <strong style={{ display: "block", fontSize: "12px", lineHeight: 1.3 }}>
-                تثبيت تطبيق «أوريجنال» 📲
+                تثبيت تطبيق «أورجنال» 📲
               </strong>
               <small style={{ display: "block", fontSize: "10px", color: "#d6eadf", lineHeight: 1.35 }}>
                 تصفح أسرع وإشعارات للطلبات بنقرة واحدة

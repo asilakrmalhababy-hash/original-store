@@ -45,8 +45,8 @@ function Header({ data, onSearch }: { data?: HomeData; onSearch: (text: string) 
   const { name } = useCustomer();
   const [text, setText] = useState("");
   const cartCount = cart.reduce((sum, row) => sum + row.quantity, 0);
-  const storeName = data?.settings.storeName || "ORIGINAL – أوريجنال";
-  const brandSubtitle = storeName === "ORIGINAL – أوريجنال" ? "أوريجنال" : storeName;
+  const storeName = data?.settings.storeName || "ORIGINAL – أورجنال";
+  const brandSubtitle = storeName === "ORIGINAL – أورجنال" ? "أورجنال" : storeName;
   const submitSearch = (event: FormEvent) => { event.preventDefault(); onSearch(text.trim()); };
   return <header className="store-header">
     <div className="header-main">
@@ -66,7 +66,7 @@ function Header({ data, onSearch }: { data?: HomeData; onSearch: (text: string) 
       </div>
     </div>
     <div className="header-subline">
-      <nav className="desktop-links" aria-label="القائمة الرئيسية"><Link href="/">الرئيسية</Link><Link href="/categories">الأقسام</Link><Link href="/products">المنتجات</Link><Link href="/assistant" className="assistant-link"><Sparkles size={15} /> مساعد أوريجنال</Link></nav>
+      <nav className="desktop-links" aria-label="القائمة الرئيسية"><Link href="/">الرئيسية</Link><Link href="/categories">الأقسام</Link><Link href="/products">المنتجات</Link><Link href="/assistant" className="assistant-link"><Sparkles size={15} /> مساعد أورجنال</Link></nav>
       <div className="header-promise"><ShieldCheck size={15} /><span></span></div><PWAInstall />
     </div>
     {data?.settings.orderPaused === "true" && <div className="service-notice"><Clock3 size={15} />{data.settings.pausedMessage || "استقبال الطلبات متوقف مؤقتًا"}</div>}
@@ -773,7 +773,7 @@ function HomePage({ data, onOpen, onAiRecipe }: { data: HomeData; onOpen: (id: n
     {data.offers.length > 0 && <section className="offers-row"><div className="section-heading compact"><div><span className="eyebrow">عروض المتجر</span><h2>فرص تستحق الانتباه</h2></div><BadgePercent size={22} /></div><div className="offer-strip">{data.offers.map(offer => <div className="offer-chip" key={offer.id}><span className="offer-chip-icon"><BadgePercent size={18} /></span><div><strong>{offer.title}</strong><small>{offer.description || (offer.discountType === "percent" ? "خصم " + offer.discountValue + "%" : "خصم " + formatPrice(offer.discountValue))}</small></div><code>{offer.code}</code></div>)}</div></section>}
     <section className="store-section categories-section"><div className="section-heading"><div><span className="eyebrow">على طريقتك</span><h2>ابدأ من الأقسام</h2></div><Link className="text-link" href="/categories">كل الأقسام <ArrowLeft size={15} /></Link></div><CategoryStrip data={data.categories} onSelect={changeCategory} /></section>
     {middleBanners.length > 0 && <BannerCarousel banners={middleBanners} />}
-    <section className="store-section products-section"><div className="section-heading"><div><span className="eyebrow">اختيارات أوريجنال</span><h2>منتجات المتجر</h2></div><div className="section-tools"><label className="sort-select"><ArrowUpDown size={15} /><select aria-label="ترتيب المنتجات" value={sort} onChange={event => setSort(event.target.value as typeof sort)}><option value="featured">الأبرز</option><option value="price-asc">السعر: الأقل أولًا</option><option value="price-desc">السعر: الأعلى أولًا</option></select></label><Link className="text-link" href="/products">عرض الكل <ArrowLeft size={15} /></Link></div></div>{productsLoading && !featured.length ? <Loading /> : <ProductGrid items={featured} onOpen={onOpen} onAiRecipe={onAiRecipe} />}</section>
+    <section className="store-section products-section"><div className="section-heading"><div><span className="eyebrow">اختيارات أورجنال</span><h2>منتجات المتجر</h2></div><div className="section-tools"><label className="sort-select"><ArrowUpDown size={15} /><select aria-label="ترتيب المنتجات" value={sort} onChange={event => setSort(event.target.value as typeof sort)}><option value="featured">الأبرز</option><option value="price-asc">السعر: الأقل أولًا</option><option value="price-desc">السعر: الأعلى أولًا</option></select></label><Link className="text-link" href="/products">عرض الكل <ArrowLeft size={15} /></Link></div></div>{productsLoading && !featured.length ? <Loading /> : <ProductGrid items={featured} onOpen={onOpen} onAiRecipe={onAiRecipe} />}</section>
     {bottomBanners.length > 0 && <BannerCarousel banners={bottomBanners} />}
   </main>;
 }
@@ -913,7 +913,7 @@ function ProductDetail({ id, allProducts = [], onSelectProduct, onBack, onAiReci
           )}
         </div>
         <div className="detail-copy">
-          <span className="eyebrow">من متجر أوريجنال</span>
+          <span className="eyebrow">من متجر أورجنال</span>
           <h1>{product.name}</h1>
           {unpackedDetail.cleanDescription ? <p className="detail-description">{unpackedDetail.cleanDescription}</p> : null}
           {unpackedDetail.variants.length > 0 && (
@@ -1342,7 +1342,7 @@ function OrdersPage() {
                 {permission === "denied"
                   ? "الإشعارات محظورة من إعدادات المتصفح؛ يرجى السماح بها من قفل الموقع أعلى المتصفح."
                   : pushEnabled
-                  ? "سيصلك إشعار واحد أنيق ومباشر بشعار أوريجنال فور تجهيز طلبك أو خروجه للتوصيل حتى لو أغلقت التطبيق."
+                  ? "سيصلك إشعار واحد أنيق ومباشر بشعار أورجنال فور تجهيز طلبك أو خروجه للتوصيل حتى لو أغلقت التطبيق."
                   : "اضغط زر التفعيل ليصلك إشعار فوري على شاشة جوالك عندما يصبح طلبك قيد التجهيز أو يخرج للتوصيل."}
               </small>
             </div>
@@ -1523,7 +1523,7 @@ function getOrCreateChatSessionId(): string {
 
 const assistantGreeting: AssistantMessage = {
   role: "assistant",
-  text: "يا هلا بك في أوريجنال! محتار إيش تاكل أو تشتري اليوم؟ قولي نفسك في شي خفيف واقتصادي ولا عصير بارد، وأنا أرتب لك أحلى خيار!",
+  text: "يا هلا بك في أورجنال! محتار إيش تاكل أو تشتري اليوم؟ قولي نفسك في شي خفيف واقتصادي ولا عصير بارد، وأنا أرتب لك أحلى خيار!",
   suggestedQuestions: ["عصير بارد اقتصادي", "وجبة خفيفة وسريعة", "عرض السلة"],
 };
 
@@ -1794,7 +1794,7 @@ function AssistantPage() {
       <section className="chat-panel">
         <div className="chat-head">
           <span className="chat-avatar"><Sparkles size={17} /></span>
-          <div><strong>مساعد أوريجنال الذكي</strong><small>متصل الآن لخدمتك ومرتبط بإدارة المتجر</small></div>
+          <div><strong>مساعد أورجنال الذكي</strong><small>متصل الآن لخدمتك ومرتبط بإدارة المتجر</small></div>
           <span className="online-dot" />
           <button type="button" className="assistant-new-chat" disabled={mutation.isPending} onClick={startNewConversation}>محادثة جديدة</button>
         </div>
@@ -1898,6 +1898,6 @@ export default function Home() {
     if (location === "/assistant") return <AssistantPage />;
     return <HomePage data={data} onOpen={openProduct} onAiRecipe={setActiveAiProduct} />;
   }, [location, productId, productPath, data]);
-  return <div className="store-app" dir="rtl"><Header data={data} onSearch={text => navigate(`/products${text ? `?search=${encodeURIComponent(text)}` : ""}`)} />{home.isError && <div className="connection-strip"><span>الاتصال بالخدمة غير متاح مؤقتًا</span><button onClick={() => void home.refetch()}>إعادة المحاولة</button></div>}{home.isError && !home.data ? <main className="page-shell inner-page"><LoadError onRetry={() => void home.refetch()} /></main> : content}<footer className="store-footer"><div className="footer-brand"><span className={`brand-mark ${data.settings.storeIconUrl ? "has-brand-image" : ""}`}>{data.settings.storeIconUrl ? <img src={data.settings.storeIconUrl} alt="" /> : <Leaf size={18} />}</span><span><b>ORIGINAL</b><small>{data.settings.storeName === "ORIGINAL – أوريجنال" || !data.settings.storeName ? "أوريجنال" : data.settings.storeName}</small></span></div>{shouldShowFooterDescription(data.settings.storeDescription) && <span>{data.settings.storeDescription}</span>}<small>© {new Date().getFullYear()} {data.settings.storeName || "ORIGINAL"}</small></footer>{activeAiProduct && <AiRecipeModal product={activeAiProduct} onClose={() => setActiveAiProduct(null)} />}
+  return <div className="store-app" dir="rtl"><Header data={data} onSearch={text => navigate(`/products${text ? `?search=${encodeURIComponent(text)}` : ""}`)} />{home.isError && <div className="connection-strip"><span>الاتصال بالخدمة غير متاح مؤقتًا</span><button onClick={() => void home.refetch()}>إعادة المحاولة</button></div>}{home.isError && !home.data ? <main className="page-shell inner-page"><LoadError onRetry={() => void home.refetch()} /></main> : content}<footer className="store-footer"><div className="footer-brand"><span className={`brand-mark ${data.settings.storeIconUrl ? "has-brand-image" : ""}`}>{data.settings.storeIconUrl ? <img src={data.settings.storeIconUrl} alt="" /> : <Leaf size={18} />}</span><span><b>ORIGINAL</b><small>{data.settings.storeName === "ORIGINAL – أورجنال" || !data.settings.storeName ? "أورجنال" : data.settings.storeName}</small></span></div>{shouldShowFooterDescription(data.settings.storeDescription) && <span>{data.settings.storeDescription}</span>}<small>© {new Date().getFullYear()} {data.settings.storeName || "ORIGINAL"}</small></footer>{activeAiProduct && <AiRecipeModal product={activeAiProduct} onClose={() => setActiveAiProduct(null)} />}
     <BottomNav active={currentNav} /></div>;
 }
