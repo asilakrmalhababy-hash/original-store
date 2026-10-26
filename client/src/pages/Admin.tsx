@@ -233,14 +233,11 @@ function Overview() {
 
 function unpackProductVariants(rawDescription?: string | null): { cleanDescription: string; variants: string[] } {
   const raw = String(rawDescription || "");
-  const marker = "[[variants:";
-  const idx = raw.indexOf(marker);
-  if (idx === -1) return { cleanDescription: raw.trim(), variants: [] };
-  const cleanDescription = raw.slice(0, idx).trim();
-  const endIdx = raw.indexOf("]]", idx);
-  const jsonPart = endIdx !== -1 ? raw.slice(idx + marker.length, endIdx) : raw.slice(idx + marker.length);
+  const m = raw.match(/\[\[variants:(\[[\s\S]*?\])\]\]/);
+  if (!m) return { cleanDescription: raw.trim(), variants: [] };
+  const cleanDescription = raw.replace(m[0], "").trim();
   try {
-    const parsed = JSON.parse(jsonPart);
+    const parsed = JSON.parse(m[1]);
     if (Array.isArray(parsed)) {
       return { cleanDescription, variants: parsed.map(v => String(v || "").trim()).filter(Boolean).slice(0, 25) };
     }
