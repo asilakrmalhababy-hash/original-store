@@ -329,9 +329,10 @@ export function prepareAssistantResponse(
       && requestedProductIds.size > 0
       && [...requestedProductIds].every(productId => referencedProducts.has(productId) && !previouslyRejected.has(productId));
     if (!cartActionAuthorized) {
-      message = rejectedRequestedIds.length > 0
-        ? "لن أكرر اقتراح إضافة " + rejectedRequestedIds.map(id => catalogById.get(id)?.name).filter(Boolean).join("، ") + " لأنك رفضته قبل قليل. إذا غيرت رأيك، اذكر اسم المنتج كاملًا في طلب جديد وسأعرض التأكيد قبل أي تغيير."
-        : "لم أغيّر السلة. لم أتمكن من مطابقة أمر واضح واسم المنتج مع المتجر؛ اكتب مثلًا «أضف 2 تونة الغويزي» أو «احذف 1 شطة»، وسأعرض التأكيد قبل أي تغيير.";
+      if (rejectedRequestedIds.length > 0) {
+        message = "لن أكرر اقتراح إضافة " + rejectedRequestedIds.map(id => catalogById.get(id)?.name).filter(Boolean).join("، ") + " لأنك رفضته قبل قليل.";
+      }
+      output.cartAction = "none";
     }
   }
   if (cartActionAuthorized && output.cartAction !== "none" && output.cartItems.length > 0) {

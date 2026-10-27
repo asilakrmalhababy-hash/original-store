@@ -1888,8 +1888,24 @@ type AssistantMessage = {
   ownerMsgId?: string;
 };
 
-const ASSISTANT_HISTORY_KEY = "original-assistant-history-v2";
-const CHAT_SESSION_KEY = "original-chat-session-id-v1";
+const ASSISTANT_HISTORY_KEY = "original-assistant-history-v3";
+const CHAT_SESSION_KEY = "original-chat-session-id-v2";
+const SEEN_OWNER_IDS_KEY = "original-seen-owner-ids-v2";
+
+function readSeenOwnerIds(): Set<string> {
+  try {
+    const raw = JSON.parse(localStorage.getItem(SEEN_OWNER_IDS_KEY) ?? "[]");
+    return new Set(Array.isArray(raw) ? raw.filter((x): x is string => typeof x === "string") : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function saveSeenOwnerIds(ids: Set<string>) {
+  try {
+    localStorage.setItem(SEEN_OWNER_IDS_KEY, JSON.stringify([...ids].slice(-200)));
+  } catch {}
+}
 
 function getOrCreateChatSessionId(): string {
   try {
@@ -1906,8 +1922,8 @@ function getOrCreateChatSessionId(): string {
 
 const assistantGreeting: AssistantMessage = {
   role: "assistant",
-  text: "يا هلا بك في أورجنال! محتار إيش تاكل أو تشتري اليوم؟ قولي نفسك في شي خفيف واقتصادي ولا عصير بارد، وأنا أرتب لك أحلى خيار!",
-  suggestedQuestions: ["عصير بارد اقتصادي", "وجبة خفيفة وسريعة", "عرض السلة"],
+  text: "يا هلا بك في أورجنال! كيف أقدر أخدمك اليوم؟ اسألني عن أي صنف أو سعره في المتجر وأنا حاضر.",
+  suggestedQuestions: ["تصفح الأقسام", "عصير بارد", "عرض السلة"],
 };
 
 function readAssistantHistory(): AssistantMessage[] {
@@ -1918,11 +1934,13 @@ function readAssistantHistory(): AssistantMessage[] {
       if (!item || typeof item !== "object") return [];
       const row = item as Record<string, unknown>;
       if ((row.role !== "user" && row.role !== "assistant") || typeof row.text !== "string") return [];
+      const cleanText = row.text.replace(/^(?:👨‍💼\s*)?إدارة المتجر\s*:\s*/i, "").slice(0, 1800);
       return [{
         role: row.role,
-        text: row.text.slice(0, 1800),
+        text: cleanText,
         ...(typeof row.contextText === "string" ? { contextText: row.contextText.slice(0, 1800) } : {}),
         ...(typeof row.ownerMsgId === "string" ? { ownerMsgId: row.ownerMsgId } : {}),
+        ...(row.cartAction && typeof row.cartAction === "object" ? { cartAction: row.cartAction as AssistantCartAction } : {}),
         ...(Array.isArray(row.suggestedQuestions) ? { suggestedQuestions: row.suggestedQuestions.filter((x): x is string => typeof x === "string") } : {}),
       } as AssistantMessage];
     }).slice(-32);
@@ -1943,44 +1961,44 @@ function AssistantPage() {
   const [messages, setMessages] = useState<AssistantMessage[]>(readAssistantHistory);
   const messagesRef = useRef<HTMLDivElement>(null);
   const appliedActionsRef = useRef(new Set<string>());
+  const seenOwnerIdsRef = useRef<Set<string>>(readSeenOwnerIds());
   const retryRef = useRef<{ request: string; history: Array<{ role: "user" | "assistant"; text: string }> } | null>(null);
   const mutation = trpc.commerce.assistant.recipe.useMutation();
 
+  useEffect(() => {
+    for (const m of messages) {
+      if (m.ownerMsgId) seenOwnerIdsRef.current.add(m.ownerMsgId);
+    }
+    saveSeenOwnerIds(seenOwnerIdsRef.current);
+  }, []);
+
   const pollQuery = trpc.commerce.assistant.pollMessages.useQuery(
     { sessionId },
-    { refetchInterval: 2000, staleTime: 0, refetchOnMount: "always", refetchOnWindowFocus: true, retry: false }
+    { refetchInterval: 2500, staleTime: 0, refetchOnMount: "always", refetchOnWindowFocus: true, retry: false }
   );
 
   useEffect(() => {
     const ownerMsgs = pollQuery.data?.ownerMessages;
     if (!ownerMsgs || !ownerMsgs.length) return;
     setMessages(current => {
-      const existingIds = new Set(current.map(m => m.ownerMsgId).filter(Boolean));
-      const unseen = ownerMsgs.filter(m => !existingIds.has(m.id));
+      const existingInState = new Set(current.map(m => m.ownerMsgId).filter(Boolean));
+      const unseen = ownerMsgs.filter(m => m.id && !existingInState.has(m.id) && !seenOwnerIdsRef.current.has(m.id));
       if (!unseen.length) return current;
+      for (const m of unseen) seenOwnerIdsRef.current.add(m.id);
+      saveSeenOwnerIds(seenOwnerIdsRef.current);
       toast.success("💬 وصلتك رسالة جديدة من إدارة المتجر!");
       return [
         ...current,
         ...unseen.map(m => ({
           role: "assistant" as const,
-          text: "👨‍💼 إدارة المتجر:\n" + m.text,
+          text: m.text.replace(/^(?:👨‍💼\s*)?إدارة المتجر\s*:\s*/i, "").trim(),
           ownerMsgId: m.id,
         })),
       ].slice(-32);
     });
   }, [pollQuery.data, pollQuery.dataUpdatedAt]);
 
-  const displayedMessages: AssistantMessage[] = useMemo(() => {
-    const existingIds = new Set(messages.map(m => m.ownerMsgId).filter(Boolean));
-    const extra: AssistantMessage[] = (pollQuery.data?.ownerMessages ?? [])
-      .filter(m => !existingIds.has(m.id))
-      .map(m => ({
-        role: "assistant" as const,
-        text: "👨‍💼 إدارة المتجر:\n" + m.text,
-        ownerMsgId: m.id,
-      }));
-    return [...messages, ...extra];
-  }, [messages, pollQuery.data]);
+  const displayedMessages = messages;
 
   useEffect(() => {
     const saved = displayedMessages.slice(-32).map(message => ({
@@ -1988,6 +2006,7 @@ function AssistantPage() {
       text: message.text,
       ...(message.contextText ? { contextText: message.contextText } : {}),
       ...(message.ownerMsgId ? { ownerMsgId: message.ownerMsgId } : {}),
+      ...(message.cartAction ? { cartAction: message.cartAction } : {}),
       ...(message.suggestedQuestions?.length ? { suggestedQuestions: message.suggestedQuestions } : {}),
     }));
     try { localStorage.setItem(ASSISTANT_HISTORY_KEY, JSON.stringify(saved)); } catch {}
@@ -2043,7 +2062,7 @@ function AssistantPage() {
       }
     }
     updateActionStatus(actionId, "confirmed");
-    if (changed) toast.success(type === "add" ? "تمت إضافة " + changed + " صنف إلى السلة." : "تم حذف " + changed + " صنف من السلة.");
+    if (changed) toast.success(type === "add" ? "تمت إضافة " + changed + " صنف إلى السلة بنجاح 🛒" : "تم حذف " + changed + " صنف من السلة.");
     if (skipped) toast.error("تغيّرت السلة أو الكمية المتاحة؛ راجع السلة قبل إتمام الطلب.");
   };
 
@@ -2051,66 +2070,72 @@ function AssistantPage() {
     if (appliedActionsRef.current.has(actionId)) return;
     appliedActionsRef.current.add(actionId);
     updateActionStatus(actionId, "cancelled");
-    toast("لم يتم تغيير السلة.");
+    toast("تم إلغاء الإضافة للسلة.");
   };
 
-  const sendText = (rawText: string, prevAssistantText = "") => {
+  const sendText = (rawText: string, _prevAssistantText = "") => {
     const trimmed = rawText.trim();
     if (mutation.isPending || !trimmed) return;
 
-    if (/^(?:عرض السلة|السلة|شوف السلة|تأكيد الطلب|إتمام الطلب|اتمام الطلب)$/i.test(trimmed)) {
+    if (/^(?:عرض السلة|السلة|شوف السلة|تأكيد الطلب|إتمام الطلب|اتمام الطلب|سلة المشتريات)$/i.test(trimmed)) {
       navigate("/cart");
+      return;
+    }
+    if (/^(?:تصفح الأقسام|عرض الأصناف|عرض القائمة|الأقسام)$/i.test(trimmed)) {
+      navigate("/categories");
+      return;
+    }
+    if (/^(?:تصفح المنتجات|كل المنتجات)$/i.test(trimmed)) {
+      navigate("/products");
       return;
     }
 
     const catalogProducts: PublicProduct[] = (homeCatalog.data?.products ?? []) as PublicProduct[];
     const norm = (s: string) => s.replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي").toLowerCase().trim();
-    const cleanBtn = norm(trimmed.replace(/^(?:أضف|اضف|إضافة|اضافة|جرب|اعطني|أعطني)\s+/i, ""));
+    const startsWithAdd = /^(?:أضف|اضف|إضافة|اضافة)\s+(.+)$/i.exec(trimmed);
 
-    if (trimmed === "إضافة الاثنين" || trimmed === "اضافة الاثنين" || trimmed === "أضف الاثنين") {
-      const mentioned = catalogProducts.filter(p => prevAssistantText.includes(p.name) || norm(prevAssistantText).includes(norm(p.name)));
-      if (mentioned.length > 0) {
-        for (const prod of mentioned) {
-          add({ id: prod.id, name: prod.name, price: prod.price, unit: prod.unit, stock: prod.stock, minQuantity: prod.minQuantity, quantityStep: prod.quantityStep }, prod.minQuantity || 1);
-        }
-        const names = mentioned.map(p => p.name).join(" + ");
-        toast.success("تمت إضافة (" + names + ") إلى السلة مباشرة!");
+    if (startsWithAdd) {
+      const targetName = norm(startsWithAdd[1]);
+      const matchedProd = catalogProducts.find(p => {
+        const np = norm(p.name);
+        return targetName.length >= 3 && (np === targetName || np.includes(targetName) || targetName.includes(np));
+      });
+      if (matchedProd) {
+        const qty = matchedProd.minQuantity || 1;
+        const actId = "act-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6);
         setMessages(current => [
           ...current,
           { role: "user" as const, text: trimmed },
           {
             role: "assistant" as const,
-            text: "أبشر يا غالي! أضفت لك (" + names + ") إلى سلة المشتريات بنجاح 🛒.\nتحب تضيف شي ثاني معاهم ولا ننتقل لإتمام الطلب؟",
-            suggestedQuestions: ["عرض السلة", "عصير بارد اقتصادي"],
+            text: "هل ترغب في تأكيد إضافة (" + qty + " × " + matchedProd.name + " — " + formatPrice(matchedProd.price) + ") إلى سلة مشترياتك؟",
+            cartAction: {
+              id: actId,
+              type: "add" as const,
+              status: "pending" as const,
+              items: [{
+                productId: matchedProd.id,
+                name: matchedProd.name,
+                price: matchedProd.price,
+                unit: matchedProd.unit,
+                quantity: qty,
+                stock: matchedProd.stock,
+                minQuantity: matchedProd.minQuantity,
+                quantityStep: matchedProd.quantityStep,
+              }],
+            },
+            suggestedQuestions: ["عرض السلة", "تصفح الأقسام"],
           },
         ].slice(-32));
         return;
       }
     }
 
-    const matchedProd = catalogProducts.find(p => {
-      const np = norm(p.name);
-      return cleanBtn.length >= 3 && (np === cleanBtn || np.includes(cleanBtn) || cleanBtn.includes(np));
-    });
-
-    if (matchedProd && trimmed.length <= 35) {
-      const qty = matchedProd.minQuantity || 1;
-      add({ id: matchedProd.id, name: matchedProd.name, price: matchedProd.price, unit: matchedProd.unit, stock: matchedProd.stock, minQuantity: matchedProd.minQuantity, quantityStep: matchedProd.quantityStep }, qty);
-      toast.success("تمت إضافة " + matchedProd.name + " إلى السلة!");
-      setMessages(current => [
-        ...current,
-        { role: "user" as const, text: trimmed },
-        {
-          role: "assistant" as const,
-          text: "أبشر يا غالي! أضفت لك (" + qty + " × " + matchedProd.name + " — " + formatPrice(matchedProd.price) + ") إلى سلتك مباشرة 🛒.\nتحب تضيف صنف ثاني ولا نعتمد الطلب؟",
-          suggestedQuestions: ["عرض السلة", "إضافة صنف آخر"],
-        },
-      ].slice(-32));
-      return;
-    }
-
     const updatedCart = cart.map(line => ({ productId: line.id, quantity: line.quantity }));
-    const history = displayedMessages.slice(-8).map(message => ({ role: message.role, text: assistantHistoryText(message) }));
+    const history = displayedMessages
+      .filter(m => !m.ownerMsgId && !m.text.includes("إدارة المتجر"))
+      .slice(-8)
+      .map(message => ({ role: message.role, text: assistantHistoryText(message) }));
     setMessages(current => [...current, { role: "user" as const, text: trimmed }].slice(-32));
     retryRef.current = { request: trimmed, history };
     setInput("");
@@ -2135,18 +2160,23 @@ function AssistantPage() {
       onSuccess: (result: any) => {
         retryRef.current = null;
         void pollQuery.refetch();
-        if (result.cartAction && result.cartAction.type === "add" && Array.isArray(result.cartAction.items)) {
-          for (const item of result.cartAction.items) {
-            add({ id: item.productId, name: item.name, price: item.price, unit: item.unit, stock: item.stock, minQuantity: item.minQuantity, quantityStep: item.quantityStep }, item.quantity);
-          }
-          toast.success("تمت الإضافة إلى السلة تلقائياً!");
+        let pendingAction: AssistantCartAction | undefined = undefined;
+        if (result.cartAction && (result.cartAction.type === "add" || result.cartAction.type === "remove") && Array.isArray(result.cartAction.items) && result.cartAction.items.length > 0) {
+          pendingAction = {
+            id: "act-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6),
+            type: result.cartAction.type,
+            items: result.cartAction.items,
+            status: "pending",
+          };
         }
+        const cleanReply = String(result.message || "").replace(/^(?:👨‍💼\s*)?إدارة المتجر\s*:\s*/i, "").trim();
         setMessages(current => [...current, {
           role: "assistant" as const,
-          text: result.message,
+          text: cleanReply,
           recipe: result.recipe,
           ingredients: result.ingredients,
           missingIngredients: result.missingIngredients,
+          cartAction: pendingAction,
           suggestedQuestions: Array.isArray(result.suggestedQuestions) ? result.suggestedQuestions : [],
         }].slice(-32));
       },
@@ -2162,16 +2192,6 @@ function AssistantPage() {
     sendText(input);
   };
 
-  const copyMissingRequest = async (message: AssistantMessage) => {
-    const missing = message.missingIngredients ?? [];
-    if (!missing.length) return;
-    const note = "طلب توفير: " + missing.join("، ");
-    try {
-      await navigator.clipboard.writeText(note);
-      toast.success("نُسخ طلب التوفير بنجاح.");
-    } catch {}
-  };
-
   return (
     <main className="page-shell inner-page assistant-page">
       <section className="chat-panel">
@@ -2183,8 +2203,50 @@ function AssistantPage() {
         </div>
         <div className="chat-messages" ref={messagesRef}>
           {displayedMessages.map((message, index) => (
-            <div key={index + "-" + message.role + "-" + (message.ownerMsgId || "")} className={"chat-message " + (message.role === "user" ? "from-user" : "from-assistant") + (message.ownerMsgId ? " from-owner" : "")}>
-              <p style={{ whiteSpace: "pre-line" }}>{message.text}</p>
+            <div key={index + "-" + message.role + "-" + (message.ownerMsgId || "")} className={"chat-message " + (message.role === "user" ? "from-user" : "from-assistant")} style={message.ownerMsgId ? { border: "1.5px solid #e0a800", background: "#fffdf5" } : undefined}>
+              {message.ownerMsgId && (
+                <div style={{ fontSize: "11px", fontWeight: 800, color: "#9a6700", marginBottom: "4px", paddingBottom: "4px", borderBottom: "1px solid #f2e2a8" }}>
+                  👨‍💼 رد مباشر من إدارة المتجر
+                </div>
+              )}
+              <p style={{ whiteSpace: "pre-line", margin: 0 }}>{message.text}</p>
+              {message.cartAction && message.cartAction.items.length > 0 && (
+                <div style={{ marginTop: "10px", padding: "10px 12px", borderRadius: "12px", background: "#f4faf6", border: "1px solid #c5dfd0" }}>
+                  <div style={{ fontSize: "11.5px", fontWeight: 800, color: "#123b2a", marginBottom: "6px" }}>
+                    {message.cartAction.type === "add" ? "🛒 تأكيد الإضافة إلى السلة:" : "🗑️ تأكيد الحذف من السلة:"}
+                  </div>
+                  <div style={{ display: "grid", gap: "4px", marginBottom: "8px", fontSize: "11.5px", color: "#264e3a" }}>
+                    {message.cartAction.items.map(item => (
+                      <div key={item.productId} style={{ display: "flex", justifyContent: "space-between" }}>
+                        <span>{item.quantity} × {item.name}</span>
+                        <b>{formatPrice(item.price * item.quantity)}</b>
+                      </div>
+                    ))}
+                  </div>
+                  {message.cartAction.status === "pending" ? (
+                    <div style={{ display: "flex", gap: "8px" }}>
+                      <button
+                        type="button"
+                        onClick={() => applyConfirmedChange(message.cartAction!.id, message.cartAction!.type, message.cartAction!.items)}
+                        style={{ flex: 1, padding: "6px 12px", borderRadius: "9px", border: "none", background: "#174b36", color: "#ffffff", fontSize: "11.5px", fontWeight: 800, cursor: "pointer" }}
+                      >
+                        ✅ نعم، اعتمد الإضافة
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => cancelCartChange(message.cartAction!.id)}
+                        style={{ padding: "6px 12px", borderRadius: "9px", border: "1px solid #cbd5e1", background: "#ffffff", color: "#475569", fontSize: "11.5px", fontWeight: 700, cursor: "pointer" }}
+                      >
+                        إلغاء
+                      </button>
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: "11px", fontWeight: 800, color: message.cartAction.status === "confirmed" ? "#15803d" : "#64748b" }}>
+                      {message.cartAction.status === "confirmed" ? "✅ تمت الإضافة إلى السلة بنجاح" : "تم إلغاء الإضافة"}
+                    </div>
+                  )}
+                </div>
+              )}
               {message.role === "assistant" && message.text.includes("770731619") && (
                 <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginTop: "8px" }}>
                   <button

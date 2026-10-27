@@ -53,12 +53,18 @@ function extractText(content: MessageContent | MessageContent[]): string {
   return "text" in content ? content.text : "";
 }
 
-function smartExtract(rawText: string, catalog: Array<{ id: number; name: string; price: number }>, userQuery: string): string | null {
+function isTobaccoOrNonFood(name: string, category = ""): boolean {
+  const txt = (name + " " + category).toLowerCase();
+  return /(?:سجائر|سجاير|دخان|شملان|كمران|معسل|تبغ|ولاعة|كبريت|منظف|صابون|كلور|مبيد)/.test(txt);
+}
+
+function smartExtract(rawText: string, catalog: Array<{ id: number; name: string; category?: string; price: number; unit?: string }>, userQuery: string): string | null {
   let clean = rawText
     .replace(/<think>[\s\S]*?<\/think>/gi, "")
     .replace(/<think>[\s\S]*/gi, "")
     .replace(/\x60\x60\x60(?:json)?/gi, "")
     .replace(/\x60\x60\x60/g, "")
+    .replace(/(?:👨‍💼\s*)?إدارة المتجر\s*:?/g, "")
     .trim();
 
   if (!clean) return null;
@@ -67,6 +73,7 @@ function smartExtract(rawText: string, catalog: Array<{ id: number; name: string
     try {
       const parsed = JSON.parse(clean);
       if (parsed && typeof parsed.message === "string" && parsed.message.trim()) {
+        parsed.message = parsed.message.replace(/(?:👨‍💼\s*)?إدارة المتجر\s*:?/g, "").trim();
         return JSON.stringify(parsed);
       }
     } catch {}
@@ -112,15 +119,13 @@ function smartExtract(rawText: string, catalog: Array<{ id: number; name: string
 
   if ((suggestedQuestions.length as number) === 0) {
     for (const p of catalog) {
-      if (clean.includes(p.name)) {
+      if (clean.includes(p.name) && !isTobaccoOrNonFood(p.name, p.category)) {
         suggestedQuestions.push("أضف " + p.name);
       }
       if ((suggestedQuestions.length as number) >= 2) break;
     }
-    if ((suggestedQuestions.length as number) === 2) {
-      suggestedQuestions.push("إضافة الاثنين");
-    } else if ((suggestedQuestions.length as number) === 0) {
-      suggestedQuestions.push("عصير بارد اقتصادي", "وجبة خفيفة وسريعة", "عرض السلة");
+    if ((suggestedQuestions.length as number) === 0) {
+      suggestedQuestions.push("تصفح الأقسام", "عرض السلة");
     }
   }
 
@@ -140,14 +145,21 @@ function smartExtract(rawText: string, catalog: Array<{ id: number; name: string
 export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   const rawUser = params.messages.filter(m => m.role === "user").map(m => extractText(m.content)).join("\n");
 
-  let catalog: Array<{ id: number; name: string; price: number }> = [];
+  let catalog: Array<{ id: number; name: string; category?: string; price: number; unit?: string }> = [];
   const catMatch = rawUser.match(/\[(\{\"id\":[\s\S]*?\})\]/);
   if (catMatch) {
     try { catalog = JSON.parse("[" + catMatch[1] + "]"); } catch {}
   }
 
-  const sortedCatalog = [...catalog].sort((a, b) => a.price - b.price);
-  const compactCatalog = sortedCatalog.map(p => "#" + p.id + " " + p.name + " (" + p.price + " ر.ي)").join(" | ");
+  const userAskedForTobacco = /(?:سجائر|سجاير|دخان|شملان|كمران|معسل|تبغ|ولاعة|كبريت)/i.test(rawUser);
+  const filteredCatalog = userAskedForTobacco
+    ? catalog
+    : catalog.filter(p => !isTobaccoOrNonFood(p.name, p.category));
+
+  const sortedCatalog = [...filteredCatalog].sort((a, b) => a.price - b.price);
+  const compactCatalog = sortedCatalog
+    .map(p => "#" + p.id + " [قسم: " + (p.category || "عام") + "] " + p.name + " (" + p.price + " ر.ي" + (p.unit ? "/" + p.unit : "") + ")")
+    .join(" | ");
 
   let cartSummary = "فارغة";
   const cartMatch = rawUser.match(/السلة الحالية[^:]*:\s*(\[[^\n]*\])/);
@@ -163,7 +175,12 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   let recentHistory = "";
   const histMatch = rawUser.match(/سجل المحادثة السابق[^:]*:\n([\s\S]*?)\n\nرسالة العميل الحالية:/);
   if (histMatch) {
-    recentHistory = histMatch[1].split("\n").slice(-4).join("\n").slice(-350);
+    recentHistory = histMatch[1]
+      .split("\n")
+      .filter(line => !line.includes("إدارة المتجر"))
+      .slice(-4)
+      .join("\n")
+      .slice(-350);
   }
 
   let currentMsg = rawUser;
@@ -173,13 +190,15 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   }
 
   const systemPrompt = [
-    "أنت بائع يمني ذكي وأمين في متجر أورجنال. ردك قصير جداً (سطرين فقط) بلهجة يمنية محترمة.",
+    "أنت المساعد الذكي الرسمي في متجر أورجنال. ردك مختصر وواضح (سطرين فقط) بلهجة يمنية ودودة ومحترمة.",
     "قواعد صارمة جداً:",
-    "1. الاقتصاد والمنطق أولاً: اقترح دائماً الأصناف الاقتصادية الرخيصة (300 إلى 400 ر.ي مثل العصائر والزبادي والقشطة). يُمنع منعاً باتاً اقتراح سمن القرية (1500 ر.ي) للحلى أو للوجبات الخفيفة أو خلط أصناف غير متناسقة!",
-    "2. عند طلب صنف غير موجود بالمتجر (مثل شوكولاتة، كيك، أجبان، إندومي، بسكويت، حليب، إلخ): لا تلفق بدائل غريبة من المتجر! قل للزبون بصدق ولطف أن الصنف غير متوفر حالياً وأنه تم إرسال طلبه للإدارة لتوفيره والتواصل معه، واعرض رقم المالك 770731619، وضع في نهاية ردك: [طلب_توفير: اسم الصنف المطلوب]",
-    "3. إذا طلب الزبون شي حلو خفيف من الموجود، اقترح قشطة المثالي بالعسل (300 ر.ي) أو عصير سيزر مانجو (400 ر.ي) فقط لأنها اقتصادية ولذيذة.",
-    "4. إذا طلب إضافة صنف متوفر للسلة ضع في نهاية ردك: [أضف: رقم_المنتج: الكمية]",
-    "5. اختم ردك بـ: [أزرار: خيار 1 | خيار 2]"
+    "1. التصنيف الصحيح والمنطق: انتبه لقسم واسم كل منتج بدقة! لا تخلط أبداً بين المشروبات/العصائر وبين القشطة/الألبان أو الخضروات أو البقوليات. كل منتج يُقترح فقط في مكانه الصحيح (العصير والماء للمشروبات، القشطة والزبادي والجبن للألبان، الليمون والخضار للخضروات والحوامض).",
+    "2. منع السجائر والدخان: يُمنع منعاً باتاً اقتراح السجائر أو الدخان كمشروب أو وجبة أو ضمن أي اقتراحات عامة.",
+    "3. لا تكرر نفس المنتجين في كل رد: أجب على سؤال الزبون مباشرة بحسب ما يطلبه (إذا سأل عن حامض اعرض الحوامض كالليمون، وإذا سأل عن عصير اعرض العصائر فقط، وإذا سأل سؤالاً عاماً رحب به واسأله أي قسم يفضل).",
+    "4. عدم الإضافة للسلة بدون طلب صريح: لا تضع وسم [أضف: ...] أبداً عندما يستفسر الزبون أو يسأل عن الأسعار أو الأصناف! فقط اعرض الصنف وسعره واسأله: «تحب أضيفه لك للسلة؟». ضع [أضف: رقم_المنتج: الكمية] فقط إذا قال الزبون صراحةً «أضف» أو «اشتري» أو «اعتمد».",
+    "5. عند طلب صنف غير موجود في قائمة المتجر: اعتذر بلطف وأخبره أنه غير متوفر حالياً وتم رفع طلب توفير للإدارة مع رقم المالك 770731619، وضع في نهاية ردك: [طلب_توفير: اسم الصنف المطلوب].",
+    "6. إياك أن تكتب عبارة «إدارة المتجر:» في ردك؛ أنت المساعد الذكي فقط.",
+    "7. اختم ردك بـ: [أزرار: خيار 1 | خيار 2]"
   ].join("\n");
 
   const compactUser = [

@@ -1101,7 +1101,11 @@ export const commerceRouter = router({
         };
       }
 
-      const catalogRows = db ? await db.select({ id: products.id, name: products.name, description: products.description, price: products.price, unit: products.unit, stock: products.stock, minQuantity: products.minQuantity, quantityStep: products.quantityStep }).from(products).where(and(eq(products.isPublished, true), eq(products.isAvailable, true))).limit(150).catch(() => []) : [];
+      const [catalogRows, catRows] = db ? await Promise.all([
+        db.select({ id: products.id, name: products.name, description: products.description, categoryId: products.categoryId, price: products.price, unit: products.unit, stock: products.stock, minQuantity: products.minQuantity, quantityStep: products.quantityStep }).from(products).where(and(eq(products.isPublished, true), eq(products.isAvailable, true))).limit(150).catch(() => []),
+        db.select({ id: categories.id, name: categories.name }).from(categories).catch(() => []),
+      ]) : [[], []];
+      const catNameById = new Map(catRows.map((c: any) => [c.id, c.name]));
       const catalog = catalogRows.filter(product => product.stock === null || product.stock > 0) as AssistantCatalogProduct[];
       const catalogById = new Map(catalog.map(product => [product.id, product]));
       const currentCart = (input.cart ?? []).flatMap(line => {
@@ -1120,7 +1124,7 @@ export const commerceRouter = router({
       ).join("\n");
 
       const userPrompt = [
-        "المنتجات المتاحة (مصدر الحقيقة الوحيد): " + JSON.stringify(catalog.slice(0, 50).map(p => ({ id: p.id, name: p.name, price: p.price, unit: p.unit }))),
+        "المنتجات المتاحة (مصدر الحقيقة الوحيد): " + JSON.stringify(catalog.slice(0, 80).map((p: any) => ({ id: p.id, name: p.name, category: catNameById.get(p.categoryId) || "عام", price: p.price, unit: p.unit }))),
         "مفضلات العميل: " + JSON.stringify(customerFavorites),
         "السلة الحالية: " + JSON.stringify(currentCart),
         history ? "سجل المحادثة السابق:\n" + history : "لا يوجد سياق سابق.",
