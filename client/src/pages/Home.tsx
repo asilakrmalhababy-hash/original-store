@@ -869,37 +869,41 @@ function CategoryStrip({ data, onSelect }: { data: HomeData["categories"]; onSel
     <div
       style={{
         display: "flex",
+        flexDirection: "row",
+        flexWrap: "nowrap",
         gap: "12px",
         overflowX: "auto",
-        padding: "4px 2px 10px",
-        scrollSnapType: "x mandatory",
+        overflowY: "hidden",
+        padding: "4px 2px 12px",
+        scrollSnapType: "x proximity",
         WebkitOverflowScrolling: "touch",
         scrollbarWidth: "none",
       }}
     >
       {data.map(category => {
-        const btnColor = category.color || "#174b36";
+        const btnColor = category.color && category.color.trim() ? category.color.trim() : "#397a54";
         return (
           <button
             key={category.id}
             type="button"
             onClick={() => onSelect(category.id)}
             style={{
-              flex: "0 0 124px",
+              flex: "0 0 132px",
+              width: "132px",
               scrollSnapAlign: "start",
               background: "#ffffff",
-              border: "1px solid #e4ece6",
+              border: "1px solid #e6ece8",
               borderRadius: "18px",
-              padding: "6px 6px 9px",
+              padding: "7px 7px 10px",
               cursor: "pointer",
-              boxShadow: "0 6px 16px rgba(17, 58, 40, 0.06)",
+              boxShadow: "0 4px 12px rgba(17, 58, 40, 0.05)",
               display: "flex",
               flexDirection: "column",
               alignItems: "center",
               gap: "8px",
             }}
           >
-            <div style={{ width: "100%", height: "104px", borderRadius: "13px", overflow: "hidden", background: "#f4f8f5" }}>
+            <div style={{ width: "100%", height: "106px", borderRadius: "13px", overflow: "hidden", background: "#f4f8f5" }}>
               {category.imageUrl ? (
                 <img
                   src={category.imageUrl}
@@ -919,18 +923,17 @@ function CategoryStrip({ data, onSelect }: { data: HomeData["categories"]; onSel
               style={{
                 display: "inline-block",
                 maxWidth: "100%",
-                padding: "4px 11px",
-                borderRadius: "999px",
+                padding: "5px 12px",
+                borderRadius: "10px",
                 backgroundColor: btnColor,
                 color: "#ffffff",
                 fontSize: "11px",
-                fontWeight: 800,
+                fontWeight: 700,
                 lineHeight: 1.35,
                 textAlign: "center",
                 whiteSpace: "nowrap",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
-                boxShadow: "0 3px 8px rgba(0,0,0,0.10)",
               }}
             >
               {category.name}
@@ -1074,6 +1077,7 @@ function ProductListPage({ data, onOpen, onAiRecipe }: { data: HomeData; onOpen:
           </button>
           {data.categories.map(cat => {
             const isActive = categoryId === cat.id;
+            const catColor = cat.color && cat.color.trim() ? cat.color.trim() : "#397a54";
             return (
               <button
                 key={cat.id}
@@ -1085,8 +1089,8 @@ function ProductListPage({ data, onOpen, onAiRecipe }: { data: HomeData; onOpen:
                   gap: "6px",
                   padding: "4px 11px 4px 6px",
                   borderRadius: "99px",
-                  border: isActive ? "1.5px solid #174b36" : "1px solid #d5e3da",
-                  background: isActive ? "#174b36" : "#ffffff",
+                  border: isActive ? ("1.5px solid " + catColor) : "1px solid #d5e3da",
+                  background: isActive ? catColor : "#ffffff",
                   color: isActive ? "#ffffff" : "#174b36",
                   fontSize: "12px",
                   fontWeight: 800,
@@ -1123,7 +1127,7 @@ function CategoriesPage({ data }: { data: HomeData }) {
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(155px, 1fr))", gap: "14px" }}>
           {data.categories.map(category => {
-            const btnColor = category.color || "#174b36";
+            const btnColor = category.color && category.color.trim() ? category.color.trim() : "#397a54";
             return (
               <button
                 key={category.id}
@@ -1131,19 +1135,19 @@ function CategoriesPage({ data }: { data: HomeData }) {
                 onClick={() => navigate("/products?category=" + category.id)}
                 style={{
                   background: "#ffffff",
-                  border: "1px solid #e2ebe4",
-                  borderRadius: "20px",
-                  padding: "7px 7px 11px",
+                  border: "1px solid #e6ece8",
+                  borderRadius: "18px",
+                  padding: "8px 8px 11px",
                   cursor: "pointer",
-                  boxShadow: "0 8px 20px rgba(15, 52, 35, 0.07)",
+                  boxShadow: "0 4px 14px rgba(15, 52, 35, 0.05)",
                   display: "flex",
                   flexDirection: "column",
                   alignItems: "center",
-                  gap: "10px",
+                  gap: "9px",
                   width: "100%",
                 }}
               >
-                <div style={{ width: "100%", height: "148px", borderRadius: "15px", overflow: "hidden", background: "#f4f8f5" }}>
+                <div style={{ width: "100%", height: "142px", borderRadius: "13px", overflow: "hidden", background: "#f4f8f5" }}>
                   {category.imageUrl ? (
                     <img
                       src={category.imageUrl}
@@ -1162,18 +1166,17 @@ function CategoriesPage({ data }: { data: HomeData }) {
                   style={{
                     display: "inline-block",
                     maxWidth: "94%",
-                    padding: "5px 14px",
-                    borderRadius: "999px",
+                    padding: "6px 14px",
+                    borderRadius: "10px",
                     backgroundColor: btnColor,
                     color: "#ffffff",
                     fontSize: "12px",
-                    fontWeight: 800,
+                    fontWeight: 700,
                     lineHeight: 1.35,
                     textAlign: "center",
                     whiteSpace: "nowrap",
                     overflow: "hidden",
                     textOverflow: "ellipsis",
-                    boxShadow: "0 4px 10px rgba(0,0,0,0.12)",
                   }}
                 >
                   {category.name}
