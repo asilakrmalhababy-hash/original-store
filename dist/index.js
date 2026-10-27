@@ -4430,7 +4430,7 @@ async function startServer() {
       { src: "/app-icon-192-v3.png", sizes: "192x192", type: "image/png", purpose: "any" },
       { src: "/app-icon-512-v3.png", sizes: "512x512", type: "image/png", purpose: "any" }
     ];
-    res.set("Cache-Control", "public, max-age=300").type("application/manifest+json").send(JSON.stringify({ id: "/", name: brand.name, short_name: "\u0623\u0648\u0631\u062C\u0646\u0627\u0644", description: "\u0645\u062A\u062C\u0631 ORIGINAL \u2013 \u0623\u0648\u0631\u062C\u0646\u0627\u0644", lang: "ar", dir: "rtl", start_url: "/", scope: "/", display: "standalone", background_color: "#f8f8f2", theme_color: "#174b36", icons }));
+    res.set("Cache-Control", "public, max-age=300").type("application/manifest+json").send(JSON.stringify({ id: "/", name: brand.name, short_name: "\u0623\u0648\u0631\u062C\u0646\u0627\u0644", description: "\u0645\u062A\u062C\u0631 ORIGINAL \u2013 \u0623\u0648\u0631\u062C\u0646\u0627\u0644", lang: "ar", dir: "rtl", start_url: "/", scope: "/", display: "standalone", background_color: "#0d3825", theme_color: "#174b36", icons }));
   });
   app.get("/api/store-icon", async (_req, res) => {
     const brand = await publicBrand();
@@ -4446,19 +4446,7 @@ async function startServer() {
       }
     }
     const initialJson = g.__fastHomeData ? JSON.stringify(g.__fastHomeData).replace(/</g, "\\u003c").replace(/>/g, "\\u003e").replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029") : "null";
-    const preloadScript = [
-      "window.__INITIAL_CATALOG__ = " + initialJson + ";",
-      "try {",
-      "  var __c = window.__INITIAL_CATALOG__;",
-      "  if (__c) {",
-      "    var __urls = [];",
-      "    if (Array.isArray(__c.banners)) __c.banners.slice(0, 2).forEach(function(b){ if (b && b.imageUrl) __urls.push(b.imageUrl); });",
-      "    if (Array.isArray(__c.categories)) __c.categories.slice(0, 8).forEach(function(k){ if (k && k.imageUrl) __urls.push(k.imageUrl); });",
-      "    if (Array.isArray(__c.products)) __c.products.slice(0, 12).forEach(function(p){ if (p && p.imageUrl) __urls.push(p.imageUrl); });",
-      "    __urls.forEach(function(u){ var im = new Image(); im.decoding = 'async'; im.src = u; });",
-      "  }",
-      "} catch (_e) {}"
-    ].join("\n");
+    const preloadScript = "window.__INITIAL_CATALOG__ = " + initialJson + ";";
     res.set("Cache-Control", "no-store").type("application/javascript").send(publicPlatformScript() + "\n" + preloadScript);
   });
   registerOAuthRoutes(app);

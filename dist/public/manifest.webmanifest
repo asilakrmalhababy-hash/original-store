@@ -8,8 +8,8 @@
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#113a28",
-  "theme_color": "#174b36",
+  "background_color": "#0d3825",
+  "theme_color": "#0d3825",
   "icons": [
     {
       "src": "/app-icon-192-v3.png",

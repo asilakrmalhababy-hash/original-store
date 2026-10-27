@@ -1,4 +1,4 @@
-const CACHE = "original-shell-v27";
+const CACHE = "original-shell-v29";
 const APP_MANIFEST = "/api/app-manifest.webmanifest";
 const PRECACHE = ["/", "/offline.html", "/manifest.webmanifest", "/app-icon-180-v2.png", "/app-icon-192-v3.png", "/app-icon-512-v3.png", "/app-icon-512-v2.png", "/notif-icon-v3.png", "/notif-badge-v3.png", APP_MANIFEST];
 self.addEventListener("install", event => {
@@ -12,21 +12,7 @@ self.addEventListener("fetch", event => {
   if (request.method !== "GET") return;
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
-  if (url.pathname === APP_MANIFEST || url.pathname === "/api/platform/config.js") {
-    event.respondWith(caches.open(CACHE).then(async cache => {
-      const cached = await cache.match(request);
-      const networkPromise = fetch(request).then(response => {
-        if (response.ok) cache.put(request, response.clone());
-        return response;
-      }).catch(() => null);
-      if (cached) return cached;
-      const fresh = await Promise.race([networkPromise, new Promise(r => setTimeout(() => r(null), 700))]);
-      if (fresh) return fresh;
-      return new Response("", { status: 200, headers: { "Content-Type": url.pathname.endsWith(".js") ? "application/javascript" : "application/manifest+json" } });
-    }));
-    return;
-  }
-  if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/manus-storage/") || url.pathname.startsWith("/__manus/") || url.pathname.startsWith("/manus-oauth/")) return;
+
   if (request.mode === "navigate") {
     event.respondWith(caches.open(CACHE).then(async cache => {
       const cachedRoot = await cache.match("/");
@@ -34,19 +20,40 @@ self.addEventListener("fetch", event => {
         if (response.ok) cache.put("/", response.clone());
         return response;
       }).catch(() => null);
-      if (cachedRoot) {
-        const fastNet = await Promise.race([bgFetch, new Promise(r => setTimeout(() => r(null), 650))]);
-        return fastNet || cachedRoot;
-      }
+      if (cachedRoot) return cachedRoot;
       return (await bgFetch) || (await cache.match("/offline.html"));
     }));
     return;
   }
-  if (url.pathname.includes("/assets/") || url.pathname.endsWith(".png") || url.pathname.endsWith(".mp4") || url.pathname.endsWith(".webm")) {
-    event.respondWith(caches.match(request).then(cached => cached || fetch(request).then(response => {
-      if (response.ok) caches.open(CACHE).then(cache => cache.put(request, response.clone()));
-      return response;
-    })));
+
+  if (url.pathname === APP_MANIFEST || url.pathname === "/api/platform/config.js") {
+    event.respondWith(caches.open(CACHE).then(async cache => {
+      const cached = await cache.match(request);
+      const bgPromise = fetch(request).then(response => {
+        if (response.ok) cache.put(request, response.clone());
+        return response;
+      }).catch(() => null);
+      if (cached) return cached;
+      const fast = await Promise.race([bgPromise, new Promise(r => setTimeout(() => r(null), 350))]);
+      if (fast) return fast;
+      return new Response("", { status: 200, headers: { "Content-Type": url.pathname.endsWith(".js") ? "application/javascript" : "application/manifest+json" } });
+    }));
+    return;
+  }
+
+  if (url.pathname.startsWith("/api/fast-img/") || url.pathname.includes("/assets/") || url.pathname.endsWith(".png") || url.pathname.endsWith(".mp4") || url.pathname.endsWith(".webm")) {
+    event.respondWith(caches.open(CACHE).then(async cache => {
+      const cached = await cache.match(request);
+      if (cached) return cached;
+      try {
+        const response = await fetch(request);
+        if (response.ok) cache.put(request, response.clone());
+        return response;
+      } catch {
+        return new Response("", { status: 504 });
+      }
+    }));
+    return;
   }
 });
 

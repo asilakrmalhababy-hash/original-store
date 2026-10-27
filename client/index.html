@@ -23,163 +23,243 @@
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        background: radial-gradient(circle at 50% 38%, #1b6342 0%, #0d3825 60%, #061f14 100%);
+        background: radial-gradient(circle at 50% 42%, #195e3e 0%, #0c3522 58%, #051b11 100%);
         transition: opacity 0.45s cubic-bezier(0.22, 1, 0.36, 1), transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
         pointer-events: none;
         overflow: hidden;
       }
       #orig-splash.hide {
         opacity: 0;
-        transform: scale(1.06);
+        transform: scale(1.08);
       }
-      .orig-logo-stage {
+      #orig-particles {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+      }
+      .orig-stage {
         position: relative;
-        width: 176px;
-        height: 176px;
+        width: 210px;
+        height: 210px;
         display: grid;
         place-items: center;
+        z-index: 2;
       }
-      .orig-svg-ring {
-        position: absolute;
-        inset: 0;
-        width: 100%;
-        height: 100%;
-        transform: rotate(-90deg);
-        filter: drop-shadow(0 0 12px rgba(245, 213, 122, 0.65));
+      .orig-emblem-svg {
+        width: 196px;
+        height: 196px;
+        overflow: visible;
+        filter: drop-shadow(0 16px 32px rgba(0, 0, 0, 0.55));
       }
-      .orig-svg-ring circle {
+      .orig-outer-o {
         fill: none;
-        stroke: url(#origGoldGrad);
-        stroke-width: 5;
+        stroke: url(#gold3d);
+        stroke-width: 22;
         stroke-linecap: round;
-        stroke-dasharray: 520;
-        stroke-dashoffset: 520;
-        animation: origDrawRing 1.1s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+        stroke-dasharray: 440;
+        stroke-dashoffset: 440;
+        animation: drawGoldO 1.15s 0.2s cubic-bezier(0.22, 1, 0.36, 1) forwards;
       }
-      .orig-logo-box {
-        position: relative;
-        width: 142px;
-        height: 142px;
-        border-radius: 36px;
-        overflow: hidden;
-        box-shadow: 0 18px 45px rgba(0, 0, 0, 0.5), 0 0 0 2px rgba(243, 210, 122, 0.5);
-        background: #0d3825;
+      .orig-inner-rim {
+        fill: none;
+        stroke: url(#green3d);
+        stroke-width: 10;
+        stroke-linecap: round;
+        stroke-dasharray: 360;
+        stroke-dashoffset: 360;
+        animation: drawGoldO 1.1s 0.35s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+      }
+      .orig-base-handle {
+        fill: none;
+        stroke: url(#gold3d);
+        stroke-width: 8;
+        stroke-linecap: round;
+        stroke-linejoin: round;
         opacity: 0;
-        transform: scale(0.55) rotate(-10deg);
-        animation: origLogoForm 0.85s 0.12s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        transform-origin: 100px 172px;
+        animation: popPart 0.55s 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
       }
-      .orig-logo-box img, .orig-logo-box video {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-        display: block;
-        animation: origLogoPulse 1.6s 0.9s ease-in-out infinite alternate;
+      .orig-top-leaf {
+        opacity: 0;
+        transform-origin: 96px 38px;
+        animation: unfurlLeaf 0.7s 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
       }
-      .orig-shimmer {
-        position: absolute;
-        inset: 0;
-        background: linear-gradient(120deg, transparent 22%, rgba(255, 245, 200, 0.48) 50%, transparent 78%);
-        transform: translateX(-130%);
-        animation: origShimmer 1.3s 0.35s ease-in-out infinite;
+      .orig-inner-carrot {
+        opacity: 0;
+        transform-origin: 112px 118px;
+        animation: dropCarrot 0.65s 0.9s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+      }
+      .orig-title-wrap {
+        position: relative;
+        z-index: 2;
+        text-align: center;
+        margin-top: 10px;
       }
       .orig-brand-title {
-        margin-top: 18px;
         font-family: system-ui, -apple-system, sans-serif;
-        font-size: 25px;
+        font-size: 27px;
         font-weight: 900;
-        letter-spacing: 0.15em;
-        color: #f7df9c;
-        text-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+        letter-spacing: 0.16em;
+        color: #fce29c;
+        text-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
         opacity: 0;
-        transform: translateY(12px);
-        animation: origTextUp 0.55s 0.28s ease-out forwards;
+        transform: translateY(14px);
+        animation: textRise 0.55s 1.0s ease-out forwards;
       }
       .orig-brand-sub {
-        margin-top: 4px;
+        margin-top: 5px;
         font-family: system-ui, -apple-system, sans-serif;
-        font-size: 14.5px;
-        font-weight: 700;
+        font-size: 15px;
+        font-weight: 800;
         color: #d8f3e3;
         opacity: 0;
-        transform: translateY(10px);
-        animation: origTextUp 0.55s 0.42s ease-out forwards;
+        transform: translateY(12px);
+        animation: textRise 0.55s 1.15s ease-out forwards;
       }
       .orig-loader-bar {
+        position: relative;
+        z-index: 2;
         margin-top: 20px;
-        width: 136px;
-        height: 4px;
+        width: 148px;
+        height: 4.5px;
         border-radius: 99px;
         background: rgba(255, 255, 255, 0.14);
         overflow: hidden;
       }
       .orig-loader-fill {
-        width: 48%;
+        width: 0%;
         height: 100%;
         border-radius: 99px;
         background: linear-gradient(90deg, #f3c65f, #ffe89e, #4ade80);
-        animation: origBarSlide 1s ease-in-out infinite alternate;
+        animation: fillProgress 2.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
       }
-      @keyframes origDrawRing {
+      @keyframes drawGoldO {
         to { stroke-dashoffset: 0; }
       }
-      @keyframes origLogoForm {
-        0% { opacity: 0; transform: scale(0.55) rotate(-10deg); filter: blur(6px); }
-        70% { opacity: 1; transform: scale(1.05) rotate(1.5deg); filter: blur(0px); }
-        100% { opacity: 1; transform: scale(1) rotate(0deg); filter: blur(0px); }
+      @keyframes unfurlLeaf {
+        0% { opacity: 0; transform: translateY(-28px) scale(0.3) rotate(-35deg); }
+        100% { opacity: 1; transform: translateY(0) scale(1) rotate(0deg); }
       }
-      @keyframes origLogoPulse {
-        from { transform: scale(1); }
-        to { transform: scale(1.05); }
+      @keyframes dropCarrot {
+        0% { opacity: 0; transform: translateY(-45px) scale(0.25) rotate(25deg); }
+        100% { opacity: 1; transform: translateY(0) scale(1) rotate(0deg); }
       }
-      @keyframes origShimmer {
-        0% { transform: translateX(-130%); }
-        100% { transform: translateX(130%); }
+      @keyframes popPart {
+        0% { opacity: 0; transform: translateY(18px) scale(0.5); }
+        100% { opacity: 1; transform: translateY(0) scale(1); }
       }
-      @keyframes origTextUp {
+      @keyframes textRise {
         to { opacity: 1; transform: translateY(0); }
       }
-      @keyframes origBarSlide {
-        from { transform: translateX(-45%); }
-        to { transform: translateX(135%); }
+      @keyframes fillProgress {
+        0% { width: 8%; }
+        100% { width: 100%; }
       }
     </style>
   </head>
   <body>
     <div id="orig-splash">
-      <div class="orig-logo-stage">
-        <svg class="orig-svg-ring" viewBox="0 0 180 180">
+      <canvas id="orig-particles"></canvas>
+      <div class="orig-stage">
+        <svg class="orig-emblem-svg" viewBox="0 0 200 200">
           <defs>
-            <linearGradient id="origGoldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stop-color="#ffe89e" />
-              <stop offset="50%" stop-color="#d49b35" />
-              <stop offset="100%" stop-color="#4ade80" />
+            <linearGradient id="gold3d" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#fff2b2" />
+              <stop offset="45%" stop-color="#e5b246" />
+              <stop offset="80%" stop-color="#b87e19" />
+              <stop offset="100%" stop-color="#f5d376" />
+            </linearGradient>
+            <linearGradient id="green3d" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#86efac" />
+              <stop offset="55%" stop-color="#22c55e" />
+              <stop offset="100%" stop-color="#14532d" />
+            </linearGradient>
+            <linearGradient id="carrotGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#fb923c" />
+              <stop offset="100%" stop-color="#ea580c" />
             </linearGradient>
           </defs>
-          <circle cx="90" cy="90" r="81" />
+          <path class="orig-base-handle" d="M 80 162 L 80 174 Q 80 182 88 182 L 112 182 Q 120 182 120 174 L 120 162" />
+          <path class="orig-outer-o" d="M 88 38 A 62 62 0 1 0 138 52" />
+          <path class="orig-inner-rim" d="M 128 56 A 50 50 0 1 1 78 52" />
+          <g class="orig-top-leaf">
+            <path d="M 92 42 C 92 14, 134 8, 148 12 C 142 36, 122 50, 92 42 Z" fill="url(#green3d)" stroke="#bbf7d0" stroke-width="1.5" />
+            <path d="M 95 40 Q 118 28 140 16" fill="none" stroke="#14532d" stroke-width="2.2" stroke-linecap="round" />
+          </g>
+          <g class="orig-inner-carrot">
+            <path d="M 103 130 C 101 116, 114 108, 125 113 C 129 122, 117 134, 103 130 Z" fill="url(#carrotGrad)" stroke="#fed7aa" stroke-width="1" />
+            <path d="M 118 110 L 115 99 M 121 111 L 124 100 M 123 113 L 131 106" stroke="#4ade80" stroke-width="2.8" stroke-linecap="round" />
+          </g>
         </svg>
-        <div class="orig-logo-box" id="orig-logo-container">
-          <img src="/app-icon-512-v3.png" alt="أورجنال" />
-          <div class="orig-shimmer"></div>
-        </div>
       </div>
-      <div class="orig-brand-title">ORIGINAL</div>
-      <div class="orig-brand-sub">أورجنال · طازج يومياً</div>
+      <div class="orig-title-wrap">
+        <div class="orig-brand-title">ORIGINAL</div>
+        <div class="orig-brand-sub">أورجنال · طازج يومياً</div>
+      </div>
       <div class="orig-loader-bar"><div class="orig-loader-fill"></div></div>
     </div>
     <div id="root"></div>
     <script>
       (function(){
+        var canvas = document.getElementById("orig-particles");
+        var animId = 0;
+        if (canvas && canvas.getContext) {
+          var ctx = canvas.getContext("2d");
+          var w = canvas.width = window.innerWidth || 380;
+          var h = canvas.height = window.innerHeight || 720;
+          var cx = w / 2, cy = h / 2 - 36;
+          var streaks = [];
+          for (var i = 0; i < 32; i++) {
+            streaks.push({
+              x: Math.random() * w,
+              y: -Math.random() * h * 0.8,
+              vy: 5 + Math.random() * 7,
+              len: 22 + Math.random() * 35,
+              gold: i % 3 !== 0,
+              alpha: 0.35 + Math.random() * 0.55,
+            });
+          }
+          var start = performance.now();
+          function draw(now) {
+            var t = (now - start) / 1000;
+            ctx.clearRect(0, 0, w, h);
+            for (var i = 0; i < streaks.length; i++) {
+              var s = streaks[i];
+              if (t < 1.1) {
+                s.y += s.vy;
+                s.x += (cx - s.x) * 0.035;
+              } else {
+                s.x += (cx - s.x) * 0.12;
+                s.y += (cy - s.y) * 0.12;
+                s.alpha *= 0.92;
+              }
+              ctx.save();
+              ctx.strokeStyle = s.gold ? "rgba(247, 217, 124," + s.alpha + ")" : "rgba(110, 231, 183," + s.alpha + ")";
+              ctx.lineWidth = s.gold ? 2.4 : 2;
+              ctx.lineCap = "round";
+              ctx.beginPath();
+              ctx.moveTo(s.x, s.y);
+              ctx.lineTo(s.x, s.y - s.len);
+              ctx.stroke();
+              ctx.restore();
+            }
+            if (t < 2.5) animId = requestAnimationFrame(draw);
+          }
+          animId = requestAnimationFrame(draw);
+        }
         var dismissed = false;
         function hideSplash() {
           if (dismissed) return;
           var el = document.getElementById("orig-splash");
           if (!el) return;
           dismissed = true;
+          if (animId) cancelAnimationFrame(animId);
           el.classList.add("hide");
-          setTimeout(function(){ if (el && el.parentNode) el.parentNode.removeChild(el); }, 480);
+          setTimeout(function(){ if (el && el.parentNode) el.parentNode.removeChild(el); }, 450);
         }
         window.__hideOriginalSplash = hideSplash;
-        setTimeout(hideSplash, 1550);
+        requestAnimationFrame(function(){ setTimeout(hideSplash, 2500); });
       })();
     </script>
     <script src="/api/platform/config.js" async></script>
