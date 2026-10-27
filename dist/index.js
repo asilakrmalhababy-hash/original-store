@@ -1554,6 +1554,146 @@ import superjson from "superjson";
 var t = initTRPC.context().create({ transformer: superjson });
 var router = t.router;
 var publicProcedure = t.procedure;
+var lastSectionViewMap = /* @__PURE__ */ new Map();
+var ORDER_STATUS_AR = {
+  new: "\u062C\u062F\u064A\u062F",
+  preparing: "\u0642\u064A\u062F \u0627\u0644\u062A\u062C\u0647\u064A\u0632",
+  ready: "\u062C\u0627\u0647\u0632 \u0644\u0644\u062A\u0648\u0635\u064A\u0644",
+  out_for_delivery: "\u062E\u0631\u062C \u0644\u0644\u062A\u0648\u0635\u064A\u0644",
+  delivered: "\u062A\u0645 \u0627\u0644\u062A\u0633\u0644\u064A\u0645",
+  cancelled: "\u0645\u0644\u063A\u064A"
+};
+function getArabicRoleName(role, isOwner) {
+  if (isOwner || role === "owner") return "\u0645\u0627\u0644\u0643 \u0627\u0644\u0645\u062A\u062C\u0631";
+  if (role && ROLE_DEFINITIONS[role]) return ROLE_DEFINITIONS[role].label;
+  return "\u0645\u0634\u0631\u0641 \u0625\u062F\u0627\u0631\u064A";
+}
+function recordArabicAdminActivity(ctx, path3, type, rawInput) {
+  try {
+    const user = ctx.user;
+    if (!user || user.role !== "admin") return;
+    const isOwner = Boolean(user.isOwner ?? (!user.adminRole && user.role === "admin"));
+    const actorId = user.staffId ?? user.id ?? null;
+    const actorName = user.name || (isOwner ? "\u0645\u0627\u0644\u0643 \u0627\u0644\u0645\u062A\u062C\u0631" : "\u0645\u0634\u0631\u0641");
+    const actorRole = getArabicRoleName(user.adminRole, isOwner);
+    const ip = getClientIp(ctx.req);
+    const inp = rawInput && typeof rawInput === "object" ? rawInput : {};
+    if (type === "query") {
+      const viewMap = {
+        "commerce.admin.overview": { section: "overview", target: "\u0642\u0633\u0645 \u0646\u0638\u0631\u0629 \u0639\u0627\u0645\u0629", details: "\u062F\u062E\u0644 \u0642\u0633\u0645 \xAB\u0646\u0638\u0631\u0629 \u0639\u0627\u0645\u0629\xBB \u0648\u0634\u0627\u0647\u062F \u0625\u062D\u0635\u0627\u0626\u064A\u0627\u062A \u0627\u0644\u0645\u062A\u062C\u0631 \u0648\u0627\u0644\u0637\u0644\u0628\u0627\u062A \u0627\u0644\u062D\u062F\u064A\u062B\u0629" },
+        "commerce.admin.orders.list": { section: "orders", target: "\u0642\u0633\u0645 \u0627\u0644\u0637\u0644\u0628\u0627\u062A", details: "\u062F\u062E\u0644 \u0642\u0633\u0645 \xAB\u0625\u062F\u0627\u0631\u0629 \u0627\u0644\u0637\u0644\u0628\u0627\u062A\xBB \u0648\u0634\u0627\u0647\u062F \u0642\u0627\u0626\u0645\u0629 \u0637\u0644\u0628\u0627\u062A \u0627\u0644\u0632\u0628\u0627\u0626\u0646" },
+        "commerce.admin.products.list": { section: "products", target: "\u0642\u0633\u0645 \u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A", details: "\u062F\u062E\u0644 \u0642\u0633\u0645 \xAB\u0625\u062F\u0627\u0631\u0629 \u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A\xBB \u0648\u0634\u0627\u0647\u062F \u0642\u0627\u0626\u0645\u0629 \u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A \u0648\u0627\u0644\u0623\u0633\u0639\u0627\u0631" },
+        "commerce.admin.categories.list": { section: "categories", target: "\u0642\u0633\u0645 \u0627\u0644\u0623\u0642\u0633\u0627\u0645", details: "\u062F\u062E\u0644 \u0642\u0633\u0645 \xAB\u0625\u062F\u0627\u0631\u0629 \u0627\u0644\u0623\u0642\u0633\u0627\u0645\xBB \u0648\u0634\u0627\u0647\u062F \u0623\u0642\u0633\u0627\u0645 \u0627\u0644\u0645\u062A\u062C\u0631" },
+        "commerce.admin.chats.list": { section: "chats", target: "\u0642\u0633\u0645 \u0627\u0644\u0645\u062D\u0627\u062F\u062B\u0627\u062A", details: "\u062F\u062E\u0644 \u0642\u0633\u0645 \xAB\u0645\u062D\u0627\u062F\u062B\u0627\u062A \u0627\u0644\u0632\u0628\u0627\u0626\u0646\xBB \u0648\u0634\u0627\u0647\u062F \u0631\u0633\u0627\u0626\u0644 \u0627\u0644\u0632\u0628\u0627\u0626\u0646 \u0645\u0639 \u0627\u0644\u0645\u0633\u0627\u0639\u062F \u0627\u0644\u0630\u0643\u064A" },
+        "commerce.admin.banners.list": { section: "banners", target: "\u0642\u0633\u0645 \u0627\u0644\u0628\u0646\u0631\u0627\u062A", details: "\u062F\u062E\u0644 \u0642\u0633\u0645 \xAB\u0627\u0644\u0628\u0646\u0631\u0627\u062A \u0627\u0644\u0625\u0639\u0644\u0627\u0646\u064A\u0629\xBB \u0648\u0634\u0627\u0647\u062F \u0627\u0644\u0628\u0646\u0631\u0627\u062A \u0627\u0644\u0645\u0639\u0631\u0648\u0636\u0629" },
+        "commerce.admin.offers.list": { section: "offers", target: "\u0642\u0633\u0645 \u0627\u0644\u0639\u0631\u0648\u0636", details: "\u062F\u062E\u0644 \u0642\u0633\u0645 \xAB\u0627\u0644\u0639\u0631\u0648\u0636 \u0648\u0627\u0644\u062E\u0635\u0648\u0645\u0627\u062A\xBB \u0648\u0634\u0627\u0647\u062F \u0627\u0644\u0643\u0648\u0628\u0648\u0646\u0627\u062A \u0648\u0627\u0644\u0639\u0631\u0648\u0636" },
+        "commerce.admin.users.list": { section: "users", target: "\u0642\u0633\u0645 \u0627\u0644\u0639\u0645\u0644\u0627\u0621", details: "\u062F\u062E\u0644 \u0642\u0633\u0645 \xAB\u0633\u062C\u0644 \u0627\u0644\u0639\u0645\u0644\u0627\u0621\xBB \u0648\u0634\u0627\u0647\u062F \u0628\u064A\u0627\u0646\u0627\u062A \u0648\u0639\u0646\u0627\u0648\u064A\u0646 \u0627\u0644\u0632\u0628\u0627\u0626\u0646" },
+        "commerce.admin.settings.get": { section: "settings", target: "\u0642\u0633\u0645 \u0627\u0644\u0625\u0639\u062F\u0627\u062F\u0627\u062A", details: "\u062F\u062E\u0644 \u0642\u0633\u0645 \xAB\u0625\u0639\u062F\u0627\u062F\u0627\u062A \u0627\u0644\u0645\u062A\u062C\u0631\xBB \u0648\u0634\u0627\u0647\u062F \u0625\u0639\u062F\u0627\u062F\u0627\u062A \u0627\u0644\u062A\u0648\u0635\u064A\u0644 \u0648\u0627\u0644\u0645\u0643\u0627\u0641\u0622\u062A" }
+      };
+      const v = viewMap[path3];
+      if (v) {
+        const actorKey = String(actorId || actorName);
+        const prev = lastSectionViewMap.get(actorKey);
+        const now = Date.now();
+        if (!prev || prev.section !== v.section || now - prev.time > 5 * 60 * 1e3) {
+          lastSectionViewMap.set(actorKey, { section: v.section, time: now });
+          void writeAdminAuditLog({
+            actorId,
+            actorName,
+            actorRole,
+            action: "\u{1F441}\uFE0F \u062A\u0635\u0641\u062D \u0648\u0645\u0634\u0627\u0647\u062F\u0629 \u0642\u0633\u0645",
+            targetName: v.target,
+            details: v.details,
+            ipAddress: ip
+          });
+        }
+      }
+      return;
+    }
+    if (type === "mutation") {
+      if (path3.startsWith("commerce.admin.staff.") || path3.startsWith("commerce.admin.notifications.")) return;
+      let actionAr = "\u26A1 \u062A\u0646\u0641\u064A\u0630 \u0625\u062C\u0631\u0627\u0621 \u0625\u062F\u0627\u0631\u064A";
+      let targetAr = "";
+      let detailsAr = "";
+      if (path3 === "commerce.admin.products.create") {
+        actionAr = "\u2795 \u0625\u0636\u0627\u0641\u0629 \u0645\u0646\u062A\u062C \u062C\u062F\u064A\u062F";
+        targetAr = "\u0627\u0644\u0645\u0646\u062A\u062C: " + (inp.name || "");
+        detailsAr = "\u0623\u0636\u0627\u0641 \u0645\u0646\u062A\u062C \u062C\u062F\u064A\u062F \xAB" + (inp.name || "") + "\xBB \u0628\u0633\u0639\u0631 " + (inp.price ?? 0) + " \u0631.\u064A (" + (inp.unit || "") + ")";
+      } else if (path3 === "commerce.admin.products.update") {
+        actionAr = "\u270F\uFE0F \u062A\u0639\u062F\u064A\u0644 \u0645\u0646\u062A\u062C";
+        const vals = inp.values || {};
+        targetAr = vals.name ? "\u0627\u0644\u0645\u0646\u062A\u062C: " + vals.name : "\u0645\u0646\u062A\u062C \u0631\u0642\u0645 #" + inp.id;
+        detailsAr = vals.name ? "\u0639\u062F\u0651\u0644 \u0628\u064A\u0627\u0646\u0627\u062A \u0627\u0644\u0645\u0646\u062A\u062C \xAB" + vals.name + "\xBB \u2014 \u0627\u0644\u0633\u0639\u0631: " + (vals.price ?? "") + " \u0631.\u064A" : "\u0639\u062F\u0651\u0644 \u062D\u0627\u0644\u0629/\u062A\u0648\u0641\u0631 \u0627\u0644\u0645\u0646\u062A\u062C \u0631\u0642\u0645 #" + inp.id;
+      } else if (path3 === "commerce.admin.products.delete" || path3 === "commerce.admin.products.archive") {
+        actionAr = "\u{1F5D1}\uFE0F \u062D\u0630\u0641 \u0645\u0646\u062A\u062C";
+        targetAr = "\u0645\u0646\u062A\u062C \u0631\u0642\u0645 #" + inp.id;
+        detailsAr = "\u0642\u0627\u0645 \u0628\u062D\u0630\u0641 \u0623\u0648 \u0625\u062E\u0641\u0627\u0621 \u0627\u0644\u0645\u0646\u062A\u062C \u0631\u0642\u0645 #" + inp.id;
+      } else if (path3 === "commerce.admin.products.setRecommendations") {
+        actionAr = "\u{1F517} \u0631\u0628\u0637 \u0645\u0646\u062A\u062C\u0627\u062A \u0645\u0642\u062A\u0631\u062D\u0629";
+        targetAr = "\u0645\u0646\u062A\u062C \u0631\u0642\u0645 #" + inp.productId;
+        detailsAr = "\u062D\u062F\u0651\u062B \u0642\u0627\u0626\u0645\u0629 \u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A \u0627\u0644\u0645\u0642\u062A\u0631\u062D\u0629 \u0627\u0644\u0645\u0631\u062A\u0628\u0637\u0629 \u0628\u0627\u0644\u0645\u0646\u062A\u062C \u0631\u0642\u0645 #" + inp.productId;
+      } else if (path3 === "commerce.admin.categories.create") {
+        actionAr = "\u{1F4C1} \u0625\u0636\u0627\u0641\u0629 \u0642\u0633\u0645 \u062C\u062F\u064A\u062F";
+        targetAr = "\u0642\u0633\u0645: " + (inp.name || "");
+        detailsAr = "\u0623\u0646\u0634\u0623 \u0642\u0633\u0645\u0627\u064B \u062C\u062F\u064A\u062F\u0627\u064B \u0628\u0627\u0633\u0645 \xAB" + (inp.name || "") + "\xBB";
+      } else if (path3 === "commerce.admin.categories.update") {
+        actionAr = "\u270F\uFE0F \u062A\u0639\u062F\u064A\u0644 \u0642\u0633\u0645";
+        const vals = inp.values || {};
+        targetAr = vals.name ? "\u0642\u0633\u0645: " + vals.name : "\u0642\u0633\u0645 \u0631\u0642\u0645 #" + inp.id;
+        detailsAr = vals.name ? "\u0639\u062F\u0651\u0644 \u0628\u064A\u0627\u0646\u0627\u062A \u0627\u0644\u0642\u0633\u0645 \xAB" + vals.name + "\xBB" : "\u063A\u064A\u0651\u0631 \u062D\u0627\u0644\u0629 \u062A\u0641\u0639\u064A\u0644 \u0627\u0644\u0642\u0633\u0645 \u0631\u0642\u0645 #" + inp.id;
+      } else if (path3 === "commerce.admin.categories.delete" || path3 === "commerce.admin.categories.archive") {
+        actionAr = "\u{1F5D1}\uFE0F \u062D\u0630\u0641 \u0642\u0633\u0645";
+        targetAr = "\u0642\u0633\u0645 \u0631\u0642\u0645 #" + inp.id;
+        detailsAr = "\u0642\u0627\u0645 \u0628\u062D\u0630\u0641 \u0627\u0644\u0642\u0633\u0645 \u0631\u0642\u0645 #" + inp.id;
+      } else if (path3 === "commerce.admin.orders.updateStatus") {
+        actionAr = "\u{1F4E6} \u062A\u062D\u062F\u064A\u062B \u062D\u0627\u0644\u0629 \u0637\u0644\u0628";
+        const stAr = ORDER_STATUS_AR[inp.status] || inp.status || "";
+        targetAr = "\u0637\u0644\u0628 \u0631\u0642\u0645 #" + inp.id;
+        detailsAr = "\u063A\u064A\u0651\u0631 \u062D\u0627\u0644\u0629 \u0627\u0644\u0637\u0644\u0628 \u0631\u0642\u0645 #" + inp.id + " \u0625\u0644\u0649 \xAB" + stAr + "\xBB" + (inp.note ? " \u2014 \u0645\u0644\u0627\u062D\u0638\u0629: " + inp.note : "");
+      } else if (path3 === "commerce.admin.chats.reply") {
+        actionAr = "\u{1F4AC} \u0631\u062F \u0645\u0628\u0627\u0634\u0631 \u0641\u064A \u0627\u0644\u0645\u062D\u0627\u062F\u062B\u0629";
+        targetAr = "\u0645\u062D\u0627\u062F\u062B\u0629 \u0632\u0628\u0648\u0646";
+        detailsAr = "\u0623\u0631\u0633\u0644 \u0631\u062F\u0627\u064B \u0645\u0628\u0627\u0634\u0631\u0627\u064B \u0644\u0644\u0632\u0628\u0648\u0646: \xAB" + String(inp.text || "").slice(0, 120) + "\xBB";
+      } else if (path3 === "commerce.admin.chats.toggleAi") {
+        actionAr = "\u{1F916} \u062A\u062D\u0643\u0645 \u0628\u0627\u0644\u0645\u0633\u0627\u0639\u062F \u0641\u064A \u0645\u062D\u0627\u062F\u062B\u0629";
+        targetAr = "\u0645\u062D\u0627\u062F\u062B\u0629 \u0632\u0628\u0648\u0646";
+        detailsAr = inp.aiPaused ? "\u0623\u0648\u0642\u0641 \u0627\u0644\u0631\u062F \u0627\u0644\u062A\u0644\u0642\u0627\u0626\u064A \u0644\u0644\u0630\u0643\u0627\u0621 \u0627\u0644\u0627\u0635\u0637\u0646\u0627\u0639\u064A \u0641\u064A \u0627\u0644\u0645\u062D\u0627\u062F\u062B\u0629 \u0644\u0644\u0631\u062F \u0628\u0646\u0641\u0633\u0647" : "\u0623\u0639\u0627\u062F \u062A\u0641\u0639\u064A\u0644 \u0627\u0644\u0631\u062F \u0627\u0644\u062A\u0644\u0642\u0627\u0626\u064A \u0644\u0644\u0630\u0643\u0627\u0621 \u0627\u0644\u0627\u0635\u0637\u0646\u0627\u0639\u064A \u0641\u064A \u0627\u0644\u0645\u062D\u0627\u062F\u062B\u0629";
+      } else if (path3 === "commerce.admin.chats.delete") {
+        actionAr = "\u{1F5D1}\uFE0F \u062D\u0630\u0641 \u0645\u062D\u0627\u062F\u062B\u0629";
+        targetAr = "\u0645\u062D\u0627\u062F\u062B\u0629 \u0632\u0628\u0648\u0646";
+        detailsAr = "\u0642\u0627\u0645 \u0628\u062D\u0630\u0641 \u0633\u062C\u0644 \u0627\u0644\u0645\u062D\u0627\u062F\u062B\u0629";
+      } else if (path3.startsWith("commerce.admin.banners.")) {
+        const sub = path3.split(".").pop();
+        const vals = inp.values || inp;
+        actionAr = sub === "create" ? "\u{1F5BC}\uFE0F \u0625\u0636\u0627\u0641\u0629 \u0628\u0646\u0631 \u0625\u0639\u0644\u0627\u0646\u064A" : sub === "delete" ? "\u{1F5D1}\uFE0F \u062D\u0630\u0641 \u0628\u0646\u0631 \u0625\u0639\u0644\u0627\u0646\u064A" : "\u270F\uFE0F \u062A\u0639\u062F\u064A\u0644 \u0628\u0646\u0631 \u0625\u0639\u0644\u0627\u0646\u064A";
+        targetAr = vals.title ? "\u0628\u0646\u0631: " + vals.title : "\u0628\u0646\u0631 \u0631\u0642\u0645 #" + (inp.id || "");
+        detailsAr = actionAr + (vals.title ? " \xAB" + vals.title + "\xBB" : "");
+      } else if (path3.startsWith("commerce.admin.offers.")) {
+        const sub = path3.split(".").pop();
+        const vals = inp.values || inp;
+        actionAr = sub === "create" ? "\u{1F3F7}\uFE0F \u0625\u0636\u0627\u0641\u0629 \u0639\u0631\u0636 \u062E\u0635\u0645" : sub === "delete" ? "\u{1F5D1}\uFE0F \u062D\u0630\u0641 \u0639\u0631\u0636 \u062E\u0635\u0645" : "\u270F\uFE0F \u062A\u0639\u062F\u064A\u0644 \u0639\u0631\u0636 \u062E\u0635\u0645";
+        targetAr = vals.title ? "\u0639\u0631\u0636: " + vals.title : "\u0639\u0631\u0636 \u0631\u0642\u0645 #" + (inp.id || "");
+        detailsAr = actionAr + (vals.title ? " \xAB" + vals.title + "\xBB" : "") + (vals.code ? " (\u0643\u0648\u062F: " + vals.code + ")" : "");
+      } else if (path3 === "commerce.admin.settings.update") {
+        actionAr = "\u2699\uFE0F \u062A\u0639\u062F\u064A\u0644 \u0625\u0639\u062F\u0627\u062F\u0627\u062A \u0627\u0644\u0645\u062A\u062C\u0631";
+        targetAr = "\u0627\u0644\u0625\u0639\u062F\u0627\u062F\u0627\u062A \u0627\u0644\u0639\u0627\u0645\u0629";
+        detailsAr = "\u0642\u0627\u0645 \u0628\u062A\u0639\u062F\u064A\u0644 \u0648\u062D\u0641\u0638 \u0625\u0639\u062F\u0627\u062F\u0627\u062A \u0627\u0644\u0645\u062A\u062C\u0631 \u0648\u0627\u0644\u062A\u0648\u0635\u064A\u0644 \u0648\u0627\u0644\u0645\u0643\u0627\u0641\u0622\u062A";
+      } else {
+        return;
+      }
+      void writeAdminAuditLog({
+        actorId,
+        actorName,
+        actorRole,
+        action: actionAr,
+        targetName: targetAr,
+        details: detailsAr,
+        ipAddress: ip
+      });
+    }
+  } catch {
+  }
+}
 var requireUser = t.middleware(async ({ ctx, next }) => {
   if (!ctx.user) throw new TRPCError2({ code: "UNAUTHORIZED", message: UNAUTHED_ERR_MSG });
   if (ctx.user.suspended) throw new TRPCError2({ code: "FORBIDDEN", message: "\u062A\u0645 \u0625\u064A\u0642\u0627\u0641 \u0647\u0630\u0627 \u0627\u0644\u062D\u0633\u0627\u0628. \u062A\u0648\u0627\u0635\u0644 \u0645\u0639 \u0625\u062F\u0627\u0631\u0629 \u0627\u0644\u0645\u062A\u062C\u0631." });
@@ -1561,14 +1701,25 @@ var requireUser = t.middleware(async ({ ctx, next }) => {
 });
 var protectedProcedure = t.procedure.use(requireUser);
 var adminProcedure = t.procedure.use(
-  t.middleware(async ({ ctx, next }) => {
+  t.middleware(async (opts) => {
+    const { ctx, path: path3, type, next } = opts;
+    let rawInput = opts.input;
+    if (!rawInput && typeof opts.getRawInput === "function") {
+      try {
+        rawInput = await opts.getRawInput();
+      } catch {
+      }
+    }
+    if (rawInput && typeof rawInput === "object" && "json" in rawInput) rawInput = rawInput.json;
     if (!ctx.user || ctx.user.role !== "admin" || ctx.user.suspended) {
       throw new TRPCError2({ code: ctx.user ? "FORBIDDEN" : "UNAUTHORIZED", message: NOT_ADMIN_ERR_MSG });
     }
     if (ctx.user.mustChangePassword) {
       throw new TRPCError2({ code: "PRECONDITION_FAILED", message: "\u064A\u062C\u0628 \u062A\u063A\u064A\u064A\u0631 \u0643\u0644\u0645\u0629 \u0627\u0644\u0645\u0631\u0648\u0631 \u0627\u0644\u0645\u0624\u0642\u062A\u0629 \u0623\u0648\u0644\u0627\u064B \u0642\u0628\u0644 \u062A\u0646\u0641\u064A\u0630 \u0623\u064A \u0639\u0645\u0644\u064A\u0629 \u0625\u062F\u0627\u0631\u064A\u0629." });
     }
-    return next({ ctx: { ...ctx, user: ctx.user } });
+    const res = await next({ ctx: { ...ctx, user: ctx.user } });
+    recordArabicAdminActivity(ctx, path3, type, rawInput);
+    return res;
   })
 );
 function requirePermission(permission) {
@@ -3357,7 +3508,7 @@ var commerceRouter = router({
       auditLogs: requirePermission("staff.manage").query(async () => {
         const db = await database();
         await ensureRbacTables(db);
-        return db.select().from(adminAuditLogs).orderBy(desc(adminAuditLogs.createdAt)).limit(150);
+        return db.select().from(adminAuditLogs).orderBy(desc(adminAuditLogs.createdAt)).limit(250);
       }),
       create: requirePermission("staff.manage").input(z3.object({
         displayName: z3.string().trim().min(2).max(160),
@@ -3407,7 +3558,7 @@ var commerceRouter = router({
           actorRole: ctx.user.adminRole || "owner",
           action: "CREATE_STAFF",
           targetName: input.displayName + " (" + normalizedUsername + ")",
-          details: "\u0625\u0646\u0634\u0627\u0621 \u062D\u0633\u0627\u0628 \u0628\u062F\u0648\u0631: " + (ROLE_DEFINITIONS[input.roleKey]?.label || input.roleKey) + " | \u0627\u0644\u0635\u0644\u0627\u062D\u064A\u0627\u062A: " + uniquePerms.join(", "),
+          details: "\u0625\u0646\u0634\u0627\u0621 \u062D\u0633\u0627\u0628 \u0628\u062F\u0648\u0631: " + (ROLE_DEFINITIONS[input.roleKey]?.label || input.roleKey) + " | \u0627\u0644\u0635\u0644\u0627\u062D\u064A\u0627\u062A: " + uniquePerms.map((p) => PERMISSION_LABELS[p]?.label || p).join("\u060C "),
           ipAddress: getClientIp(ctx.req)
         });
         return { id: Number(result[0].insertId), success: true };
@@ -3454,7 +3605,7 @@ var commerceRouter = router({
           actorRole: ctx.user.adminRole || "owner",
           action: "UPDATE_STAFF",
           targetName: input.displayName + " (" + normalizedUsername + ")",
-          details: "\u062A\u062D\u062F\u064A\u062B \u0627\u0644\u062F\u0648\u0631 \u0625\u0644\u0649: " + (ROLE_DEFINITIONS[input.roleKey]?.label || input.roleKey) + " | \u0627\u0644\u0635\u0644\u0627\u062D\u064A\u0627\u062A: " + uniquePerms.join(", "),
+          details: "\u062A\u062D\u062F\u064A\u062B \u0627\u0644\u062F\u0648\u0631 \u0625\u0644\u0649: " + (ROLE_DEFINITIONS[input.roleKey]?.label || input.roleKey) + " | \u0627\u0644\u0635\u0644\u0627\u062D\u064A\u0627\u062A: " + uniquePerms.map((p) => PERMISSION_LABELS[p]?.label || p).join("\u060C "),
           ipAddress: getClientIp(ctx.req)
         });
         return { success: true };

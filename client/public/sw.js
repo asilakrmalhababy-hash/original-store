@@ -1,12 +1,15 @@
-const CACHE = "original-shell-v29";
-const APP_MANIFEST = "/api/app-manifest.webmanifest";
-const PRECACHE = ["/", "/offline.html", "/manifest.webmanifest", "/app-icon-180-v2.png", "/app-icon-192-v3.png", "/app-icon-512-v3.png", "/app-icon-512-v2.png", "/notif-icon-v3.png", "/notif-badge-v3.png", APP_MANIFEST];
+const CACHE = "original-shell-v31";
+const PRECACHE = ["/", "/offline.html", "/manifest.webmanifest", "/app-icon-180-v3.png", "/app-icon-192-v3.png", "/app-icon-512-v3.png", "/notif-icon-v3.png", "/notif-badge-v3.png"];
+
 self.addEventListener("install", event => {
-  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(PRECACHE)).then(() => self.skipWaiting()));
+  self.skipWaiting();
+  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(PRECACHE).catch(() => {})));
 });
+
 self.addEventListener("activate", event => {
   event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key.startsWith("original-shell-") && key !== CACHE).map(key => caches.delete(key)))).then(() => self.clients.claim()));
 });
+
 self.addEventListener("fetch", event => {
   const request = event.request;
   if (request.method !== "GET") return;
@@ -26,24 +29,9 @@ self.addEventListener("fetch", event => {
     return;
   }
 
-  if (url.pathname === APP_MANIFEST || url.pathname === "/api/platform/config.js") {
+  if (url.pathname.startsWith("/api/fast-img/") || url.pathname.includes("/assets/") || url.pathname.endsWith(".png") || url.pathname.endsWith(".webmanifest")) {
     event.respondWith(caches.open(CACHE).then(async cache => {
-      const cached = await cache.match(request);
-      const bgPromise = fetch(request).then(response => {
-        if (response.ok) cache.put(request, response.clone());
-        return response;
-      }).catch(() => null);
-      if (cached) return cached;
-      const fast = await Promise.race([bgPromise, new Promise(r => setTimeout(() => r(null), 350))]);
-      if (fast) return fast;
-      return new Response("", { status: 200, headers: { "Content-Type": url.pathname.endsWith(".js") ? "application/javascript" : "application/manifest+json" } });
-    }));
-    return;
-  }
-
-  if (url.pathname.startsWith("/api/fast-img/") || url.pathname.includes("/assets/") || url.pathname.endsWith(".png") || url.pathname.endsWith(".mp4") || url.pathname.endsWith(".webm")) {
-    event.respondWith(caches.open(CACHE).then(async cache => {
-      const cached = await cache.match(request);
+      const cached = await cache.match(request, { ignoreSearch: !url.pathname.startsWith("/api/fast-img/") });
       if (cached) return cached;
       try {
         const response = await fetch(request);

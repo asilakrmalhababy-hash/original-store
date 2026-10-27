@@ -2018,7 +2018,8 @@ function ChatsPanel() {
 function StaffManagementPanel({ actorIsOwner, actorPermissions, actorStaffId }: { actorIsOwner: boolean; actorPermissions: PermissionKey[]; actorStaffId: number | null }) {
   const utils = trpc.useUtils();
   const staffQuery = trpc.commerce.admin.staff.list.useQuery(undefined, { retry: 1 });
-  const logsQuery = trpc.commerce.admin.staff.auditLogs.useQuery(undefined, { retry: 1 });
+  const logsQuery = trpc.commerce.admin.staff.auditLogs.useQuery(undefined, { retry: 1, refetchInterval: 5000 });
+  const [logActorFilter, setLogActorFilter] = useState<string>("all");
 
   const [editingId, setEditingId] = useState<number | null>(null);
   const [displayName, setDisplayName] = useState("");
@@ -2415,21 +2416,95 @@ function StaffManagementPanel({ actorIsOwner, actorPermissions, actorStaffId }: 
         </div>
       )}
 
-      <div className="admin-section-heading" style={{ marginTop: "32px" }}>
-        <div><h2>سجل التدقيق والنشاط الإداري (Audit Log)</h2><p>توثيق زمني لجميع عمليات الدخول وإدارة الحسابات والصلاحيات.</p></div>
+            <div className="admin-section-heading" style={{ marginTop: "32px", flexWrap: "wrap", gap: "10px" }}>
+        <div>
+          <h2>📋 سجل الرقابة الشامل لنشاط المشرفين (باللغة العربية)</h2>
+          <p>يعرض بالتفصيل ماذا فعل كل أدمن، وأي قسم دخله وشاهده، وماذا أضاف أو عدّل أو حذف مع الوقت والتاريخ.</p>
+        </div>
+        <select
+          value={logActorFilter}
+          onChange={e => setLogActorFilter(e.target.value)}
+          style={{ minHeight: "36px", padding: "0 12px", borderRadius: "10px", border: "1px solid #cfe0d4", background: "#ffffff", color: "#174b36", fontSize: "12px", fontWeight: 700 }}
+        >
+          <option value="all">👤 عرض نشاط جميع الإداريين ({logsQuery.data?.length ?? 0})</option>
+          {Array.from(new Set((logsQuery.data ?? []).map(l => l.actorName))).map(name => (
+            <option key={name} value={name}>👤 نشاط: {name}</option>
+          ))}
+        </select>
       </div>
       {!logsQuery.data?.length ? (
-        <AdminEmpty title="لا توجد سجلات تدقيق بعد" text="ستظهر هنا جميع العمليات الإدارية الحساسة فور حدوثها." />
+        <AdminEmpty title="لا توجد سجلات نشاط بعد" text="ستظهر هنا جميع تحركات وعمليات المشرفين باللغة العربية فور حدوثها." />
       ) : (
-        <div className="admin-order-table" style={{ maxHeight: "380px", overflowY: "auto" }}>
-          {logsQuery.data.map(log => (
-            <div className="admin-order-row" key={log.id} style={{ gridTemplateColumns: "1fr 1fr 1.5fr auto" }}>
-              <span><strong>{log.actorName}</strong> <small>({log.actorRole})</small></span>
-              <span className="order-number">{log.action}</span>
-              <span>{log.targetName ? log.targetName + " — " : ""}{log.details || ""}</span>
-              <small dir="ltr">{new Date(log.createdAt).toLocaleString("ar-YE")}</small>
-            </div>
-          ))}
+        <div style={{ display: "grid", gap: "8px", maxHeight: "480px", overflowY: "auto", padding: "4px" }}>
+          {logsQuery.data
+            .filter(log => logActorFilter === "all" || log.actorName === logActorFilter)
+            .map(log => {
+              const roleMapAr: Record<string, string> = {
+                owner: "مالك المتجر",
+                general_manager: "مدير عام",
+                product_manager: "مدير منتجات",
+                order_manager: "مدير طلبات",
+                content_manager: "مدير محتوى وعروض",
+                staff: "موظف / مشرف",
+                unauthenticated: "محاولة دخول غير مصرحة",
+              };
+              const actionMapAr: Record<string, string> = {
+                LOGIN_SUCCESS: "🔑 تسجيل دخول للوحة التحكم",
+                LOGIN_FAILED_OWNER: "⚠️ محاولة دخول فاشلة لحساب المالك",
+                LOGIN_FAILED_STAFF: "⚠️ محاولة دخول فاشلة لحساب مشرف",
+                LOGIN_BLOCKED_DISABLED: "🚫 محاولة دخول لحساب معطّل",
+                CREATE_STAFF: "👤 إضافة مدير / مشرف جديد",
+                UPDATE_STAFF: "✏️ تعديل بيانات وصلاحيات مدير",
+                ACTIVATE_STAFF: "✅ تفعيل حساب مدير",
+                DISABLE_STAFF: "⏸️ تعطيل حساب مدير وإخراجه",
+                RESET_STAFF_PASSWORD: "🔐 تغيير كلمة مرور مدير",
+                DELETE_STAFF: "🗑️ حذف حساب مدير نهائياً",
+                CHANGE_OWN_PASSWORD: "🔐 تحديث كلمة المرور الشخصية",
+              };
+              const roleAr = roleMapAr[log.actorRole] || log.actorRole || "مشرف";
+              const actionAr = actionMapAr[log.action] || log.action;
+              let detailsAr = String(log.details || "");
+              for (const k of PERMISSION_KEYS) {
+                if (detailsAr.includes(k)) {
+                  detailsAr = detailsAr.split(k).join(PERMISSION_LABELS[k]?.label || k);
+                }
+              }
+              const isView = actionAr.includes("تصفح") || actionAr.includes("👁️");
+              const isDanger = actionAr.includes("حذف") || actionAr.includes("فاشلة") || actionAr.includes("تعطيل");
+              return (
+                <div
+                  key={log.id}
+                  style={{
+                    padding: "11px 14px",
+                    borderRadius: "13px",
+                    background: isDanger ? "#fff9f8" : isView ? "#f8fbf9" : "#ffffff",
+                    border: isDanger ? "1px solid #f2d0c9" : isView ? "1px solid #dcebe2" : "1px solid #cfe2d5",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "5px",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                      <strong style={{ fontSize: "13px", color: "#123b29" }}>👤 {log.actorName}</strong>
+                      <span style={{ fontSize: "10.5px", fontWeight: 700, padding: "2px 8px", borderRadius: "99px", background: "#e8f3ec", color: "#174b36" }}>
+                        {roleAr}
+                      </span>
+                      <span style={{ fontSize: "11.5px", fontWeight: 800, padding: "3px 10px", borderRadius: "8px", background: isDanger ? "#fde8e4" : isView ? "#eef6f1" : "#fff7e0", color: isDanger ? "#9b3b2e" : isView ? "#1d5c3f" : "#8a5a00" }}>
+                        {actionAr}
+                      </span>
+                    </div>
+                    <small style={{ color: "#64746b", fontSize: "11px", fontWeight: 600 }}>
+                      🕒 {new Date(log.createdAt).toLocaleString("ar-YE")}
+                    </small>
+                  </div>
+                  <div style={{ fontSize: "12px", color: "#2c4637", lineHeight: 1.6, paddingTop: "2px" }}>
+                    {log.targetName ? <strong style={{ color: "#174b36" }}>[{log.targetName}] </strong> : null}
+                    <span>{detailsAr || "تم تنفيذ العملية بنجاح"}</span>
+                  </div>
+                </div>
+              );
+            })}
         </div>
       )}
     </div>

@@ -30,7 +30,7 @@ import {
 } from "../drizzle/schema";
 import { adminAuditLogs, adminStaff } from "../drizzle/schema";
 import { adminProcedure, protectedProcedure, publicProcedure, requireAnyPermission, requirePermission, router } from "./_core/trpc";
-import { PERMISSION_KEYS, ROLE_DEFINITIONS, ROLE_KEYS, canManageTargetStaff, hasPermission, parsePermissionsJson, type AdminRoleKey, type PermissionKey } from "@shared/rbac";
+import { PERMISSION_KEYS, PERMISSION_LABELS, ROLE_DEFINITIONS, ROLE_KEYS, canManageTargetStaff, hasPermission, parsePermissionsJson, type AdminRoleKey, type PermissionKey } from "@shared/rbac";
 import { ensureRbacTables, getClientIp, hashAdminPassword, verifyAdminPassword, writeAdminAuditLog } from "./_core/adminAuth";
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
@@ -1259,7 +1259,7 @@ export const commerceRouter = router({
       auditLogs: requirePermission("staff.manage").query(async () => {
         const db = await database();
         await ensureRbacTables(db);
-        return db.select().from(adminAuditLogs).orderBy(desc(adminAuditLogs.createdAt)).limit(150);
+        return db.select().from(adminAuditLogs).orderBy(desc(adminAuditLogs.createdAt)).limit(250);
       }),
       create: requirePermission("staff.manage").input(z.object({
         displayName: z.string().trim().min(2).max(160),
@@ -1309,7 +1309,7 @@ export const commerceRouter = router({
           actorRole: ctx.user.adminRole || "owner",
           action: "CREATE_STAFF",
           targetName: input.displayName + " (" + normalizedUsername + ")",
-          details: "إنشاء حساب بدور: " + (ROLE_DEFINITIONS[input.roleKey]?.label || input.roleKey) + " | الصلاحيات: " + uniquePerms.join(", "),
+          details: "إنشاء حساب بدور: " + (ROLE_DEFINITIONS[input.roleKey]?.label || input.roleKey) + " | الصلاحيات: " + uniquePerms.map(p => PERMISSION_LABELS[p]?.label || p).join("، "),
           ipAddress: getClientIp(ctx.req),
         });
         return { id: Number(result[0].insertId), success: true };
@@ -1356,7 +1356,7 @@ export const commerceRouter = router({
           actorRole: ctx.user.adminRole || "owner",
           action: "UPDATE_STAFF",
           targetName: input.displayName + " (" + normalizedUsername + ")",
-          details: "تحديث الدور إلى: " + (ROLE_DEFINITIONS[input.roleKey]?.label || input.roleKey) + " | الصلاحيات: " + uniquePerms.join(", "),
+          details: "تحديث الدور إلى: " + (ROLE_DEFINITIONS[input.roleKey]?.label || input.roleKey) + " | الصلاحيات: " + uniquePerms.map(p => PERMISSION_LABELS[p]?.label || p).join("، "),
           ipAddress: getClientIp(ctx.req),
         });
         return { success: true };
