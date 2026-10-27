@@ -866,64 +866,78 @@ function ProductGrid({ items, onOpen, onAiRecipe }: { items: PublicProduct[]; on
 function CategoryStrip({ data, onSelect }: { data: HomeData["categories"]; onSelect: (id: number) => void }) {
   if (!data.length) return <div className="category-empty"><span className="category-empty-mark"><SlidersHorizontal size={19} /></span><div><strong>الأقسام قيد التجهيز</strong><p>أضف أقسام متجرك لتبدأ ترتيب المنتجات.</p></div><Link href="/categories"><ChevronLeft size={18} /></Link></div>;
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(145px, 1fr))", gap: "12px" }}>
-      {data.map(category => (
-        <button
-          key={category.id}
-          type="button"
-          onClick={() => onSelect(category.id)}
-          style={{
-            position: "relative",
-            height: "152px",
-            borderRadius: "20px",
-            overflow: "hidden",
-            border: "1.5px solid rgba(23, 75, 54, 0.14)",
-            padding: 0,
-            background: category.color || "#174b36",
-            cursor: "pointer",
-            boxShadow: "0 10px 24px rgba(17, 58, 40, 0.11)",
-            display: "block",
-            width: "100%",
-          }}
-        >
-          {category.imageUrl ? (
-            <img
-              src={category.imageUrl}
-              alt={category.name}
-              loading="eager"
-              fetchPriority="high"
-              decoding="async"
-              style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-            />
-          ) : (
-            <div style={{ width: "100%", height: "100%", display: "grid", placeItems: "center", color: "#ffffff", background: "linear-gradient(135deg, #174b36, #286a48)" }}>
-              <Leaf size={38} strokeWidth={1.5} />
-            </div>
-          )}
-          <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(0,0,0,0) 35%, rgba(7, 26, 18, 0.78) 100%)" }} />
-          <div
+    <div
+      style={{
+        display: "flex",
+        gap: "12px",
+        overflowX: "auto",
+        padding: "4px 2px 10px",
+        scrollSnapType: "x mandatory",
+        WebkitOverflowScrolling: "touch",
+        scrollbarWidth: "none",
+      }}
+    >
+      {data.map(category => {
+        const btnColor = category.color || "#174b36";
+        return (
+          <button
+            key={category.id}
+            type="button"
+            onClick={() => onSelect(category.id)}
             style={{
-              position: "absolute",
-              bottom: "9px",
-              right: "9px",
-              left: "9px",
-              padding: "7px 10px",
-              borderRadius: "12px",
-              background: "rgba(15, 52, 35, 0.90)",
-              backdropFilter: "blur(6px)",
-              border: "1px solid rgba(241, 216, 151, 0.55)",
-              color: "#ffffff",
-              fontSize: "13px",
-              fontWeight: 800,
-              textAlign: "center",
-              lineHeight: 1.3,
-              boxShadow: "0 4px 12px rgba(0,0,0,0.25)",
+              flex: "0 0 124px",
+              scrollSnapAlign: "start",
+              background: "#ffffff",
+              border: "1px solid #e4ece6",
+              borderRadius: "18px",
+              padding: "6px 6px 9px",
+              cursor: "pointer",
+              boxShadow: "0 6px 16px rgba(17, 58, 40, 0.06)",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: "8px",
             }}
           >
-            {category.name}
-          </div>
-        </button>
-      ))}
+            <div style={{ width: "100%", height: "104px", borderRadius: "13px", overflow: "hidden", background: "#f4f8f5" }}>
+              {category.imageUrl ? (
+                <img
+                  src={category.imageUrl}
+                  alt={category.name}
+                  loading="eager"
+                  fetchPriority="high"
+                  decoding="async"
+                  style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                />
+              ) : (
+                <div style={{ width: "100%", height: "100%", display: "grid", placeItems: "center", color: btnColor }}>
+                  <Leaf size={30} strokeWidth={1.6} />
+                </div>
+              )}
+            </div>
+            <span
+              style={{
+                display: "inline-block",
+                maxWidth: "100%",
+                padding: "4px 11px",
+                borderRadius: "999px",
+                backgroundColor: btnColor,
+                color: "#ffffff",
+                fontSize: "11px",
+                fontWeight: 800,
+                lineHeight: 1.35,
+                textAlign: "center",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                boxShadow: "0 3px 8px rgba(0,0,0,0.10)",
+              }}
+            >
+              {category.name}
+            </span>
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -1108,68 +1122,70 @@ function CategoriesPage({ data }: { data: HomeData }) {
         <EmptyState icon={SlidersHorizontal} title="لا توجد أقسام بعد" description="سيضيف صاحب المتجر الأقسام المناسبة، وستظهر لك هنا تلقائيًا." action="استكشف المتجر" href="/products" />
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(155px, 1fr))", gap: "14px" }}>
-          {data.categories.map(category => (
-            <button
-              key={category.id}
-              type="button"
-              onClick={() => navigate("/products?category=" + category.id)}
-              style={{
-                position: "relative",
-                height: "190px",
-                borderRadius: "22px",
-                overflow: "hidden",
-                border: "1.5px solid rgba(23, 75, 54, 0.14)",
-                padding: 0,
-                background: category.color || "#174b36",
-                cursor: "pointer",
-                boxShadow: "0 12px 28px rgba(15, 52, 35, 0.13)",
-                display: "block",
-                width: "100%",
-              }}
-            >
-              {category.imageUrl ? (
-                <img
-                  src={category.imageUrl}
-                  alt={category.name}
-                  loading="eager"
-                  decoding="async"
-                  style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-                />
-              ) : (
-                <div style={{ width: "100%", height: "100%", display: "grid", placeItems: "center", color: "#ffffff", background: "linear-gradient(135deg, #174b36, #286a48)" }}>
-                  <Leaf size={44} strokeWidth={1.5} />
-                </div>
-              )}
-              <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(0,0,0,0) 35%, rgba(7, 26, 18, 0.82) 100%)" }} />
-              <div
+          {data.categories.map(category => {
+            const btnColor = category.color || "#174b36";
+            return (
+              <button
+                key={category.id}
+                type="button"
+                onClick={() => navigate("/products?category=" + category.id)}
                 style={{
-                  position: "absolute",
-                  bottom: "10px",
-                  right: "10px",
-                  left: "10px",
-                  padding: "9px 10px",
-                  borderRadius: "14px",
-                  background: "rgba(15, 52, 35, 0.92)",
-                  backdropFilter: "blur(6px)",
-                  border: "1px solid rgba(241, 216, 151, 0.6)",
-                  color: "#ffffff",
-                  fontSize: "13.5px",
-                  fontWeight: 800,
-                  textAlign: "center",
-                  lineHeight: 1.3,
-                  boxShadow: "0 6px 16px rgba(0,0,0,0.28)",
+                  background: "#ffffff",
+                  border: "1px solid #e2ebe4",
+                  borderRadius: "20px",
+                  padding: "7px 7px 11px",
+                  cursor: "pointer",
+                  boxShadow: "0 8px 20px rgba(15, 52, 35, 0.07)",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: "10px",
+                  width: "100%",
                 }}
               >
-                {category.name}
-              </div>
-            </button>
-          ))}
+                <div style={{ width: "100%", height: "148px", borderRadius: "15px", overflow: "hidden", background: "#f4f8f5" }}>
+                  {category.imageUrl ? (
+                    <img
+                      src={category.imageUrl}
+                      alt={category.name}
+                      loading="eager"
+                      decoding="async"
+                      style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                    />
+                  ) : (
+                    <div style={{ width: "100%", height: "100%", display: "grid", placeItems: "center", color: btnColor }}>
+                      <Leaf size={40} strokeWidth={1.5} />
+                    </div>
+                  )}
+                </div>
+                <span
+                  style={{
+                    display: "inline-block",
+                    maxWidth: "94%",
+                    padding: "5px 14px",
+                    borderRadius: "999px",
+                    backgroundColor: btnColor,
+                    color: "#ffffff",
+                    fontSize: "12px",
+                    fontWeight: 800,
+                    lineHeight: 1.35,
+                    textAlign: "center",
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    boxShadow: "0 4px 10px rgba(0,0,0,0.12)",
+                  }}
+                >
+                  {category.name}
+                </span>
+              </button>
+            );
+          })}
         </div>
       )}
     </main>
   );
 }
-
 
 function ProductDetail({ id, allProducts = [], onSelectProduct, onBack, onAiRecipe }: { id: number; allProducts?: PublicProduct[]; onSelectProduct?: (nextId: number) => void; onBack: () => void; onAiRecipe?: (p: PublicProduct) => void }) {
   const cachedProduct = useMemo(() => allProducts.find(p => p.id === id) ?? null, [allProducts, id]);

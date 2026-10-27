@@ -821,7 +821,14 @@ function CategoriesPanel() {
           <div className="product-form-layout">
             <div className="form-fields-grid">
               <label>اسم القسم<input required maxLength={120} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></label>
-              <label>لون تعبيري<input type="color" value={form.color} onChange={e => setForm({ ...form, color: e.target.value })} /></label>
+              <label>لون زر القسم
+  <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", marginTop: "4px" }}>
+    <input type="color" value={form.color || "#174b36"} onChange={e => setForm({ ...form, color: e.target.value })} style={{ width: "42px", height: "36px", padding: "2px", borderRadius: "10px", cursor: "pointer" }} />
+    {["#174b36", "#b45309", "#be123c", "#1d4ed8", "#6d28d9", "#0f766e", "#374151"].map(preset => (
+      <button key={preset} type="button" onClick={() => setForm({ ...form, color: preset })} style={{ width: "24px", height: "24px", borderRadius: "999px", background: preset, border: form.color === preset ? "2.5px solid #111827" : "1px solid #cbd5e1", cursor: "pointer" }} title={preset} />
+    ))}
+  </div>
+</label>
               <label className="field-wide">وصف (اختياري)<textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} /></label>
               <label>ترتيب العرض<input type="number" value={form.sortOrder} onChange={e => setForm({ ...form, sortOrder: e.target.value })} /></label>
               <label className="toggle-field"><input type="checkbox" checked={form.isActive} onChange={e => setForm({ ...form, isActive: e.target.checked })} /> القسم مفعّل في الواجهة</label>
