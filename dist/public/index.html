@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#174b36" />
+    <meta name="theme-color" content="#0d3825" />
     <meta name="description" content="ORIGINAL – أورجنال، احتياجات يومك على اختيارك." />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -14,12 +14,177 @@
     <link rel="icon" type="image/png" sizes="192x192" href="/app-icon-192-v3.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/api/store-icon" />
     <title>ORIGINAL – أورجنال</title>
-    <script type="module" crossorigin src="/assets/index-7e94R_Xf.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-DCMlNLt_.css">
+    <style>
+      #orig-splash {
+        position: fixed;
+        inset: 0;
+        z-index: 99999;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: radial-gradient(circle at 50% 38%, #1b6342 0%, #0d3825 60%, #061f14 100%);
+        transition: opacity 0.45s cubic-bezier(0.22, 1, 0.36, 1), transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+        pointer-events: none;
+        overflow: hidden;
+      }
+      #orig-splash.hide {
+        opacity: 0;
+        transform: scale(1.06);
+      }
+      .orig-logo-stage {
+        position: relative;
+        width: 176px;
+        height: 176px;
+        display: grid;
+        place-items: center;
+      }
+      .orig-svg-ring {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        transform: rotate(-90deg);
+        filter: drop-shadow(0 0 12px rgba(245, 213, 122, 0.65));
+      }
+      .orig-svg-ring circle {
+        fill: none;
+        stroke: url(#origGoldGrad);
+        stroke-width: 5;
+        stroke-linecap: round;
+        stroke-dasharray: 520;
+        stroke-dashoffset: 520;
+        animation: origDrawRing 1.1s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+      }
+      .orig-logo-box {
+        position: relative;
+        width: 142px;
+        height: 142px;
+        border-radius: 36px;
+        overflow: hidden;
+        box-shadow: 0 18px 45px rgba(0, 0, 0, 0.5), 0 0 0 2px rgba(243, 210, 122, 0.5);
+        background: #0d3825;
+        opacity: 0;
+        transform: scale(0.55) rotate(-10deg);
+        animation: origLogoForm 0.85s 0.12s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      }
+      .orig-logo-box img, .orig-logo-box video {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+        animation: origLogoPulse 1.6s 0.9s ease-in-out infinite alternate;
+      }
+      .orig-shimmer {
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(120deg, transparent 22%, rgba(255, 245, 200, 0.48) 50%, transparent 78%);
+        transform: translateX(-130%);
+        animation: origShimmer 1.3s 0.35s ease-in-out infinite;
+      }
+      .orig-brand-title {
+        margin-top: 18px;
+        font-family: system-ui, -apple-system, sans-serif;
+        font-size: 25px;
+        font-weight: 900;
+        letter-spacing: 0.15em;
+        color: #f7df9c;
+        text-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+        opacity: 0;
+        transform: translateY(12px);
+        animation: origTextUp 0.55s 0.28s ease-out forwards;
+      }
+      .orig-brand-sub {
+        margin-top: 4px;
+        font-family: system-ui, -apple-system, sans-serif;
+        font-size: 14.5px;
+        font-weight: 700;
+        color: #d8f3e3;
+        opacity: 0;
+        transform: translateY(10px);
+        animation: origTextUp 0.55s 0.42s ease-out forwards;
+      }
+      .orig-loader-bar {
+        margin-top: 20px;
+        width: 136px;
+        height: 4px;
+        border-radius: 99px;
+        background: rgba(255, 255, 255, 0.14);
+        overflow: hidden;
+      }
+      .orig-loader-fill {
+        width: 48%;
+        height: 100%;
+        border-radius: 99px;
+        background: linear-gradient(90deg, #f3c65f, #ffe89e, #4ade80);
+        animation: origBarSlide 1s ease-in-out infinite alternate;
+      }
+      @keyframes origDrawRing {
+        to { stroke-dashoffset: 0; }
+      }
+      @keyframes origLogoForm {
+        0% { opacity: 0; transform: scale(0.55) rotate(-10deg); filter: blur(6px); }
+        70% { opacity: 1; transform: scale(1.05) rotate(1.5deg); filter: blur(0px); }
+        100% { opacity: 1; transform: scale(1) rotate(0deg); filter: blur(0px); }
+      }
+      @keyframes origLogoPulse {
+        from { transform: scale(1); }
+        to { transform: scale(1.05); }
+      }
+      @keyframes origShimmer {
+        0% { transform: translateX(-130%); }
+        100% { transform: translateX(130%); }
+      }
+      @keyframes origTextUp {
+        to { opacity: 1; transform: translateY(0); }
+      }
+      @keyframes origBarSlide {
+        from { transform: translateX(-45%); }
+        to { transform: translateX(135%); }
+      }
+    </style>
+    <script type="module" crossorigin src="/assets/index-q86UO1Rc.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-Cys9S8fN.css">
     <script src="/__manus__/debug-collector.js"></script>
   </head>
   <body>
+    <div id="orig-splash">
+      <div class="orig-logo-stage">
+        <svg class="orig-svg-ring" viewBox="0 0 180 180">
+          <defs>
+            <linearGradient id="origGoldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#ffe89e" />
+              <stop offset="50%" stop-color="#d49b35" />
+              <stop offset="100%" stop-color="#4ade80" />
+            </linearGradient>
+          </defs>
+          <circle cx="90" cy="90" r="81" />
+        </svg>
+        <div class="orig-logo-box" id="orig-logo-container">
+          <img src="/app-icon-512-v3.png" alt="أورجنال" />
+          <div class="orig-shimmer"></div>
+        </div>
+      </div>
+      <div class="orig-brand-title">ORIGINAL</div>
+      <div class="orig-brand-sub">أورجنال · طازج يومياً</div>
+      <div class="orig-loader-bar"><div class="orig-loader-fill"></div></div>
+    </div>
     <div id="root"></div>
-    <script src="/api/platform/config.js"></script>
+    <script>
+      (function(){
+        var dismissed = false;
+        function hideSplash() {
+          if (dismissed) return;
+          var el = document.getElementById("orig-splash");
+          if (!el) return;
+          dismissed = true;
+          el.classList.add("hide");
+          setTimeout(function(){ if (el && el.parentNode) el.parentNode.removeChild(el); }, 480);
+        }
+        window.__hideOriginalSplash = hideSplash;
+        setTimeout(hideSplash, 1550);
+      })();
+    </script>
+    <script src="/api/platform/config.js" async></script>
   </body>
 </html>

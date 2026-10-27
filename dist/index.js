@@ -4324,7 +4324,14 @@ async function startServer() {
   const server = createServer(app);
   app.use(express2.json({ limit: "50mb" }));
   app.use(express2.urlencoded({ limit: "50mb", extended: true }));
-  app.get("/api/health", (_req, res) => res.json({ status: "ok" }));
+  app.get("/api/health", (_req, res) => res.json({ status: "ok", ts: Date.now() }));
+  if (!globalThis.__keepAliveTimer) {
+    globalThis.__keepAliveTimer = setInterval(() => {
+      const extUrl = process.env.RENDER_EXTERNAL_URL || HTTPS_PREFIX + "original-store-xmyf.onrender.com";
+      fetch(extUrl + "/api/health").catch(() => {
+      });
+    }, 10 * 60 * 1e3);
+  }
   const ALLOWED_IMG_MIMES = /* @__PURE__ */ new Set(["image/webp", "image/png", "image/jpeg", "image/jpg", "image/gif", "image/avif"]);
   function isSafeExternalImageUrl(rawUrl) {
     try {
