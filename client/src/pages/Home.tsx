@@ -1888,9 +1888,9 @@ type AssistantMessage = {
   ownerMsgId?: string;
 };
 
-const ASSISTANT_HISTORY_KEY = "original-assistant-history-v4";
-const CHAT_SESSION_KEY = "original-chat-session-id-v3";
-const SEEN_OWNER_IDS_KEY = "original-seen-owner-ids-v3";
+const ASSISTANT_HISTORY_KEY = "original-assistant-history-v5";
+const CHAT_SESSION_KEY = "original-chat-session-id-v4";
+const SEEN_OWNER_IDS_KEY = "original-seen-owner-ids-v4";
 
 function readSeenOwnerIds(): Set<string> {
   try {
@@ -1922,12 +1922,12 @@ function getOrCreateChatSessionId(): string {
 
 const assistantGreeting: AssistantMessage = {
   role: "assistant",
-  text: "يا هلا بك في أورجنال! 🌿 أنا مساعدك الذكي وشيف المتجر.\nأقدر أقترح لك طبخة أو وصفة شهية بمقادير من المتجر، أو أجهز لك طلبك الخاص، أو أرتب لك سلة اقتصادية على قد ميزانيتك!\nاختر من الأزرار بالأسفل أو اكتب لي اللي في خاطرك:",
+  text: "يا هلا بك في أورجنال! 🌿 حياك الله، إيش تحب أجهز لك اليوم؟\nتريد مقاضي الصباح، ولا سلة خضروات ومقاضي للمطبخ والبيت، ولا أقترح لك وصفة طبخة اقتصادية سريعة؟",
   suggestedQuestions: [
-    "🍳 اقترح لي طبخة أو وصفة اليوم",
-    "🛒 أريد طلب أصناف بنفسي",
-    "💰 رتب لي سلة اقتصادية",
-    "🥤 عصائر وسناكات باردة",
+    "🌅 مقاضي الصباح والفطور",
+    "🍅 سلة المطبخ اليومية",
+    "📦 مقاضي البيت والأسبوع",
+    "🍳 وصفة طبخة اقتصادية",
   ],
 };
 
@@ -1957,6 +1957,179 @@ function assistantHistoryText(message: AssistantMessage) {
   return [message.text, message.contextText].filter(Boolean).join("\n").slice(0, 1800);
 }
 
+function buildSmartPresetReply(
+  query: string,
+  catalog: PublicProduct[],
+  categories: HomeData["categories"],
+  turnIndex: number,
+): { text: string; items: PublicProduct[]; suggestions: string[] } | null {
+  if (!catalog.length) return null;
+  const norm = (s: string) => s.replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي").toLowerCase().trim();
+  const q = norm(query);
+  const findByKeywords = (kws: string[]) => catalog.filter(p => {
+    const np = norm(p.name);
+    return kws.some(k => np.includes(norm(k)));
+  });
+  const pickOne = (kws: string[], offset = 0): PublicProduct | null => {
+    const matches = findByKeywords(kws);
+    if (!matches.length) return null;
+    return matches[(turnIndex + offset) % matches.length];
+  };
+  const uniqueProducts = (arr: Array<PublicProduct | null | undefined>) => {
+    const seen = new Set<number>();
+    const out: PublicProduct[] = [];
+    for (const item of arr) {
+      if (item && !seen.has(item.id)) {
+        seen.add(item.id);
+        out.push(item);
+      }
+    }
+    return out;
+  };
+
+  if (/(?:مقاضي الصباح|سله الصباح|تشكيله صباحيه|فطور|صباح)/.test(q)) {
+    const variant = turnIndex % 3;
+    let items: PublicProduct[] = [];
+    let desc = "";
+    if (variant === 0) {
+      items = uniqueProducts([pickOne(["فول"]), pickOne(["طماطم"]), pickOne(["خيار"]), pickOne(["نعنع", "جرجير", "كبزر"], 1), pickOne(["قشطه", "زبادي", "جبن"])]);
+      desc = "صباح الخيرات! 🌅 رتبت لك «سلة الصباح والفطور» (فول وخضار صباحية طازجة مع القشطة/الألبان) 👇";
+    } else if (variant === 1) {
+      items = uniqueProducts([pickOne(["قشطه", "زبادي"]), pickOne(["خيار"]), pickOne(["طماطم"]), pickOne(["جرجير", "خس", "نعنع"], 2), pickOne(["ليمون"])]);
+      desc = "أحلى صباح يا غالي! 🌅 هذي «سلة فطور صباحي خفيف ومنعش» بخضروات الصباح الطازجة والألبان 👇";
+    } else {
+      items = uniqueProducts([pickOne(["طماطم"]), pickOne(["بصل"]), pickOne(["بسباس"]), pickOne(["كبزر", "بقدونس"]), pickOne(["فول", "تونه"])]);
+      desc = "يا صباح النشاط! 🌅 جهزت لك «مقاضي كشنة وفطور الصباح اليمني» طازجة واقتصادية 👇";
+    }
+    if (items.length >= 2) {
+      return {
+        text: desc + "\nاعتمد السلة كاملة أو أضف أي صنف بمفرده، أو اضغط «🌅 تشكيلة صباحية أخرى»!",
+        items,
+        suggestions: ["🌅 تشكيلة صباحية أخرى", "🍅 سلة المطبخ اليومية", "🍳 وصفة طبخة اقتصادية", "عرض السلة"],
+      };
+    }
+  }
+
+  if (/(?:سله المطبخ|مقاضي المطبخ|تشكيله مطبخ|سله خضروات|سله يوميه|خضروات يوميه)/.test(q)) {
+    const variant = turnIndex % 3;
+    const extraVeg = variant === 0 ? ["كوسه", "باميه"] : variant === 1 ? ["باذنجان", "جزر"] : ["باميه", "ملوخيه", "فجل"];
+    const items = uniqueProducts([
+      pickOne(["طماطم"]),
+      pickOne(["بطاط"]),
+      pickOne(["بصل ابيض", "بصل"], variant),
+      pickOne(extraVeg, variant),
+      pickOne(["بسباس", "ثوم", "كبزر"], variant),
+      pickOne(["ليمون", "خيار"], variant),
+    ]).slice(0, 5);
+    if (items.length >= 2) {
+      return {
+        text: "أبشر يا غالي! 🍅 رتبت لك «سلة المطبخ والخضروات اليومية» بأهم أساسيات الطبخ الطازجة 👇\nاعتمدها كاملة أو اختر الصنف اللي ناقصك، أو جرب تشكيلة ثانية!",
+        items,
+        suggestions: ["🍅 تشكيلة مطبخ أخرى", "📦 مقاضي البيت والأسبوع", "🥗 سلة سلطة وورقيات", "🍳 وصفة طبخة اقتصادية"],
+      };
+    }
+  }
+
+  if (/(?:سله سلطه|ورقيات|سلطه خضراء)/.test(q)) {
+    const items = uniqueProducts([
+      pickOne(["خيار"]),
+      pickOne(["طماطم"]),
+      pickOne(["ليمون"]),
+      pickOne(["خس", "جرجير", "ملفوف"], turnIndex),
+      pickOne(["كبزر", "بقدونس", "نعنع", "فجل"], turnIndex + 1),
+    ]).slice(0, 5);
+    if (items.length >= 2) {
+      return {
+        text: "يا هلا! 🥗 هذي «سلة السلطة والورقيات الطازجة» لوجبة صحية تفتح النفس 👇",
+        items,
+        suggestions: ["🌅 مقاضي الصباح والفطور", "🍅 سلة المطبخ اليومية", "🍳 وصفة طبخة اقتصادية", "عرض السلة"],
+      };
+    }
+  }
+
+  if (/(?:مقاضي البيت|مقاضي الاسبوع|تشكيله اسبوعيه|سله الاسبوع|سله اقتصاديه)/.test(q)) {
+    const items = uniqueProducts([
+      pickOne(["بطاط"]),
+      pickOne(["طماطم"]),
+      pickOne(["بصل ابيض", "بصل احمر"], turnIndex),
+      pickOne(["ثوم"]),
+      pickOne(["كوسه", "جزر", "باذنجان", "باميه"], turnIndex),
+      pickOne(["فول", "تونه", "قشطه", "زبادي"], turnIndex),
+    ]).slice(0, 6);
+    if (items.length >= 2) {
+      return {
+        text: "على عيني! 📦 رتبت لك «سلة مقاضي البيت والأسبوع الاقتصادية» تجمع أساسيات الخضار والمؤونة بسعر ممتاز 👇",
+        items,
+        suggestions: ["📦 تشكيلة أسبوعية أخرى", "🌅 مقاضي الصباح والفطور", "🍅 سلة المطبخ اليومية", "عرض السلة"],
+      };
+    }
+  }
+
+  if (/^(?:🍳\s*)?(?:وصفه طبخه اقتصاديه|وصفه اقتصاديه|اقترح لي طبخه او وصفه اليوم|وصفه ثانيه|طبخه ثانيه|وصفه خضروات)$/.test(q)) {
+    const recipeIdx = turnIndex % 4;
+    if (recipeIdx === 0) {
+      const items = uniqueProducts([pickOne(["بطاط"]), pickOne(["طماطم"]), pickOne(["بصل"]), pickOne(["ثوم"]), pickOne(["بسباس", "كبزر"])]);
+      return {
+        text: "🍲 طبخة مقترحة: «صينية بطاط يمنية بالخضار والثوم البلدي»\n👩‍🍳 قطّع البطاط والطماطم والبصل حلقات، وتبّلها بالثوم والبسباس الأخضر واطبخها على نار هادئة 20 دقيقة 👇",
+        items,
+        suggestions: ["🍳 وصفة ثانية", "🍅 سلة المطبخ اليومية", "🌅 مقاضي الصباح والفطور", "عرض السلة"],
+      };
+    }
+    if (recipeIdx === 1) {
+      const items = uniqueProducts([pickOne(["فول"]), pickOne(["طماطم"]), pickOne(["بصل"]), pickOne(["بسباس"]), pickOne(["كبزر"])]);
+      return {
+        text: "🍲 طبخة مقترحة: «قلابة فول يمني بالخلطة الطازجة»\n👩‍🍳 احمس البصل والطماطم والبسباس الأخضر، ثم أضف الفول ورشة كبزرة طازجة على الوجه في 5 دقائق 👇",
+        items,
+        suggestions: ["🍳 وصفة ثانية", "🌅 مقاضي الصباح والفطور", "🥗 سلة سلطة وورقيات", "عرض السلة"],
+      };
+    }
+    if (recipeIdx === 2) {
+      const items = uniqueProducts([pickOne(["كوسه"]), pickOne(["باذنجان", "باميه"]), pickOne(["بطاط"]), pickOne(["طماطم"]), pickOne(["بصل"])]);
+      return {
+        text: "🍲 طبخة مقترحة: «إدام خضار مشكل طازج (مشكل فرن)»\n👩‍🍳 شوّح البصل والطماطم وأضف الكوسة والباذنجان والبطاط على نار هادئة لغداء صحي واقتصادي يكفي العائلة 👇",
+        items,
+        suggestions: ["🍳 وصفة ثانية", "📦 مقاضي البيت والأسبوع", "🥗 سلة سلطة وورقيات", "عرض السلة"],
+      };
+    }
+    const items = uniqueProducts([pickOne(["خيار"]), pickOne(["طماطم"]), pickOne(["ليمون"]), pickOne(["جرجير", "خس"]), pickOne(["بسباس"]), pickOne(["كبزر"])]).slice(0, 5);
+    return {
+      text: "🥗 وصفة مقترحة: «سلطة خضراء يمنية مع سحاوق طماطم وبسباس»\n👩‍🍳 افرم الخيار والطماطم والجرجير مع عصرة ليمون، واخلط الطماطم مع البسباس والكبزرة لألذ سحاوق يمني 👇",
+      items,
+      suggestions: ["🍳 وصفة ثانية", "🍅 سلة المطبخ اليومية", "🌅 مقاضي الصباح والفطور", "عرض السلة"],
+    };
+  }
+
+  const matchedCategory = categories.find(c => norm(c.name) === q.replace(/^[^\p{L}\p{N}]+/gu, "").trim());
+  if (matchedCategory) {
+    const catProds = catalog.filter(p => p.categoryId === matchedCategory.id);
+    if (catProds.length > 0) {
+      const start = (turnIndex * 4) % catProds.length;
+      const rotated = [...catProds.slice(start), ...catProds.slice(0, start)].slice(0, 5);
+      return {
+        text: "يا هلا بك! اخترت لك 5 أصناف مميزة وطازجة من قسم «" + matchedCategory.name + "» 👇\nتقدر تضيف أي صنف بمفرده أو تضغط لعرض دفعة أخرى من القسم:",
+        items: rotated,
+        suggestions: ["🔄 عرض المزيد من " + matchedCategory.name, "🌅 مقاضي الصباح والفطور", "🍅 سلة المطبخ اليومية", "عرض السلة"],
+      };
+    }
+  }
+  if (q.startsWith(norm("🔄 عرض المزيد من "))) {
+    const catName = q.replace(norm("🔄 عرض المزيد من "), "").trim();
+    const mc = categories.find(c => norm(c.name).includes(catName) || catName.includes(norm(c.name)));
+    if (mc) {
+      const catProds = catalog.filter(p => p.categoryId === mc.id);
+      const start = ((turnIndex + 1) * 5) % Math.max(1, catProds.length);
+      const rotated = [...catProds.slice(start), ...catProds.slice(0, start)].slice(0, 5);
+      return {
+        text: "تفضل يا غالي! هذي دفعة ثانية من أصناف قسم «" + mc.name + "» 👇",
+        items: rotated,
+        suggestions: ["🔄 عرض المزيد من " + mc.name, "🍅 سلة المطبخ اليومية", "📦 مقاضي البيت والأسبوع", "عرض السلة"],
+      };
+    }
+  }
+
+  return null;
+}
+
 function AssistantPage() {
   const { add, cart, setQuantity, favoriteIds } = useStore();
   const homeCatalog = trpc.commerce.catalog.home.useQuery();
@@ -1966,6 +2139,7 @@ function AssistantPage() {
   const [messages, setMessages] = useState<AssistantMessage[]>(readAssistantHistory);
   const messagesRef = useRef<HTMLDivElement>(null);
   const appliedActionsRef = useRef(new Set<string>());
+  const turnCounterRef = useRef<number>(Math.floor(Math.random() * 10));
   const seenOwnerIdsRef = useRef<Set<string>>(readSeenOwnerIds());
   const retryRef = useRef<{ request: string; history: Array<{ role: "user" | "assistant"; text: string }> } | null>(null);
   const mutation = trpc.commerce.assistant.recipe.useMutation();
@@ -2105,6 +2279,40 @@ function AssistantPage() {
     }
 
     const catalogProducts: PublicProduct[] = (homeCatalog.data?.products ?? []) as PublicProduct[];
+    const catalogCategories = (homeCatalog.data?.categories ?? []) as HomeData["categories"];
+    turnCounterRef.current += 1;
+
+    const preset = buildSmartPresetReply(trimmed, catalogProducts, catalogCategories, turnCounterRef.current);
+    if (preset) {
+      const actId = "act-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6);
+      setInput("");
+      setMessages(current => [
+        ...current,
+        { role: "user" as const, text: trimmed },
+        {
+          role: "assistant" as const,
+          text: preset.text,
+          cartAction: {
+            id: actId,
+            type: "add" as const,
+            status: "pending" as const,
+            items: preset.items.map(p => ({
+              productId: p.id,
+              name: p.name,
+              price: p.price,
+              unit: p.unit,
+              quantity: p.minQuantity || 1,
+              stock: p.stock,
+              minQuantity: p.minQuantity,
+              quantityStep: p.quantityStep,
+            })),
+          },
+          suggestedQuestions: preset.suggestions,
+        },
+      ].slice(-32));
+      return;
+    }
+
     const norm = (s: string) => s.replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي").toLowerCase().trim();
     const cleanTarget = norm(trimmed.replace(/^(?:أضف|اضف|إضافة|اضافة|اريد|أريد|ابغى|أبغى|عطني|أعطني|اعطني)\s+/i, ""));
     const matchedProd = catalogProducts.find(p => {
@@ -2115,12 +2323,13 @@ function AssistantPage() {
     if (matchedProd && trimmed.length <= 40) {
       const qty = matchedProd.minQuantity || 1;
       const actId = "act-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6);
+      setInput("");
       setMessages(current => [
         ...current,
         { role: "user" as const, text: trimmed },
         {
           role: "assistant" as const,
-          text: "جهزت لك «" + matchedProd.name + "» (" + formatPrice(matchedProd.price) + ") في بطاقة التأكيد بالأسفل 👇 اضغط «✅ اعتمد الإضافة للسلة» لإضافته فوراً:",
+          text: "جهزت لك «" + matchedProd.name + "» (" + formatPrice(matchedProd.price) + ") في البطاقة بالأسفل 👇 اضغط «✅ اعتمد الإضافة»:",
           cartAction: {
             id: actId,
             type: "add" as const,
@@ -2136,7 +2345,7 @@ function AssistantPage() {
               quantityStep: matchedProd.quantityStep,
             }],
           },
-          suggestedQuestions: ["🍳 اقترح لي طبخة أو وصفة", "🛒 أريد طلب أصناف بنفسي", "عرض السلة"],
+          suggestedQuestions: ["🌅 مقاضي الصباح والفطور", "🍅 سلة المطبخ اليومية", "عرض السلة"],
         },
       ].slice(-32));
       return;
@@ -2145,7 +2354,7 @@ function AssistantPage() {
     const updatedCart = cart.map(line => ({ productId: line.id, quantity: line.quantity }));
     const history = displayedMessages
       .filter(m => !m.ownerMsgId && !m.text.includes("إدارة المتجر"))
-      .slice(-8)
+      .slice(-4)
       .map(message => ({ role: message.role, text: assistantHistoryText(message) }));
     setMessages(current => [...current, { role: "user" as const, text: trimmed }].slice(-32));
     retryRef.current = { request: trimmed, history };
@@ -2218,7 +2427,7 @@ function AssistantPage() {
       <section className="chat-panel">
         <div className="chat-head">
           <span className="chat-avatar"><Sparkles size={17} /></span>
-          <div><strong>مساعد وشيف أورجنال الذكي</strong><small>وصفات شهية · طلبات ذكية · سلة اقتصادية</small></div>
+          <div><strong>مساعد وشيف أورجنال الذكي</strong><small>سلات يومية · مقاضي الصباح · وصفات اقتصادية</small></div>
           <span className="online-dot" />
           <button type="button" className="assistant-new-chat" disabled={mutation.isPending} onClick={startNewConversation}>محادثة جديدة</button>
         </div>
@@ -2330,7 +2539,7 @@ function AssistantPage() {
           )}
         </div>
         <form className="chat-input" onSubmit={send}>
-          <input maxLength={1200} value={input} onChange={event => setInput(event.target.value)} placeholder="اطلب طبخة، أو اسأل عن صنف، أو حدد ميزانيتك..." aria-label="رسالة للمساعد" disabled={mutation.isPending} />
+          <input maxLength={1200} value={input} onChange={event => setInput(event.target.value)} placeholder="اطلب سلة الصباح، مقاضي المطبخ، أو وصفة اقتصادية..." aria-label="رسالة للمساعد" disabled={mutation.isPending} />
           <button disabled={mutation.isPending || !input.trim()} aria-label="إرسال"><ArrowLeft size={18} /></button>
         </form>
       </section>

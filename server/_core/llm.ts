@@ -117,24 +117,40 @@ function smartExtract(rawText: string, catalog: Array<{ id: number; name: string
   const norm = (s: string) => s.replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي").toLowerCase().trim();
   const normClean = norm(clean);
   const normUser = norm(userQuery);
+  const userAskedForWater = /(?:ماء|مياه|مويه|عصير|مشروب|شرب)/i.test(normUser);
+
+  if (!userAskedForWater && cartItemsMap.size >= 3) {
+    for (const [pid] of [...cartItemsMap.entries()]) {
+      const prod = catalog.find(p => p.id === pid);
+      if (prod && /(?:مياه|ماء)/.test(prod.name)) {
+        cartItemsMap.delete(pid);
+      }
+    }
+  }
+
   const mentionedInReply: Array<{ id: number; name: string; price: number }> = [];
   for (const p of catalog) {
     if (isTobaccoOrNonFood(p.name, p.category) && !/(?:سجائر|سجاير|دخان|شملان|كمران)/.test(normUser)) continue;
+    if (!userAskedForWater && /(?:مياه|ماء)/.test(p.name) && mentionedInReply.length >= 2) continue;
     const np = norm(p.name);
     if (np.length >= 3 && (normClean.includes(np) || normUser === np)) {
       mentionedInReply.push(p);
     }
   }
 
-  if (cartItemsMap.size === 0 && mentionedInReply.length > 0 && mentionedInReply.length <= 6) {
+  if (cartItemsMap.size === 0 && mentionedInReply.length > 0) {
     cartAction = "add";
-    for (const p of mentionedInReply) {
+    for (const p of mentionedInReply.slice(0, 5)) {
       cartItemsMap.set(p.id, 1);
     }
   }
 
+  const lines = clean.split("\n").map(l => l.trim()).filter(Boolean);
+  const conciseLines = lines.filter(l => !( /^[*•\-]\s+.+:\s*\d+/.test(l) && lines.length > 5 )).slice(0, 4);
+  clean = (conciseLines.length > 0 ? conciseLines.join("\n") : lines.slice(0, 3).join("\n")).slice(0, 340);
+
   clean = clean
-    .replace(/(?:تمام[،,]?\s*)?(?:ضفت|أضفت|اضفت|تمت إضافة|تم اضافه)\s+([^.\n]+?)\s*(?:بالسلة|للسلة|إلى السلة|في السلة)(?:\s*بنجاح)?[\.!]?/g, "جهزت لك ($1) في بطاقة التأكيد بالأسفل 👇 اضغط «✅ اعتمد الإضافة للسلة» لإضافتها فوراً!")
+    .replace(/(?:تمام[،,]?\s*)?(?:ضفت|أضفت|اضفت|تمت إضافة|تم اضافه)\s+([^.\n]+?)\s*(?:بالسلة|للسلة|إلى السلة|في السلة)(?:\s*بنجاح)?[\.!]?/g, "جهزت لك ($1) في البطاقة بالأسفل 👇 اضغط «✅ اعتمد الإضافة»:")
     .trim();
 
   const mentionsUnavailable = /(?:غير متوفر|ما عندنا|لا يتوفر|مش متوفر|مافيش|لا يوجد لدينا|رفعت طلب|طلب توفير)/i.test(clean);
@@ -143,15 +159,15 @@ function smartExtract(rawText: string, catalog: Array<{ id: number; name: string
   }
 
   if (missingIngredients.length > 0 && !clean.includes("770731619")) {
-    clean += "\n📲 تم إرسال طلبك للإدارة لتوفيره، وللتواصل المباشر مع المالك: 770731619";
+    clean += "\n📲 تم رفع طلب توفير للإدارة، وللتواصل: 770731619";
   }
 
   const filteredSuggestions = suggestedQuestions.filter(q => !/^(?:نعم|لا|نعم أضف|نعم اضف|نعم أضفها|لا شكراً|لا شكرا)$/i.test(q.trim()));
   if (filteredSuggestions.length === 0) {
-    filteredSuggestions.push("🍳 اقترح لي طبخة أو وصفة", "🛒 أطلب أصناف بنفسي", "💰 سلة اقتصادية", "عرض السلة");
+    filteredSuggestions.push("🌅 مقاضي الصباح والفطور", "🍅 سلة المطبخ اليومية", "📦 مقاضي البيت والأسبوع", "🍳 وصفة طبخة اقتصادية");
   }
 
-  const cartItems = [...cartItemsMap.entries()].map(([productId, quantity]) => ({ productId, quantity }));
+  const cartItems = [...cartItemsMap.entries()].slice(0, 6).map(([productId, quantity]) => ({ productId, quantity }));
 
   return JSON.stringify({
     message: clean,
@@ -180,10 +196,15 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     ? catalog
     : catalog.filter(p => !isTobaccoOrNonFood(p.name, p.category));
 
-  const sortedCatalog = [...filteredCatalog].sort((a, b) => a.price - b.price);
-  const compactCatalog = sortedCatalog
-    .map(p => "#" + p.id + " [قسم: " + (p.category || "عام") + "] " + p.name + " (" + p.price + " ر.ي" + (p.unit ? "/" + p.unit : "") + ")")
-    .join(" | ");
+  const variedCatalog = [...filteredCatalog]
+    .map(p => ({ p, sortScore: p.price + Math.floor(Math.random() * 220) }))
+    .sort((a, b) => a.sortScore - b.sortScore)
+    .slice(0, 34)
+    .map(x => x.p);
+
+  const compactCatalog = variedCatalog
+    .map(p => "#" + p.id + ":" + p.name + "(" + p.price + ")")
+    .join("|");
 
   let cartSummary = "فارغة";
   const cartMatch = rawUser.match(/السلة الحالية[^:]*:\s*(\[[^\n]*\])/);
@@ -191,7 +212,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     try {
       const c = JSON.parse(cartMatch[1]);
       if (Array.isArray(c) && c.length > 0) {
-        cartSummary = c.map((i: any) => i.name + "×" + i.quantity).join("، ");
+        cartSummary = c.map((i: any) => i.name + "×" + i.quantity).join("،");
       }
     } catch {}
   }
@@ -202,9 +223,9 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     recentHistory = histMatch[1]
       .split("\n")
       .filter(line => !line.includes("إدارة المتجر"))
-      .slice(-6)
+      .slice(-2)
       .join("\n")
-      .slice(-500);
+      .slice(-160);
   }
 
   let currentMsg = rawUser;
@@ -214,17 +235,12 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   }
 
   const systemPrompt = [
-    "أنت «مساعد وشيف متجر أورجنال الذكي» — خبير طهي يمني وبائع شخصي محترف وودود.",
-    "مهمتك إبهار الزبون وتلبية كل احتياجاته بذكاء عبر 4 قدرات رئيسية:",
-    "1. الشيف الذكي والطبخات والوصفات: إذا طلب الزبون «وصفة» أو «طبخة» أو «فطور» أو «غداء» أو «عشاء» أو «حلى»، لا تسرد أسماء منتجات جافة! بل ابتكر له فوراً اسم طبخة أو وصفة شهية ومفصلة من منتجات المتجر المتوفرة، واكتبها بهذا الترتيب الجميل:",
-    "   🍲 اسم الطبخة/الوصفة:",
-    "   🧾 المقادير من متجرنا (مع ذكر اسم كل منتج وسعره):",
-    "   👩‍🍳 طريقة التحضير المختصرة والشهية (في 3 خطوات مرقمة وواضحة):",
-    "   ثم ضع في نهاية ردك كود المقادير هكذا: [أضف: رقم_المنتج1: 1 | رقم_المنتج2: 1] ليظهر للزبون زر اعتماد وإضافة مقادير الطبخة للسلة بضغطة واحدة!",
-    "2. الطلب الحر والمقاضي حسب الرغبة: إذا أراد الزبون طلب أصناف بنفسه أو سأل عن قسم (خضار، عصائر، ألبان، معلبات، بهارات)، اعرض له الأصناف المتوفرة في ذلك القسم مع أسعارها، وضع كود [أضف: رقم_المنتج: 1] للأصناف المقترحة لكي يظهر له زر الإضافة المباشر تحت رسالتك.",
-    "3. السلة الاقتصادية حسب الميزانية: إذا طلب «سلة اقتصادية» أو حدد مبلغاً (مثلاً بـ 1000 أو 1500 ر.ي)، رتب له تشكيلة متوازنة من المتجر مع حساب مجموعها، وضع كود [أضف: رقم1: 1 | رقم2: 1] لكي يعتمدها بضغطة زر.",
-    "4. الدقة والأمانة: لا تخلط أبداً بين الأقسام، ولا تقترح السجائر أو الدخان، ولا تقل للزبون «ضفت لك للسلة» كحقيقة تمت بل قل «جهزت لك الأصناف في بطاقة التأكيد بالأسفل، اضغط (✅ اعتمد الإضافة) لإضافتها لسلتك!». وإذا طلب صنفاً غير متوفر بالمتجر اعتذر بلطف وأخبره أنه تم إرسال طلب توفير للإدارة (770731619) وضع [طلب_توفير: اسم الصنف].",
-    "5. لا تضع أبداً أزراراً مبهمة مثل (نعم أضف) أو (نعم) أو (لا)؛ اجعل الأزرار دائماً واضحة ومفيدة في نهاية ردك مثل: [أزرار: 🍳 وصفة ثانية | 🥤 عصير بارد | 🛒 تصفح الأقسام | عرض السلة]"
+    "أنت «مساعد وشيف أورجنال الذكي». ردك في سطرين قصيرين فقط (أقل من 35 كلمة لتوفير التوكنز) وودود وذكي.",
+    "قواعد صارمة:",
+    "1. ممنوع سرد قوائم طويلة بالأسعار في النص! اختر فقط 3 إلى 5 أصناف مناسبة لطلب الزبون وضع أرقامها في النهاية هكذا: [أضف: رقم1: 1 | رقم2: 1] لأن البطاقة التفاعلية تحت رسالتك تعرض الأسعار والأزرار تلقائياً.",
+    "2. واقعية 100%: لسلة الصباح اختر فطور وخضار صباحية (مثل فول أو قشطة أو زبادي مع طماطم وخيار ونعنعة). لسلة المطبخ اليومية اختر (طماطم، بطاط، بصل، بسباس، كبزرة). للطبخات لا تضع مياه معدنية أبداً مع مقادير الطبخ!",
+    "3. إذا كان الصنف غير متوفر (مثل دقيق/كيك) اعتذر بسطر واحد لطيف واقترح بديلاً متوفراً كالقشطة والعسل أو الفواكه وضع [طلب_توفير: الصنف] ورقم 770731619.",
+    "4. اختم دائماً بـ: [أزرار: 🌅 مقاضي الصباح والفطور | 🍅 سلة المطبخ اليومية | 📦 مقاضي البيت والأسبوع | 🍳 وصفة طبخة اقتصادية]"
   ].join("\n");
 
   const compactUser = [
@@ -261,7 +277,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
           body: JSON.stringify({
             model,
             temperature: 0.35,
-            max_tokens: 700,
+            max_tokens: 190,
             messages: [
               { role: "system", content: systemPrompt },
               { role: "user", content: compactUser }
