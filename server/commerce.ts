@@ -335,6 +335,7 @@ const settingSchema = z.object({
   rewardEnabled: z.boolean().optional(),
   rewardType: z.enum(["free_delivery", "discount_percent"]).optional(),
   rewardValue: z.number().int().min(0).max(100).optional(),
+  aiInstructions: z.string().trim().max(3000).optional(),
 });
 
 function slugify(value: string) {
@@ -346,6 +347,7 @@ const PUBLIC_STORE_SETTING_KEYS = new Set([
   "storeName", "storeDescription", "contactPhone", "currency", "storeIconUrl",
   "deliveryEnabled", "deliveryFee", "deliveryZones", "orderPaused", "pausedMessage",
   "rewardEnabled", "rewardsThreshold", "rewardType", "rewardValue", "rewardsMessage",
+  "aiInstructions",
 ]);
 
 const __orderRateBuckets = new Map<string, { count: number; resetAt: number }>();
@@ -1038,6 +1040,7 @@ export const commerceRouter = router({
       sessionId: z.string().trim().min(1).max(80),
     })).query(async ({ input }) => {
       const db = await getDb();
+      const settings = db ? await readSettings(db) : { deliveryEnabled: "true", deliveryFee: "0" };
       await loadLiveChats(db);
       const session = liveChatsMemory.get(input.sessionId);
       return {
@@ -1133,10 +1136,11 @@ export const commerceRouter = router({
 
       let output: AssistantModelOutput | null = null;
       try {
+        const aiInst = db ? (await readSettings(db)).aiInstructions : "";
         const response = await invokeLLM({
           messages: [
-            { role: "system", content: "أنت بائع يمني ذكي وأمين في متجر أورجنال." },
-            { role: "user", content: userPrompt },
+            { role: "system", content: "أنت بائع وشيف يمني ذكي في متجر أورجنال." },
+            { role: "user", content: userPrompt + (aiInst ? "\n\nتوجيهات مالك المتجر الخاصة:\n" + aiInst : "") },
           ],
           response_format: { type: "json_object" },
         });

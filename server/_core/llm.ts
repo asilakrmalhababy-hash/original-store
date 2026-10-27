@@ -128,26 +128,22 @@ function smartExtract(rawText: string, catalog: Array<{ id: number; name: string
     }
   }
 
-  const mentionedInReply: Array<{ id: number; name: string; price: number }> = [];
-  for (const p of catalog) {
-    if (isTobaccoOrNonFood(p.name, p.category) && !/(?:سجائر|سجاير|دخان|شملان|كمران)/.test(normUser)) continue;
-    if (!userAskedForWater && /(?:مياه|ماء)/.test(p.name) && mentionedInReply.length >= 2) continue;
-    const np = norm(p.name);
-    if (np.length >= 3 && (normClean.includes(np) || normUser === np)) {
-      mentionedInReply.push(p);
+  const userWantsToAdd = /(?:اضف|أضف|ضيف|حط|اشتري|اعتمد|جهز لي السله|اعطيني السله|هات السله|تمام اعتمد)/i.test(normUser);
+  if (cartItemsMap.size === 0 && userWantsToAdd) {
+    for (const p of catalog) {
+      if (isTobaccoOrNonFood(p.name, p.category) && !/(?:سجائر|سجاير|دخان|شملان|كمران)/.test(normUser)) continue;
+      const np = norm(p.name);
+      if (np.length >= 3 && (normClean.includes(np) || normUser.includes(np))) {
+        cartItemsMap.set(p.id, 1);
+        if (cartItemsMap.size >= 5) break;
+      }
     }
-  }
-
-  if (cartItemsMap.size === 0 && mentionedInReply.length > 0) {
-    cartAction = "add";
-    for (const p of mentionedInReply.slice(0, 5)) {
-      cartItemsMap.set(p.id, 1);
-    }
+    if (cartItemsMap.size > 0) cartAction = "add";
   }
 
   const lines = clean.split("\n").map(l => l.trim()).filter(Boolean);
-  const conciseLines = lines.filter(l => !( /^[*•\-]\s+.+:\s*\d+/.test(l) && lines.length > 5 )).slice(0, 4);
-  clean = (conciseLines.length > 0 ? conciseLines.join("\n") : lines.slice(0, 3).join("\n")).slice(0, 340);
+  const conciseLines = lines.filter(l => !( /^[*•\-]\s+.+:\s*\d+/.test(l) && lines.length > 4 )).slice(0, 4);
+  clean = (conciseLines.length > 0 ? conciseLines.join("\n") : lines.slice(0, 3).join("\n")).slice(0, 350);
 
   clean = clean
     .replace(/(?:تمام[،,]?\s*)?(?:ضفت|أضفت|اضفت|تمت إضافة|تم اضافه)\s+([^.\n]+?)\s*(?:بالسلة|للسلة|إلى السلة|في السلة)(?:\s*بنجاح)?[\.!]?/g, "جهزت لك ($1) في البطاقة بالأسفل 👇 اضغط «✅ اعتمد الإضافة»:")
@@ -159,15 +155,15 @@ function smartExtract(rawText: string, catalog: Array<{ id: number; name: string
   }
 
   if (missingIngredients.length > 0 && !clean.includes("770731619")) {
-    clean += "\n📲 تم رفع طلب توفير للإدارة، وللتواصل: 770731619";
+    clean += "\n📲 تم رفع طلب توفير للإدارة، وللتواصل المباشر مع المالك: 770731619";
   }
 
   const filteredSuggestions = suggestedQuestions.filter(q => !/^(?:نعم|لا|نعم أضف|نعم اضف|نعم أضفها|لا شكراً|لا شكرا)$/i.test(q.trim()));
   if (filteredSuggestions.length === 0) {
-    filteredSuggestions.push("🌅 مقاضي الصباح والفطور", "🍅 سلة المطبخ اليومية", "📦 مقاضي البيت والأسبوع", "🍳 وصفة طبخة اقتصادية");
+    filteredSuggestions.push("🌅 مقاضي الصباح", "🍅 سلة المطبخ", "📦 سلة أسبوعية للبيت", "🍳 وصفة طبخة");
   }
 
-  const cartItems = [...cartItemsMap.entries()].slice(0, 6).map(([productId, quantity]) => ({ productId, quantity }));
+  const cartItems = [...cartItemsMap.entries()].slice(0, 7).map(([productId, quantity]) => ({ productId, quantity }));
 
   return JSON.stringify({
     message: clean,
@@ -196,14 +192,9 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     ? catalog
     : catalog.filter(p => !isTobaccoOrNonFood(p.name, p.category));
 
-  const variedCatalog = [...filteredCatalog]
-    .map(p => ({ p, sortScore: p.price + Math.floor(Math.random() * 220) }))
-    .sort((a, b) => a.sortScore - b.sortScore)
-    .slice(0, 34)
-    .map(x => x.p);
-
-  const compactCatalog = variedCatalog
-    .map(p => "#" + p.id + ":" + p.name + "(" + p.price + ")")
+  const compactCatalog = filteredCatalog
+    .slice(0, 45)
+    .map(p => "#" + p.id + ":" + p.name + "(" + p.price + (p.unit ? "/" + p.unit : "") + ")[" + (p.category || "عام") + "]")
     .join("|");
 
   let cartSummary = "فارغة";
@@ -223,9 +214,9 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     recentHistory = histMatch[1]
       .split("\n")
       .filter(line => !line.includes("إدارة المتجر"))
-      .slice(-2)
+      .slice(-4)
       .join("\n")
-      .slice(-160);
+      .slice(-320);
   }
 
   let currentMsg = rawUser;
@@ -234,14 +225,22 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     currentMsg = rawUser.slice(reqIdx + "رسالة العميل الحالية:".length).trim();
   }
 
+  const ownerCustomNote = rawUser.includes("توجيهات مالك المتجر الخاصة:")
+    ? rawUser.slice(rawUser.indexOf("توجيهات مالك المتجر الخاصة:")).trim()
+    : "";
+
   const systemPrompt = [
-    "أنت «مساعد وشيف أورجنال الذكي». ردك في سطرين قصيرين فقط (أقل من 35 كلمة لتوفير التوكنز) وودود وذكي.",
-    "قواعد صارمة:",
-    "1. ممنوع سرد قوائم طويلة بالأسعار في النص! اختر فقط 3 إلى 5 أصناف مناسبة لطلب الزبون وضع أرقامها في النهاية هكذا: [أضف: رقم1: 1 | رقم2: 1] لأن البطاقة التفاعلية تحت رسالتك تعرض الأسعار والأزرار تلقائياً.",
-    "2. واقعية 100%: لسلة الصباح اختر فطور وخضار صباحية (مثل فول أو قشطة أو زبادي مع طماطم وخيار ونعنعة). لسلة المطبخ اليومية اختر (طماطم، بطاط، بصل، بسباس، كبزرة). للطبخات لا تضع مياه معدنية أبداً مع مقادير الطبخ!",
-    "3. إذا كان الصنف غير متوفر (مثل دقيق/كيك) اعتذر بسطر واحد لطيف واقترح بديلاً متوفراً كالقشطة والعسل أو الفواكه وضع [طلب_توفير: الصنف] ورقم 770731619.",
-    "4. اختم دائماً بـ: [أزرار: 🌅 مقاضي الصباح والفطور | 🍅 سلة المطبخ اليومية | 📦 مقاضي البيت والأسبوع | 🍳 وصفة طبخة اقتصادية]"
-  ].join("\n");
+    "أنت «بائع وشيف أورجنال الذكي» — إنسان لبق وشاطر، تاجر يمني أصيل يناقش الزبون بذكاء ويرشده لما ينفعه.",
+    "أهم مهاراتك الذكية:",
+    "1. الحوار والمناقشة الاستشارية: لا ترمِ بطاقات سلة أو قوائم أسعار جاهزة في كل رسالة! ناقش الزبون بلطف وافهم احتياجه الحقيقي أولاً:",
+    "   - إذا سأل عن (سلة أسبوعية): اسأله بذكاء كم شخص في البيت وما إذا كان يفضل التركيز على خضار الطبيخ اليومي أو إضافة معلبات وبقوليات، وضع أزراراً لعدد الأفراد [أزرار: 👨‍👩‍👧 نحن 3-4 أشخاص | 👨‍👩‍👧‍👦 نحن 5-7 أشخاص | 🍅 ركز على الخضار | 🥫 تشكيلة خضار ومعلبات].",
+    "   - بعد معرفة عدد الأفراد أو عند اعتماد السلة: احسب كميات أسبوعية حقيقية تكفي أسبوعاً فعلاً (مثلاً لـ 4 أشخاص: 3 كغ بطاط، 2 كغ طماطم، 1.5 كغ بصل، ربع كغ ثوم، علبتين فول)، وعندها فقط ضع كود [أضف: رقم_البطاط: 3 | رقم_الطماطم: 2 | ...] لتظهر بطاقة الإضافة بالكميات الموزونة!",
+    "   - إذا طلب (طبخة أو وصفة): ناقشه أولاً (نفسك في خضار مشكل بالفرن، ولا قلابة فول وتونة، ولا سلطة وسحاوق؟)، وعندما يختار اكتب الوصفة في سطرين شهية وضع كود المقادير لتجهيزها له.",
+    "2. متى تضع كود [أضف: ...]؟ ضعه فقط عند الوصول لتشكيلة نهائية واضحة أو عندما يقول الزبون (تمام اعتمدها / أضف / وريني السلة). أثناء النقاش الأولي تحدث معه كإنسان بدون كود [أضف] لتجنب إظهار بطاقات غير مطلوبة.",
+    "3. واقعية تامة: لا مياه معدنية في الطبخات، ولا سجائر أو دخان في الوجبات أو الاقتراحات العامة.",
+    "4. الرد مختصر (سطرين إلى 4 أسطر مفيدة وذكية لتوفير التوكنز والوقت).",
+    ownerCustomNote ? ("توجيهات إضافية من مالك المتجر:\n" + ownerCustomNote) : ""
+  ].filter(Boolean).join("\n");
 
   const compactUser = [
     "/no_think",
@@ -277,7 +276,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
           body: JSON.stringify({
             model,
             temperature: 0.35,
-            max_tokens: 190,
+            max_tokens: 280,
             messages: [
               { role: "system", content: systemPrompt },
               { role: "user", content: compactUser }

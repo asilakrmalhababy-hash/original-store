@@ -2282,36 +2282,8 @@ function AssistantPage() {
     const catalogCategories = (homeCatalog.data?.categories ?? []) as HomeData["categories"];
     turnCounterRef.current += 1;
 
-    const preset = buildSmartPresetReply(trimmed, catalogProducts, catalogCategories, turnCounterRef.current);
-    if (preset) {
-      const actId = "act-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6);
-      setInput("");
-      setMessages(current => [
-        ...current,
-        { role: "user" as const, text: trimmed },
-        {
-          role: "assistant" as const,
-          text: preset.text,
-          cartAction: {
-            id: actId,
-            type: "add" as const,
-            status: "pending" as const,
-            items: preset.items.map(p => ({
-              productId: p.id,
-              name: p.name,
-              price: p.price,
-              unit: p.unit,
-              quantity: p.minQuantity || 1,
-              stock: p.stock,
-              minQuantity: p.minQuantity,
-              quantityStep: p.quantityStep,
-            })),
-          },
-          suggestedQuestions: preset.suggestions,
-        },
-      ].slice(-32));
-      return;
-    }
+    // Dynamic AI conversation handled by invokeLLM
+    const preset = null;
 
     const norm = (s: string) => s.replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي").toLowerCase().trim();
     const cleanTarget = norm(trimmed.replace(/^(?:أضف|اضف|إضافة|اضافة|اريد|أريد|ابغى|أبغى|عطني|أعطني|اعطني)\s+/i, ""));

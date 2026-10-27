@@ -1622,6 +1622,7 @@ function SettingsPanel() {
     rewardType: "free_delivery" as "free_delivery" | "discount_percent",
     rewardValue: "0",
     rewardsMessage: "",
+    aiInstructions: "",
   });
   const [rcfg, setRcfg] = useState<AdminRewardCfg>({
     rewardMode: "custom_gift",
@@ -1655,6 +1656,7 @@ function SettingsPanel() {
       rewardType: raw.rewardType === "discount_percent" ? "discount_percent" : "free_delivery",
       rewardValue: raw.rewardValue || "0",
       rewardsMessage: unpacked.cleanMessage,
+      aiInstructions: (raw as any).aiInstructions || "",
     });
     setRcfg(unpacked.cfg);
     setReady(true);
@@ -1833,7 +1835,18 @@ function SettingsPanel() {
         </div>
       </div>
     </section>
-    <button className="button button-primary settings-save" disabled={save.isPending}>{save.isPending ? <LoaderCircle className="spin" size={16} /> : <Save size={17} />}{save.isPending ? "جارٍ الحفظ..." : "حفظ كل الإعدادات"}</button>
+    <section className="admin-form-card">
+        <div className="form-card-heading">
+          <span className="form-card-number">🤖</span>
+          <div><h2>توجيهات وشخصية المساعد الذكي</h2><p>اكتب أي توجيهات تريد من الذكاء الاصطناعي الالتزام بها أثناء محادثة الزبائن (مثلاً: ركز على الخضار، اسأل عن عدد العائلة، لا تذكر السجائر، إلخ).</p></div>
+        </div>
+        <div className="form-stack">
+          <label className="field-wide">توجيهاتك الخاصة للمساعد الذكي
+            <textarea rows={4} maxLength={2500} value={values.aiInstructions} onChange={e => setValues({ ...values, aiInstructions: e.target.value })} placeholder="مثلاً: كن ودوداً جداً، إذا سأل الزبون عن السلة الأسبوعية اسأله كم عدد أفراد البيت، ركز على الخضروات الطازجة، ولا تقترح السجائر نهائياً..." />
+          </label>
+        </div>
+      </section>
+      <button className="button button-primary settings-save" disabled={save.isPending}>{save.isPending ? <LoaderCircle className="spin" size={16} /> : <Save size={17} />}{save.isPending ? "جارٍ الحفظ..." : "حفظ كل الإعدادات"}</button>
   </form>}</div>;
 }
 
