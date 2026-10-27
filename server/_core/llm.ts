@@ -79,17 +79,23 @@ function smartExtract(rawText: string, catalog: Array<{ id: number; name: string
     } catch {}
   }
 
-  const cartItems: Array<{ productId: number; quantity: number }> = [];
+  const cartItemsMap = new Map<number, number>();
   let cartAction: "none" | "add" | "remove" = "none";
   const suggestedQuestions: string[] = [];
   const missingIngredients: string[] = [];
 
-  clean = clean.replace(/\[\s*(?:أضف|اضف|إضافة|اضافة|add)\s*:\s*(\d+)(?:\s*:\s*(\d+))?\s*\]/gi, (_, idStr, qtyStr) => {
-    const pid = Number(idStr);
-    const qty = Math.max(1, Number(qtyStr || 1));
-    if (catalog.some(p => p.id === pid)) {
-      cartAction = "add";
-      cartItems.push({ productId: pid, quantity: qty });
+  clean = clean.replace(/\[\s*(?:أضف|اضف|إضافة|اضافة|add|مقادير|سلة)\s*:([^\]]+)\]/gi, (_, inner) => {
+    const parts = String(inner).split(/[|،,;]+/);
+    for (const part of parts) {
+      const m = part.trim().match(/^#?(\d+)(?:\s*[:×x*]\s*(\d+))?/);
+      if (m) {
+        const pid = Number(m[1]);
+        const qty = Math.max(1, Number(m[2] || 1));
+        if (catalog.some(p => p.id === pid)) {
+          cartAction = "add";
+          cartItemsMap.set(pid, (cartItemsMap.get(pid) ?? 0) + qty);
+        }
+      }
     }
     return "";
   });
@@ -101,12 +107,35 @@ function smartExtract(rawText: string, catalog: Array<{ id: number; name: string
   });
 
   clean = clean.replace(/\[\s*(?:أزرار|ازرار|خيارات|مقترحات)\s*:\s*([^\]]+)\]/gi, (_, btns) => {
-    String(btns).split(/[|،,]/).map(s => s.trim()).filter(Boolean).slice(0, 3).forEach(b => suggestedQuestions.push(b));
+    String(btns).split(/[|،,]/).map(s => s.trim()).filter(Boolean).slice(0, 4).forEach(b => suggestedQuestions.push(b));
     return "";
   });
 
   clean = clean.replace(/\*\*/g, "").trim();
   if (!clean) return null;
+
+  const norm = (s: string) => s.replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي").toLowerCase().trim();
+  const normClean = norm(clean);
+  const normUser = norm(userQuery);
+  const mentionedInReply: Array<{ id: number; name: string; price: number }> = [];
+  for (const p of catalog) {
+    if (isTobaccoOrNonFood(p.name, p.category) && !/(?:سجائر|سجاير|دخان|شملان|كمران)/.test(normUser)) continue;
+    const np = norm(p.name);
+    if (np.length >= 3 && (normClean.includes(np) || normUser === np)) {
+      mentionedInReply.push(p);
+    }
+  }
+
+  if (cartItemsMap.size === 0 && mentionedInReply.length > 0 && mentionedInReply.length <= 6) {
+    cartAction = "add";
+    for (const p of mentionedInReply) {
+      cartItemsMap.set(p.id, 1);
+    }
+  }
+
+  clean = clean
+    .replace(/(?:تمام[،,]?\s*)?(?:ضفت|أضفت|اضفت|تمت إضافة|تم اضافه)\s+([^.\n]+?)\s*(?:بالسلة|للسلة|إلى السلة|في السلة)(?:\s*بنجاح)?[\.!]?/g, "جهزت لك ($1) في بطاقة التأكيد بالأسفل 👇 اضغط «✅ اعتمد الإضافة للسلة» لإضافتها فوراً!")
+    .trim();
 
   const mentionsUnavailable = /(?:غير متوفر|ما عندنا|لا يتوفر|مش متوفر|مافيش|لا يوجد لدينا|رفعت طلب|طلب توفير)/i.test(clean);
   if (mentionsUnavailable && missingIngredients.length === 0 && userQuery.trim().length > 1) {
@@ -117,17 +146,12 @@ function smartExtract(rawText: string, catalog: Array<{ id: number; name: string
     clean += "\n📲 تم إرسال طلبك للإدارة لتوفيره، وللتواصل المباشر مع المالك: 770731619";
   }
 
-  if ((suggestedQuestions.length as number) === 0) {
-    for (const p of catalog) {
-      if (clean.includes(p.name) && !isTobaccoOrNonFood(p.name, p.category)) {
-        suggestedQuestions.push("أضف " + p.name);
-      }
-      if ((suggestedQuestions.length as number) >= 2) break;
-    }
-    if ((suggestedQuestions.length as number) === 0) {
-      suggestedQuestions.push("تصفح الأقسام", "عرض السلة");
-    }
+  const filteredSuggestions = suggestedQuestions.filter(q => !/^(?:نعم|لا|نعم أضف|نعم اضف|نعم أضفها|لا شكراً|لا شكرا)$/i.test(q.trim()));
+  if (filteredSuggestions.length === 0) {
+    filteredSuggestions.push("🍳 اقترح لي طبخة أو وصفة", "🛒 أطلب أصناف بنفسي", "💰 سلة اقتصادية", "عرض السلة");
   }
+
+  const cartItems = [...cartItemsMap.entries()].map(([productId, quantity]) => ({ productId, quantity }));
 
   return JSON.stringify({
     message: clean,
@@ -136,9 +160,9 @@ function smartExtract(rawText: string, catalog: Array<{ id: number; name: string
     ingredients: [],
     steps: [],
     missingIngredients,
-    cartAction,
+    cartAction: cartItems.length > 0 ? cartAction : "none",
     cartItems,
-    suggestedQuestions: suggestedQuestions.slice(0, 3),
+    suggestedQuestions: filteredSuggestions.slice(0, 4),
   });
 }
 
@@ -178,9 +202,9 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     recentHistory = histMatch[1]
       .split("\n")
       .filter(line => !line.includes("إدارة المتجر"))
-      .slice(-4)
+      .slice(-6)
       .join("\n")
-      .slice(-350);
+      .slice(-500);
   }
 
   let currentMsg = rawUser;
@@ -190,15 +214,17 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   }
 
   const systemPrompt = [
-    "أنت المساعد الذكي الرسمي في متجر أورجنال. ردك مختصر وواضح (سطرين فقط) بلهجة يمنية ودودة ومحترمة.",
-    "قواعد صارمة جداً:",
-    "1. التصنيف الصحيح والمنطق: انتبه لقسم واسم كل منتج بدقة! لا تخلط أبداً بين المشروبات/العصائر وبين القشطة/الألبان أو الخضروات أو البقوليات. كل منتج يُقترح فقط في مكانه الصحيح (العصير والماء للمشروبات، القشطة والزبادي والجبن للألبان، الليمون والخضار للخضروات والحوامض).",
-    "2. منع السجائر والدخان: يُمنع منعاً باتاً اقتراح السجائر أو الدخان كمشروب أو وجبة أو ضمن أي اقتراحات عامة.",
-    "3. لا تكرر نفس المنتجين في كل رد: أجب على سؤال الزبون مباشرة بحسب ما يطلبه (إذا سأل عن حامض اعرض الحوامض كالليمون، وإذا سأل عن عصير اعرض العصائر فقط، وإذا سأل سؤالاً عاماً رحب به واسأله أي قسم يفضل).",
-    "4. عدم الإضافة للسلة بدون طلب صريح: لا تضع وسم [أضف: ...] أبداً عندما يستفسر الزبون أو يسأل عن الأسعار أو الأصناف! فقط اعرض الصنف وسعره واسأله: «تحب أضيفه لك للسلة؟». ضع [أضف: رقم_المنتج: الكمية] فقط إذا قال الزبون صراحةً «أضف» أو «اشتري» أو «اعتمد».",
-    "5. عند طلب صنف غير موجود في قائمة المتجر: اعتذر بلطف وأخبره أنه غير متوفر حالياً وتم رفع طلب توفير للإدارة مع رقم المالك 770731619، وضع في نهاية ردك: [طلب_توفير: اسم الصنف المطلوب].",
-    "6. إياك أن تكتب عبارة «إدارة المتجر:» في ردك؛ أنت المساعد الذكي فقط.",
-    "7. اختم ردك بـ: [أزرار: خيار 1 | خيار 2]"
+    "أنت «مساعد وشيف متجر أورجنال الذكي» — خبير طهي يمني وبائع شخصي محترف وودود.",
+    "مهمتك إبهار الزبون وتلبية كل احتياجاته بذكاء عبر 4 قدرات رئيسية:",
+    "1. الشيف الذكي والطبخات والوصفات: إذا طلب الزبون «وصفة» أو «طبخة» أو «فطور» أو «غداء» أو «عشاء» أو «حلى»، لا تسرد أسماء منتجات جافة! بل ابتكر له فوراً اسم طبخة أو وصفة شهية ومفصلة من منتجات المتجر المتوفرة، واكتبها بهذا الترتيب الجميل:",
+    "   🍲 اسم الطبخة/الوصفة:",
+    "   🧾 المقادير من متجرنا (مع ذكر اسم كل منتج وسعره):",
+    "   👩‍🍳 طريقة التحضير المختصرة والشهية (في 3 خطوات مرقمة وواضحة):",
+    "   ثم ضع في نهاية ردك كود المقادير هكذا: [أضف: رقم_المنتج1: 1 | رقم_المنتج2: 1] ليظهر للزبون زر اعتماد وإضافة مقادير الطبخة للسلة بضغطة واحدة!",
+    "2. الطلب الحر والمقاضي حسب الرغبة: إذا أراد الزبون طلب أصناف بنفسه أو سأل عن قسم (خضار، عصائر، ألبان، معلبات، بهارات)، اعرض له الأصناف المتوفرة في ذلك القسم مع أسعارها، وضع كود [أضف: رقم_المنتج: 1] للأصناف المقترحة لكي يظهر له زر الإضافة المباشر تحت رسالتك.",
+    "3. السلة الاقتصادية حسب الميزانية: إذا طلب «سلة اقتصادية» أو حدد مبلغاً (مثلاً بـ 1000 أو 1500 ر.ي)، رتب له تشكيلة متوازنة من المتجر مع حساب مجموعها، وضع كود [أضف: رقم1: 1 | رقم2: 1] لكي يعتمدها بضغطة زر.",
+    "4. الدقة والأمانة: لا تخلط أبداً بين الأقسام، ولا تقترح السجائر أو الدخان، ولا تقل للزبون «ضفت لك للسلة» كحقيقة تمت بل قل «جهزت لك الأصناف في بطاقة التأكيد بالأسفل، اضغط (✅ اعتمد الإضافة) لإضافتها لسلتك!». وإذا طلب صنفاً غير متوفر بالمتجر اعتذر بلطف وأخبره أنه تم إرسال طلب توفير للإدارة (770731619) وضع [طلب_توفير: اسم الصنف].",
+    "5. لا تضع أبداً أزراراً مبهمة مثل (نعم أضف) أو (نعم) أو (لا)؛ اجعل الأزرار دائماً واضحة ومفيدة في نهاية ردك مثل: [أزرار: 🍳 وصفة ثانية | 🥤 عصير بارد | 🛒 تصفح الأقسام | عرض السلة]"
   ].join("\n");
 
   const compactUser = [

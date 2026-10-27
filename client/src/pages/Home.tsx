@@ -1888,9 +1888,9 @@ type AssistantMessage = {
   ownerMsgId?: string;
 };
 
-const ASSISTANT_HISTORY_KEY = "original-assistant-history-v3";
-const CHAT_SESSION_KEY = "original-chat-session-id-v2";
-const SEEN_OWNER_IDS_KEY = "original-seen-owner-ids-v2";
+const ASSISTANT_HISTORY_KEY = "original-assistant-history-v4";
+const CHAT_SESSION_KEY = "original-chat-session-id-v3";
+const SEEN_OWNER_IDS_KEY = "original-seen-owner-ids-v3";
 
 function readSeenOwnerIds(): Set<string> {
   try {
@@ -1922,8 +1922,13 @@ function getOrCreateChatSessionId(): string {
 
 const assistantGreeting: AssistantMessage = {
   role: "assistant",
-  text: "يا هلا بك في أورجنال! كيف أقدر أخدمك اليوم؟ اسألني عن أي صنف أو سعره في المتجر وأنا حاضر.",
-  suggestedQuestions: ["تصفح الأقسام", "عصير بارد", "عرض السلة"],
+  text: "يا هلا بك في أورجنال! 🌿 أنا مساعدك الذكي وشيف المتجر.\nأقدر أقترح لك طبخة أو وصفة شهية بمقادير من المتجر، أو أجهز لك طلبك الخاص، أو أرتب لك سلة اقتصادية على قد ميزانيتك!\nاختر من الأزرار بالأسفل أو اكتب لي اللي في خاطرك:",
+  suggestedQuestions: [
+    "🍳 اقترح لي طبخة أو وصفة اليوم",
+    "🛒 أريد طلب أصناف بنفسي",
+    "💰 رتب لي سلة اقتصادية",
+    "🥤 عصائر وسناكات باردة",
+  ],
 };
 
 function readAssistantHistory(): AssistantMessage[] {
@@ -2036,11 +2041,20 @@ function AssistantPage() {
       if (message.cartAction?.id === actionId) {
         return { ...message, cartAction: { ...message.cartAction, status }, contextText: (message.contextText ?? message.text) + "\nحالة طلب السلة: " + (status === "confirmed" ? "أكد العميل التغيير" : "رفض العميل التغيير") + "." };
       }
-      if (message.recipeActionId === actionId) {
-        return { ...message, recipeAdded: status === "confirmed", contextText: (message.contextText ?? message.text) + "\nحالة إضافة مقادير الوصفة: " + (status === "confirmed" ? "أكد العميل الإضافة" : "رفض العميل الإضافة") + "." };
-      }
       return message;
     }));
+  };
+
+  const addSingleAssistantItem = (item: AssistantProductLine) => {
+    const current = cart.find(line => line.id === item.productId);
+    const qty = item.quantity || item.minQuantity || 1;
+    const total = (current?.quantity ?? 0) + qty;
+    if (item.stock !== null && total > item.stock) {
+      toast.error("الكمية المطلوبة غير متوفرة حالياً في المخزون.");
+      return;
+    }
+    add({ id: item.productId, name: item.name, price: item.price, unit: item.unit, stock: item.stock, minQuantity: item.minQuantity, quantityStep: item.quantityStep }, qty);
+    toast.success("تمت إضافة «" + item.name + "» إلى السلة بنجاح 🛒");
   };
 
   const applyConfirmedChange = (actionId: string, type: "add" | "remove", items: AssistantProductLine[]) => {
@@ -2062,7 +2076,7 @@ function AssistantPage() {
       }
     }
     updateActionStatus(actionId, "confirmed");
-    if (changed) toast.success(type === "add" ? "تمت إضافة " + changed + " صنف إلى السلة بنجاح 🛒" : "تم حذف " + changed + " صنف من السلة.");
+    if (changed) toast.success(type === "add" ? "تم اعتماد وإضافة " + changed + " صنف إلى السلة بنجاح 🛒" : "تم حذف " + changed + " صنف من السلة.");
     if (skipped) toast.error("تغيّرت السلة أو الكمية المتاحة؛ راجع السلة قبل إتمام الطلب.");
   };
 
@@ -2077,7 +2091,7 @@ function AssistantPage() {
     const trimmed = rawText.trim();
     if (mutation.isPending || !trimmed) return;
 
-    if (/^(?:عرض السلة|السلة|شوف السلة|تأكيد الطلب|إتمام الطلب|اتمام الطلب|سلة المشتريات)$/i.test(trimmed)) {
+    if (/^(?:عرض السلة|السلة|شوف السلة|تأكيد الطلب|إتمام الطلب|اتمام الطلب|سلة المشتريات|إنهاء الطلب|انهاء الطلب)$/i.test(trimmed)) {
       navigate("/cart");
       return;
     }
@@ -2085,50 +2099,47 @@ function AssistantPage() {
       navigate("/categories");
       return;
     }
-    if (/^(?:تصفح المنتجات|كل المنتجات)$/i.test(trimmed)) {
+    if (/^(?:تصفح المنتجات|تصفح المتجر|كل المنتجات)$/i.test(trimmed)) {
       navigate("/products");
       return;
     }
 
     const catalogProducts: PublicProduct[] = (homeCatalog.data?.products ?? []) as PublicProduct[];
     const norm = (s: string) => s.replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي").toLowerCase().trim();
-    const startsWithAdd = /^(?:أضف|اضف|إضافة|اضافة)\s+(.+)$/i.exec(trimmed);
+    const cleanTarget = norm(trimmed.replace(/^(?:أضف|اضف|إضافة|اضافة|اريد|أريد|ابغى|أبغى|عطني|أعطني|اعطني)\s+/i, ""));
+    const matchedProd = catalogProducts.find(p => {
+      const np = norm(p.name);
+      return cleanTarget.length >= 3 && (np === cleanTarget || (trimmed.startsWith("أضف") && (np.includes(cleanTarget) || cleanTarget.includes(np))));
+    });
 
-    if (startsWithAdd) {
-      const targetName = norm(startsWithAdd[1]);
-      const matchedProd = catalogProducts.find(p => {
-        const np = norm(p.name);
-        return targetName.length >= 3 && (np === targetName || np.includes(targetName) || targetName.includes(np));
-      });
-      if (matchedProd) {
-        const qty = matchedProd.minQuantity || 1;
-        const actId = "act-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6);
-        setMessages(current => [
-          ...current,
-          { role: "user" as const, text: trimmed },
-          {
-            role: "assistant" as const,
-            text: "هل ترغب في تأكيد إضافة (" + qty + " × " + matchedProd.name + " — " + formatPrice(matchedProd.price) + ") إلى سلة مشترياتك؟",
-            cartAction: {
-              id: actId,
-              type: "add" as const,
-              status: "pending" as const,
-              items: [{
-                productId: matchedProd.id,
-                name: matchedProd.name,
-                price: matchedProd.price,
-                unit: matchedProd.unit,
-                quantity: qty,
-                stock: matchedProd.stock,
-                minQuantity: matchedProd.minQuantity,
-                quantityStep: matchedProd.quantityStep,
-              }],
-            },
-            suggestedQuestions: ["عرض السلة", "تصفح الأقسام"],
+    if (matchedProd && trimmed.length <= 40) {
+      const qty = matchedProd.minQuantity || 1;
+      const actId = "act-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6);
+      setMessages(current => [
+        ...current,
+        { role: "user" as const, text: trimmed },
+        {
+          role: "assistant" as const,
+          text: "جهزت لك «" + matchedProd.name + "» (" + formatPrice(matchedProd.price) + ") في بطاقة التأكيد بالأسفل 👇 اضغط «✅ اعتمد الإضافة للسلة» لإضافته فوراً:",
+          cartAction: {
+            id: actId,
+            type: "add" as const,
+            status: "pending" as const,
+            items: [{
+              productId: matchedProd.id,
+              name: matchedProd.name,
+              price: matchedProd.price,
+              unit: matchedProd.unit,
+              quantity: qty,
+              stock: matchedProd.stock,
+              minQuantity: matchedProd.minQuantity,
+              quantityStep: matchedProd.quantityStep,
+            }],
           },
-        ].slice(-32));
-        return;
-      }
+          suggestedQuestions: ["🍳 اقترح لي طبخة أو وصفة", "🛒 أريد طلب أصناف بنفسي", "عرض السلة"],
+        },
+      ].slice(-32));
+      return;
     }
 
     const updatedCart = cart.map(line => ({ productId: line.id, quantity: line.quantity }));
@@ -2168,8 +2179,18 @@ function AssistantPage() {
             items: result.cartAction.items,
             status: "pending",
           };
+        } else if (Array.isArray(result.ingredients) && result.ingredients.length > 0) {
+          pendingAction = {
+            id: "act-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6),
+            type: "add",
+            items: result.ingredients,
+            status: "pending",
+          };
         }
-        const cleanReply = String(result.message || "").replace(/^(?:👨‍💼\s*)?إدارة المتجر\s*:\s*/i, "").trim();
+        const cleanReply = String(result.message || "")
+          .replace(/^(?:👨‍💼\s*)?إدارة المتجر\s*:\s*/i, "")
+          .replace(/\[\s*(?:أضف|اضف|إضافة|اضافة|add|مقادير|سلة)\s*:[^\]]+\]/gi, "")
+          .trim();
         setMessages(current => [...current, {
           role: "assistant" as const,
           text: cleanReply,
@@ -2197,101 +2218,119 @@ function AssistantPage() {
       <section className="chat-panel">
         <div className="chat-head">
           <span className="chat-avatar"><Sparkles size={17} /></span>
-          <div><strong>مساعد أورجنال الذكي</strong><small>متصل الآن لخدمتك ومرتبط بإدارة المتجر</small></div>
+          <div><strong>مساعد وشيف أورجنال الذكي</strong><small>وصفات شهية · طلبات ذكية · سلة اقتصادية</small></div>
           <span className="online-dot" />
           <button type="button" className="assistant-new-chat" disabled={mutation.isPending} onClick={startNewConversation}>محادثة جديدة</button>
         </div>
         <div className="chat-messages" ref={messagesRef}>
-          {displayedMessages.map((message, index) => (
-            <div key={index + "-" + message.role + "-" + (message.ownerMsgId || "")} className={"chat-message " + (message.role === "user" ? "from-user" : "from-assistant")} style={message.ownerMsgId ? { border: "1.5px solid #e0a800", background: "#fffdf5" } : undefined}>
-              {message.ownerMsgId && (
-                <div style={{ fontSize: "11px", fontWeight: 800, color: "#9a6700", marginBottom: "4px", paddingBottom: "4px", borderBottom: "1px solid #f2e2a8" }}>
-                  👨‍💼 رد مباشر من إدارة المتجر
-                </div>
-              )}
-              <p style={{ whiteSpace: "pre-line", margin: 0 }}>{message.text}</p>
-              {message.cartAction && message.cartAction.items.length > 0 && (
-                <div style={{ marginTop: "10px", padding: "10px 12px", borderRadius: "12px", background: "#f4faf6", border: "1px solid #c5dfd0" }}>
-                  <div style={{ fontSize: "11.5px", fontWeight: 800, color: "#123b2a", marginBottom: "6px" }}>
-                    {message.cartAction.type === "add" ? "🛒 تأكيد الإضافة إلى السلة:" : "🗑️ تأكيد الحذف من السلة:"}
+          {displayedMessages.map((message, index) => {
+            const totalActionPrice = message.cartAction?.items.reduce((s, it) => s + it.price * it.quantity, 0) ?? 0;
+            return (
+              <div key={index + "-" + message.role + "-" + (message.ownerMsgId || "")} className={"chat-message " + (message.role === "user" ? "from-user" : "from-assistant")} style={message.ownerMsgId ? { border: "1.5px solid #e0a800", background: "#fffdf5" } : undefined}>
+                {message.ownerMsgId && (
+                  <div style={{ fontSize: "11px", fontWeight: 800, color: "#9a6700", marginBottom: "4px", paddingBottom: "4px", borderBottom: "1px solid #f2e2a8" }}>
+                    👨‍💼 رد مباشر من إدارة المتجر
                   </div>
-                  <div style={{ display: "grid", gap: "4px", marginBottom: "8px", fontSize: "11.5px", color: "#264e3a" }}>
-                    {message.cartAction.items.map(item => (
-                      <div key={item.productId} style={{ display: "flex", justifyContent: "space-between" }}>
-                        <span>{item.quantity} × {item.name}</span>
-                        <b>{formatPrice(item.price * item.quantity)}</b>
+                )}
+                <p style={{ whiteSpace: "pre-line", margin: 0, lineHeight: 1.65 }}>{message.text}</p>
+                {message.cartAction && message.cartAction.items.length > 0 && (
+                  <div style={{ marginTop: "10px", padding: "11px 12px", borderRadius: "14px", background: "#f3faf6", border: "1.5px solid #b8dec8", boxShadow: "0 4px 12px rgba(15, 60, 40, 0.06)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "12px", fontWeight: 800, color: "#123b2a", marginBottom: "8px" }}>
+                      <span>{message.cartAction.items.length > 1 ? "🛒 الأصناف والمقادير المقترحة للسلة:" : "🛒 تأكيد إضافة الصنف للسلة:"}</span>
+                      <span style={{ color: "#174b36", background: "#e2f2e9", padding: "2px 8px", borderRadius: "99px", fontSize: "11px" }}>الإجمالي: {formatPrice(totalActionPrice)}</span>
+                    </div>
+                    <div style={{ display: "grid", gap: "6px", marginBottom: "10px" }}>
+                      {message.cartAction.items.map(item => (
+                        <div key={item.productId} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", padding: "6px 9px", borderRadius: "10px", background: "#ffffff", border: "1px solid #dfece4", fontSize: "11.5px", color: "#1e3f2f" }}>
+                          <div>
+                            <strong>{item.name}</strong>
+                            <small style={{ display: "block", color: "#5c7467", fontSize: "10.5px" }}>{item.quantity} × {formatPrice(item.price)} ({item.unit})</small>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => addSingleAssistantItem(item)}
+                            style={{ padding: "5px 10px", borderRadius: "8px", border: "1px solid #174b36", background: "#f2f9f5", color: "#174b36", fontSize: "11px", fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" }}
+                          >
+                            + أضف بمفرده
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    {message.cartAction.status === "pending" ? (
+                      <div style={{ display: "flex", gap: "8px" }}>
+                        <button
+                          type="button"
+                          onClick={() => applyConfirmedChange(message.cartAction!.id, message.cartAction!.type, message.cartAction!.items)}
+                          style={{ flex: 1, padding: "8px 12px", borderRadius: "10px", border: "none", background: "#174b36", color: "#ffffff", fontSize: "12px", fontWeight: 800, cursor: "pointer", boxShadow: "0 3px 10px rgba(23, 75, 54, 0.2)" }}
+                        >
+                          {message.cartAction.items.length > 1 ? ("✅ اعتمد وإضافة الكل للسلة (" + formatPrice(totalActionPrice) + ")") : ("✅ نعم، اعتمد الإضافة للسلة (" + formatPrice(totalActionPrice) + ")")}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => cancelCartChange(message.cartAction!.id)}
+                          style={{ padding: "8px 12px", borderRadius: "10px", border: "1px solid #cbd5e1", background: "#ffffff", color: "#475569", fontSize: "11.5px", fontWeight: 700, cursor: "pointer" }}
+                        >
+                          إلغاء
+                        </button>
                       </div>
+                    ) : (
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "11.5px", fontWeight: 800, color: message.cartAction.status === "confirmed" ? "#15803d" : "#64748b" }}>
+                        <span>{message.cartAction.status === "confirmed" ? "✅ تمت الإضافة إلى السلة بنجاح!" : "تم إلغاء الإضافة"}</span>
+                        {message.cartAction.status === "confirmed" && (
+                          <button type="button" onClick={() => navigate("/cart")} style={{ padding: "4px 10px", borderRadius: "8px", border: "none", background: "#174b36", color: "#fff", fontSize: "11px", fontWeight: 800, cursor: "pointer" }}>
+                            فتح السلة 🛒
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {message.role === "assistant" && message.text.includes("770731619") && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginTop: "8px" }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard?.writeText("770731619");
+                        toast.success("تم نسخ رقم المالك 770731619 بنجاح!");
+                      }}
+                      style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "6px 12px", borderRadius: "10px", border: "1px solid #0f5c3a", background: "#f2f9f5", color: "#0f5c3a", fontSize: "0.78rem", fontWeight: 700, cursor: "pointer" }}
+                    >
+                      <Copy size={13} /> نسخ الرقم: 770731619
+                    </button>
+                    <a
+                      href="tel:770731619"
+                      style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "6px 12px", borderRadius: "10px", border: "1px solid #d5e6dc", background: "#ffffff", color: "#0f5c3a", fontSize: "0.78rem", fontWeight: 700, textDecoration: "none" }}
+                    >
+                      📞 اتصال مباشر
+                    </a>
+                  </div>
+                )}
+                {message.role === "assistant" && message.suggestedQuestions && message.suggestedQuestions.length > 0 && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "9px" }}>
+                    {message.suggestedQuestions.map((q, qIdx) => (
+                      <button
+                        key={qIdx}
+                        type="button"
+                        disabled={mutation.isPending}
+                        onClick={() => sendText(q, message.text)}
+                        style={{ padding: "6px 12px", borderRadius: "999px", border: "1px solid #cfe2d6", background: "#f3f9f5", color: "#0f5c3a", fontSize: "0.76rem", fontWeight: 700, cursor: "pointer" }}
+                      >
+                        {q}
+                      </button>
                     ))}
                   </div>
-                  {message.cartAction.status === "pending" ? (
-                    <div style={{ display: "flex", gap: "8px" }}>
-                      <button
-                        type="button"
-                        onClick={() => applyConfirmedChange(message.cartAction!.id, message.cartAction!.type, message.cartAction!.items)}
-                        style={{ flex: 1, padding: "6px 12px", borderRadius: "9px", border: "none", background: "#174b36", color: "#ffffff", fontSize: "11.5px", fontWeight: 800, cursor: "pointer" }}
-                      >
-                        ✅ نعم، اعتمد الإضافة
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => cancelCartChange(message.cartAction!.id)}
-                        style={{ padding: "6px 12px", borderRadius: "9px", border: "1px solid #cbd5e1", background: "#ffffff", color: "#475569", fontSize: "11.5px", fontWeight: 700, cursor: "pointer" }}
-                      >
-                        إلغاء
-                      </button>
-                    </div>
-                  ) : (
-                    <div style={{ fontSize: "11px", fontWeight: 800, color: message.cartAction.status === "confirmed" ? "#15803d" : "#64748b" }}>
-                      {message.cartAction.status === "confirmed" ? "✅ تمت الإضافة إلى السلة بنجاح" : "تم إلغاء الإضافة"}
-                    </div>
-                  )}
-                </div>
-              )}
-              {message.role === "assistant" && message.text.includes("770731619") && (
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginTop: "8px" }}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      navigator.clipboard?.writeText("770731619");
-                      toast.success("تم نسخ رقم المالك 770731619 بنجاح!");
-                    }}
-                    style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "6px 12px", borderRadius: "10px", border: "1px solid #0f5c3a", background: "#f2f9f5", color: "#0f5c3a", fontSize: "0.78rem", fontWeight: 700, cursor: "pointer" }}
-                  >
-                    <Copy size={13} /> نسخ الرقم: 770731619
-                  </button>
-                  <a
-                    href="tel:770731619"
-                    style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "6px 12px", borderRadius: "10px", border: "1px solid #d5e6dc", background: "#ffffff", color: "#0f5c3a", fontSize: "0.78rem", fontWeight: 700, textDecoration: "none" }}
-                  >
-                    📞 اتصال مباشر
-                  </a>
-                </div>
-              )}
-              {message.role === "assistant" && message.suggestedQuestions && message.suggestedQuestions.length > 0 && (
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "8px" }}>
-                  {message.suggestedQuestions.map((q, qIdx) => (
-                    <button
-                      key={qIdx}
-                      type="button"
-                      disabled={mutation.isPending}
-                      onClick={() => sendText(q, message.text)}
-                      style={{ padding: "5px 11px", borderRadius: "999px", border: "1px solid #cfe2d6", background: "#f3f9f5", color: "#0f5c3a", fontSize: "0.75rem", fontWeight: 700, cursor: "pointer" }}
-                    >
-                      {q}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
+                )}
+              </div>
+            );
+          })}
           {mutation.isPending && (
             <div className="chat-message from-assistant" style={{ opacity: 0.75 }}>
-              <p>يكتب لك الآن...</p>
+              <p>يجهز لك الرد والاقتراحات الآن...</p>
             </div>
           )}
         </div>
         <form className="chat-input" onSubmit={send}>
-          <input maxLength={1200} value={input} onChange={event => setInput(event.target.value)} placeholder="اكتب رسالتك هنا..." aria-label="رسالة للمساعد" disabled={mutation.isPending} />
+          <input maxLength={1200} value={input} onChange={event => setInput(event.target.value)} placeholder="اطلب طبخة، أو اسأل عن صنف، أو حدد ميزانيتك..." aria-label="رسالة للمساعد" disabled={mutation.isPending} />
           <button disabled={mutation.isPending || !input.trim()} aria-label="إرسال"><ArrowLeft size={18} /></button>
         </form>
       </section>

@@ -1678,16 +1678,22 @@ function smartExtract(rawText, catalog, userQuery) {
     } catch {
     }
   }
-  const cartItems = [];
+  const cartItemsMap = /* @__PURE__ */ new Map();
   let cartAction = "none";
   const suggestedQuestions = [];
   const missingIngredients = [];
-  clean = clean.replace(/\[\s*(?:أضف|اضف|إضافة|اضافة|add)\s*:\s*(\d+)(?:\s*:\s*(\d+))?\s*\]/gi, (_, idStr, qtyStr) => {
-    const pid = Number(idStr);
-    const qty = Math.max(1, Number(qtyStr || 1));
-    if (catalog.some((p) => p.id === pid)) {
-      cartAction = "add";
-      cartItems.push({ productId: pid, quantity: qty });
+  clean = clean.replace(/\[\s*(?:أضف|اضف|إضافة|اضافة|add|مقادير|سلة)\s*:([^\]]+)\]/gi, (_, inner) => {
+    const parts = String(inner).split(/[|،,;]+/);
+    for (const part of parts) {
+      const m = part.trim().match(/^#?(\d+)(?:\s*[:×x*]\s*(\d+))?/);
+      if (m) {
+        const pid = Number(m[1]);
+        const qty = Math.max(1, Number(m[2] || 1));
+        if (catalog.some((p) => p.id === pid)) {
+          cartAction = "add";
+          cartItemsMap.set(pid, (cartItemsMap.get(pid) ?? 0) + qty);
+        }
+      }
     }
     return "";
   });
@@ -1697,11 +1703,29 @@ function smartExtract(rawText, catalog, userQuery) {
     return "";
   });
   clean = clean.replace(/\[\s*(?:أزرار|ازرار|خيارات|مقترحات)\s*:\s*([^\]]+)\]/gi, (_, btns) => {
-    String(btns).split(/[|،,]/).map((s) => s.trim()).filter(Boolean).slice(0, 3).forEach((b) => suggestedQuestions.push(b));
+    String(btns).split(/[|،,]/).map((s) => s.trim()).filter(Boolean).slice(0, 4).forEach((b) => suggestedQuestions.push(b));
     return "";
   });
   clean = clean.replace(/\*\*/g, "").trim();
   if (!clean) return null;
+  const norm = (s) => s.replace(/[أإآ]/g, "\u0627").replace(/ة/g, "\u0647").replace(/ى/g, "\u064A").toLowerCase().trim();
+  const normClean = norm(clean);
+  const normUser = norm(userQuery);
+  const mentionedInReply = [];
+  for (const p of catalog) {
+    if (isTobaccoOrNonFood(p.name, p.category) && !/(?:سجائر|سجاير|دخان|شملان|كمران)/.test(normUser)) continue;
+    const np = norm(p.name);
+    if (np.length >= 3 && (normClean.includes(np) || normUser === np)) {
+      mentionedInReply.push(p);
+    }
+  }
+  if (cartItemsMap.size === 0 && mentionedInReply.length > 0 && mentionedInReply.length <= 6) {
+    cartAction = "add";
+    for (const p of mentionedInReply) {
+      cartItemsMap.set(p.id, 1);
+    }
+  }
+  clean = clean.replace(/(?:تمام[،,]?\s*)?(?:ضفت|أضفت|اضفت|تمت إضافة|تم اضافه)\s+([^.\n]+?)\s*(?:بالسلة|للسلة|إلى السلة|في السلة)(?:\s*بنجاح)?[\.!]?/g, "\u062C\u0647\u0632\u062A \u0644\u0643 ($1) \u0641\u064A \u0628\u0637\u0627\u0642\u0629 \u0627\u0644\u062A\u0623\u0643\u064A\u062F \u0628\u0627\u0644\u0623\u0633\u0641\u0644 \u{1F447} \u0627\u0636\u063A\u0637 \xAB\u2705 \u0627\u0639\u062A\u0645\u062F \u0627\u0644\u0625\u0636\u0627\u0641\u0629 \u0644\u0644\u0633\u0644\u0629\xBB \u0644\u0625\u0636\u0627\u0641\u062A\u0647\u0627 \u0641\u0648\u0631\u0627\u064B!").trim();
   const mentionsUnavailable = /(?:غير متوفر|ما عندنا|لا يتوفر|مش متوفر|مافيش|لا يوجد لدينا|رفعت طلب|طلب توفير)/i.test(clean);
   if (mentionsUnavailable && missingIngredients.length === 0 && userQuery.trim().length > 1) {
     missingIngredients.push("\u0637\u0644\u0628 \u062A\u0648\u0641\u064A\u0631: " + userQuery.trim().slice(0, 80));
@@ -1709,17 +1733,11 @@ function smartExtract(rawText, catalog, userQuery) {
   if (missingIngredients.length > 0 && !clean.includes("770731619")) {
     clean += "\n\u{1F4F2} \u062A\u0645 \u0625\u0631\u0633\u0627\u0644 \u0637\u0644\u0628\u0643 \u0644\u0644\u0625\u062F\u0627\u0631\u0629 \u0644\u062A\u0648\u0641\u064A\u0631\u0647\u060C \u0648\u0644\u0644\u062A\u0648\u0627\u0635\u0644 \u0627\u0644\u0645\u0628\u0627\u0634\u0631 \u0645\u0639 \u0627\u0644\u0645\u0627\u0644\u0643: 770731619";
   }
-  if (suggestedQuestions.length === 0) {
-    for (const p of catalog) {
-      if (clean.includes(p.name) && !isTobaccoOrNonFood(p.name, p.category)) {
-        suggestedQuestions.push("\u0623\u0636\u0641 " + p.name);
-      }
-      if (suggestedQuestions.length >= 2) break;
-    }
-    if (suggestedQuestions.length === 0) {
-      suggestedQuestions.push("\u062A\u0635\u0641\u062D \u0627\u0644\u0623\u0642\u0633\u0627\u0645", "\u0639\u0631\u0636 \u0627\u0644\u0633\u0644\u0629");
-    }
+  const filteredSuggestions = suggestedQuestions.filter((q) => !/^(?:نعم|لا|نعم أضف|نعم اضف|نعم أضفها|لا شكراً|لا شكرا)$/i.test(q.trim()));
+  if (filteredSuggestions.length === 0) {
+    filteredSuggestions.push("\u{1F373} \u0627\u0642\u062A\u0631\u062D \u0644\u064A \u0637\u0628\u062E\u0629 \u0623\u0648 \u0648\u0635\u0641\u0629", "\u{1F6D2} \u0623\u0637\u0644\u0628 \u0623\u0635\u0646\u0627\u0641 \u0628\u0646\u0641\u0633\u064A", "\u{1F4B0} \u0633\u0644\u0629 \u0627\u0642\u062A\u0635\u0627\u062F\u064A\u0629", "\u0639\u0631\u0636 \u0627\u0644\u0633\u0644\u0629");
   }
+  const cartItems = [...cartItemsMap.entries()].map(([productId, quantity]) => ({ productId, quantity }));
   return JSON.stringify({
     message: clean,
     recipeName: "",
@@ -1727,9 +1745,9 @@ function smartExtract(rawText, catalog, userQuery) {
     ingredients: [],
     steps: [],
     missingIngredients,
-    cartAction,
+    cartAction: cartItems.length > 0 ? cartAction : "none",
     cartItems,
-    suggestedQuestions: suggestedQuestions.slice(0, 3)
+    suggestedQuestions: filteredSuggestions.slice(0, 4)
   });
 }
 async function invokeLLM(params) {
@@ -1760,7 +1778,7 @@ async function invokeLLM(params) {
   let recentHistory = "";
   const histMatch = rawUser.match(/سجل المحادثة السابق[^:]*:\n([\s\S]*?)\n\nرسالة العميل الحالية:/);
   if (histMatch) {
-    recentHistory = histMatch[1].split("\n").filter((line) => !line.includes("\u0625\u062F\u0627\u0631\u0629 \u0627\u0644\u0645\u062A\u062C\u0631")).slice(-4).join("\n").slice(-350);
+    recentHistory = histMatch[1].split("\n").filter((line) => !line.includes("\u0625\u062F\u0627\u0631\u0629 \u0627\u0644\u0645\u062A\u062C\u0631")).slice(-6).join("\n").slice(-500);
   }
   let currentMsg = rawUser;
   const reqIdx = rawUser.lastIndexOf("\u0631\u0633\u0627\u0644\u0629 \u0627\u0644\u0639\u0645\u064A\u0644 \u0627\u0644\u062D\u0627\u0644\u064A\u0629:");
@@ -1768,15 +1786,17 @@ async function invokeLLM(params) {
     currentMsg = rawUser.slice(reqIdx + "\u0631\u0633\u0627\u0644\u0629 \u0627\u0644\u0639\u0645\u064A\u0644 \u0627\u0644\u062D\u0627\u0644\u064A\u0629:".length).trim();
   }
   const systemPrompt = [
-    "\u0623\u0646\u062A \u0627\u0644\u0645\u0633\u0627\u0639\u062F \u0627\u0644\u0630\u0643\u064A \u0627\u0644\u0631\u0633\u0645\u064A \u0641\u064A \u0645\u062A\u062C\u0631 \u0623\u0648\u0631\u062C\u0646\u0627\u0644. \u0631\u062F\u0643 \u0645\u062E\u062A\u0635\u0631 \u0648\u0648\u0627\u0636\u062D (\u0633\u0637\u0631\u064A\u0646 \u0641\u0642\u0637) \u0628\u0644\u0647\u062C\u0629 \u064A\u0645\u0646\u064A\u0629 \u0648\u062F\u0648\u062F\u0629 \u0648\u0645\u062D\u062A\u0631\u0645\u0629.",
-    "\u0642\u0648\u0627\u0639\u062F \u0635\u0627\u0631\u0645\u0629 \u062C\u062F\u0627\u064B:",
-    "1. \u0627\u0644\u062A\u0635\u0646\u064A\u0641 \u0627\u0644\u0635\u062D\u064A\u062D \u0648\u0627\u0644\u0645\u0646\u0637\u0642: \u0627\u0646\u062A\u0628\u0647 \u0644\u0642\u0633\u0645 \u0648\u0627\u0633\u0645 \u0643\u0644 \u0645\u0646\u062A\u062C \u0628\u062F\u0642\u0629! \u0644\u0627 \u062A\u062E\u0644\u0637 \u0623\u0628\u062F\u0627\u064B \u0628\u064A\u0646 \u0627\u0644\u0645\u0634\u0631\u0648\u0628\u0627\u062A/\u0627\u0644\u0639\u0635\u0627\u0626\u0631 \u0648\u0628\u064A\u0646 \u0627\u0644\u0642\u0634\u0637\u0629/\u0627\u0644\u0623\u0644\u0628\u0627\u0646 \u0623\u0648 \u0627\u0644\u062E\u0636\u0631\u0648\u0627\u062A \u0623\u0648 \u0627\u0644\u0628\u0642\u0648\u0644\u064A\u0627\u062A. \u0643\u0644 \u0645\u0646\u062A\u062C \u064A\u064F\u0642\u062A\u0631\u062D \u0641\u0642\u0637 \u0641\u064A \u0645\u0643\u0627\u0646\u0647 \u0627\u0644\u0635\u062D\u064A\u062D (\u0627\u0644\u0639\u0635\u064A\u0631 \u0648\u0627\u0644\u0645\u0627\u0621 \u0644\u0644\u0645\u0634\u0631\u0648\u0628\u0627\u062A\u060C \u0627\u0644\u0642\u0634\u0637\u0629 \u0648\u0627\u0644\u0632\u0628\u0627\u062F\u064A \u0648\u0627\u0644\u062C\u0628\u0646 \u0644\u0644\u0623\u0644\u0628\u0627\u0646\u060C \u0627\u0644\u0644\u064A\u0645\u0648\u0646 \u0648\u0627\u0644\u062E\u0636\u0627\u0631 \u0644\u0644\u062E\u0636\u0631\u0648\u0627\u062A \u0648\u0627\u0644\u062D\u0648\u0627\u0645\u0636).",
-    "2. \u0645\u0646\u0639 \u0627\u0644\u0633\u062C\u0627\u0626\u0631 \u0648\u0627\u0644\u062F\u062E\u0627\u0646: \u064A\u064F\u0645\u0646\u0639 \u0645\u0646\u0639\u0627\u064B \u0628\u0627\u062A\u0627\u064B \u0627\u0642\u062A\u0631\u0627\u062D \u0627\u0644\u0633\u062C\u0627\u0626\u0631 \u0623\u0648 \u0627\u0644\u062F\u062E\u0627\u0646 \u0643\u0645\u0634\u0631\u0648\u0628 \u0623\u0648 \u0648\u062C\u0628\u0629 \u0623\u0648 \u0636\u0645\u0646 \u0623\u064A \u0627\u0642\u062A\u0631\u0627\u062D\u0627\u062A \u0639\u0627\u0645\u0629.",
-    "3. \u0644\u0627 \u062A\u0643\u0631\u0631 \u0646\u0641\u0633 \u0627\u0644\u0645\u0646\u062A\u062C\u064A\u0646 \u0641\u064A \u0643\u0644 \u0631\u062F: \u0623\u062C\u0628 \u0639\u0644\u0649 \u0633\u0624\u0627\u0644 \u0627\u0644\u0632\u0628\u0648\u0646 \u0645\u0628\u0627\u0634\u0631\u0629 \u0628\u062D\u0633\u0628 \u0645\u0627 \u064A\u0637\u0644\u0628\u0647 (\u0625\u0630\u0627 \u0633\u0623\u0644 \u0639\u0646 \u062D\u0627\u0645\u0636 \u0627\u0639\u0631\u0636 \u0627\u0644\u062D\u0648\u0627\u0645\u0636 \u0643\u0627\u0644\u0644\u064A\u0645\u0648\u0646\u060C \u0648\u0625\u0630\u0627 \u0633\u0623\u0644 \u0639\u0646 \u0639\u0635\u064A\u0631 \u0627\u0639\u0631\u0636 \u0627\u0644\u0639\u0635\u0627\u0626\u0631 \u0641\u0642\u0637\u060C \u0648\u0625\u0630\u0627 \u0633\u0623\u0644 \u0633\u0624\u0627\u0644\u0627\u064B \u0639\u0627\u0645\u0627\u064B \u0631\u062D\u0628 \u0628\u0647 \u0648\u0627\u0633\u0623\u0644\u0647 \u0623\u064A \u0642\u0633\u0645 \u064A\u0641\u0636\u0644).",
-    "4. \u0639\u062F\u0645 \u0627\u0644\u0625\u0636\u0627\u0641\u0629 \u0644\u0644\u0633\u0644\u0629 \u0628\u062F\u0648\u0646 \u0637\u0644\u0628 \u0635\u0631\u064A\u062D: \u0644\u0627 \u062A\u0636\u0639 \u0648\u0633\u0645 [\u0623\u0636\u0641: ...] \u0623\u0628\u062F\u0627\u064B \u0639\u0646\u062F\u0645\u0627 \u064A\u0633\u062A\u0641\u0633\u0631 \u0627\u0644\u0632\u0628\u0648\u0646 \u0623\u0648 \u064A\u0633\u0623\u0644 \u0639\u0646 \u0627\u0644\u0623\u0633\u0639\u0627\u0631 \u0623\u0648 \u0627\u0644\u0623\u0635\u0646\u0627\u0641! \u0641\u0642\u0637 \u0627\u0639\u0631\u0636 \u0627\u0644\u0635\u0646\u0641 \u0648\u0633\u0639\u0631\u0647 \u0648\u0627\u0633\u0623\u0644\u0647: \xAB\u062A\u062D\u0628 \u0623\u0636\u064A\u0641\u0647 \u0644\u0643 \u0644\u0644\u0633\u0644\u0629\u061F\xBB. \u0636\u0639 [\u0623\u0636\u0641: \u0631\u0642\u0645_\u0627\u0644\u0645\u0646\u062A\u062C: \u0627\u0644\u0643\u0645\u064A\u0629] \u0641\u0642\u0637 \u0625\u0630\u0627 \u0642\u0627\u0644 \u0627\u0644\u0632\u0628\u0648\u0646 \u0635\u0631\u0627\u062D\u0629\u064B \xAB\u0623\u0636\u0641\xBB \u0623\u0648 \xAB\u0627\u0634\u062A\u0631\u064A\xBB \u0623\u0648 \xAB\u0627\u0639\u062A\u0645\u062F\xBB.",
-    "5. \u0639\u0646\u062F \u0637\u0644\u0628 \u0635\u0646\u0641 \u063A\u064A\u0631 \u0645\u0648\u062C\u0648\u062F \u0641\u064A \u0642\u0627\u0626\u0645\u0629 \u0627\u0644\u0645\u062A\u062C\u0631: \u0627\u0639\u062A\u0630\u0631 \u0628\u0644\u0637\u0641 \u0648\u0623\u062E\u0628\u0631\u0647 \u0623\u0646\u0647 \u063A\u064A\u0631 \u0645\u062A\u0648\u0641\u0631 \u062D\u0627\u0644\u064A\u0627\u064B \u0648\u062A\u0645 \u0631\u0641\u0639 \u0637\u0644\u0628 \u062A\u0648\u0641\u064A\u0631 \u0644\u0644\u0625\u062F\u0627\u0631\u0629 \u0645\u0639 \u0631\u0642\u0645 \u0627\u0644\u0645\u0627\u0644\u0643 770731619\u060C \u0648\u0636\u0639 \u0641\u064A \u0646\u0647\u0627\u064A\u0629 \u0631\u062F\u0643: [\u0637\u0644\u0628_\u062A\u0648\u0641\u064A\u0631: \u0627\u0633\u0645 \u0627\u0644\u0635\u0646\u0641 \u0627\u0644\u0645\u0637\u0644\u0648\u0628].",
-    "6. \u0625\u064A\u0627\u0643 \u0623\u0646 \u062A\u0643\u062A\u0628 \u0639\u0628\u0627\u0631\u0629 \xAB\u0625\u062F\u0627\u0631\u0629 \u0627\u0644\u0645\u062A\u062C\u0631:\xBB \u0641\u064A \u0631\u062F\u0643\u061B \u0623\u0646\u062A \u0627\u0644\u0645\u0633\u0627\u0639\u062F \u0627\u0644\u0630\u0643\u064A \u0641\u0642\u0637.",
-    "7. \u0627\u062E\u062A\u0645 \u0631\u062F\u0643 \u0628\u0640: [\u0623\u0632\u0631\u0627\u0631: \u062E\u064A\u0627\u0631 1 | \u062E\u064A\u0627\u0631 2]"
+    "\u0623\u0646\u062A \xAB\u0645\u0633\u0627\u0639\u062F \u0648\u0634\u064A\u0641 \u0645\u062A\u062C\u0631 \u0623\u0648\u0631\u062C\u0646\u0627\u0644 \u0627\u0644\u0630\u0643\u064A\xBB \u2014 \u062E\u0628\u064A\u0631 \u0637\u0647\u064A \u064A\u0645\u0646\u064A \u0648\u0628\u0627\u0626\u0639 \u0634\u062E\u0635\u064A \u0645\u062D\u062A\u0631\u0641 \u0648\u0648\u062F\u0648\u062F.",
+    "\u0645\u0647\u0645\u062A\u0643 \u0625\u0628\u0647\u0627\u0631 \u0627\u0644\u0632\u0628\u0648\u0646 \u0648\u062A\u0644\u0628\u064A\u0629 \u0643\u0644 \u0627\u062D\u062A\u064A\u0627\u062C\u0627\u062A\u0647 \u0628\u0630\u0643\u0627\u0621 \u0639\u0628\u0631 4 \u0642\u062F\u0631\u0627\u062A \u0631\u0626\u064A\u0633\u064A\u0629:",
+    "1. \u0627\u0644\u0634\u064A\u0641 \u0627\u0644\u0630\u0643\u064A \u0648\u0627\u0644\u0637\u0628\u062E\u0627\u062A \u0648\u0627\u0644\u0648\u0635\u0641\u0627\u062A: \u0625\u0630\u0627 \u0637\u0644\u0628 \u0627\u0644\u0632\u0628\u0648\u0646 \xAB\u0648\u0635\u0641\u0629\xBB \u0623\u0648 \xAB\u0637\u0628\u062E\u0629\xBB \u0623\u0648 \xAB\u0641\u0637\u0648\u0631\xBB \u0623\u0648 \xAB\u063A\u062F\u0627\u0621\xBB \u0623\u0648 \xAB\u0639\u0634\u0627\u0621\xBB \u0623\u0648 \xAB\u062D\u0644\u0649\xBB\u060C \u0644\u0627 \u062A\u0633\u0631\u062F \u0623\u0633\u0645\u0627\u0621 \u0645\u0646\u062A\u062C\u0627\u062A \u062C\u0627\u0641\u0629! \u0628\u0644 \u0627\u0628\u062A\u0643\u0631 \u0644\u0647 \u0641\u0648\u0631\u0627\u064B \u0627\u0633\u0645 \u0637\u0628\u062E\u0629 \u0623\u0648 \u0648\u0635\u0641\u0629 \u0634\u0647\u064A\u0629 \u0648\u0645\u0641\u0635\u0644\u0629 \u0645\u0646 \u0645\u0646\u062A\u062C\u0627\u062A \u0627\u0644\u0645\u062A\u062C\u0631 \u0627\u0644\u0645\u062A\u0648\u0641\u0631\u0629\u060C \u0648\u0627\u0643\u062A\u0628\u0647\u0627 \u0628\u0647\u0630\u0627 \u0627\u0644\u062A\u0631\u062A\u064A\u0628 \u0627\u0644\u062C\u0645\u064A\u0644:",
+    "   \u{1F372} \u0627\u0633\u0645 \u0627\u0644\u0637\u0628\u062E\u0629/\u0627\u0644\u0648\u0635\u0641\u0629:",
+    "   \u{1F9FE} \u0627\u0644\u0645\u0642\u0627\u062F\u064A\u0631 \u0645\u0646 \u0645\u062A\u062C\u0631\u0646\u0627 (\u0645\u0639 \u0630\u0643\u0631 \u0627\u0633\u0645 \u0643\u0644 \u0645\u0646\u062A\u062C \u0648\u0633\u0639\u0631\u0647):",
+    "   \u{1F469}\u200D\u{1F373} \u0637\u0631\u064A\u0642\u0629 \u0627\u0644\u062A\u062D\u0636\u064A\u0631 \u0627\u0644\u0645\u062E\u062A\u0635\u0631\u0629 \u0648\u0627\u0644\u0634\u0647\u064A\u0629 (\u0641\u064A 3 \u062E\u0637\u0648\u0627\u062A \u0645\u0631\u0642\u0645\u0629 \u0648\u0648\u0627\u0636\u062D\u0629):",
+    "   \u062B\u0645 \u0636\u0639 \u0641\u064A \u0646\u0647\u0627\u064A\u0629 \u0631\u062F\u0643 \u0643\u0648\u062F \u0627\u0644\u0645\u0642\u0627\u062F\u064A\u0631 \u0647\u0643\u0630\u0627: [\u0623\u0636\u0641: \u0631\u0642\u0645_\u0627\u0644\u0645\u0646\u062A\u062C1: 1 | \u0631\u0642\u0645_\u0627\u0644\u0645\u0646\u062A\u062C2: 1] \u0644\u064A\u0638\u0647\u0631 \u0644\u0644\u0632\u0628\u0648\u0646 \u0632\u0631 \u0627\u0639\u062A\u0645\u0627\u062F \u0648\u0625\u0636\u0627\u0641\u0629 \u0645\u0642\u0627\u062F\u064A\u0631 \u0627\u0644\u0637\u0628\u062E\u0629 \u0644\u0644\u0633\u0644\u0629 \u0628\u0636\u063A\u0637\u0629 \u0648\u0627\u062D\u062F\u0629!",
+    "2. \u0627\u0644\u0637\u0644\u0628 \u0627\u0644\u062D\u0631 \u0648\u0627\u0644\u0645\u0642\u0627\u0636\u064A \u062D\u0633\u0628 \u0627\u0644\u0631\u063A\u0628\u0629: \u0625\u0630\u0627 \u0623\u0631\u0627\u062F \u0627\u0644\u0632\u0628\u0648\u0646 \u0637\u0644\u0628 \u0623\u0635\u0646\u0627\u0641 \u0628\u0646\u0641\u0633\u0647 \u0623\u0648 \u0633\u0623\u0644 \u0639\u0646 \u0642\u0633\u0645 (\u062E\u0636\u0627\u0631\u060C \u0639\u0635\u0627\u0626\u0631\u060C \u0623\u0644\u0628\u0627\u0646\u060C \u0645\u0639\u0644\u0628\u0627\u062A\u060C \u0628\u0647\u0627\u0631\u0627\u062A)\u060C \u0627\u0639\u0631\u0636 \u0644\u0647 \u0627\u0644\u0623\u0635\u0646\u0627\u0641 \u0627\u0644\u0645\u062A\u0648\u0641\u0631\u0629 \u0641\u064A \u0630\u0644\u0643 \u0627\u0644\u0642\u0633\u0645 \u0645\u0639 \u0623\u0633\u0639\u0627\u0631\u0647\u0627\u060C \u0648\u0636\u0639 \u0643\u0648\u062F [\u0623\u0636\u0641: \u0631\u0642\u0645_\u0627\u0644\u0645\u0646\u062A\u062C: 1] \u0644\u0644\u0623\u0635\u0646\u0627\u0641 \u0627\u0644\u0645\u0642\u062A\u0631\u062D\u0629 \u0644\u0643\u064A \u064A\u0638\u0647\u0631 \u0644\u0647 \u0632\u0631 \u0627\u0644\u0625\u0636\u0627\u0641\u0629 \u0627\u0644\u0645\u0628\u0627\u0634\u0631 \u062A\u062D\u062A \u0631\u0633\u0627\u0644\u062A\u0643.",
+    "3. \u0627\u0644\u0633\u0644\u0629 \u0627\u0644\u0627\u0642\u062A\u0635\u0627\u062F\u064A\u0629 \u062D\u0633\u0628 \u0627\u0644\u0645\u064A\u0632\u0627\u0646\u064A\u0629: \u0625\u0630\u0627 \u0637\u0644\u0628 \xAB\u0633\u0644\u0629 \u0627\u0642\u062A\u0635\u0627\u062F\u064A\u0629\xBB \u0623\u0648 \u062D\u062F\u062F \u0645\u0628\u0644\u063A\u0627\u064B (\u0645\u062B\u0644\u0627\u064B \u0628\u0640 1000 \u0623\u0648 1500 \u0631.\u064A)\u060C \u0631\u062A\u0628 \u0644\u0647 \u062A\u0634\u0643\u064A\u0644\u0629 \u0645\u062A\u0648\u0627\u0632\u0646\u0629 \u0645\u0646 \u0627\u0644\u0645\u062A\u062C\u0631 \u0645\u0639 \u062D\u0633\u0627\u0628 \u0645\u062C\u0645\u0648\u0639\u0647\u0627\u060C \u0648\u0636\u0639 \u0643\u0648\u062F [\u0623\u0636\u0641: \u0631\u0642\u06451: 1 | \u0631\u0642\u06452: 1] \u0644\u0643\u064A \u064A\u0639\u062A\u0645\u062F\u0647\u0627 \u0628\u0636\u063A\u0637\u0629 \u0632\u0631.",
+    "4. \u0627\u0644\u062F\u0642\u0629 \u0648\u0627\u0644\u0623\u0645\u0627\u0646\u0629: \u0644\u0627 \u062A\u062E\u0644\u0637 \u0623\u0628\u062F\u0627\u064B \u0628\u064A\u0646 \u0627\u0644\u0623\u0642\u0633\u0627\u0645\u060C \u0648\u0644\u0627 \u062A\u0642\u062A\u0631\u062D \u0627\u0644\u0633\u062C\u0627\u0626\u0631 \u0623\u0648 \u0627\u0644\u062F\u062E\u0627\u0646\u060C \u0648\u0644\u0627 \u062A\u0642\u0644 \u0644\u0644\u0632\u0628\u0648\u0646 \xAB\u0636\u0641\u062A \u0644\u0643 \u0644\u0644\u0633\u0644\u0629\xBB \u0643\u062D\u0642\u064A\u0642\u0629 \u062A\u0645\u062A \u0628\u0644 \u0642\u0644 \xAB\u062C\u0647\u0632\u062A \u0644\u0643 \u0627\u0644\u0623\u0635\u0646\u0627\u0641 \u0641\u064A \u0628\u0637\u0627\u0642\u0629 \u0627\u0644\u062A\u0623\u0643\u064A\u062F \u0628\u0627\u0644\u0623\u0633\u0641\u0644\u060C \u0627\u0636\u063A\u0637 (\u2705 \u0627\u0639\u062A\u0645\u062F \u0627\u0644\u0625\u0636\u0627\u0641\u0629) \u0644\u0625\u0636\u0627\u0641\u062A\u0647\u0627 \u0644\u0633\u0644\u062A\u0643!\xBB. \u0648\u0625\u0630\u0627 \u0637\u0644\u0628 \u0635\u0646\u0641\u0627\u064B \u063A\u064A\u0631 \u0645\u062A\u0648\u0641\u0631 \u0628\u0627\u0644\u0645\u062A\u062C\u0631 \u0627\u0639\u062A\u0630\u0631 \u0628\u0644\u0637\u0641 \u0648\u0623\u062E\u0628\u0631\u0647 \u0623\u0646\u0647 \u062A\u0645 \u0625\u0631\u0633\u0627\u0644 \u0637\u0644\u0628 \u062A\u0648\u0641\u064A\u0631 \u0644\u0644\u0625\u062F\u0627\u0631\u0629 (770731619) \u0648\u0636\u0639 [\u0637\u0644\u0628_\u062A\u0648\u0641\u064A\u0631: \u0627\u0633\u0645 \u0627\u0644\u0635\u0646\u0641].",
+    "5. \u0644\u0627 \u062A\u0636\u0639 \u0623\u0628\u062F\u0627\u064B \u0623\u0632\u0631\u0627\u0631\u0627\u064B \u0645\u0628\u0647\u0645\u0629 \u0645\u062B\u0644 (\u0646\u0639\u0645 \u0623\u0636\u0641) \u0623\u0648 (\u0646\u0639\u0645) \u0623\u0648 (\u0644\u0627)\u061B \u0627\u062C\u0639\u0644 \u0627\u0644\u0623\u0632\u0631\u0627\u0631 \u062F\u0627\u0626\u0645\u0627\u064B \u0648\u0627\u0636\u062D\u0629 \u0648\u0645\u0641\u064A\u062F\u0629 \u0641\u064A \u0646\u0647\u0627\u064A\u0629 \u0631\u062F\u0643 \u0645\u062B\u0644: [\u0623\u0632\u0631\u0627\u0631: \u{1F373} \u0648\u0635\u0641\u0629 \u062B\u0627\u0646\u064A\u0629 | \u{1F964} \u0639\u0635\u064A\u0631 \u0628\u0627\u0631\u062F | \u{1F6D2} \u062A\u0635\u0641\u062D \u0627\u0644\u0623\u0642\u0633\u0627\u0645 | \u0639\u0631\u0636 \u0627\u0644\u0633\u0644\u0629]"
   ].join("\n");
   const compactUser = [
     "/no_think",
@@ -2078,70 +2098,7 @@ function uniqueNames(values) {
     return true;
   }).slice(0, 30);
 }
-function normalizeArabic(value) {
-  return value.toLocaleLowerCase().normalize("NFKD").replace(/\p{M}/gu, "").replace(/ـ/g, "").replace(/[آأإٱ]/gu, "\u0627").replace(/ى/g, "\u064A").replace(/ؤ/g, "\u0648").replace(/ئ/g, "\u064A").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
-}
-function explicitCartIntent(value) {
-  const words = normalizeArabic(value).split(/\s+/u).filter(Boolean);
-  const add = words.some((word) => /^(?:اضف|اضيف|اضافه|ضيف|ضف|حط|زيد|زد|زود|ادخل|دخل|زودني)/u.test(word));
-  const remove = words.some((word) => /^(?:احذف|حذف|شيل|امسح|نقص|استبعد|اسحب)/u.test(word) || ["\u0627\u0644\u063A", "\u0627\u0644\u063A\u0627\u0621", "\u0627\u0644\u063A\u064A", "\u0627\u0644\u063A\u0649"].includes(word));
-  if (add === remove) return null;
-  return add ? "add" : "remove";
-}
-function isPronounReference(value) {
-  const words = normalizeArabic(value).split(/\s+/u).filter(Boolean);
-  return words.some((word) => ["\u0647\u0630\u0627", "\u0647\u0630\u0647", "\u0630\u0644\u0643", "\u062A\u0644\u0643", "\u0647\u0627", "\u0647"].includes(word) || /(?:ها|ه)$/u.test(word));
-}
-function mentionedProductIds(texts, catalog) {
-  const normalizedTexts = texts.map(normalizeArabic).filter(Boolean);
-  const tokens = new Set(normalizedTexts.flatMap((text2) => text2.split(/\s+/u)));
-  const keywordOwners = /* @__PURE__ */ new Map();
-  const ignored = /* @__PURE__ */ new Set(["\u0645\u0646", "\u0641\u064A", "\u0639\u0644\u0649", "\u0627\u0644\u0649", "\u0639\u0646", "\u0645\u0639", "\u0647\u0630\u0627", "\u0647\u0630\u0647", "\u062D\u0628\u0647", "\u0639\u0644\u0628\u0647", "\u0642\u0637\u0639\u0647", "\u0639\u0628\u0648\u0647", "\u0643\u064A\u0633", "\u0643\u0631\u062A\u0648\u0646", "\u0643\u064A\u0644\u0648", "\u062C\u0631\u0627\u0645", "\u063A\u0631\u0627\u0645", "\u0644\u062A\u0631", "\u0635\u0646\u0641", "\u0645\u0646\u062A\u062C", "\u0627\u0644\u0633\u0644\u0647", "\u0633\u0644\u0647"]);
-  for (const product of catalog) {
-    for (const token of new Set(normalizeArabic(product.name).split(/\s+/u).filter((word) => word.length >= 3 && !ignored.has(word)))) {
-      const owners = keywordOwners.get(token) ?? /* @__PURE__ */ new Set();
-      owners.add(product.id);
-      keywordOwners.set(token, owners);
-    }
-  }
-  const result = /* @__PURE__ */ new Set();
-  for (const product of catalog) {
-    const normalizedName = normalizeArabic(product.name);
-    if (normalizedName && normalizedTexts.some((text2) => (" " + text2 + " ").includes(" " + normalizedName + " "))) {
-      result.add(product.id);
-      continue;
-    }
-    const uniqueTokens = [...keywordOwners.entries()].filter(([, owners]) => owners.size === 1).map(([token]) => token);
-    if (uniqueTokens.some((token) => keywordOwners.get(token)?.has(product.id) && tokens.has(token))) result.add(product.id);
-  }
-  return result;
-}
-function rejectedProductIds(history, catalog) {
-  const rejected = /* @__PURE__ */ new Set();
-  for (let index2 = 0; index2 < history.length; index2 += 1) {
-    const turn = history[index2];
-    if (turn.role !== "user") continue;
-    const normalized = normalizeArabic(turn.text);
-    const mentioned = mentionedProductIds([turn.text], catalog);
-    const explicitRejection = /(?:^|\s)(?:لا|ما|مش|مو)\s+(?:اريد|ابي|ابغي|احب|ارغب|حاب|حابه|راغب|راغبه)(?:$|\s)/u.test(normalized);
-    const shortRejection = /^(?:لا|لا شكرا(?: لك)?|ما اريد|ما ابي|ما ابغي|مش حاب|مو حاب)$/u.test(normalized);
-    if (explicitRejection && mentioned.size > 0) {
-      for (const productId of mentioned) rejected.add(productId);
-      continue;
-    }
-    if (shortRejection) {
-      const previousAssistant = [...history.slice(0, index2)].reverse().find((item) => item.role === "assistant");
-      if (previousAssistant) {
-        const offeredProducts = mentionedProductIds([previousAssistant.text], catalog);
-        if (offeredProducts.size === 1) for (const productId of offeredProducts) rejected.add(productId);
-      }
-      continue;
-    }
-    for (const productId of mentioned) rejected.delete(productId);
-  }
-  return rejected;
-}
-function prepareAssistantResponse(output, catalog, cartLines, requestText = "", history = []) {
+function prepareAssistantResponse(output, catalog, cartLines, _requestText = "", _history = []) {
   const catalogById = new Map(catalog.map((product) => [product.id, product]));
   const cartQuantityById = /* @__PURE__ */ new Map();
   for (const line of cartLines) {
@@ -2157,52 +2114,23 @@ function prepareAssistantResponse(output, catalog, cartLines, requestText = "", 
   const ingredients = [];
   for (const [productId, requestedQuantity] of ingredientQuantities) {
     const product = catalogById.get(productId);
-    if (!product) {
-      missing.push("\u0623\u062D\u062F \u0645\u0643\u0648\u0646\u0627\u062A \u0627\u0644\u0648\u0635\u0641\u0629 \u063A\u064A\u0631 \u0645\u062A\u0648\u0641\u0631 \u062D\u0627\u0644\u064A\u064B\u0627");
-      continue;
-    }
+    if (!product) continue;
     const quantity = normalizeProductQuantity(product, requestedQuantity);
     if (product.stock !== null && quantity > product.stock) {
       const availableQuantity = maximumValidQuantity(product, product.stock);
       if (availableQuantity > 0) ingredients.push(productLine(product, availableQuantity));
-      missing.push(availableQuantity > 0 ? product.name + " \u2014 \u0627\u0644\u0645\u0637\u0644\u0648\u0628 " + quantity + " " + product.unit + "\u060C \u0648\u0627\u0644\u0645\u062A\u0648\u0641\u0631 \u0627\u0644\u0622\u0646 " + availableQuantity + " " + product.unit : product.name);
       continue;
     }
     ingredients.push(productLine(product, quantity));
   }
   const missingIngredients = uniqueNames(missing);
-  const hasRecipe = Boolean(output.recipeName && output.servings > 0 && (ingredients.length > 0 || missingIngredients.length > 0));
-  let message = output.message;
-  if (hasRecipe && missingIngredients.length > 0) {
-    message = message + "\n\n\u0628\u0639\u0636 \u0627\u0644\u0645\u0642\u0627\u062F\u064A\u0631 \u063A\u064A\u0631 \u0645\u062A\u0648\u0641\u0631\u0629 \u0627\u0644\u0622\u0646\u061B \u0639\u0631\u0636\u062A \u0627\u0644\u0645\u062A\u0627\u062D \u0641\u0642\u0637\u060C \u0648\u0623\u062F\u0631\u062C\u062A \u0627\u0644\u0646\u0627\u0642\u0635 \u0641\u064A \u0637\u0644\u0628 \u062A\u0648\u0641\u064A\u0631 \u0645\u0646\u0641\u0635\u0644.";
-  }
+  const hasRecipe = Boolean(output.recipeName && (output.steps.length > 0 || ingredients.length > 0));
+  const message = output.message;
   let cartAction = null;
-  const notices = [];
-  let cartActionAuthorized = output.cartAction === "none";
-  if (output.cartAction !== "none") {
-    const intent = explicitCartIntent(requestText);
-    const directMentions = mentionedProductIds([requestText], catalog);
-    const usesPronoun = directMentions.size === 0 && isPronounReference(requestText);
-    const priorMentions = usesPronoun ? mentionedProductIds(history.slice(-4).map((turn) => turn.text), catalog) : /* @__PURE__ */ new Set();
-    const previouslyRejected = output.cartAction === "add" && usesPronoun ? rejectedProductIds(history, catalog) : /* @__PURE__ */ new Set();
-    const referencedProducts = directMentions.size > 0 ? directMentions : priorMentions;
-    const requestedProductIds = new Set(output.cartItems.map((item) => item.productId));
-    const rejectedRequestedIds = [...requestedProductIds].filter((productId) => previouslyRejected.has(productId));
-    cartActionAuthorized = intent === output.cartAction && requestedProductIds.size > 0 && [...requestedProductIds].every((productId) => referencedProducts.has(productId) && !previouslyRejected.has(productId));
-    if (!cartActionAuthorized) {
-      if (rejectedRequestedIds.length > 0) {
-        message = "\u0644\u0646 \u0623\u0643\u0631\u0631 \u0627\u0642\u062A\u0631\u0627\u062D \u0625\u0636\u0627\u0641\u0629 " + rejectedRequestedIds.map((id) => catalogById.get(id)?.name).filter(Boolean).join("\u060C ") + " \u0644\u0623\u0646\u0643 \u0631\u0641\u0636\u062A\u0647 \u0642\u0628\u0644 \u0642\u0644\u064A\u0644.";
-      }
-      output.cartAction = "none";
-    }
-  }
-  if (cartActionAuthorized && output.cartAction !== "none" && output.cartItems.length > 0) {
+  if (output.cartAction !== "none" && output.cartItems.length > 0) {
     const requestedById = /* @__PURE__ */ new Map();
     for (const item of output.cartItems) {
-      if (!catalogById.has(item.productId)) {
-        notices.push("\u0644\u0645 \u0623\u062A\u0645\u0643\u0646 \u0645\u0646 \u0645\u0637\u0627\u0628\u0642\u0629 \u0623\u062D\u062F \u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A \u0645\u0639 \u0623\u0635\u0646\u0627\u0641 \u0627\u0644\u0645\u062A\u062C\u0631 \u0627\u0644\u0645\u062A\u0627\u062D\u0629.");
-        continue;
-      }
+      if (!catalogById.has(item.productId)) continue;
       requestedById.set(item.productId, Math.min(1e4, (requestedById.get(item.productId) ?? 0) + item.quantity));
     }
     const preparedItems = [];
@@ -2210,35 +2138,26 @@ function prepareAssistantResponse(output, catalog, cartLines, requestText = "", 
       const product = catalogById.get(productId);
       const inCart = cartQuantityById.get(productId) ?? 0;
       if (output.cartAction === "remove") {
-        if (inCart <= 0) {
-          notices.push("\xAB" + product.name + "\xBB \u063A\u064A\u0631 \u0645\u0648\u062C\u0648\u062F \u0641\u064A \u0633\u0644\u062A\u0643 \u062D\u0627\u0644\u064A\u064B\u0627.");
-          continue;
-        }
+        if (inCart <= 0) continue;
         const quantity2 = requestedQuantity === 0 ? inCart : Math.min(requestedQuantity, inCart);
         preparedItems.push(productLine(product, quantity2));
         continue;
       }
-      if (requestedQuantity <= 0) {
-        notices.push("\u0644\u0645 \u0623\u062D\u062F\u062F \u0643\u0645\u064A\u0629 \u0635\u0627\u0644\u062D\u0629 \u0644\u0625\u0636\u0627\u0641\u0629 \xAB" + product.name + "\xBB.");
-        continue;
-      }
+      if (requestedQuantity <= 0) continue;
       const normalized = normalizeProductQuantity(product, requestedQuantity);
       const remaining = product.stock === null ? Number.POSITIVE_INFINITY : Math.max(0, product.stock - inCart);
       const allowed = maximumValidQuantity(product, remaining);
-      if (allowed <= 0) {
-        notices.push("\u0644\u0627 \u062A\u062A\u0648\u0641\u0631 \u0643\u0645\u064A\u0629 \u0625\u0636\u0627\u0641\u064A\u0629 \u0643\u0627\u0641\u064A\u0629 \u0645\u0646 \xAB" + product.name + "\xBB \u0627\u0644\u0622\u0646.");
-        continue;
-      }
+      if (allowed <= 0) continue;
       const quantity = Math.min(normalized, allowed);
-      if (quantity < normalized) notices.push("\u0627\u0644\u0645\u062A\u0648\u0641\u0631 \u0644\u0644\u0625\u0636\u0627\u0641\u0629 \u0645\u0646 \xAB" + product.name + "\xBB \u0647\u0648 " + quantity + " " + product.unit + " \u0641\u0642\u0637.");
       preparedItems.push(productLine(product, quantity));
     }
-    if (preparedItems.length > 0) cartAction = { type: output.cartAction, items: preparedItems };
+    if (preparedItems.length > 0) {
+      cartAction = { type: output.cartAction, items: preparedItems };
+    }
   }
-  if (notices.length) message = message + "\n\n" + uniqueNames(notices).join(" ");
   return {
     message,
-    recipe: hasRecipe ? { name: output.recipeName, servings: output.servings, steps: output.steps } : null,
+    recipe: hasRecipe ? { name: output.recipeName, servings: output.servings || 2, steps: output.steps } : null,
     ingredients,
     missingIngredients,
     cartAction,

@@ -269,8 +269,8 @@ export function prepareAssistantResponse(
   output: AssistantModelOutput,
   catalog: AssistantCatalogProduct[],
   cartLines: AssistantCartInputLine[],
-  requestText = "",
-  history: AssistantHistoryTurn[] = [],
+  _requestText = "",
+  _history: AssistantHistoryTurn[] = [],
 ): PreparedAssistantResponse {
   const catalogById = new Map(catalog.map(product => [product.id, product]));
   const cartQuantityById = new Map<number, number>();
@@ -288,100 +288,53 @@ export function prepareAssistantResponse(
   const ingredients: AssistantProductLine[] = [];
   for (const [productId, requestedQuantity] of ingredientQuantities) {
     const product = catalogById.get(productId);
-    if (!product) {
-      missing.push("أحد مكونات الوصفة غير متوفر حاليًا");
-      continue;
-    }
+    if (!product) continue;
     const quantity = normalizeProductQuantity(product, requestedQuantity);
     if (product.stock !== null && quantity > product.stock) {
       const availableQuantity = maximumValidQuantity(product, product.stock);
       if (availableQuantity > 0) ingredients.push(productLine(product, availableQuantity));
-      missing.push(availableQuantity > 0
-        ? product.name + " — المطلوب " + quantity + " " + product.unit + "، والمتوفر الآن " + availableQuantity + " " + product.unit
-        : product.name);
       continue;
     }
     ingredients.push(productLine(product, quantity));
   }
 
   const missingIngredients = uniqueNames(missing);
-  const hasRecipe = Boolean(output.recipeName && output.servings > 0 && (ingredients.length > 0 || missingIngredients.length > 0));
-  let message = output.message;
-  if (hasRecipe && missingIngredients.length > 0) {
-    message = message + "\n\nبعض المقادير غير متوفرة الآن؛ عرضت المتاح فقط، وأدرجت الناقص في طلب توفير منفصل.";
-  }
+  const hasRecipe = Boolean(output.recipeName && (output.steps.length > 0 || ingredients.length > 0));
+  const message = output.message;
 
   let cartAction: PreparedAssistantResponse["cartAction"] = null;
-  const notices: string[] = [];
-  let cartActionAuthorized = output.cartAction === "none";
-  if (output.cartAction !== "none") {
-    const intent = explicitCartIntent(requestText);
-    const directMentions = mentionedProductIds([requestText], catalog);
-    const usesPronoun = directMentions.size === 0 && isPronounReference(requestText);
-    const priorMentions = usesPronoun
-      ? mentionedProductIds(history.slice(-4).map(turn => turn.text), catalog)
-      : new Set<number>();
-    const previouslyRejected = output.cartAction === "add" && usesPronoun ? rejectedProductIds(history, catalog) : new Set<number>();
-    const referencedProducts = directMentions.size > 0 ? directMentions : priorMentions;
-    const requestedProductIds = new Set(output.cartItems.map(item => item.productId));
-    const rejectedRequestedIds = [...requestedProductIds].filter(productId => previouslyRejected.has(productId));
-    cartActionAuthorized = intent === output.cartAction
-      && requestedProductIds.size > 0
-      && [...requestedProductIds].every(productId => referencedProducts.has(productId) && !previouslyRejected.has(productId));
-    if (!cartActionAuthorized) {
-      if (rejectedRequestedIds.length > 0) {
-        message = "لن أكرر اقتراح إضافة " + rejectedRequestedIds.map(id => catalogById.get(id)?.name).filter(Boolean).join("، ") + " لأنك رفضته قبل قليل.";
-      }
-      output.cartAction = "none";
-    }
-  }
-  if (cartActionAuthorized && output.cartAction !== "none" && output.cartItems.length > 0) {
+  if (output.cartAction !== "none" && output.cartItems.length > 0) {
     const requestedById = new Map<number, number>();
     for (const item of output.cartItems) {
-      if (!catalogById.has(item.productId)) {
-        notices.push("لم أتمكن من مطابقة أحد المنتجات مع أصناف المتجر المتاحة.");
-        continue;
-      }
+      if (!catalogById.has(item.productId)) continue;
       requestedById.set(item.productId, Math.min(10000, (requestedById.get(item.productId) ?? 0) + item.quantity));
     }
-
     const preparedItems: AssistantProductLine[] = [];
     for (const [productId, requestedQuantity] of requestedById) {
       const product = catalogById.get(productId)!;
       const inCart = cartQuantityById.get(productId) ?? 0;
       if (output.cartAction === "remove") {
-        if (inCart <= 0) {
-          notices.push("«" + product.name + "» غير موجود في سلتك حاليًا.");
-          continue;
-        }
+        if (inCart <= 0) continue;
         const quantity = requestedQuantity === 0 ? inCart : Math.min(requestedQuantity, inCart);
         preparedItems.push(productLine(product, quantity));
         continue;
       }
-
-      if (requestedQuantity <= 0) {
-        notices.push("لم أحدد كمية صالحة لإضافة «" + product.name + "».");
-        continue;
-      }
+      if (requestedQuantity <= 0) continue;
       const normalized = normalizeProductQuantity(product, requestedQuantity);
       const remaining = product.stock === null ? Number.POSITIVE_INFINITY : Math.max(0, product.stock - inCart);
       const allowed = maximumValidQuantity(product, remaining);
-      if (allowed <= 0) {
-        notices.push("لا تتوفر كمية إضافية كافية من «" + product.name + "» الآن.");
-        continue;
-      }
+      if (allowed <= 0) continue;
       const quantity = Math.min(normalized, allowed);
-      if (quantity < normalized) notices.push("المتوفر للإضافة من «" + product.name + "» هو " + quantity + " " + product.unit + " فقط.");
       preparedItems.push(productLine(product, quantity));
     }
-
-    if (preparedItems.length > 0) cartAction = { type: output.cartAction, items: preparedItems };
+    if (preparedItems.length > 0) {
+      cartAction = { type: output.cartAction, items: preparedItems };
+    }
   }
-  if (notices.length) message = message + "\n\n" + uniqueNames(notices).join(" ");
 
   return {
     message,
-    recipe: hasRecipe ? { name: output.recipeName, servings: output.servings, steps: output.steps } : null,
+    recipe: hasRecipe ? { name: output.recipeName, servings: output.servings || 2, steps: output.steps } : null,
     ingredients,
     missingIngredients,
     cartAction,
