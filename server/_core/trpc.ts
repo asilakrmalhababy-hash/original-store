@@ -76,7 +76,12 @@ function recordArabicAdminActivity(ctx: TrpcContext, path: string, type: string,
       let targetAr = "";
       let detailsAr = "";
 
-      if (path === "commerce.admin.products.create") {
+      if (path === "commerce.admin.products.bulkCreate") {
+        const items = Array.isArray(inp.items) ? inp.items : [];
+        actionAr = "🚀 إضافة جماعية للمنتجات";
+        targetAr = "دفعة من " + items.length + " منتج";
+        detailsAr = "أضاف " + items.length + " منتجاً دفعة واحدة (" + items.slice(0, 6).map((x: any) => x.name).join("، ") + (items.length > 6 ? "..." : "") + ")";
+      } else if (path === "commerce.admin.products.create") {
         actionAr = "➕ إضافة منتج جديد";
         targetAr = "المنتج: " + (inp.name || "");
         detailsAr = "أضاف منتج جديد «" + (inp.name || "") + "» بسعر " + (inp.price ?? 0) + " ر.ي (" + (inp.unit || "") + ")";

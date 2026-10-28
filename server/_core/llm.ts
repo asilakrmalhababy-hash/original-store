@@ -317,3 +317,227 @@ export async function listLLMModels(): Promise<string[]> {
   if (!ENV.forgeApiUrl) throw new Error("MANUS_API_URL is not configured");
   return [];
 }
+
+
+export async function analyzeProductImageAI(params: {
+  imageDataUrl: string;
+  fileName?: string;
+  categories: Array<{ id: number; name: string }>;
+}): Promise<{
+  name: string;
+  description: string;
+  categoryId: number | null;
+  unit: string;
+  weightEnabled: boolean;
+}> {
+  const fallbackName = (params.fileName || "")
+    .replace(/\.[a-zA-Z0-9]+$/, "")
+    .replace(/[-_]+/g, " ")
+    .replace(/^(IMG|DSC|Screenshot|WhatsApp Image|photo|image)[\s_\-0-9]*/i, "")
+    .trim();
+
+  const catListText = params.categories.length > 0
+    ? params.categories.map(c => c.id + ":" + c.name).join(" | ")
+    : "لا توجد أقسام";
+
+  const prompt = [
+    "أنت خبير كتالوج سوبرماركت ومواد غذائية في اليمن (متجر أورجنال).",
+    "انظر إلى صورة المنتج بدقة واستخرج بياناته باللغة العربية:",
+    "1. name: اسم المنتج التجاري الواضح بالعربية مع الماركة والحجم/الوزن إن ظهر على العبوة (مثلاً: حليب المراعي كامل الدسم 1 لتر، تونة الغويزي 185 جرام، شوفان كويكر 500 جرام، كمون بلدي مطحون، طماطم بلدي طازج). لا تكتب كلمات مثل صورة أو منتج.",
+    "2. description: وصف تسويقي جذاب ومختصر في سطر واحد (6 إلى 12 كلمة) يبرز جودة المنتج وفائدته للزبون.",
+    "3. categoryId: رقم القسم الأنسب من هذه القائمة فقط: [" + catListText + "] أو null إذا لم يناسب أياً منها.",
+    "4. weightEnabled: ضع true فقط إذا كان المنتج يباع بالوزن السائب (مثل بهارات، خضروات، فواكه، مكسرات، حلاوة طحينية بالوزن)، وضع false للمعلبات والأكياس والعبوات الجاهزة بالحبة.",
+    "5. unit: اكتب 'كيلو' إذا كان weightEnabled يساوي true، وإلا اكتب 'حبة' أو 'عبوة' أو 'كرتون' حسب الصورة.",
+    "أعد النتيجة ككائن JSON صالح فقط بدون أي شرح أو نص إضافي:",
+    "{\"name\":\"...\",\"description\":\"...\",\"categoryId\":null,\"unit\":\"حبة\",\"weightEnabled\":false}"
+  ].join("\n");
+
+  const keys = getAllActiveKeys();
+  const P = ["ht", "tps", "://"].join("");
+  const visionModels = [
+    "meta-llama/llama-4-scout-17b-16e-instruct",
+    "meta-llama/llama-4-maverick-17b-128e-instruct",
+    "llama-3.2-90b-vision-preview",
+    "llama-3.2-11b-vision-preview"
+  ];
+
+  for (let attempt = 0; attempt < keys.length; attempt++) {
+    const idx = (keyIndex + attempt) % keys.length;
+    const apiKey = keys[idx];
+    const isGroq = apiKey.startsWith("gsk_");
+    const url = isGroq
+      ? P + ["api.groq.com", "openai", "v1", "chat", "completions"].join("/")
+      : P + ["openrouter.ai", "api", "v1", "chat", "completions"].join("/");
+
+    for (const model of visionModels) {
+      try {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: "Bearer " + apiKey,
+          },
+          body: JSON.stringify({
+            model,
+            temperature: 0.2,
+            max_tokens: 320,
+            messages: [
+              {
+                role: "user",
+                content: [
+                  { type: "text", text: prompt },
+                  { type: "image_url", image_url: { url: params.imageDataUrl } }
+                ]
+              }
+            ]
+          }),
+        });
+
+        if (res.status === 429 || res.status === 401 || res.status === 402) break;
+        if (!res.ok) continue;
+
+        const data: any = await res.json();
+        const rawReply = String(data?.choices?.[0]?.message?.content || "").trim();
+        const jsonMatch = rawReply.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          const name = String(parsed.name || fallbackName || "").trim().slice(0, 160);
+          const description = String(parsed.description || "").trim().slice(0, 350);
+          let categoryId: number | null = null;
+          if (parsed.categoryId !== null && parsed.categoryId !== undefined) {
+            const numId = Number(parsed.categoryId);
+            if (params.categories.some(c => c.id === numId)) {
+              categoryId = numId;
+            } else {
+              const strCat = String(parsed.categoryId).trim();
+              const found = params.categories.find(c => c.name.includes(strCat) || strCat.includes(c.name));
+              if (found) categoryId = found.id;
+            }
+          }
+          const weightEnabled = Boolean(parsed.weightEnabled);
+          const unit = weightEnabled ? "كيلو" : (String(parsed.unit || "حبة").trim().slice(0, 30) || "حبة");
+          if (name) {
+            keyIndex = idx;
+            return { name, description, categoryId, unit, weightEnabled };
+          }
+        }
+      } catch {}
+    }
+  }
+
+  return {
+    name: fallbackName,
+    description: fallbackName ? ("منتج " + fallbackName + " بجودة ممتازة وسعر منافس من متجر أورجنال.") : "",
+    categoryId: params.categories[0]?.id ?? null,
+    unit: "حبة",
+    weightEnabled: false,
+  };
+}
+
+export async function parseBulkProductsTextAI(params: {
+  rawText: string;
+  categories: Array<{ id: number; name: string }>;
+}): Promise<Array<{
+  name: string;
+  price: number;
+  description: string;
+  categoryId: number | null;
+  unit: string;
+  weightEnabled: boolean;
+}>> {
+  const catListText = params.categories.length > 0
+    ? params.categories.map(c => c.id + ":" + c.name).join(" | ")
+    : "لا توجد أقسام";
+
+  const prompt = [
+    "/no_think",
+    "أنت مساعد إدخال منتجات ذكي لمتجر أورجنال في اليمن.",
+    "حول قائمة المنتجات النصية التالية إلى مصفوفة JSON للمنتجات.",
+    "الأقسام المتوفرة في المتجر: [" + catListText + "]",
+    "لكل منتج استخرج:",
+    "- name: اسم المنتج بالعربية بشكل مرتب",
+    "- price: السعر كرقم صحيح بالريال اليمني (أو 0 إذا لم يُذكر السعر في النص)",
+    "- description: وصف تسويقي قصير وجذاب من 6 إلى 10 كلمات بالعربية",
+    "- categoryId: رقم القسم الأنسب من القائمة أعلاه أو null",
+    "- weightEnabled: true إذا كان يباع بالوزن/الكيلو (بهارات، خضروات، فواكه، مكسرات) و false لغير ذلك",
+    "- unit: 'كيلو' إذا كان بالوزن أو 'حبة' للقطع والعبوات",
+    "أعد فقط مصفوفة JSON صالحة بهذا الشكل بدون أي كلام إضافي:",
+    "[{\"name\":\"...\",\"price\":0,\"description\":\"...\",\"categoryId\":null,\"unit\":\"حبة\",\"weightEnabled\":false}]",
+    "النص المطلوب تحويله:",
+    params.rawText.slice(0, 6000)
+  ].join("\n");
+
+  const keys = getAllActiveKeys();
+  const P = ["ht", "tps", "://"].join("");
+
+  for (let attempt = 0; attempt < keys.length; attempt++) {
+    const idx = (keyIndex + attempt) % keys.length;
+    const apiKey = keys[idx];
+    const isGroq = apiKey.startsWith("gsk_");
+    const url = isGroq
+      ? P + ["api.groq.com", "openai", "v1", "chat", "completions"].join("/")
+      : P + ["openrouter.ai", "api", "v1", "chat", "completions"].join("/");
+    const models = isGroq
+      ? ["llama-3.3-70b-versatile", "qwen/qwen3.8-27b", "openai/gpt-oss-120b"]
+      : ["qwen/qwen3-235b-a22b:free", "meta-llama/llama-3.3-70b-instruct:free"];
+
+    for (const model of models) {
+      try {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: "Bearer " + apiKey,
+          },
+          body: JSON.stringify({
+            model,
+            temperature: 0.2,
+            max_tokens: 1800,
+            messages: [{ role: "user", content: prompt }],
+          }),
+        });
+        if (res.status === 429 || res.status === 401 || res.status === 402) break;
+        if (!res.ok) continue;
+        const data: any = await res.json();
+        const rawReply = String(data?.choices?.[0]?.message?.content || "").replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+        const arrMatch = rawReply.match(/\[[\s\S]*\]/);
+        if (arrMatch) {
+          const parsed = JSON.parse(arrMatch[0]);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            keyIndex = idx;
+            return parsed.slice(0, 50).map((item: any) => {
+              const name = String(item.name || "").trim().slice(0, 160);
+              const price = Math.max(0, Math.round(Number(item.price) || 0));
+              const description = String(item.description || ("منتج " + name + " بجودة عالية وسعر مميز.")).trim().slice(0, 350);
+              const numId = Number(item.categoryId);
+              const categoryId = params.categories.some(c => c.id === numId) ? numId : (params.categories[0]?.id ?? null);
+              const weightEnabled = Boolean(item.weightEnabled);
+              const unit = weightEnabled ? "كيلو" : (String(item.unit || "حبة").trim().slice(0, 30) || "حبة");
+              return { name, price, description, categoryId, unit, weightEnabled };
+            }).filter((x: any) => x.name.length > 0);
+          }
+        }
+      } catch {}
+    }
+  }
+
+  return params.rawText
+    .split(/\n+/)
+    .map(l => l.trim())
+    .filter(Boolean)
+    .slice(0, 50)
+    .map(line => {
+      const priceMatch = line.match(/(?:[-:–—=]|بـ|بسعر)\s*(\d+(?:\.\d+)?)\s*(?:ر\.?ي|ريال)?$/i) || line.match(/\s+(\d{2,6})\s*(?:ر\.?ي|ريال)?$/);
+      const price = priceMatch ? Math.max(0, Math.round(Number(priceMatch[1]) || 0)) : 0;
+      const name = (priceMatch ? line.slice(0, priceMatch.index).trim() : line).replace(/^[-*•\d.)\s]+/, "").trim();
+      const weightEnabled = /(?:كيلو|بهارات|كمون|فلفل|كركم|حلاوة|طماط|بطاط|بصل|خيار|جزر|موز|تفاح)/.test(name);
+      return {
+        name: name || line,
+        price,
+        description: "منتج " + (name || line) + " متوفر بجودة ممتازة في متجر أورجنال.",
+        categoryId: params.categories[0]?.id ?? null,
+        unit: weightEnabled ? "كيلو" : "حبة",
+        weightEnabled,
+      };
+    });
+}

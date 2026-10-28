@@ -1615,7 +1615,12 @@ function recordArabicAdminActivity(ctx, path3, type, rawInput) {
       let actionAr = "\u26A1 \u062A\u0646\u0641\u064A\u0630 \u0625\u062C\u0631\u0627\u0621 \u0625\u062F\u0627\u0631\u064A";
       let targetAr = "";
       let detailsAr = "";
-      if (path3 === "commerce.admin.products.create") {
+      if (path3 === "commerce.admin.products.bulkCreate") {
+        const items = Array.isArray(inp.items) ? inp.items : [];
+        actionAr = "\u{1F680} \u0625\u0636\u0627\u0641\u0629 \u062C\u0645\u0627\u0639\u064A\u0629 \u0644\u0644\u0645\u0646\u062A\u062C\u0627\u062A";
+        targetAr = "\u062F\u0641\u0639\u0629 \u0645\u0646 " + items.length + " \u0645\u0646\u062A\u062C";
+        detailsAr = "\u0623\u0636\u0627\u0641 " + items.length + " \u0645\u0646\u062A\u062C\u0627\u064B \u062F\u0641\u0639\u0629 \u0648\u0627\u062D\u062F\u0629 (" + items.slice(0, 6).map((x) => x.name).join("\u060C ") + (items.length > 6 ? "..." : "") + ")";
+      } else if (path3 === "commerce.admin.products.create") {
         actionAr = "\u2795 \u0625\u0636\u0627\u0641\u0629 \u0645\u0646\u062A\u062C \u062C\u062F\u064A\u062F";
         targetAr = "\u0627\u0644\u0645\u0646\u062A\u062C: " + (inp.name || "");
         detailsAr = "\u0623\u0636\u0627\u0641 \u0645\u0646\u062A\u062C \u062C\u062F\u064A\u062F \xAB" + (inp.name || "") + "\xBB \u0628\u0633\u0639\u0631 " + (inp.price ?? 0) + " \u0631.\u064A (" + (inp.unit || "") + ")";
@@ -2018,6 +2023,177 @@ async function invokeLLM(params) {
     }
   }
   throw new Error("AI_UNAVAILABLE");
+}
+async function analyzeProductImageAI(params) {
+  const fallbackName = (params.fileName || "").replace(/\.[a-zA-Z0-9]+$/, "").replace(/[-_]+/g, " ").replace(/^(IMG|DSC|Screenshot|WhatsApp Image|photo|image)[\s_\-0-9]*/i, "").trim();
+  const catListText = params.categories.length > 0 ? params.categories.map((c) => c.id + ":" + c.name).join(" | ") : "\u0644\u0627 \u062A\u0648\u062C\u062F \u0623\u0642\u0633\u0627\u0645";
+  const prompt = [
+    "\u0623\u0646\u062A \u062E\u0628\u064A\u0631 \u0643\u062A\u0627\u0644\u0648\u062C \u0633\u0648\u0628\u0631\u0645\u0627\u0631\u0643\u062A \u0648\u0645\u0648\u0627\u062F \u063A\u0630\u0627\u0626\u064A\u0629 \u0641\u064A \u0627\u0644\u064A\u0645\u0646 (\u0645\u062A\u062C\u0631 \u0623\u0648\u0631\u062C\u0646\u0627\u0644).",
+    "\u0627\u0646\u0638\u0631 \u0625\u0644\u0649 \u0635\u0648\u0631\u0629 \u0627\u0644\u0645\u0646\u062A\u062C \u0628\u062F\u0642\u0629 \u0648\u0627\u0633\u062A\u062E\u0631\u062C \u0628\u064A\u0627\u0646\u0627\u062A\u0647 \u0628\u0627\u0644\u0644\u063A\u0629 \u0627\u0644\u0639\u0631\u0628\u064A\u0629:",
+    "1. name: \u0627\u0633\u0645 \u0627\u0644\u0645\u0646\u062A\u062C \u0627\u0644\u062A\u062C\u0627\u0631\u064A \u0627\u0644\u0648\u0627\u0636\u062D \u0628\u0627\u0644\u0639\u0631\u0628\u064A\u0629 \u0645\u0639 \u0627\u0644\u0645\u0627\u0631\u0643\u0629 \u0648\u0627\u0644\u062D\u062C\u0645/\u0627\u0644\u0648\u0632\u0646 \u0625\u0646 \u0638\u0647\u0631 \u0639\u0644\u0649 \u0627\u0644\u0639\u0628\u0648\u0629 (\u0645\u062B\u0644\u0627\u064B: \u062D\u0644\u064A\u0628 \u0627\u0644\u0645\u0631\u0627\u0639\u064A \u0643\u0627\u0645\u0644 \u0627\u0644\u062F\u0633\u0645 1 \u0644\u062A\u0631\u060C \u062A\u0648\u0646\u0629 \u0627\u0644\u063A\u0648\u064A\u0632\u064A 185 \u062C\u0631\u0627\u0645\u060C \u0634\u0648\u0641\u0627\u0646 \u0643\u0648\u064A\u0643\u0631 500 \u062C\u0631\u0627\u0645\u060C \u0643\u0645\u0648\u0646 \u0628\u0644\u062F\u064A \u0645\u0637\u062D\u0648\u0646\u060C \u0637\u0645\u0627\u0637\u0645 \u0628\u0644\u062F\u064A \u0637\u0627\u0632\u062C). \u0644\u0627 \u062A\u0643\u062A\u0628 \u0643\u0644\u0645\u0627\u062A \u0645\u062B\u0644 \u0635\u0648\u0631\u0629 \u0623\u0648 \u0645\u0646\u062A\u062C.",
+    "2. description: \u0648\u0635\u0641 \u062A\u0633\u0648\u064A\u0642\u064A \u062C\u0630\u0627\u0628 \u0648\u0645\u062E\u062A\u0635\u0631 \u0641\u064A \u0633\u0637\u0631 \u0648\u0627\u062D\u062F (6 \u0625\u0644\u0649 12 \u0643\u0644\u0645\u0629) \u064A\u0628\u0631\u0632 \u062C\u0648\u062F\u0629 \u0627\u0644\u0645\u0646\u062A\u062C \u0648\u0641\u0627\u0626\u062F\u062A\u0647 \u0644\u0644\u0632\u0628\u0648\u0646.",
+    "3. categoryId: \u0631\u0642\u0645 \u0627\u0644\u0642\u0633\u0645 \u0627\u0644\u0623\u0646\u0633\u0628 \u0645\u0646 \u0647\u0630\u0647 \u0627\u0644\u0642\u0627\u0626\u0645\u0629 \u0641\u0642\u0637: [" + catListText + "] \u0623\u0648 null \u0625\u0630\u0627 \u0644\u0645 \u064A\u0646\u0627\u0633\u0628 \u0623\u064A\u0627\u064B \u0645\u0646\u0647\u0627.",
+    "4. weightEnabled: \u0636\u0639 true \u0641\u0642\u0637 \u0625\u0630\u0627 \u0643\u0627\u0646 \u0627\u0644\u0645\u0646\u062A\u062C \u064A\u0628\u0627\u0639 \u0628\u0627\u0644\u0648\u0632\u0646 \u0627\u0644\u0633\u0627\u0626\u0628 (\u0645\u062B\u0644 \u0628\u0647\u0627\u0631\u0627\u062A\u060C \u062E\u0636\u0631\u0648\u0627\u062A\u060C \u0641\u0648\u0627\u0643\u0647\u060C \u0645\u0643\u0633\u0631\u0627\u062A\u060C \u062D\u0644\u0627\u0648\u0629 \u0637\u062D\u064A\u0646\u064A\u0629 \u0628\u0627\u0644\u0648\u0632\u0646)\u060C \u0648\u0636\u0639 false \u0644\u0644\u0645\u0639\u0644\u0628\u0627\u062A \u0648\u0627\u0644\u0623\u0643\u064A\u0627\u0633 \u0648\u0627\u0644\u0639\u0628\u0648\u0627\u062A \u0627\u0644\u062C\u0627\u0647\u0632\u0629 \u0628\u0627\u0644\u062D\u0628\u0629.",
+    "5. unit: \u0627\u0643\u062A\u0628 '\u0643\u064A\u0644\u0648' \u0625\u0630\u0627 \u0643\u0627\u0646 weightEnabled \u064A\u0633\u0627\u0648\u064A true\u060C \u0648\u0625\u0644\u0627 \u0627\u0643\u062A\u0628 '\u062D\u0628\u0629' \u0623\u0648 '\u0639\u0628\u0648\u0629' \u0623\u0648 '\u0643\u0631\u062A\u0648\u0646' \u062D\u0633\u0628 \u0627\u0644\u0635\u0648\u0631\u0629.",
+    "\u0623\u0639\u062F \u0627\u0644\u0646\u062A\u064A\u062C\u0629 \u0643\u0643\u0627\u0626\u0646 JSON \u0635\u0627\u0644\u062D \u0641\u0642\u0637 \u0628\u062F\u0648\u0646 \u0623\u064A \u0634\u0631\u062D \u0623\u0648 \u0646\u0635 \u0625\u0636\u0627\u0641\u064A:",
+    '{"name":"...","description":"...","categoryId":null,"unit":"\u062D\u0628\u0629","weightEnabled":false}'
+  ].join("\n");
+  const keys = getAllActiveKeys();
+  const P = ["ht", "tps", "://"].join("");
+  const visionModels = [
+    "meta-llama/llama-4-scout-17b-16e-instruct",
+    "meta-llama/llama-4-maverick-17b-128e-instruct",
+    "llama-3.2-90b-vision-preview",
+    "llama-3.2-11b-vision-preview"
+  ];
+  for (let attempt = 0; attempt < keys.length; attempt++) {
+    const idx = (keyIndex + attempt) % keys.length;
+    const apiKey = keys[idx];
+    const isGroq = apiKey.startsWith("gsk_");
+    const url = isGroq ? P + ["api.groq.com", "openai", "v1", "chat", "completions"].join("/") : P + ["openrouter.ai", "api", "v1", "chat", "completions"].join("/");
+    for (const model of visionModels) {
+      try {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: "Bearer " + apiKey
+          },
+          body: JSON.stringify({
+            model,
+            temperature: 0.2,
+            max_tokens: 320,
+            messages: [
+              {
+                role: "user",
+                content: [
+                  { type: "text", text: prompt },
+                  { type: "image_url", image_url: { url: params.imageDataUrl } }
+                ]
+              }
+            ]
+          })
+        });
+        if (res.status === 429 || res.status === 401 || res.status === 402) break;
+        if (!res.ok) continue;
+        const data = await res.json();
+        const rawReply = String(data?.choices?.[0]?.message?.content || "").trim();
+        const jsonMatch = rawReply.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          const name = String(parsed.name || fallbackName || "").trim().slice(0, 160);
+          const description = String(parsed.description || "").trim().slice(0, 350);
+          let categoryId = null;
+          if (parsed.categoryId !== null && parsed.categoryId !== void 0) {
+            const numId = Number(parsed.categoryId);
+            if (params.categories.some((c) => c.id === numId)) {
+              categoryId = numId;
+            } else {
+              const strCat = String(parsed.categoryId).trim();
+              const found = params.categories.find((c) => c.name.includes(strCat) || strCat.includes(c.name));
+              if (found) categoryId = found.id;
+            }
+          }
+          const weightEnabled = Boolean(parsed.weightEnabled);
+          const unit = weightEnabled ? "\u0643\u064A\u0644\u0648" : String(parsed.unit || "\u062D\u0628\u0629").trim().slice(0, 30) || "\u062D\u0628\u0629";
+          if (name) {
+            keyIndex = idx;
+            return { name, description, categoryId, unit, weightEnabled };
+          }
+        }
+      } catch {
+      }
+    }
+  }
+  return {
+    name: fallbackName,
+    description: fallbackName ? "\u0645\u0646\u062A\u062C " + fallbackName + " \u0628\u062C\u0648\u062F\u0629 \u0645\u0645\u062A\u0627\u0632\u0629 \u0648\u0633\u0639\u0631 \u0645\u0646\u0627\u0641\u0633 \u0645\u0646 \u0645\u062A\u062C\u0631 \u0623\u0648\u0631\u062C\u0646\u0627\u0644." : "",
+    categoryId: params.categories[0]?.id ?? null,
+    unit: "\u062D\u0628\u0629",
+    weightEnabled: false
+  };
+}
+async function parseBulkProductsTextAI(params) {
+  const catListText = params.categories.length > 0 ? params.categories.map((c) => c.id + ":" + c.name).join(" | ") : "\u0644\u0627 \u062A\u0648\u062C\u062F \u0623\u0642\u0633\u0627\u0645";
+  const prompt = [
+    "/no_think",
+    "\u0623\u0646\u062A \u0645\u0633\u0627\u0639\u062F \u0625\u062F\u062E\u0627\u0644 \u0645\u0646\u062A\u062C\u0627\u062A \u0630\u0643\u064A \u0644\u0645\u062A\u062C\u0631 \u0623\u0648\u0631\u062C\u0646\u0627\u0644 \u0641\u064A \u0627\u0644\u064A\u0645\u0646.",
+    "\u062D\u0648\u0644 \u0642\u0627\u0626\u0645\u0629 \u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A \u0627\u0644\u0646\u0635\u064A\u0629 \u0627\u0644\u062A\u0627\u0644\u064A\u0629 \u0625\u0644\u0649 \u0645\u0635\u0641\u0648\u0641\u0629 JSON \u0644\u0644\u0645\u0646\u062A\u062C\u0627\u062A.",
+    "\u0627\u0644\u0623\u0642\u0633\u0627\u0645 \u0627\u0644\u0645\u062A\u0648\u0641\u0631\u0629 \u0641\u064A \u0627\u0644\u0645\u062A\u062C\u0631: [" + catListText + "]",
+    "\u0644\u0643\u0644 \u0645\u0646\u062A\u062C \u0627\u0633\u062A\u062E\u0631\u062C:",
+    "- name: \u0627\u0633\u0645 \u0627\u0644\u0645\u0646\u062A\u062C \u0628\u0627\u0644\u0639\u0631\u0628\u064A\u0629 \u0628\u0634\u0643\u0644 \u0645\u0631\u062A\u0628",
+    "- price: \u0627\u0644\u0633\u0639\u0631 \u0643\u0631\u0642\u0645 \u0635\u062D\u064A\u062D \u0628\u0627\u0644\u0631\u064A\u0627\u0644 \u0627\u0644\u064A\u0645\u0646\u064A (\u0623\u0648 0 \u0625\u0630\u0627 \u0644\u0645 \u064A\u064F\u0630\u0643\u0631 \u0627\u0644\u0633\u0639\u0631 \u0641\u064A \u0627\u0644\u0646\u0635)",
+    "- description: \u0648\u0635\u0641 \u062A\u0633\u0648\u064A\u0642\u064A \u0642\u0635\u064A\u0631 \u0648\u062C\u0630\u0627\u0628 \u0645\u0646 6 \u0625\u0644\u0649 10 \u0643\u0644\u0645\u0627\u062A \u0628\u0627\u0644\u0639\u0631\u0628\u064A\u0629",
+    "- categoryId: \u0631\u0642\u0645 \u0627\u0644\u0642\u0633\u0645 \u0627\u0644\u0623\u0646\u0633\u0628 \u0645\u0646 \u0627\u0644\u0642\u0627\u0626\u0645\u0629 \u0623\u0639\u0644\u0627\u0647 \u0623\u0648 null",
+    "- weightEnabled: true \u0625\u0630\u0627 \u0643\u0627\u0646 \u064A\u0628\u0627\u0639 \u0628\u0627\u0644\u0648\u0632\u0646/\u0627\u0644\u0643\u064A\u0644\u0648 (\u0628\u0647\u0627\u0631\u0627\u062A\u060C \u062E\u0636\u0631\u0648\u0627\u062A\u060C \u0641\u0648\u0627\u0643\u0647\u060C \u0645\u0643\u0633\u0631\u0627\u062A) \u0648 false \u0644\u063A\u064A\u0631 \u0630\u0644\u0643",
+    "- unit: '\u0643\u064A\u0644\u0648' \u0625\u0630\u0627 \u0643\u0627\u0646 \u0628\u0627\u0644\u0648\u0632\u0646 \u0623\u0648 '\u062D\u0628\u0629' \u0644\u0644\u0642\u0637\u0639 \u0648\u0627\u0644\u0639\u0628\u0648\u0627\u062A",
+    "\u0623\u0639\u062F \u0641\u0642\u0637 \u0645\u0635\u0641\u0648\u0641\u0629 JSON \u0635\u0627\u0644\u062D\u0629 \u0628\u0647\u0630\u0627 \u0627\u0644\u0634\u0643\u0644 \u0628\u062F\u0648\u0646 \u0623\u064A \u0643\u0644\u0627\u0645 \u0625\u0636\u0627\u0641\u064A:",
+    '[{"name":"...","price":0,"description":"...","categoryId":null,"unit":"\u062D\u0628\u0629","weightEnabled":false}]',
+    "\u0627\u0644\u0646\u0635 \u0627\u0644\u0645\u0637\u0644\u0648\u0628 \u062A\u062D\u0648\u064A\u0644\u0647:",
+    params.rawText.slice(0, 6e3)
+  ].join("\n");
+  const keys = getAllActiveKeys();
+  const P = ["ht", "tps", "://"].join("");
+  for (let attempt = 0; attempt < keys.length; attempt++) {
+    const idx = (keyIndex + attempt) % keys.length;
+    const apiKey = keys[idx];
+    const isGroq = apiKey.startsWith("gsk_");
+    const url = isGroq ? P + ["api.groq.com", "openai", "v1", "chat", "completions"].join("/") : P + ["openrouter.ai", "api", "v1", "chat", "completions"].join("/");
+    const models = isGroq ? ["llama-3.3-70b-versatile", "qwen/qwen3.8-27b", "openai/gpt-oss-120b"] : ["qwen/qwen3-235b-a22b:free", "meta-llama/llama-3.3-70b-instruct:free"];
+    for (const model of models) {
+      try {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: "Bearer " + apiKey
+          },
+          body: JSON.stringify({
+            model,
+            temperature: 0.2,
+            max_tokens: 1800,
+            messages: [{ role: "user", content: prompt }]
+          })
+        });
+        if (res.status === 429 || res.status === 401 || res.status === 402) break;
+        if (!res.ok) continue;
+        const data = await res.json();
+        const rawReply = String(data?.choices?.[0]?.message?.content || "").replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+        const arrMatch = rawReply.match(/\[[\s\S]*\]/);
+        if (arrMatch) {
+          const parsed = JSON.parse(arrMatch[0]);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            keyIndex = idx;
+            return parsed.slice(0, 50).map((item) => {
+              const name = String(item.name || "").trim().slice(0, 160);
+              const price = Math.max(0, Math.round(Number(item.price) || 0));
+              const description = String(item.description || "\u0645\u0646\u062A\u062C " + name + " \u0628\u062C\u0648\u062F\u0629 \u0639\u0627\u0644\u064A\u0629 \u0648\u0633\u0639\u0631 \u0645\u0645\u064A\u0632.").trim().slice(0, 350);
+              const numId = Number(item.categoryId);
+              const categoryId = params.categories.some((c) => c.id === numId) ? numId : params.categories[0]?.id ?? null;
+              const weightEnabled = Boolean(item.weightEnabled);
+              const unit = weightEnabled ? "\u0643\u064A\u0644\u0648" : String(item.unit || "\u062D\u0628\u0629").trim().slice(0, 30) || "\u062D\u0628\u0629";
+              return { name, price, description, categoryId, unit, weightEnabled };
+            }).filter((x) => x.name.length > 0);
+          }
+        }
+      } catch {
+      }
+    }
+  }
+  return params.rawText.split(/\n+/).map((l) => l.trim()).filter(Boolean).slice(0, 50).map((line) => {
+    const priceMatch = line.match(/(?:[-:–—=]|بـ|بسعر)\s*(\d+(?:\.\d+)?)\s*(?:ر\.?ي|ريال)?$/i) || line.match(/\s+(\d{2,6})\s*(?:ر\.?ي|ريال)?$/);
+    const price = priceMatch ? Math.max(0, Math.round(Number(priceMatch[1]) || 0)) : 0;
+    const name = (priceMatch ? line.slice(0, priceMatch.index).trim() : line).replace(/^[-*•\d.)\s]+/, "").trim();
+    const weightEnabled = /(?:كيلو|بهارات|كمون|فلفل|كركم|حلاوة|طماط|بطاط|بصل|خيار|جزر|موز|تفاح)/.test(name);
+    return {
+      name: name || line,
+      price,
+      description: "\u0645\u0646\u062A\u062C " + (name || line) + " \u0645\u062A\u0648\u0641\u0631 \u0628\u062C\u0648\u062F\u0629 \u0645\u0645\u062A\u0627\u0632\u0629 \u0641\u064A \u0645\u062A\u062C\u0631 \u0623\u0648\u0631\u062C\u0646\u0627\u0644.",
+      categoryId: params.categories[0]?.id ?? null,
+      unit: weightEnabled ? "\u0643\u064A\u0644\u0648" : "\u062D\u0628\u0629",
+      weightEnabled
+    };
+  });
 }
 
 // server/guest-orders.ts
@@ -3899,6 +4075,36 @@ var commerceRouter = router({
         await db.update(products).set({ isPublished: false, isAvailable: false }).where(eq4(products.id, input.id));
         clearCatalogCache();
         return { success: true };
+      }),
+      analyzeImage: requirePermission("products.manage").input(z3.object({ imageDataUrl: z3.string().min(20).max(25e5), fileName: z3.string().max(200).optional() })).mutation(async ({ input }) => {
+        const db = await database();
+        const catRows = await db.select({ id: categories.id, name: categories.name }).from(categories).orderBy(asc(categories.sortOrder));
+        return analyzeProductImageAI({ imageDataUrl: input.imageDataUrl, fileName: input.fileName, categories: catRows });
+      }),
+      parseBulkText: requirePermission("products.manage").input(z3.object({ rawText: z3.string().min(2).max(12e3) })).mutation(async ({ input }) => {
+        const db = await database();
+        const catRows = await db.select({ id: categories.id, name: categories.name }).from(categories).orderBy(asc(categories.sortOrder));
+        return parseBulkProductsTextAI({ rawText: input.rawText, categories: catRows });
+      }),
+      bulkCreate: requirePermission("products.manage").use(async ({ next }) => {
+        const res = await next();
+        clearCatalogCache();
+        return res;
+      }).input(z3.object({ items: z3.array(productInput).min(1).max(60) })).mutation(async ({ input }) => {
+        const db = await database();
+        const insertedIds = [];
+        for (const item of input.items) {
+          const result = await db.insert(products).values({
+            ...item,
+            slug: slugify(item.name),
+            description: item.description ?? null,
+            imageUrl: item.imageUrl ?? null,
+            categoryId: item.categoryId ?? null,
+            stock: item.stock ?? null
+          });
+          insertedIds.push(Number(result[0]?.insertId || 0));
+        }
+        return { count: insertedIds.length, ids: insertedIds };
       }),
       setRecommendations: requirePermission("products.manage").input(z3.object({ productId: safeId, recommendedIds: z3.array(safeId).max(30) })).mutation(async ({ input }) => {
         if (input.recommendedIds.includes(input.productId)) throw new TRPCError3({ code: "BAD_REQUEST", message: "\u0644\u0627 \u064A\u0645\u0643\u0646 \u0627\u0642\u062A\u0631\u0627\u062D \u0627\u0644\u0645\u0646\u062A\u062C \u0646\u0641\u0633\u0647." });

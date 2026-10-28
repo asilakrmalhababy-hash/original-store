@@ -64,6 +64,56 @@ async function quickCompressImageFile(file: File, kind: "product" | "category" |
   });
 }
 
+
+async function makeVisionThumbDataUrl(fileOrDataUrl: File | string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const isFile = typeof fileOrDataUrl !== "string";
+    const url = isFile ? URL.createObjectURL(fileOrDataUrl) : fileOrDataUrl;
+    const img = new Image();
+    img.onload = () => {
+      try {
+        if (isFile) URL.revokeObjectURL(url);
+        const maxDim = 384;
+        let w = img.naturalWidth || img.width || 384;
+        let h = img.naturalHeight || img.height || 384;
+        if (w > maxDim || h > maxDim) {
+          const ratio = Math.min(maxDim / w, maxDim / h);
+          w = Math.max(1, Math.round(w * ratio));
+          h = Math.max(1, Math.round(h * ratio));
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) { reject(new Error("تعذر تجهيز الصورة")); return; }
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL("image/jpeg", 0.72));
+      } catch (e) {
+        reject(e);
+      }
+    };
+    img.onerror = () => {
+      if (isFile) URL.revokeObjectURL(url);
+      reject(new Error("تعذر قراءة الصورة"));
+    };
+    img.src = url;
+  });
+}
+
+type BulkDraftItem = {
+  uid: string;
+  imageUrl: string;
+  name: string;
+  description: string;
+  price: string;
+  categoryId: number | null;
+  unit: string;
+  weightEnabled: boolean;
+  aiStatus: "idle" | "analyzing" | "done" | "error";
+};
+
 function ImageField({ value, onChange, kind, aspect, title }: { value: string; onChange: (value: string) => void; kind: "product" | "category" | "banner" | "icon"; aspect: number; title: string }) {
   const [open, setOpen] = useState(false);
   const [compressing, setCompressing] = useState(false);
@@ -355,10 +405,478 @@ const blankProduct: ProductFormState = {
   sortOrder: "0",
 };
 
+function SmartBulkProductsStudio({
+  categories,
+  onClose,
+  onSaved,
+}: {
+  categories: Array<{ id: number; name: string }>;
+  onClose: () => void;
+  onSaved: () => Promise<void>;
+}) {
+  const [tab, setTab] = useState<"photos" | "text">("photos");
+  const [items, setItems] = useState<BulkDraftItem[]>([]);
+  const [bulkText, setBulkText] = useState("");
+  const [defaultCatId, setDefaultCatId] = useState<number | null>(categories[0]?.id ?? null);
+  const [unifiedPrice, setUnifiedPrice] = useState("");
+  const multiFileInputRef = useRef<HTMLInputElement>(null);
+  const singleRowFileRef = useRef<{ uid: string | null; input: HTMLInputElement | null }>({ uid: null, input: null });
+  const priceRefs = useRef<Record<string, HTMLInputElement | null>>({});
+
+  const analyzeMut = trpc.commerce.admin.products.analyzeImage.useMutation();
+  const parseTextMut = trpc.commerce.admin.products.parseBulkText.useMutation();
+  const bulkCreateMut = trpc.commerce.admin.products.bulkCreate.useMutation({
+    onSuccess: async (res) => {
+      toast.success("🎉 تم حفظ ونشر " + res.count + " منتج في المتجر بنجاح!");
+      await onSaved();
+      onClose();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const updateItem = (uid: string, patch: Partial<BulkDraftItem>) => {
+    setItems(prev => prev.map(it => (it.uid === uid ? { ...it, ...patch } : it)));
+  };
+
+  const removeItem = (uid: string) => {
+    setItems(prev => prev.filter(it => it.uid !== uid));
+  };
+
+  const handleFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = Array.from(e.target.files ?? []).slice(0, 35);
+    e.target.value = "";
+    if (!fileList.length) return;
+
+    toast.info("📸 جارٍ تجهيز " + fileList.length + " صورة وقراءة المنتجات بالذكاء الاصطناعي...");
+
+    const createdTasks: Array<{ uid: string; file: File }> = fileList.map((file, idx) => ({
+      uid: "bulk_" + Date.now() + "_" + idx + "_" + Math.random().toString(36).slice(2, 6),
+      file,
+    }));
+
+    const placeholders: BulkDraftItem[] = createdTasks.map(t => ({
+      uid: t.uid,
+      imageUrl: "",
+      name: "",
+      description: "",
+      price: "",
+      categoryId: defaultCatId,
+      unit: "حبة",
+      weightEnabled: false,
+      aiStatus: "analyzing",
+    }));
+
+    setItems(prev => [...prev, ...placeholders]);
+
+    const concurrency = 3;
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < createdTasks.length) {
+        const task = createdTasks[cursor++];
+        try {
+          const [storeImg, visionThumb] = await Promise.all([
+            quickCompressImageFile(task.file, "product"),
+            makeVisionThumbDataUrl(task.file),
+          ]);
+          updateItem(task.uid, { imageUrl: storeImg });
+          const aiRes = await analyzeMut.mutateAsync({
+            imageDataUrl: visionThumb,
+            fileName: task.file.name,
+          });
+          updateItem(task.uid, {
+            name: aiRes.name || "منتج جديد",
+            description: aiRes.description || "",
+            categoryId: aiRes.categoryId ?? defaultCatId,
+            unit: aiRes.unit || (aiRes.weightEnabled ? "كيلو" : "حبة"),
+            weightEnabled: Boolean(aiRes.weightEnabled),
+            aiStatus: "done",
+          });
+        } catch {
+          const cleanFile = task.file.name.replace(/\.[a-zA-Z0-9]+$/, "").replace(/[-_]+/g, " ").trim();
+          updateItem(task.uid, {
+            name: cleanFile && !/^(IMG|DSC|Screenshot|WhatsApp)/i.test(cleanFile) ? cleanFile : "",
+            aiStatus: "error",
+          });
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(concurrency, createdTasks.length) }, () => worker()));
+    toast.success("✨ اكتمل تحليل الصور! اكتب السعر فقط أمام كل منتج ثم اضغط حفظ الكل.");
+  };
+
+  const handleParseBulkText = async () => {
+    if (!bulkText.trim()) {
+      toast.error("اكتب أو الصق قائمة المنتجات أولاً.");
+      return;
+    }
+    try {
+      const parsed = await parseTextMut.mutateAsync({ rawText: bulkText });
+      if (!parsed.length) {
+        toast.error("لم يتم العثور على منتجات في النص.");
+        return;
+      }
+      const newItems: BulkDraftItem[] = parsed.map((p, idx) => ({
+        uid: "txt_" + Date.now() + "_" + idx,
+        imageUrl: "",
+        name: p.name,
+        description: p.description,
+        price: p.price > 0 ? String(p.price) : "",
+        categoryId: p.categoryId ?? defaultCatId,
+        unit: p.unit || (p.weightEnabled ? "كيلو" : "حبة"),
+        weightEnabled: Boolean(p.weightEnabled),
+        aiStatus: "done",
+      }));
+      setItems(prev => [...prev, ...newItems]);
+      setBulkText("");
+      toast.success("✨ تم تجهيز " + newItems.length + " منتج بالذكاء الاصطناعي!");
+    } catch (e: any) {
+      toast.error(e?.message || "تعذر تحليل النص.");
+    }
+  };
+
+  const handleReplaceRowImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    const targetUid = singleRowFileRef.current.uid;
+    e.target.value = "";
+    if (!file || !targetUid) return;
+    try {
+      const compressed = await quickCompressImageFile(file, "product");
+      updateItem(targetUid, { imageUrl: compressed });
+    } catch {
+      toast.error("تعذر قراءة الصورة");
+    }
+  };
+
+  const analyzingCount = items.filter(i => i.aiStatus === "analyzing").length;
+  const readyItems = items.filter(i => i.name.trim().length > 0 && Number(i.price) >= 0 && i.price.trim() !== "");
+  const missingPriceCount = items.filter(i => i.name.trim().length > 0 && i.price.trim() === "").length;
+
+  const saveAllReady = () => {
+    if (!readyItems.length) {
+      toast.error("يرجى إدخال السعر لمنتج واحد على الأقل قبل الحفظ.");
+      return;
+    }
+    const payload = readyItems.map((it, idx) => ({
+      name: it.name.trim(),
+      description: packProductVariants(it.description, [], it.weightEnabled, 100),
+      imageUrl: it.imageUrl || null,
+      categoryId: it.categoryId,
+      price: Math.max(0, Number(it.price) || 0),
+      unit: it.weightEnabled ? "كيلو" : (it.unit.trim() || "حبة"),
+      stock: null,
+      minQuantity: 1,
+      quantityStep: 1,
+      isPublished: true,
+      isAvailable: true,
+      sortOrder: idx,
+    }));
+    bulkCreateMut.mutate({ items: payload });
+  };
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" onClick={onClose} style={{ zIndex: 195 }}>
+      <section
+        className="checkout-modal"
+        onClick={e => e.stopPropagation()}
+        style={{ maxWidth: "860px", width: "96vw", maxHeight: "92vh", display: "flex", flexDirection: "column", padding: "18px" }}
+      >
+        <input ref={multiFileInputRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={e => void handleFilesSelected(e)} />
+        <input ref={el => { singleRowFileRef.current.input = el; }} type="file" accept="image/*" style={{ display: "none" }} onChange={e => void handleReplaceRowImage(e)} />
+
+        <div className="modal-heading" style={{ marginBottom: "12px", flexShrink: 0 }}>
+          <div>
+            <span className="eyebrow">وداعاً للتعب — إضافة 30 منتج في دقائق</span>
+            <h2 style={{ fontSize: "19px", margin: "2px 0" }}>⚡ الإضافة الجماعية الذكية للمنتجات</h2>
+            <small style={{ color: "#52655a" }}>ارفع صور المنتجات وسيقوم الذكاء الاصطناعي بقراءة كل صورة وكتابة الاسم والوصف واختيار القسم، ويبقى عليك كتابة السعر فقط!</small>
+          </div>
+          <button type="button" className="icon-button" onClick={onClose}><X size={18} /></button>
+        </div>
+
+        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "12px", flexShrink: 0 }}>
+          <button
+            type="button"
+            className={"small-button" + (tab === "photos" ? " selected" : "")}
+            onClick={() => setTab("photos")}
+            style={{ flex: 1, justifyContent: "center", padding: "10px 14px", fontWeight: 800, borderRadius: "12px" }}
+          >
+            📸 1. رفع صور المنتجات (حتى 30 صورة دفعة واحدة)
+          </button>
+          <button
+            type="button"
+            className={"small-button" + (tab === "text" ? " selected" : "")}
+            onClick={() => setTab("text")}
+            style={{ flex: 1, justifyContent: "center", padding: "10px 14px", fontWeight: 800, borderRadius: "12px" }}
+          >
+            📝 2. لصق قائمة منتجات وأسعار نصية
+          </button>
+        </div>
+
+        <div style={{ overflowY: "auto", flex: 1, display: "grid", gap: "12px", paddingLeft: "2px" }}>
+          {tab === "photos" ? (
+            <div
+              onClick={() => multiFileInputRef.current?.click()}
+              style={{
+                padding: "18px",
+                borderRadius: "16px",
+                border: "2px dashed #174b36",
+                background: "linear-gradient(135deg, #f3faf5 0%, #fffdf6 100%)",
+                textAlign: "center",
+                cursor: "pointer",
+                display: "grid",
+                gap: "6px",
+                justifyItems: "center",
+              }}
+            >
+              <span style={{ width: "48px", height: "48px", borderRadius: "14px", background: "#174b36", color: "#f1d897", display: "grid", placeItems: "center" }}>
+                <ImagePlus size={24} />
+              </span>
+              <strong style={{ fontSize: "15px", color: "#123b2a" }}>اضغط هنا لاختيار صور المنتجات من هاتفك (10 أو 20 أو 30 صورة دفعة واحدة)</strong>
+              <small style={{ color: "#4d6457", fontSize: "12px" }}>
+                الذكاء الاصطناعي سيقرأ اسم المنتج من الصورة ويكتب الوصف ويحدد القسم تلقائياً — وأنت تكتب السعر فقط!
+              </small>
+            </div>
+          ) : (
+            <div style={{ padding: "14px", borderRadius: "16px", background: "#f6faf7", border: "1px solid #d4e3d9", display: "grid", gap: "10px" }}>
+              <label style={{ display: "grid", gap: "6px", fontSize: "13px", fontWeight: 800, color: "#174b36" }}>
+                <span>اكتب أو الصق قائمة المنتجات (كل منتج في سطر مع سعره أو بدون سعر):</span>
+                <textarea
+                  rows={4}
+                  value={bulkText}
+                  onChange={e => setBulkText(e.target.value)}
+                  placeholder={"مثال:\nحليب المراعي كامل الدسم 1 لتر - 900\nجبن المراعي كاسات كبير - 1800\nكمون بلدي مطحون - 4000\nتونة الغويزي 185 جرام - 850"}
+                  style={{ background: "#ffffff", borderRadius: "12px", padding: "10px" }}
+                />
+              </label>
+              <button
+                type="button"
+                className="button button-primary"
+                disabled={parseTextMut.isPending}
+                onClick={() => void handleParseBulkText()}
+              >
+                {parseTextMut.isPending ? <LoaderCircle size={16} className="spin" /> : <Sparkles size={16} />}
+                {parseTextMut.isPending ? "جارٍ تحويل القائمة وتوليد الوصف..." : "✨ تحويل القائمة بالذكاء الاصطناعي إلى بطاقات جاهزة"}
+              </button>
+            </div>
+          )}
+
+          {items.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", borderRadius: "12px", background: "#eef5f0", border: "1px solid #d5e4da" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                <strong style={{ fontSize: "12px", color: "#174b36" }}>المنتجات بالجدول: {items.length}</strong>
+                {analyzingCount > 0 && (
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", padding: "4px 10px", borderRadius: "99px", background: "#174b36", color: "#f1d897", fontSize: "11px", fontWeight: 800 }}>
+                    <LoaderCircle size={13} className="spin" /> جارٍ قراءة الصور بالذكاء الاصطناعي ({analyzingCount} متبقية)...
+                  </span>
+                )}
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", alignItems: "center" }}>
+                <select
+                  value={defaultCatId ?? ""}
+                  onChange={e => {
+                    const val = e.target.value ? Number(e.target.value) : null;
+                    setDefaultCatId(val);
+                    setItems(prev => prev.map(it => ({ ...it, categoryId: val })));
+                    toast.success("تم توحيد القسم لجميع المنتجات بالجدول");
+                  }}
+                  style={{ padding: "6px 10px", borderRadius: "10px", border: "1px solid #bfd2c6", fontSize: "12px", background: "#ffffff" }}
+                >
+                  <option value="">توحيد القسم للكل...</option>
+                  {categories.map(c => <option key={c.id} value={c.id}>تعيين الكل: {c.name}</option>)}
+                </select>
+                <div style={{ display: "inline-flex", gap: "4px", alignItems: "center" }}>
+                  <input
+                    type="number"
+                    min="0"
+                    value={unifiedPrice}
+                    onChange={e => setUnifiedPrice(e.target.value)}
+                    placeholder="سعر موحد..."
+                    style={{ width: "95px", padding: "6px 8px", borderRadius: "10px", border: "1px solid #bfd2c6", fontSize: "12px", background: "#ffffff" }}
+                  />
+                  {unifiedPrice.trim() && (
+                    <button
+                      type="button"
+                      className="small-button"
+                      onClick={() => {
+                        setItems(prev => prev.map(it => (it.price.trim() === "" ? { ...it, price: unifiedPrice.trim() } : it)));
+                        toast.success("تم تعبئة السعر للمنتجات الفارغة");
+                      }}
+                    >
+                      تعبئة الفارغ
+                    </button>
+                  )}
+                </div>
+                <button type="button" className="small-button danger-soft" onClick={() => setItems([])}>مسح القائمة</button>
+              </div>
+            </div>
+          )}
+
+          {items.length > 0 && (
+            <div style={{ display: "grid", gap: "10px" }}>
+              {items.map((item, idx) => {
+                const nextItem = items[idx + 1];
+                const hasPrice = item.price.trim() !== "";
+                return (
+                  <div
+                    key={item.uid}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "76px 1fr",
+                      gap: "12px",
+                      padding: "12px",
+                      borderRadius: "15px",
+                      background: "#ffffff",
+                      border: hasPrice ? "1.5px solid #1b6b45" : "1.5px solid #e0b44c",
+                      boxShadow: "0 3px 10px rgba(15, 42, 28, 0.05)",
+                      alignItems: "start",
+                    }}
+                  >
+                    <div style={{ display: "grid", gap: "5px", justifyItems: "center" }}>
+                      <div
+                        onClick={() => {
+                          singleRowFileRef.current.uid = item.uid;
+                          singleRowFileRef.current.input?.click();
+                        }}
+                        title="اضغط لتغيير الصورة"
+                        style={{
+                          width: "74px",
+                          height: "74px",
+                          borderRadius: "12px",
+                          overflow: "hidden",
+                          background: "#f2f6f3",
+                          border: "1px solid #d4e0d8",
+                          display: "grid",
+                          placeItems: "center",
+                          cursor: "pointer",
+                        }}
+                      >
+                        {item.imageUrl ? (
+                          <img src={item.imageUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        ) : (
+                          <ImagePlus size={20} color="#5b7365" />
+                        )}
+                      </div>
+                      <span style={{ fontSize: "10px", fontWeight: 800, color: item.aiStatus === "analyzing" ? "#b27b16" : "#174b36" }}>
+                        {item.aiStatus === "analyzing" ? "⏳ يقرأ الصورة..." : ("#" + (idx + 1))}
+                      </span>
+                    </div>
+
+                    <div style={{ display: "grid", gap: "8px" }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: "8px" }}>
+                        <label style={{ display: "grid", gap: "3px", fontSize: "11px", fontWeight: 800, color: "#2c4738" }}>
+                          <span>🤖 اسم المنتج (من الذكاء الاصطناعي):</span>
+                          <input
+                            value={item.name}
+                            onChange={e => updateItem(item.uid, { name: e.target.value })}
+                            placeholder={item.aiStatus === "analyzing" ? "جارٍ استخراج الاسم من الصورة..." : "اسم المنتج..."}
+                            style={{ padding: "8px 10px", borderRadius: "10px", border: "1px solid #cad8cf", fontWeight: 800 }}
+                          />
+                        </label>
+
+                        <label style={{ display: "grid", gap: "3px", fontSize: "11px", fontWeight: 900, color: hasPrice ? "#145936" : "#9c6509" }}>
+                          <span>💰 {item.weightEnabled ? "سعر الكيلو (ر.ي) * — اكتب السعر فقط:" : "السعر (ر.ي) * — اكتب السعر فقط:"}</span>
+                          <input
+                            ref={el => { priceRefs.current[item.uid] = el; }}
+                            type="number"
+                            min="0"
+                            value={item.price}
+                            onChange={e => updateItem(item.uid, { price: e.target.value })}
+                            onKeyDown={e => {
+                              if (e.key === "Enter" && nextItem) {
+                                e.preventDefault();
+                                priceRefs.current[nextItem.uid]?.focus();
+                                priceRefs.current[nextItem.uid]?.select();
+                              }
+                            }}
+                            placeholder="اكتب السعر هنا ثم اضغط Enter للتالي..."
+                            style={{
+                              padding: "8px 10px",
+                              borderRadius: "10px",
+                              border: hasPrice ? "2px solid #1b6b45" : "2px solid #e0a82e",
+                              background: hasPrice ? "#f1fbf5" : "#fffbeb",
+                              fontWeight: 900,
+                              fontSize: "14px",
+                            }}
+                          />
+                        </label>
+                      </div>
+
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: "8px", alignItems: "center" }}>
+                        <input
+                          value={item.description}
+                          onChange={e => updateItem(item.uid, { description: e.target.value })}
+                          placeholder={item.aiStatus === "analyzing" ? "جارٍ كتابة الوصف التسويقي تلقائياً..." : "الوصف التسويقي للمنتج..."}
+                          style={{ padding: "6px 10px", borderRadius: "9px", border: "1px solid #d8e3dc", fontSize: "12px", color: "#3c5245" }}
+                        />
+
+                        <select
+                          value={item.categoryId ?? ""}
+                          onChange={e => updateItem(item.uid, { categoryId: e.target.value ? Number(e.target.value) : null })}
+                          style={{ padding: "6px 8px", borderRadius: "9px", border: "1px solid #cad8cf", fontSize: "12px", background: "#f9fbf9" }}
+                        >
+                          <option value="">بلا قسم</option>
+                          {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        </select>
+
+                        <div style={{ display: "flex", gap: "4px" }}>
+                          <button
+                            type="button"
+                            className={"small-button" + (item.weightEnabled ? " selected" : "")}
+                            onClick={() => updateItem(item.uid, { weightEnabled: !item.weightEnabled, unit: !item.weightEnabled ? "كيلو" : "حبة" })}
+                            title="تبديل بين البيع بالحبة أو البيع بالوزن والمبلغ"
+                            style={{ padding: "5px 8px", fontSize: "11px" }}
+                          >
+                            {item.weightEnabled ? "⚖️ بالوزن" : "📦 بالحبة"}
+                          </button>
+                          <button
+                            type="button"
+                            className="small-button danger-soft"
+                            onClick={() => removeItem(item.uid)}
+                            title="حذف من القائمة"
+                            style={{ padding: "5px 8px" }}
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div style={{ marginTop: "12px", paddingTop: "12px", borderTop: "1px solid #dce6df", display: "flex", flexWrap: "wrap", gap: "8px", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
+          <div style={{ fontSize: "12px", color: "#355242", fontWeight: 700 }}>
+            جاهز للنشر: <strong style={{ color: "#174b36" }}>{readyItems.length}</strong> من {items.length} منتج
+            {missingPriceCount > 0 ? <span style={{ color: "#b56e08", marginRight: "8px" }}>• ({missingPriceCount} منتج ينتظر كتابة السعر)</span> : null}
+          </div>
+          <div style={{ display: "flex", gap: "8px" }}>
+            <button type="button" className="button button-quiet" onClick={onClose}>إغلاق</button>
+            <button
+              type="button"
+              className="button button-primary"
+              disabled={bulkCreateMut.isPending || readyItems.length === 0}
+              onClick={saveAllReady}
+            >
+              {bulkCreateMut.isPending ? <LoaderCircle size={16} className="spin" /> : <Save size={16} />}
+              🚀 حفظ ونشر كل المنتجات الجاهزة ({readyItems.length})
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function ProductsPanel() {
   const utils = trpc.useUtils();
   const [form, setForm] = useState(blankProduct);
   const [editing, setEditing] = useState<number | null>(null);
+  const [showBulkStudio, setShowBulkStudio] = useState(false);
+  const [aiReadingPhoto, setAiReadingPhoto] = useState(false);
+  const singlePriceInputRef = useRef<HTMLInputElement>(null);
+  const analyzeSingleMut = trpc.commerce.admin.products.analyzeImage.useMutation();
   const [showVariantsModal, setShowVariantsModal] = useState(false);
   const [showWeightModal, setShowWeightModal] = useState(false);
   const [showAdvancedFields, setShowAdvancedFields] = useState(false);
@@ -430,6 +948,29 @@ function ProductsPanel() {
   });
 
   const setField = <K extends keyof ProductFormState>(key: K, value: ProductFormState[K]) => setForm(current => ({ ...current, [key]: value }));
+
+  const runSinglePhotoAi = async (imgUrl: string, forceOverwrite = false) => {
+    if (!imgUrl) { toast.error("اختر صورة المنتج أولاً"); return; }
+    setAiReadingPhoto(true);
+    try {
+      const thumb = await makeVisionThumbDataUrl(imgUrl);
+      const res = await analyzeSingleMut.mutateAsync({ imageDataUrl: thumb });
+      setForm(curr => ({
+        ...curr,
+        name: (forceOverwrite || !curr.name.trim()) ? (res.name || curr.name) : curr.name,
+        description: (forceOverwrite || !curr.description.trim()) ? (res.description || curr.description) : curr.description,
+        categoryId: curr.categoryId ?? res.categoryId,
+        weightEnabled: res.weightEnabled ? true : curr.weightEnabled,
+        unit: res.weightEnabled ? "كيلو" : (curr.unit || res.unit || "حبة"),
+      }));
+      toast.success("✨ قرأ الذكاء الاصطناعي الصورة وكتب الاسم والوصف والقسم — اكتب السعر فقط!");
+      setTimeout(() => { singlePriceInputRef.current?.focus(); }, 80);
+    } catch {
+      toast.error("تعذر قراءة الصورة تلقائياً، يمكنك كتابة الاسم يدوياً.");
+    } finally {
+      setAiReadingPhoto(false);
+    }
+  };
 
   const selectEdit = (item: NonNullable<typeof query.data>[number]) => {
     const unpacked = unpackProductVariants(item.description);
@@ -505,6 +1046,31 @@ function ProductsPanel() {
         <div><span className="eyebrow">كتالوج متجرك السريع</span><h1>إدارة المنتجات</h1><p>واجهة مبسطة وسريعة جداً لرفع المنتجات بالقطعة أو بالوزن والمبلغ (بهارات، حلاوة، خضروات).</p></div>
         <span className="admin-heading-mark"><Package size={25} /></span>
       </div>
+      <div style={{ marginBottom: "14px", padding: "14px 16px", borderRadius: "18px", background: "linear-gradient(135deg, #174b36 0%, #0f3324 100%)", color: "#ffffff", display: "flex", flexWrap: "wrap", gap: "12px", alignItems: "center", justifyContent: "space-between", boxShadow: "0 10px 24px rgba(15, 51, 36, 0.18)" }}>
+        <div style={{ display: "grid", gap: "4px" }}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: "6px", color: "#f1d897", fontSize: "12px", fontWeight: 900 }}>
+            <Sparkles size={15} /> الأسرع على الإطلاق — توفير 90% من وقت الإدخال
+          </span>
+          <strong style={{ fontSize: "16px" }}>⚡ ارفع حتى 30 صورة منتج دفعة واحدة والذكاء الاصطناعي يكتب الاسم والوصف والقسم!</strong>
+          <small style={{ color: "#d5e6dc", fontSize: "12px" }}>اختَر كل صور المنتجات من الاستوديو أو الصق قائمة أسعار، وسيبقى عليك فقط كتابة السعر أمام كل منتج.</small>
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowBulkStudio(true)}
+          style={{ padding: "11px 18px", borderRadius: "13px", border: "none", background: "#f1d897", color: "#123828", fontWeight: 900, fontSize: "13px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "7px", boxShadow: "0 4px 12px rgba(0,0,0,0.18)" }}
+        >
+          <ImagePlus size={17} /> فتح استوديو الإضافة السريعة (30 منتج)
+        </button>
+      </div>
+      {showBulkStudio && (
+        <SmartBulkProductsStudio
+          categories={cats.data ?? []}
+          onClose={() => setShowBulkStudio(false)}
+          onSaved={async () => {
+            await Promise.all([utils.commerce.admin.products.list.invalidate(), utils.commerce.admin.overview.invalidate(), refreshCatalog()]);
+          }}
+        />
+      )}
       <section className="admin-form-card">
         <div className="form-card-heading">
           <span className="form-card-number">{editing ? "✳" : "01"}</span>
@@ -515,7 +1081,7 @@ function ProductsPanel() {
           <div className="product-form-layout">
             <div className="form-fields-grid">
               <label className="field-wide">اسم المنتج *<input required maxLength={180} value={form.name} onChange={e => setField("name", e.target.value)} placeholder="مثلاً: كمون بلدي، حلاوة طحينية، زبادي..." /></label>
-              <label>{form.weightEnabled ? "سعر الكيلو الواحد (1000 جرام) بالريال *" : "السعر بالريال اليمني *"}<input required type="number" min="0" value={form.price} onChange={e => setField("price", e.target.value)} placeholder={form.weightEnabled ? "مثلاً: 4000 (سعر الكيلو)" : "0"} /></label>
+              <label>{form.weightEnabled ? "سعر الكيلو الواحد (1000 جرام) بالريال *" : "السعر بالريال اليمني *"}<input ref={singlePriceInputRef} required type="number" min="0" value={form.price} onChange={e => setField("price", e.target.value)} placeholder={form.weightEnabled ? "مثلاً: 4000 (سعر الكيلو)" : "0"} /></label>
               <label>القسم<select value={form.categoryId ?? ""} onChange={e => setField("categoryId", e.target.value ? Number(e.target.value) : null)}><option value="">اختر القسم...</option>{cats.data?.map(category => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
               <label className="field-wide">الوصف (اختياري)<textarea rows={2} value={form.description} onChange={e => setField("description", e.target.value)} placeholder="وصف مختصر للمنتج..." /></label>
 
@@ -559,7 +1125,15 @@ function ProductsPanel() {
                 </div>
               )}
             </div>
-            <ImageField title="قص وتجهيز صورة المنتج" value={form.imageUrl} onChange={imageUrl => setField("imageUrl", imageUrl)} kind="product" aspect={1} />
+            <div style={{ display: "grid", gap: "6px" }}>
+              <ImageField title="قص وتجهيز صورة المنتج" value={form.imageUrl} onChange={imageUrl => { setField("imageUrl", imageUrl); if (imageUrl && !form.name.trim()) { void runSinglePhotoAi(imageUrl, false); } }} kind="product" aspect={1} />
+              {form.imageUrl && (
+                <button type="button" className="small-button selected" disabled={aiReadingPhoto} onClick={() => void runSinglePhotoAi(form.imageUrl, true)} style={{ justifyContent: "center", width: "100%" }}>
+                  {aiReadingPhoto ? <LoaderCircle size={14} className="spin" /> : <Sparkles size={14} />}
+                  {aiReadingPhoto ? "جارٍ قراءة المنتج من الصورة..." : "🤖 استخراج الاسم والوصف من الصورة بالذكاء الاصطناعي"}
+                </button>
+              )}
+            </div>
           </div>
 
           {showWeightModal && (
@@ -714,6 +1288,7 @@ function ProductsPanel() {
                 <span className={"visibility-tag " + (item.isPublished ? "visible" : "hidden")}>{item.isPublished ? "منشور" : "مخفي"}</span>
                 <div className="entity-actions">
                   <button type="button" className="small-button" onClick={() => selectEdit(item)}>تعديل</button>
+                  <button type="button" className="small-button" onClick={() => { selectEdit(item); setEditing(null); setField("name", item.name + " (نسخة)"); toast.info("تم نسخ بيانات المنتج — عدّل السعر أو الاسم واضغط إضافة"); }}>نسخ</button>
                   <button
                     type="button"
                     className={"small-button " + (item.isPublished ? "" : "selected")}

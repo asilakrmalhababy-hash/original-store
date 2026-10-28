@@ -37,6 +37,7 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { sdk } from "./_core/sdk";
 import { TRPCError } from "@trpc/server";
 import { nanoid } from "nanoid";
+import { analyzeProductImageAI, parseBulkProductsTextAI } from "./_core/llm";
 import { invokeLLM } from "./_core/llm";
 import { hashGuestOrderKey, isValidGuestPhone, matchesGuestOrderKey } from "./guest-orders";
 import {
@@ -1630,6 +1631,39 @@ export const commerceRouter = router({
         await db.update(products).set({ isPublished: false, isAvailable: false }).where(eq(products.id, input.id));
         clearCatalogCache(); return { success: true };
       }),
+      analyzeImage: requirePermission("products.manage")
+        .input(z.object({ imageDataUrl: z.string().min(20).max(2_500_000), fileName: z.string().max(200).optional() }))
+        .mutation(async ({ input }) => {
+          const db = await database();
+          const catRows = await db.select({ id: categories.id, name: categories.name }).from(categories).orderBy(asc(categories.sortOrder));
+          return analyzeProductImageAI({ imageDataUrl: input.imageDataUrl, fileName: input.fileName, categories: catRows });
+        }),
+      parseBulkText: requirePermission("products.manage")
+        .input(z.object({ rawText: z.string().min(2).max(12000) }))
+        .mutation(async ({ input }) => {
+          const db = await database();
+          const catRows = await db.select({ id: categories.id, name: categories.name }).from(categories).orderBy(asc(categories.sortOrder));
+          return parseBulkProductsTextAI({ rawText: input.rawText, categories: catRows });
+        }),
+      bulkCreate: requirePermission("products.manage")
+        .use(async ({ next }) => { const res = await next(); clearCatalogCache(); return res; })
+        .input(z.object({ items: z.array(productInput).min(1).max(60) }))
+        .mutation(async ({ input }) => {
+          const db = await database();
+          const insertedIds: number[] = [];
+          for (const item of input.items) {
+            const result = await db.insert(products).values({
+              ...item,
+              slug: slugify(item.name),
+              description: item.description ?? null,
+              imageUrl: item.imageUrl ?? null,
+              categoryId: item.categoryId ?? null,
+              stock: item.stock ?? null,
+            });
+            insertedIds.push(Number(result[0]?.insertId || 0));
+          }
+          return { count: insertedIds.length, ids: insertedIds };
+        }),
       setRecommendations: requirePermission("products.manage").input(z.object({ productId: safeId, recommendedIds: z.array(safeId).max(30) })).mutation(async ({ input }) => {
         if (input.recommendedIds.includes(input.productId)) throw new TRPCError({ code: "BAD_REQUEST", message: "لا يمكن اقتراح المنتج نفسه." });
         const db = await database();
