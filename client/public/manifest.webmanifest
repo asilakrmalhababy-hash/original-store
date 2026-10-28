@@ -1,24 +1,25 @@
 {
   "id": "/",
-  "name": "ORIGINAL – أورجنال",
+  "name": "ORIGINAL - أورجنال",
   "short_name": "أورجنال",
-  "description": "متجر أورجنال للاحتياجات اليومية",
+  "description": "منصة تسوق إلكتروني متكاملة لطلب المنتجات بسهولة وسرعة",
   "lang": "ar",
   "dir": "rtl",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
+  "orientation": "portrait",
   "background_color": "#f8f8f2",
   "theme_color": "#174b36",
   "icons": [
     {
-      "src": "/app-icon-192-v3.png",
+      "src": "/app-icon-192-v4.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/app-icon-512-v3.png",
+      "src": "/app-icon-512-v4.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
