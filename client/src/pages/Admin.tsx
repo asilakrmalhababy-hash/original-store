@@ -73,7 +73,7 @@ async function makeVisionThumbDataUrl(fileOrDataUrl: File | string): Promise<str
     img.onload = () => {
       try {
         if (isFile) URL.revokeObjectURL(url);
-        const maxDim = 384;
+        const maxDim = 220;
         let w = img.naturalWidth || img.width || 384;
         let h = img.naturalHeight || img.height || 384;
         if (w > maxDim || h > maxDim) {
@@ -116,6 +116,7 @@ type BulkDraftItem = {
 
 function ImageField({ value, onChange, kind, aspect, title }: { value: string; onChange: (value: string) => void; kind: "product" | "category" | "banner" | "icon"; aspect: number; title: string }) {
   const [open, setOpen] = useState(false);
+  const [editorTool, setEditorTool] = useState<"crop" | "lasso">("crop");
   const [compressing, setCompressing] = useState(false);
   const quickInputRef = useRef<HTMLInputElement>(null);
 
@@ -151,7 +152,10 @@ function ImageField({ value, onChange, kind, aspect, title }: { value: string; o
         <button type="button" className="small-button selected" disabled={compressing} onClick={e => { e.preventDefault(); e.stopPropagation(); quickInputRef.current?.click(); }}>
           <ImagePlus size={15} />{compressing ? "جارٍ التجهيز..." : value ? "تغيير سريع ⚡" : "رفع صورة سريع ⚡"}
         </button>
-        <button type="button" className="small-button" onClick={e => { e.preventDefault(); e.stopPropagation(); setOpen(true); }}>
+        <button type="button" className="small-button" onClick={e => { e.preventDefault(); e.stopPropagation(); setEditorTool("lasso"); setOpen(true); }} style={{ background: "#f2f8f4", border: "1px solid #174b36", color: "#174b36", fontWeight: 800 }}>
+          🪄 عزل الخلفية (خلفية بيضاء)
+        </button>
+        <button type="button" className="small-button" onClick={e => { e.preventDefault(); e.stopPropagation(); setEditorTool("crop"); setOpen(true); }}>
           ✂️ قص وتعديل
         </button>
         {value && (
@@ -166,6 +170,7 @@ function ImageField({ value, onChange, kind, aspect, title }: { value: string; o
           aspect={aspect}
           format="webp"
           initialSource={value || undefined}
+          initialTool={editorTool}
           onCancel={() => setOpen(false)}
           onSave={handleCropSave}
         />
@@ -414,17 +419,32 @@ function SmartBulkProductsStudio({
   onClose: () => void;
   onSaved: () => Promise<void>;
 }) {
+  const utils = trpc.useUtils();
   const [tab, setTab] = useState<"photos" | "text">("photos");
   const [items, setItems] = useState<BulkDraftItem[]>([]);
   const [bulkText, setBulkText] = useState("");
-  const [defaultCatId, setDefaultCatId] = useState<number | null>(categories[0]?.id ?? null);
+  const [defaultCatId, setDefaultCatId] = useState<number | null>(null);
+  const [newCatName, setNewCatName] = useState("");
+  const [showNewCatInput, setShowNewCatInput] = useState(false);
   const [unifiedPrice, setUnifiedPrice] = useState("");
+  const [lassoEditingUid, setLassoEditingUid] = useState<string | null>(null);
   const multiFileInputRef = useRef<HTMLInputElement>(null);
   const singleRowFileRef = useRef<{ uid: string | null; input: HTMLInputElement | null }>({ uid: null, input: null });
   const priceRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   const analyzeMut = trpc.commerce.admin.products.analyzeImage.useMutation();
   const parseTextMut = trpc.commerce.admin.products.parseBulkText.useMutation();
+  const createCatMut = trpc.commerce.admin.categories.create.useMutation({
+    onSuccess: async (res) => {
+      await Promise.all([utils.commerce.admin.categories.list.invalidate(), utils.commerce.catalog.listCategories.invalidate(), utils.commerce.catalog.home.invalidate()]);
+      setDefaultCatId(res.id);
+      setItems(prev => prev.map(it => ({ ...it, categoryId: res.id })));
+      setNewCatName("");
+      setShowNewCatInput(false);
+      toast.success("✅ تم إنشاء القسم الجديد وتعيينه للمنتجات بالجدول!");
+    },
+    onError: (err) => toast.error(err.message),
+  });
   const bulkCreateMut = trpc.commerce.admin.products.bulkCreate.useMutation({
     onSuccess: async (res) => {
       toast.success("🎉 تم حفظ ونشر " + res.count + " منتج في المتجر بنجاح!");
@@ -447,7 +467,7 @@ function SmartBulkProductsStudio({
     e.target.value = "";
     if (!fileList.length) return;
 
-    toast.info("📸 جارٍ تجهيز " + fileList.length + " صورة وقراءة المنتجات بالذكاء الاصطناعي...");
+    toast.info("📸 جارٍ تجهيز " + fileList.length + " صورة واستخراج الأسماء بالعربية وتصنيف الأقسام...");
 
     const createdTasks: Array<{ uid: string; file: File }> = fileList.map((file, idx) => ({
       uid: "bulk_" + Date.now() + "_" + idx + "_" + Math.random().toString(36).slice(2, 6),
@@ -468,40 +488,37 @@ function SmartBulkProductsStudio({
 
     setItems(prev => [...prev, ...placeholders]);
 
-    const concurrency = 3;
-    let cursor = 0;
-    const worker = async () => {
-      while (cursor < createdTasks.length) {
-        const task = createdTasks[cursor++];
-        try {
-          const [storeImg, visionThumb] = await Promise.all([
-            quickCompressImageFile(task.file, "product"),
-            makeVisionThumbDataUrl(task.file),
-          ]);
-          updateItem(task.uid, { imageUrl: storeImg });
-          const aiRes = await analyzeMut.mutateAsync({
-            imageDataUrl: visionThumb,
-            fileName: task.file.name,
-          });
-          updateItem(task.uid, {
-            name: aiRes.name || "منتج جديد",
-            description: aiRes.description || "",
-            categoryId: aiRes.categoryId ?? defaultCatId,
-            unit: aiRes.unit || (aiRes.weightEnabled ? "كيلو" : "حبة"),
-            weightEnabled: Boolean(aiRes.weightEnabled),
-            aiStatus: "done",
-          });
-        } catch {
-          const cleanFile = task.file.name.replace(/\.[a-zA-Z0-9]+$/, "").replace(/[-_]+/g, " ").trim();
-          updateItem(task.uid, {
-            name: cleanFile && !/^(IMG|DSC|Screenshot|WhatsApp)/i.test(cleanFile) ? cleanFile : "",
-            aiStatus: "error",
-          });
+    for (const task of createdTasks) {
+      try {
+        const [storeImg, visionThumb] = await Promise.all([
+          quickCompressImageFile(task.file, "product"),
+          makeVisionThumbDataUrl(task.file),
+        ]);
+        updateItem(task.uid, { imageUrl: storeImg });
+        const aiRes = await analyzeMut.mutateAsync({
+          imageDataUrl: visionThumb,
+          fileName: task.file.name,
+        });
+        if (aiRes.categoryId && !categories.some(c => c.id === aiRes.categoryId)) {
+          await utils.commerce.admin.categories.list.invalidate();
         }
+        updateItem(task.uid, {
+          name: aiRes.name || "منتج جديد",
+          description: aiRes.description || "",
+          categoryId: defaultCatId !== null ? defaultCatId : aiRes.categoryId,
+          unit: aiRes.unit || (aiRes.weightEnabled ? "كيلو" : "حبة"),
+          weightEnabled: Boolean(aiRes.weightEnabled),
+          aiStatus: "done",
+        });
+      } catch {
+        updateItem(task.uid, {
+          name: "منتج جديد",
+          aiStatus: "error",
+        });
       }
-    };
-    await Promise.all(Array.from({ length: Math.min(concurrency, createdTasks.length) }, () => worker()));
-    toast.success("✨ اكتمل تحليل الصور! اكتب السعر فقط أمام كل منتج ثم اضغط حفظ الكل.");
+    }
+    await utils.commerce.admin.categories.list.invalidate();
+    toast.success("✨ اكتمل استخراج الأسماء بالعربية وتحديد القسم! اكتب السعر فقط أمام كل منتج.");
   };
 
   const handleParseBulkText = async () => {
@@ -521,14 +538,14 @@ function SmartBulkProductsStudio({
         name: p.name,
         description: p.description,
         price: p.price > 0 ? String(p.price) : "",
-        categoryId: p.categoryId ?? defaultCatId,
+        categoryId: defaultCatId !== null ? defaultCatId : p.categoryId,
         unit: p.unit || (p.weightEnabled ? "كيلو" : "حبة"),
         weightEnabled: Boolean(p.weightEnabled),
         aiStatus: "done",
       }));
       setItems(prev => [...prev, ...newItems]);
       setBulkText("");
-      toast.success("✨ تم تجهيز " + newItems.length + " منتج بالذكاء الاصطناعي!");
+      toast.success("✨ تم تجهيز " + newItems.length + " منتج!");
     } catch (e: any) {
       toast.error(e?.message || "تعذر تحليل النص.");
     }
@@ -587,7 +604,7 @@ function SmartBulkProductsStudio({
           <div>
             <span className="eyebrow">وداعاً للتعب — إضافة 30 منتج في دقائق</span>
             <h2 style={{ fontSize: "19px", margin: "2px 0" }}>⚡ الإضافة الجماعية الذكية للمنتجات</h2>
-            <small style={{ color: "#52655a" }}>ارفع صور المنتجات وسيقوم الذكاء الاصطناعي بقراءة كل صورة وكتابة الاسم والوصف واختيار القسم، ويبقى عليك كتابة السعر فقط!</small>
+            <small style={{ color: "#52655a" }}>ارفع صور المنتجات وسيقوم النظام بكتابة الاسم بالعربية والوصف واختيار القسم وعزل الخلفية، ويبقى عليك كتابة السعر فقط!</small>
           </div>
           <button type="button" className="icon-button" onClick={onClose}><X size={18} /></button>
         </div>
@@ -632,7 +649,7 @@ function SmartBulkProductsStudio({
               </span>
               <strong style={{ fontSize: "15px", color: "#123b2a" }}>اضغط هنا لاختيار صور المنتجات من هاتفك (10 أو 20 أو 30 صورة دفعة واحدة)</strong>
               <small style={{ color: "#4d6457", fontSize: "12px" }}>
-                الذكاء الاصطناعي سيقرأ اسم المنتج من الصورة ويكتب الوصف ويحدد القسم تلقائياً — وأنت تكتب السعر فقط!
+                سيتم استخراج الاسم بالعربية وتحديد القسم تلقائياً — ويمكنك الضغط على «🪄 عزل الخلفية» تحت أي صورة لجعل خلفيتها بيضاء!
               </small>
             </div>
           ) : (
@@ -654,59 +671,87 @@ function SmartBulkProductsStudio({
                 onClick={() => void handleParseBulkText()}
               >
                 {parseTextMut.isPending ? <LoaderCircle size={16} className="spin" /> : <Sparkles size={16} />}
-                {parseTextMut.isPending ? "جارٍ تحويل القائمة وتوليد الوصف..." : "✨ تحويل القائمة بالذكاء الاصطناعي إلى بطاقات جاهزة"}
+                {parseTextMut.isPending ? "جارٍ تحويل القائمة..." : "✨ تحويل القائمة إلى بطاقات جاهزة"}
               </button>
             </div>
           )}
 
           {items.length > 0 && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", borderRadius: "12px", background: "#eef5f0", border: "1px solid #d5e4da" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-                <strong style={{ fontSize: "12px", color: "#174b36" }}>المنتجات بالجدول: {items.length}</strong>
-                {analyzingCount > 0 && (
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", padding: "4px 10px", borderRadius: "99px", background: "#174b36", color: "#f1d897", fontSize: "11px", fontWeight: 800 }}>
-                    <LoaderCircle size={13} className="spin" /> جارٍ قراءة الصور بالذكاء الاصطناعي ({analyzingCount} متبقية)...
-                  </span>
-                )}
-              </div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", alignItems: "center" }}>
-                <select
-                  value={defaultCatId ?? ""}
-                  onChange={e => {
-                    const val = e.target.value ? Number(e.target.value) : null;
-                    setDefaultCatId(val);
-                    setItems(prev => prev.map(it => ({ ...it, categoryId: val })));
-                    toast.success("تم توحيد القسم لجميع المنتجات بالجدول");
-                  }}
-                  style={{ padding: "6px 10px", borderRadius: "10px", border: "1px solid #bfd2c6", fontSize: "12px", background: "#ffffff" }}
-                >
-                  <option value="">توحيد القسم للكل...</option>
-                  {categories.map(c => <option key={c.id} value={c.id}>تعيين الكل: {c.name}</option>)}
-                </select>
-                <div style={{ display: "inline-flex", gap: "4px", alignItems: "center" }}>
-                  <input
-                    type="number"
-                    min="0"
-                    value={unifiedPrice}
-                    onChange={e => setUnifiedPrice(e.target.value)}
-                    placeholder="سعر موحد..."
-                    style={{ width: "95px", padding: "6px 8px", borderRadius: "10px", border: "1px solid #bfd2c6", fontSize: "12px", background: "#ffffff" }}
-                  />
-                  {unifiedPrice.trim() && (
-                    <button
-                      type="button"
-                      className="small-button"
-                      onClick={() => {
-                        setItems(prev => prev.map(it => (it.price.trim() === "" ? { ...it, price: unifiedPrice.trim() } : it)));
-                        toast.success("تم تعبئة السعر للمنتجات الفارغة");
-                      }}
-                    >
-                      تعبئة الفارغ
-                    </button>
+            <div style={{ display: "grid", gap: "8px", padding: "10px 12px", borderRadius: "12px", background: "#eef5f0", border: "1px solid #d5e4da" }}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center", justifyContent: "space-between" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                  <strong style={{ fontSize: "12px", color: "#174b36" }}>المنتجات بالجدول: {items.length}</strong>
+                  {analyzingCount > 0 && (
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", padding: "4px 10px", borderRadius: "99px", background: "#174b36", color: "#f1d897", fontSize: "11px", fontWeight: 800 }}>
+                      <LoaderCircle size={13} className="spin" /> جارٍ تجهيز الصور ({analyzingCount} متبقية)...
+                    </span>
                   )}
                 </div>
-                <button type="button" className="small-button danger-soft" onClick={() => setItems([])}>مسح القائمة</button>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", alignItems: "center" }}>
+                  <select
+                    value={defaultCatId ?? ""}
+                    onChange={e => {
+                      const val = e.target.value ? Number(e.target.value) : null;
+                      setDefaultCatId(val);
+                      setItems(prev => prev.map(it => ({ ...it, categoryId: val })));
+                      toast.success(val ? "تم توحيد القسم لجميع المنتجات بالجدول" : "تم إلغاء توحيد القسم");
+                    }}
+                    style={{ padding: "6px 10px", borderRadius: "10px", border: "1px solid #bfd2c6", fontSize: "12px", background: "#ffffff" }}
+                  >
+                    <option value="">تصنيف تلقائي لكل منتج...</option>
+                    {categories.map(c => <option key={c.id} value={c.id}>تعيين الكل: {c.name}</option>)}
+                  </select>
+                  <button
+                    type="button"
+                    className="small-button"
+                    onClick={() => setShowNewCatInput(v => !v)}
+                    style={{ background: "#ffffff", border: "1px solid #174b36", color: "#174b36", fontWeight: 800 }}
+                  >
+                    <Plus size={13} /> قسم جديد سريع
+                  </button>
+                  <div style={{ display: "inline-flex", gap: "4px", alignItems: "center" }}>
+                    <input
+                      type="number"
+                      min="0"
+                      value={unifiedPrice}
+                      onChange={e => setUnifiedPrice(e.target.value)}
+                      placeholder="سعر موحد..."
+                      style={{ width: "95px", padding: "6px 8px", borderRadius: "10px", border: "1px solid #bfd2c6", fontSize: "12px", background: "#ffffff" }}
+                    />
+                    {unifiedPrice.trim() && (
+                      <button
+                        type="button"
+                        className="small-button"
+                        onClick={() => {
+                          setItems(prev => prev.map(it => (it.price.trim() === "" ? { ...it, price: unifiedPrice.trim() } : it)));
+                          toast.success("تم تعبئة السعر للمنتجات الفارغة");
+                        }}
+                      >
+                        تعبئة الفارغ
+                      </button>
+                    )}
+                  </div>
+                  <button type="button" className="small-button danger-soft" onClick={() => setItems([])}>مسح القائمة</button>
+                </div>
               </div>
+              {showNewCatInput && (
+                <div style={{ display: "flex", gap: "6px", alignItems: "center", paddingTop: "4px" }}>
+                  <input
+                    value={newCatName}
+                    onChange={e => setNewCatName(e.target.value)}
+                    placeholder="اكتب اسم القسم الجديد (مثلاً: العصائر والمشروبات)..."
+                    style={{ flex: 1, padding: "7px 10px", borderRadius: "10px", border: "1px solid #174b36", background: "#ffffff", fontSize: "12px" }}
+                  />
+                  <button
+                    type="button"
+                    className="small-button selected"
+                    disabled={createCatMut.isPending || !newCatName.trim()}
+                    onClick={() => createCatMut.mutate({ name: newCatName.trim(), description: "", imageUrl: "", color: "#174b36", isActive: true, sortOrder: 0 })}
+                  >
+                    {createCatMut.isPending ? <LoaderCircle size={13} className="spin" /> : <Check size={13} />} حفظ وتعيين للكل
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -720,7 +765,7 @@ function SmartBulkProductsStudio({
                     key={item.uid}
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "76px 1fr",
+                      gridTemplateColumns: "92px 1fr",
                       gap: "12px",
                       padding: "12px",
                       borderRadius: "15px",
@@ -738,8 +783,8 @@ function SmartBulkProductsStudio({
                         }}
                         title="اضغط لتغيير الصورة"
                         style={{
-                          width: "74px",
-                          height: "74px",
+                          width: "76px",
+                          height: "76px",
                           borderRadius: "12px",
                           overflow: "hidden",
                           background: "#f2f6f3",
@@ -758,16 +803,26 @@ function SmartBulkProductsStudio({
                       <span style={{ fontSize: "10px", fontWeight: 800, color: item.aiStatus === "analyzing" ? "#b27b16" : "#174b36" }}>
                         {item.aiStatus === "analyzing" ? "⏳ يقرأ الصورة..." : ("#" + (idx + 1))}
                       </span>
+                      {item.imageUrl && (
+                        <button
+                          type="button"
+                          className="small-button"
+                          onClick={() => setLassoEditingUid(item.uid)}
+                          style={{ padding: "4px 6px", fontSize: "10px", fontWeight: 900, background: "#174b36", border: "1px solid #174b36", color: "#f1d897", width: "100%", justifyContent: "center" }}
+                        >
+                          🪄 عزل الخلفية
+                        </button>
+                      )}
                     </div>
 
                     <div style={{ display: "grid", gap: "8px" }}>
                       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: "8px" }}>
                         <label style={{ display: "grid", gap: "3px", fontSize: "11px", fontWeight: 800, color: "#2c4738" }}>
-                          <span>🤖 اسم المنتج (من الذكاء الاصطناعي):</span>
+                          <span>🤖 اسم المنتج بالعربية:</span>
                           <input
                             value={item.name}
                             onChange={e => updateItem(item.uid, { name: e.target.value })}
-                            placeholder={item.aiStatus === "analyzing" ? "جارٍ استخراج الاسم من الصورة..." : "اسم المنتج..."}
+                            placeholder={item.aiStatus === "analyzing" ? "جارٍ استخراج الاسم بالعربية..." : "اسم المنتج..."}
                             style={{ padding: "8px 10px", borderRadius: "10px", border: "1px solid #cad8cf", fontWeight: 800 }}
                           />
                         </label>
@@ -813,7 +868,7 @@ function SmartBulkProductsStudio({
                           onChange={e => updateItem(item.uid, { categoryId: e.target.value ? Number(e.target.value) : null })}
                           style={{ padding: "6px 8px", borderRadius: "9px", border: "1px solid #cad8cf", fontSize: "12px", background: "#f9fbf9" }}
                         >
-                          <option value="">بلا قسم</option>
+                          <option value="">بلا قسم (اختر قسماً...)</option>
                           {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                         </select>
 
@@ -864,6 +919,21 @@ function SmartBulkProductsStudio({
             </button>
           </div>
         </div>
+        {lassoEditingUid && (
+          <ImageEditor
+            title="عزل خلفية المنتج بالرسم الذكي (0 توكنز)"
+            aspect={1}
+            format="webp"
+            initialSource={items.find(x => x.uid === lassoEditingUid)?.imageUrl || undefined}
+            initialTool="lasso"
+            onCancel={() => setLassoEditingUid(null)}
+            onSave={(newDataUrl) => {
+              updateItem(lassoEditingUid, { imageUrl: newDataUrl });
+              setLassoEditingUid(null);
+              toast.success("✨ تم عزل خلفية المنتج إلى اللون الأبيض بنجاح!");
+            }}
+          />
+        )}
       </section>
     </div>
   );

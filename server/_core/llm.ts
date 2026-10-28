@@ -318,6 +318,189 @@ export async function listLLMModels(): Promise<string[]> {
   return [];
 }
 
+function cleanHintFromFileName(rawFileName?: string): string {
+  if (!rawFileName) return "";
+  return rawFileName
+    .replace(/\.[a-zA-Z0-9]+$/, "")
+    .replace(/[-_.:,()[\]]+/g, " ")
+    .replace(/\b(?:nanobanana|nano\s*banana|nano|banana\s*\d*|midjourney|dalle|chatgpt|gemini|photoroom|removebg|canva|picsart|inshot|whatsapp|image|photo|img|dsc|screenshot|pxl|sam|dcim|copy|edit|edited|final|version|ver|at|am|pm)\b/gi, " ")
+    .replace(/\b(?:v?\d{1,4}|\d{5,})\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function stripNoiseFromArabicName(rawName: string): string {
+  return String(rawName || "")
+    .replace(/\b(?:nanobanana|nano\s*banana|نانو\s*بنانا|نانوبنانا|نانو\s*موز)\b/gi, "")
+    .replace(/\b0+\d+\b/g, "")
+    .replace(/\s+\d{1,2}$/g, "")
+    .replace(/[-_]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function translateEnglishProductTokensToArabic(text: string): { arabicName: string; hadUnknownEnglish: boolean } {
+  let s = stripNoiseFromArabicName(text);
+  if (!s) return { arabicName: "", hadUnknownEnglish: false };
+  const dict: Array<[RegExp, string]> = [
+    [/\bdelta\b/gi, "دلتا"],
+    [/\brawab(?:i|y)?\b/gi, "روابي"],
+    [/\balmarai\b/gi, "المراعي"],
+    [/\bnadec\b/gi, "نادك"],
+    [/\bsaudia\b/gi, "السعودية"],
+    [/\bmumtaz\b/gi, "ممتاز"],
+    [/\brani\b/gi, "راني"],
+    [/\bcaesar\b/gi, "سيزر"],
+    [/\bsuntop\b/gi, "سن توب"],
+    [/\bsuncola\b/gi, "سن كولا"],
+    [/\bvimto\b/gi, "فيمتو"],
+    [/\btang\b/gi, "تانج"],
+    [/\bnido\b/gi, "نيدو"],
+    [/\bankor|anchor\b/gi, "أنكور"],
+    [/\bkiri\b/gi, "كيري"],
+    [/\bpuck\b/gi, "بوك"],
+    [/\blavache\b/gi, "لافاش كيري"],
+    [/\balghwaizi|ghwaizi\b/gi, "الغويزي"],
+    [/\bquaker\b/gi, "كويكر"],
+    [/\bindomie\b/gi, "إندومي"],
+    [/\bmaggi\b/gi, "ماجي"],
+    [/\blipton\b/gi, "ليبتون"],
+    [/\bkabous|al\s*kbous\b/gi, "الكبوس"],
+    [/\bnutella\b/gi, "نوتيلا"],
+    [/\bgalaxy\b/gi, "جالاكسي"],
+    [/\bsnickers\b/gi, "سنيكرز"],
+    [/\bkitkat\b/gi, "كيت كات"],
+    [/\boreo\b/gi, "أوريو"],
+    [/\bpringles\b/gi, "برينجلز"],
+    [/\blays\b/gi, "ليز"],
+    [/\bdoritos\b/gi, "دوريتوس"],
+    [/\bcheetos\b/gi, "شيتوس"],
+    [/\bpepsi\b/gi, "بيبسي"],
+    [/\bcoca\s*cola|coke\b/gi, "كوكاكولا"],
+    [/\b7up|seven\s*up\b/gi, "سفن أب"],
+    [/\bmirinda\b/gi, "ميرندا"],
+    [/\bfanta\b/gi, "فانتا"],
+    [/\bsprite\b/gi, "سبرايت"],
+    [/\bdew|mountain\s*dew\b/gi, "ماونتن ديو"],
+    [/\borange\b/gi, "برتقال"],
+    [/\bmango\b/gi, "مانجو"],
+    [/\bguava\b/gi, "جوافة"],
+    [/\bapple\b/gi, "تفاح"],
+    [/\bpeach\b/gi, "خوخ"],
+    [/\bstrawberry\b/gi, "فراولة"],
+    [/\bpineapple\b/gi, "أناناس"],
+    [/\bgrape(?:s)?\b/gi, "عنب"],
+    [/\blemon(?:ade)?\b/gi, "ليمون"],
+    [/\bmint\b/gi, "نعناع"],
+    [/\bcocktail|mixed\s*fruit(?:s)?|mix\b/gi, "كوكتيل فواكه"],
+    [/\bpomegranate\b/gi, "رمان"],
+    [/\bwatermelon\b/gi, "بطيخ"],
+    [/\bcherry\b/gi, "كرز"],
+    [/\bapricot\b/gi, "مشمش"],
+    [/\bkiwi\b/gi, "كيوي"],
+    [/\bavocado\b/gi, "أفوكادو"],
+    [/\bjuice|nectar|drink\b/gi, "عصير"],
+    [/\bmilk\b/gi, "حليب"],
+    [/\bcheese\b/gi, "جبن"],
+    [/\bcream\b/gi, "قشطة"],
+    [/\bbutter\b/gi, "زبدة"],
+    [/\byogurt|yoghurt|laban\b/gi, "زبادي"],
+    [/\bwater\b/gi, "مياه"],
+    [/\btuna\b/gi, "تونة"],
+    [/\bbeans|foul\b/gi, "فول"],
+    [/\bpeas\b/gi, "بازلاء"],
+    [/\bcorn\b/gi, "ذرة"],
+    [/\boil\b/gi, "زيت"],
+    [/\bghee\b/gi, "سمن"],
+    [/\brice\b/gi, "أرز"],
+    [/\bsugar\b/gi, "سكر"],
+    [/\bflour\b/gi, "دقيق"],
+    [/\btea\b/gi, "شاي"],
+    [/\bcoffee\b/gi, "قهوة"],
+    [/\boats\b/gi, "شوفان"],
+    [/\bbiscuit(?:s)?|cookies\b/gi, "بسكويت"],
+    [/\bchips|crisps\b/gi, "شيبس"],
+    [/\bchocolate\b/gi, "شوكولاتة"],
+    [/\bcake\b/gi, "كيك"],
+    [/\bhoney\b/gi, "عسل"],
+    [/\bjam\b/gi, "مربى"],
+    [/\bhalawa\b/gi, "حلاوة طحينية"],
+    [/\btomato\s*paste\b/gi, "صلصة طماطم"],
+    [/\bketchup\b/gi, "كاتشب"],
+    [/\bmayonnaise|mayo\b/gi, "مايونيز"],
+    [/\bpasta|macaroni|spaghetti\b/gi, "مكرونة"],
+    [/\bsoap\b/gi, "صابون"],
+    [/\bshampoo\b/gi, "شامبو"],
+  ];
+  for (const [rx, ar] of dict) {
+    s = s.replace(rx, ar);
+  }
+  const hadUnknownEnglish = /[a-zA-Z]{3,}/.test(s);
+  s = s.replace(/[a-zA-Z]+/g, " ").replace(/\s+/g, " ").trim();
+  if (/(?:دلتا|روابي|راني|سيزر|سن توب)/.test(s) && !/(?:عصير|شراب|حليب|لبن|زبادي|جبن)/.test(s)) {
+    s = "عصير " + s;
+  } else if (/(?:برتقال|مانجو|جوافة|كوكتيل|أناناس|خوخ|فراولة)/.test(s) && /(?:دلتا|روابي|راني|سيزر|سن توب|نادك|المراعي)/.test(s) && !s.startsWith("عصير")) {
+    s = "عصير " + s;
+  }
+  return { arabicName: s.trim(), hadUnknownEnglish };
+}
+
+function classifyProductCategory(
+  productName: string,
+  productTypeHint: string,
+  aiSuggestedCatId: number | null,
+  categories: Array<{ id: number; name: string }>
+): { categoryId: number | null; suggestedCategoryName: string | null } {
+  const text = (productName + " " + productTypeHint).toLowerCase();
+
+  const isJuiceOrDrink = /(?:عصير|عصائر|شراب|مشروب|مشروبات|مرطبات|دلتا|روابي|راني|سيزر|سن توب|فيمتو|تانج|بيبسي|كوكاكولا|سفن|ميرندا|فانتا|سبرايت|مياه|ماء)/.test(text) && !/(?:حليب|لبن|جبن|زبادي|قشطة|زبدة)/.test(text);
+  const isDairy = /(?:حليب|لبن|ألبان|البان|جبن|جبنة|أجبان|اجبان|زبادي|قشطة|زبدة|لبنة|كيري|بوك|نيدو)/.test(text);
+  const isSpices = /(?:بهار|بهارات|عطارة|كمون|فلفل|كركم|قرفة|هيل|زنجبيل|كزبرة|قرنفل|بسباس|حوائج)/.test(text);
+  const isProduce = /(?:خضار|خضروات|فواكه|فاكهة|طماطم|بطاط|بصل|خيار|جزر|ثوم|كوسة|باذنجان|بامية|موز|تفاح)/.test(text) && !isJuiceOrDrink;
+  const isCannedOrGrocery = /(?:تونة|فول|فاصوليا|بازلاء|ذرة|صلصة|معلبات|أرز|ارز|سكر|دقيق|مكرونة|شوفان|زيت|سمن|حلاوة|عسل|مربى|شاي|قهوة)/.test(text);
+  const isSnacks = /(?:بسكويت|شيبس|شوكولاتة|بطاطس|كيك|حلويات|سناك|برينجلز|أوريو|ليز|جالاكسي|كيت كات)/.test(text);
+  const isCleaning = /(?:صابون|شامبو|منظف|منظفات|كلور|تايد|إيريال|فيري|مناديل|حفاضات)/.test(text);
+
+  const findCat = (rx: RegExp) => categories.find(c => rx.test(c.name));
+
+  if (isJuiceOrDrink) {
+    const c = findCat(/(?:عصير|عصائر|مشروب|مشروبات|مرطبات|مياه)/);
+    return { categoryId: c ? c.id : null, suggestedCategoryName: "العصائر والمشروبات" };
+  }
+  if (isDairy) {
+    const c = findCat(/(?:ألبان|البان|أجبان|اجبان|حليب|مشتقات)/);
+    return { categoryId: c ? c.id : null, suggestedCategoryName: "الألبان والأجبان" };
+  }
+  if (isSpices) {
+    const c = findCat(/(?:بهار|بهارات|عطارة|توابل)/);
+    return { categoryId: c ? c.id : null, suggestedCategoryName: "البهارات والعطارة" };
+  }
+  if (isProduce) {
+    const c = findCat(/(?:خضار|خضروات|فواكه|طازج)/);
+    return { categoryId: c ? c.id : null, suggestedCategoryName: "الخضروات والفواكه" };
+  }
+  if (isCannedOrGrocery) {
+    const c = findCat(/(?:معلبات|بقوليات|مواد غذائية|تموينات|بقالة|أساسية|اساسية|زيوت|حبوب)/);
+    return { categoryId: c ? c.id : null, suggestedCategoryName: "المواد الغذائية والمعلبات" };
+  }
+  if (isSnacks) {
+    const c = findCat(/(?:بسكويت|حلويات|شيبس|سناك|تسالي|شوكولاتة)/);
+    return { categoryId: c ? c.id : null, suggestedCategoryName: "البسكويت والحلويات" };
+  }
+  if (isCleaning) {
+    const c = findCat(/(?:منظف|منظفات|عناية|صابون|منزلية)/);
+    return { categoryId: c ? c.id : null, suggestedCategoryName: "المنظفات والعناية" };
+  }
+
+  if (aiSuggestedCatId && categories.some(c => c.id === aiSuggestedCatId)) {
+    const suggestedCat = categories.find(c => c.id === aiSuggestedCatId)!;
+    if (/(?:ألبان|البان|أجبان|اجبان)/.test(suggestedCat.name) && !isDairy) {
+      return { categoryId: null, suggestedCategoryName: null };
+    }
+    return { categoryId: aiSuggestedCatId, suggestedCategoryName: null };
+  }
+  return { categoryId: null, suggestedCategoryName: null };
+}
 
 export async function analyzeProductImageAI(params: {
   imageDataUrl: string;
@@ -327,39 +510,45 @@ export async function analyzeProductImageAI(params: {
   name: string;
   description: string;
   categoryId: number | null;
+  suggestedCategoryName?: string | null;
   unit: string;
   weightEnabled: boolean;
 }> {
-  const fallbackName = (params.fileName || "")
-    .replace(/\.[a-zA-Z0-9]+$/, "")
-    .replace(/[-_]+/g, " ")
-    .replace(/^(IMG|DSC|Screenshot|WhatsApp Image|photo|image)[\s_\-0-9]*/i, "")
-    .trim();
+  const cleanedHint = cleanHintFromFileName(params.fileName);
+  // STAGE 0 (ZERO TOKENS): If the filename already has recognizable product words, translate & classify locally with 0 AI tokens!
+  if (cleanedHint.length >= 3) {
+    const localTrans = translateEnglishProductTokensToArabic(cleanedHint);
+    if (localTrans.arabicName.length >= 3 && !localTrans.hadUnknownEnglish) {
+      const finalName = localTrans.arabicName;
+      const isPackagedOrDrink = /(?:عصير|شراب|حليب|لبن|زبادي|جبن|قشطة|تونة|فول|بسكويت|شيبس|شوكولاتة|مياه|ماء|زيت|سمن|معلب|علبة|عبوة)/.test(finalName);
+      const weightEnabled = !isPackagedOrDrink && /(?:كمون|فلفل|كركم|بهارات|طماطم|بطاط|بصل|خيار|جزر|حلاوة)/.test(finalName);
+      const catMatch = classifyProductCategory(finalName, "", null, params.categories);
+      return {
+        name: finalName,
+        description: "منتج " + finalName + " بجودة ممتازة وسعر منافس من متجر أورجنال.",
+        categoryId: catMatch.categoryId,
+        suggestedCategoryName: catMatch.suggestedCategoryName,
+        unit: weightEnabled ? "كيلو" : "حبة",
+        weightEnabled,
+      };
+    }
+  }
 
-  const catListText = params.categories.length > 0
-    ? params.categories.map(c => c.id + ":" + c.name).join(" | ")
-    : "لا توجد أقسام";
-
-  const prompt = [
-    "أنت خبير كتالوج سوبرماركت ومواد غذائية في اليمن (متجر أورجنال).",
-    "انظر إلى صورة المنتج بدقة واستخرج بياناته باللغة العربية:",
-    "1. name: اسم المنتج التجاري الواضح بالعربية مع الماركة والحجم/الوزن إن ظهر على العبوة (مثلاً: حليب المراعي كامل الدسم 1 لتر، تونة الغويزي 185 جرام، شوفان كويكر 500 جرام، كمون بلدي مطحون، طماطم بلدي طازج). لا تكتب كلمات مثل صورة أو منتج.",
-    "2. description: وصف تسويقي جذاب ومختصر في سطر واحد (6 إلى 12 كلمة) يبرز جودة المنتج وفائدته للزبون.",
-    "3. categoryId: رقم القسم الأنسب من هذه القائمة فقط: [" + catListText + "] أو null إذا لم يناسب أياً منها.",
-    "4. weightEnabled: ضع true فقط إذا كان المنتج يباع بالوزن السائب (مثل بهارات، خضروات، فواكه، مكسرات، حلاوة طحينية بالوزن)، وضع false للمعلبات والأكياس والعبوات الجاهزة بالحبة.",
-    "5. unit: اكتب 'كيلو' إذا كان weightEnabled يساوي true، وإلا اكتب 'حبة' أو 'عبوة' أو 'كرتون' حسب الصورة.",
-    "أعد النتيجة ككائن JSON صالح فقط بدون أي شرح أو نص إضافي:",
-    "{\"name\":\"...\",\"description\":\"...\",\"categoryId\":null,\"unit\":\"حبة\",\"weightEnabled\":false}"
-  ].join("\n");
+  // STAGE 1 (Ultra-Light Vision AI only when filename is generic like IMG_1234.jpg)
+  const catListText = params.categories.map(c => c.id + ":" + c.name).join("|");
+  const shortVisionPrompt = "اقرأ المنتج بالصورة واكتب JSON بالعربية فقط بدون أي حرف إنجليزي: {\"name\":\"اسم المنتج بالعربية\",\"productType\":\"عصائر/ألبان/معلبات/بهارات/خضروات/حلويات/منظفات\",\"categoryId\":null,\"weightEnabled\":false} الأقسام:[" + catListText + "]";
 
   const keys = getAllActiveKeys();
   const P = ["ht", "tps", "://"].join("");
   const visionModels = [
     "meta-llama/llama-4-scout-17b-16e-instruct",
-    "meta-llama/llama-4-maverick-17b-128e-instruct",
-    "llama-3.2-90b-vision-preview",
-    "llama-3.2-11b-vision-preview"
+    "meta-llama/llama-4-maverick-17b-128e-instruct"
   ];
+
+  let extractedName = "";
+  let extractedType = "";
+  let extractedCatId: number | null = null;
+  let extractedWeight = false;
 
   for (let attempt = 0; attempt < keys.length; attempt++) {
     const idx = (keyIndex + attempt) % keys.length;
@@ -373,64 +562,56 @@ export async function analyzeProductImageAI(params: {
       try {
         const res = await fetch(url, {
           method: "POST",
-          headers: {
-            "content-type": "application/json",
-            authorization: "Bearer " + apiKey,
-          },
+          headers: { "content-type": "application/json", authorization: "Bearer " + apiKey },
           body: JSON.stringify({
             model,
-            temperature: 0.2,
-            max_tokens: 320,
-            messages: [
-              {
-                role: "user",
-                content: [
-                  { type: "text", text: prompt },
-                  { type: "image_url", image_url: { url: params.imageDataUrl } }
-                ]
-              }
-            ]
+            temperature: 0.1,
+            max_tokens: 140,
+            messages: [{
+              role: "user",
+              content: [
+                { type: "text", text: shortVisionPrompt },
+                { type: "image_url", image_url: { url: params.imageDataUrl } }
+              ]
+            }]
           }),
         });
-
-        if (res.status === 429 || res.status === 401 || res.status === 402) break;
+        if (res.status === 401 || res.status === 402) break;
+        if (res.status === 429) { await new Promise(r => setTimeout(r, 500)); continue; }
         if (!res.ok) continue;
-
         const data: any = await res.json();
-        const rawReply = String(data?.choices?.[0]?.message?.content || "").trim();
+        const rawReply = String(data?.choices?.[0]?.message?.content || "").replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
         const jsonMatch = rawReply.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
           const parsed = JSON.parse(jsonMatch[0]);
-          const name = String(parsed.name || fallbackName || "").trim().slice(0, 160);
-          const description = String(parsed.description || "").trim().slice(0, 350);
-          let categoryId: number | null = null;
-          if (parsed.categoryId !== null && parsed.categoryId !== undefined) {
-            const numId = Number(parsed.categoryId);
-            if (params.categories.some(c => c.id === numId)) {
-              categoryId = numId;
-            } else {
-              const strCat = String(parsed.categoryId).trim();
-              const found = params.categories.find(c => c.name.includes(strCat) || strCat.includes(c.name));
-              if (found) categoryId = found.id;
-            }
-          }
-          const weightEnabled = Boolean(parsed.weightEnabled);
-          const unit = weightEnabled ? "كيلو" : (String(parsed.unit || "حبة").trim().slice(0, 30) || "حبة");
-          if (name) {
+          const candName = stripNoiseFromArabicName(String(parsed.name || ""));
+          if (candName) {
+            extractedName = candName;
+            extractedType = String(parsed.productType || "");
+            extractedCatId = parsed.categoryId !== null && parsed.categoryId !== undefined ? Number(parsed.categoryId) : null;
+            extractedWeight = Boolean(parsed.weightEnabled);
             keyIndex = idx;
-            return { name, description, categoryId, unit, weightEnabled };
+            break;
           }
         }
       } catch {}
     }
+    if (extractedName) break;
   }
 
+  const finalTrans = translateEnglishProductTokensToArabic(extractedName || cleanedHint);
+  const finalName = finalTrans.arabicName || "منتج جديد";
+  const isPackagedOrDrink = /(?:عصير|شراب|حليب|لبن|زبادي|جبن|قشطة|تونة|فول|بسكويت|شيبس|شوكولاتة|مياه|ماء|زيت|سمن|معلب|علبة|عبوة)/.test(finalName + " " + extractedType);
+  const finalWeightEnabled = isPackagedOrDrink ? false : Boolean(extractedWeight);
+  const catMatch = classifyProductCategory(finalName, extractedType, extractedCatId, params.categories);
+
   return {
-    name: fallbackName,
-    description: fallbackName ? ("منتج " + fallbackName + " بجودة ممتازة وسعر منافس من متجر أورجنال.") : "",
-    categoryId: params.categories[0]?.id ?? null,
-    unit: "حبة",
-    weightEnabled: false,
+    name: finalName,
+    description: "منتج " + finalName + " بجودة ممتازة وسعر منافس من متجر أورجنال.",
+    categoryId: catMatch.categoryId,
+    suggestedCategoryName: catMatch.suggestedCategoryName,
+    unit: finalWeightEnabled ? "كيلو" : "حبة",
+    weightEnabled: finalWeightEnabled,
   };
 }
 
@@ -445,82 +626,6 @@ export async function parseBulkProductsTextAI(params: {
   unit: string;
   weightEnabled: boolean;
 }>> {
-  const catListText = params.categories.length > 0
-    ? params.categories.map(c => c.id + ":" + c.name).join(" | ")
-    : "لا توجد أقسام";
-
-  const prompt = [
-    "/no_think",
-    "أنت مساعد إدخال منتجات ذكي لمتجر أورجنال في اليمن.",
-    "حول قائمة المنتجات النصية التالية إلى مصفوفة JSON للمنتجات.",
-    "الأقسام المتوفرة في المتجر: [" + catListText + "]",
-    "لكل منتج استخرج:",
-    "- name: اسم المنتج بالعربية بشكل مرتب",
-    "- price: السعر كرقم صحيح بالريال اليمني (أو 0 إذا لم يُذكر السعر في النص)",
-    "- description: وصف تسويقي قصير وجذاب من 6 إلى 10 كلمات بالعربية",
-    "- categoryId: رقم القسم الأنسب من القائمة أعلاه أو null",
-    "- weightEnabled: true إذا كان يباع بالوزن/الكيلو (بهارات، خضروات، فواكه، مكسرات) و false لغير ذلك",
-    "- unit: 'كيلو' إذا كان بالوزن أو 'حبة' للقطع والعبوات",
-    "أعد فقط مصفوفة JSON صالحة بهذا الشكل بدون أي كلام إضافي:",
-    "[{\"name\":\"...\",\"price\":0,\"description\":\"...\",\"categoryId\":null,\"unit\":\"حبة\",\"weightEnabled\":false}]",
-    "النص المطلوب تحويله:",
-    params.rawText.slice(0, 6000)
-  ].join("\n");
-
-  const keys = getAllActiveKeys();
-  const P = ["ht", "tps", "://"].join("");
-
-  for (let attempt = 0; attempt < keys.length; attempt++) {
-    const idx = (keyIndex + attempt) % keys.length;
-    const apiKey = keys[idx];
-    const isGroq = apiKey.startsWith("gsk_");
-    const url = isGroq
-      ? P + ["api.groq.com", "openai", "v1", "chat", "completions"].join("/")
-      : P + ["openrouter.ai", "api", "v1", "chat", "completions"].join("/");
-    const models = isGroq
-      ? ["llama-3.3-70b-versatile", "qwen/qwen3.8-27b", "openai/gpt-oss-120b"]
-      : ["qwen/qwen3-235b-a22b:free", "meta-llama/llama-3.3-70b-instruct:free"];
-
-    for (const model of models) {
-      try {
-        const res = await fetch(url, {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            authorization: "Bearer " + apiKey,
-          },
-          body: JSON.stringify({
-            model,
-            temperature: 0.2,
-            max_tokens: 1800,
-            messages: [{ role: "user", content: prompt }],
-          }),
-        });
-        if (res.status === 429 || res.status === 401 || res.status === 402) break;
-        if (!res.ok) continue;
-        const data: any = await res.json();
-        const rawReply = String(data?.choices?.[0]?.message?.content || "").replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
-        const arrMatch = rawReply.match(/\[[\s\S]*\]/);
-        if (arrMatch) {
-          const parsed = JSON.parse(arrMatch[0]);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            keyIndex = idx;
-            return parsed.slice(0, 50).map((item: any) => {
-              const name = String(item.name || "").trim().slice(0, 160);
-              const price = Math.max(0, Math.round(Number(item.price) || 0));
-              const description = String(item.description || ("منتج " + name + " بجودة عالية وسعر مميز.")).trim().slice(0, 350);
-              const numId = Number(item.categoryId);
-              const categoryId = params.categories.some(c => c.id === numId) ? numId : (params.categories[0]?.id ?? null);
-              const weightEnabled = Boolean(item.weightEnabled);
-              const unit = weightEnabled ? "كيلو" : (String(item.unit || "حبة").trim().slice(0, 30) || "حبة");
-              return { name, price, description, categoryId, unit, weightEnabled };
-            }).filter((x: any) => x.name.length > 0);
-          }
-        }
-      } catch {}
-    }
-  }
-
   return params.rawText
     .split(/\n+/)
     .map(l => l.trim())
@@ -529,13 +634,15 @@ export async function parseBulkProductsTextAI(params: {
     .map(line => {
       const priceMatch = line.match(/(?:[-:–—=]|بـ|بسعر)\s*(\d+(?:\.\d+)?)\s*(?:ر\.?ي|ريال)?$/i) || line.match(/\s+(\d{2,6})\s*(?:ر\.?ي|ريال)?$/);
       const price = priceMatch ? Math.max(0, Math.round(Number(priceMatch[1]) || 0)) : 0;
-      const name = (priceMatch ? line.slice(0, priceMatch.index).trim() : line).replace(/^[-*•\d.)\s]+/, "").trim();
-      const weightEnabled = /(?:كيلو|بهارات|كمون|فلفل|كركم|حلاوة|طماط|بطاط|بصل|خيار|جزر|موز|تفاح)/.test(name);
+      const rawName = (priceMatch ? line.slice(0, priceMatch.index).trim() : line).replace(/^[-*•\d.)\s]+/, "").trim();
+      const name = translateEnglishProductTokensToArabic(rawName).arabicName || rawName;
+      const isDrinkOrPack = /(?:عصير|شراب|حليب|لبن|زبادي|جبن|تونة|فول|بسكويت|شيبس)/.test(name);
+      const weightEnabled = !isDrinkOrPack && /(?:كيلو|بهارات|كمون|فلفل|كركم|حلاوة|طماط|بطاط|بصل|خيار)/.test(name);
       return {
-        name: name || line,
+        name,
         price,
-        description: "منتج " + (name || line) + " متوفر بجودة ممتازة في متجر أورجنال.",
-        categoryId: params.categories[0]?.id ?? null,
+        description: "منتج " + name + " بجودة ممتازة وسعر منافس من متجر أورجنال.",
+        categoryId: classifyProductCategory(name, "", null, params.categories).categoryId,
         unit: weightEnabled ? "كيلو" : "حبة",
         weightEnabled,
       };

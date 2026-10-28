@@ -1636,7 +1636,36 @@ export const commerceRouter = router({
         .mutation(async ({ input }) => {
           const db = await database();
           const catRows = await db.select({ id: categories.id, name: categories.name }).from(categories).orderBy(asc(categories.sortOrder));
-          return analyzeProductImageAI({ imageDataUrl: input.imageDataUrl, fileName: input.fileName, categories: catRows });
+          const res = await analyzeProductImageAI({ imageDataUrl: input.imageDataUrl, fileName: input.fileName, categories: catRows });
+          if (!res.categoryId && res.suggestedCategoryName) {
+            const targetSlug = slugify(res.suggestedCategoryName);
+            const freshCats = await db.select({ id: categories.id, name: categories.name, slug: categories.slug }).from(categories);
+            const existing = freshCats.find(c => c.name.trim() === res.suggestedCategoryName!.trim() || c.slug === targetSlug);
+            if (existing) {
+              res.categoryId = existing.id;
+            } else {
+              try {
+                const ins = await db.insert(categories).values({
+                  name: res.suggestedCategoryName,
+                  slug: targetSlug,
+                  description: "قسم " + res.suggestedCategoryName,
+                  imageUrl: null,
+                  isActive: true,
+                  sortOrder: freshCats.length,
+                });
+                const newId = Number(ins[0]?.insertId || 0);
+                if (newId > 0) {
+                  res.categoryId = newId;
+                  clearCatalogCache();
+                }
+              } catch {
+                const retryCats = await db.select({ id: categories.id, name: categories.name, slug: categories.slug }).from(categories);
+                const found = retryCats.find(c => c.name.trim() === res.suggestedCategoryName!.trim() || c.slug === targetSlug);
+                if (found) res.categoryId = found.id;
+              }
+            }
+          }
+          return res;
         }),
       parseBulkText: requirePermission("products.manage")
         .input(z.object({ rawText: z.string().min(2).max(12000) }))

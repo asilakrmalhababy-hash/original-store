@@ -2024,28 +2024,196 @@ async function invokeLLM(params) {
   }
   throw new Error("AI_UNAVAILABLE");
 }
+function cleanHintFromFileName(rawFileName) {
+  if (!rawFileName) return "";
+  return rawFileName.replace(/\.[a-zA-Z0-9]+$/, "").replace(/[-_.:,()[\]]+/g, " ").replace(/\b(?:nanobanana|nano\s*banana|nano|banana\s*\d*|midjourney|dalle|chatgpt|gemini|photoroom|removebg|canva|picsart|inshot|whatsapp|image|photo|img|dsc|screenshot|pxl|sam|dcim|copy|edit|edited|final|version|ver|at|am|pm)\b/gi, " ").replace(/\b(?:v?\d{1,4}|\d{5,})\b/gi, " ").replace(/\s+/g, " ").trim();
+}
+function stripNoiseFromArabicName(rawName) {
+  return String(rawName || "").replace(/\b(?:nanobanana|nano\s*banana|نانو\s*بنانا|نانوبنانا|نانو\s*موز)\b/gi, "").replace(/\b0+\d+\b/g, "").replace(/\s+\d{1,2}$/g, "").replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim();
+}
+function translateEnglishProductTokensToArabic(text2) {
+  let s = stripNoiseFromArabicName(text2);
+  if (!s) return { arabicName: "", hadUnknownEnglish: false };
+  const dict = [
+    [/\bdelta\b/gi, "\u062F\u0644\u062A\u0627"],
+    [/\brawab(?:i|y)?\b/gi, "\u0631\u0648\u0627\u0628\u064A"],
+    [/\balmarai\b/gi, "\u0627\u0644\u0645\u0631\u0627\u0639\u064A"],
+    [/\bnadec\b/gi, "\u0646\u0627\u062F\u0643"],
+    [/\bsaudia\b/gi, "\u0627\u0644\u0633\u0639\u0648\u062F\u064A\u0629"],
+    [/\bmumtaz\b/gi, "\u0645\u0645\u062A\u0627\u0632"],
+    [/\brani\b/gi, "\u0631\u0627\u0646\u064A"],
+    [/\bcaesar\b/gi, "\u0633\u064A\u0632\u0631"],
+    [/\bsuntop\b/gi, "\u0633\u0646 \u062A\u0648\u0628"],
+    [/\bsuncola\b/gi, "\u0633\u0646 \u0643\u0648\u0644\u0627"],
+    [/\bvimto\b/gi, "\u0641\u064A\u0645\u062A\u0648"],
+    [/\btang\b/gi, "\u062A\u0627\u0646\u062C"],
+    [/\bnido\b/gi, "\u0646\u064A\u062F\u0648"],
+    [/\bankor|anchor\b/gi, "\u0623\u0646\u0643\u0648\u0631"],
+    [/\bkiri\b/gi, "\u0643\u064A\u0631\u064A"],
+    [/\bpuck\b/gi, "\u0628\u0648\u0643"],
+    [/\blavache\b/gi, "\u0644\u0627\u0641\u0627\u0634 \u0643\u064A\u0631\u064A"],
+    [/\balghwaizi|ghwaizi\b/gi, "\u0627\u0644\u063A\u0648\u064A\u0632\u064A"],
+    [/\bquaker\b/gi, "\u0643\u0648\u064A\u0643\u0631"],
+    [/\bindomie\b/gi, "\u0625\u0646\u062F\u0648\u0645\u064A"],
+    [/\bmaggi\b/gi, "\u0645\u0627\u062C\u064A"],
+    [/\blipton\b/gi, "\u0644\u064A\u0628\u062A\u0648\u0646"],
+    [/\bkabous|al\s*kbous\b/gi, "\u0627\u0644\u0643\u0628\u0648\u0633"],
+    [/\bnutella\b/gi, "\u0646\u0648\u062A\u064A\u0644\u0627"],
+    [/\bgalaxy\b/gi, "\u062C\u0627\u0644\u0627\u0643\u0633\u064A"],
+    [/\bsnickers\b/gi, "\u0633\u0646\u064A\u0643\u0631\u0632"],
+    [/\bkitkat\b/gi, "\u0643\u064A\u062A \u0643\u0627\u062A"],
+    [/\boreo\b/gi, "\u0623\u0648\u0631\u064A\u0648"],
+    [/\bpringles\b/gi, "\u0628\u0631\u064A\u0646\u062C\u0644\u0632"],
+    [/\blays\b/gi, "\u0644\u064A\u0632"],
+    [/\bdoritos\b/gi, "\u062F\u0648\u0631\u064A\u062A\u0648\u0633"],
+    [/\bcheetos\b/gi, "\u0634\u064A\u062A\u0648\u0633"],
+    [/\bpepsi\b/gi, "\u0628\u064A\u0628\u0633\u064A"],
+    [/\bcoca\s*cola|coke\b/gi, "\u0643\u0648\u0643\u0627\u0643\u0648\u0644\u0627"],
+    [/\b7up|seven\s*up\b/gi, "\u0633\u0641\u0646 \u0623\u0628"],
+    [/\bmirinda\b/gi, "\u0645\u064A\u0631\u0646\u062F\u0627"],
+    [/\bfanta\b/gi, "\u0641\u0627\u0646\u062A\u0627"],
+    [/\bsprite\b/gi, "\u0633\u0628\u0631\u0627\u064A\u062A"],
+    [/\bdew|mountain\s*dew\b/gi, "\u0645\u0627\u0648\u0646\u062A\u0646 \u062F\u064A\u0648"],
+    [/\borange\b/gi, "\u0628\u0631\u062A\u0642\u0627\u0644"],
+    [/\bmango\b/gi, "\u0645\u0627\u0646\u062C\u0648"],
+    [/\bguava\b/gi, "\u062C\u0648\u0627\u0641\u0629"],
+    [/\bapple\b/gi, "\u062A\u0641\u0627\u062D"],
+    [/\bpeach\b/gi, "\u062E\u0648\u062E"],
+    [/\bstrawberry\b/gi, "\u0641\u0631\u0627\u0648\u0644\u0629"],
+    [/\bpineapple\b/gi, "\u0623\u0646\u0627\u0646\u0627\u0633"],
+    [/\bgrape(?:s)?\b/gi, "\u0639\u0646\u0628"],
+    [/\blemon(?:ade)?\b/gi, "\u0644\u064A\u0645\u0648\u0646"],
+    [/\bmint\b/gi, "\u0646\u0639\u0646\u0627\u0639"],
+    [/\bcocktail|mixed\s*fruit(?:s)?|mix\b/gi, "\u0643\u0648\u0643\u062A\u064A\u0644 \u0641\u0648\u0627\u0643\u0647"],
+    [/\bpomegranate\b/gi, "\u0631\u0645\u0627\u0646"],
+    [/\bwatermelon\b/gi, "\u0628\u0637\u064A\u062E"],
+    [/\bcherry\b/gi, "\u0643\u0631\u0632"],
+    [/\bapricot\b/gi, "\u0645\u0634\u0645\u0634"],
+    [/\bkiwi\b/gi, "\u0643\u064A\u0648\u064A"],
+    [/\bavocado\b/gi, "\u0623\u0641\u0648\u0643\u0627\u062F\u0648"],
+    [/\bjuice|nectar|drink\b/gi, "\u0639\u0635\u064A\u0631"],
+    [/\bmilk\b/gi, "\u062D\u0644\u064A\u0628"],
+    [/\bcheese\b/gi, "\u062C\u0628\u0646"],
+    [/\bcream\b/gi, "\u0642\u0634\u0637\u0629"],
+    [/\bbutter\b/gi, "\u0632\u0628\u062F\u0629"],
+    [/\byogurt|yoghurt|laban\b/gi, "\u0632\u0628\u0627\u062F\u064A"],
+    [/\bwater\b/gi, "\u0645\u064A\u0627\u0647"],
+    [/\btuna\b/gi, "\u062A\u0648\u0646\u0629"],
+    [/\bbeans|foul\b/gi, "\u0641\u0648\u0644"],
+    [/\bpeas\b/gi, "\u0628\u0627\u0632\u0644\u0627\u0621"],
+    [/\bcorn\b/gi, "\u0630\u0631\u0629"],
+    [/\boil\b/gi, "\u0632\u064A\u062A"],
+    [/\bghee\b/gi, "\u0633\u0645\u0646"],
+    [/\brice\b/gi, "\u0623\u0631\u0632"],
+    [/\bsugar\b/gi, "\u0633\u0643\u0631"],
+    [/\bflour\b/gi, "\u062F\u0642\u064A\u0642"],
+    [/\btea\b/gi, "\u0634\u0627\u064A"],
+    [/\bcoffee\b/gi, "\u0642\u0647\u0648\u0629"],
+    [/\boats\b/gi, "\u0634\u0648\u0641\u0627\u0646"],
+    [/\bbiscuit(?:s)?|cookies\b/gi, "\u0628\u0633\u0643\u0648\u064A\u062A"],
+    [/\bchips|crisps\b/gi, "\u0634\u064A\u0628\u0633"],
+    [/\bchocolate\b/gi, "\u0634\u0648\u0643\u0648\u0644\u0627\u062A\u0629"],
+    [/\bcake\b/gi, "\u0643\u064A\u0643"],
+    [/\bhoney\b/gi, "\u0639\u0633\u0644"],
+    [/\bjam\b/gi, "\u0645\u0631\u0628\u0649"],
+    [/\bhalawa\b/gi, "\u062D\u0644\u0627\u0648\u0629 \u0637\u062D\u064A\u0646\u064A\u0629"],
+    [/\btomato\s*paste\b/gi, "\u0635\u0644\u0635\u0629 \u0637\u0645\u0627\u0637\u0645"],
+    [/\bketchup\b/gi, "\u0643\u0627\u062A\u0634\u0628"],
+    [/\bmayonnaise|mayo\b/gi, "\u0645\u0627\u064A\u0648\u0646\u064A\u0632"],
+    [/\bpasta|macaroni|spaghetti\b/gi, "\u0645\u0643\u0631\u0648\u0646\u0629"],
+    [/\bsoap\b/gi, "\u0635\u0627\u0628\u0648\u0646"],
+    [/\bshampoo\b/gi, "\u0634\u0627\u0645\u0628\u0648"]
+  ];
+  for (const [rx, ar] of dict) {
+    s = s.replace(rx, ar);
+  }
+  const hadUnknownEnglish = /[a-zA-Z]{3,}/.test(s);
+  s = s.replace(/[a-zA-Z]+/g, " ").replace(/\s+/g, " ").trim();
+  if (/(?:دلتا|روابي|راني|سيزر|سن توب)/.test(s) && !/(?:عصير|شراب|حليب|لبن|زبادي|جبن)/.test(s)) {
+    s = "\u0639\u0635\u064A\u0631 " + s;
+  } else if (/(?:برتقال|مانجو|جوافة|كوكتيل|أناناس|خوخ|فراولة)/.test(s) && /(?:دلتا|روابي|راني|سيزر|سن توب|نادك|المراعي)/.test(s) && !s.startsWith("\u0639\u0635\u064A\u0631")) {
+    s = "\u0639\u0635\u064A\u0631 " + s;
+  }
+  return { arabicName: s.trim(), hadUnknownEnglish };
+}
+function classifyProductCategory(productName, productTypeHint, aiSuggestedCatId, categories2) {
+  const text2 = (productName + " " + productTypeHint).toLowerCase();
+  const isJuiceOrDrink = /(?:عصير|عصائر|شراب|مشروب|مشروبات|مرطبات|دلتا|روابي|راني|سيزر|سن توب|فيمتو|تانج|بيبسي|كوكاكولا|سفن|ميرندا|فانتا|سبرايت|مياه|ماء)/.test(text2) && !/(?:حليب|لبن|جبن|زبادي|قشطة|زبدة)/.test(text2);
+  const isDairy = /(?:حليب|لبن|ألبان|البان|جبن|جبنة|أجبان|اجبان|زبادي|قشطة|زبدة|لبنة|كيري|بوك|نيدو)/.test(text2);
+  const isSpices = /(?:بهار|بهارات|عطارة|كمون|فلفل|كركم|قرفة|هيل|زنجبيل|كزبرة|قرنفل|بسباس|حوائج)/.test(text2);
+  const isProduce = /(?:خضار|خضروات|فواكه|فاكهة|طماطم|بطاط|بصل|خيار|جزر|ثوم|كوسة|باذنجان|بامية|موز|تفاح)/.test(text2) && !isJuiceOrDrink;
+  const isCannedOrGrocery = /(?:تونة|فول|فاصوليا|بازلاء|ذرة|صلصة|معلبات|أرز|ارز|سكر|دقيق|مكرونة|شوفان|زيت|سمن|حلاوة|عسل|مربى|شاي|قهوة)/.test(text2);
+  const isSnacks = /(?:بسكويت|شيبس|شوكولاتة|بطاطس|كيك|حلويات|سناك|برينجلز|أوريو|ليز|جالاكسي|كيت كات)/.test(text2);
+  const isCleaning = /(?:صابون|شامبو|منظف|منظفات|كلور|تايد|إيريال|فيري|مناديل|حفاضات)/.test(text2);
+  const findCat = (rx) => categories2.find((c) => rx.test(c.name));
+  if (isJuiceOrDrink) {
+    const c = findCat(/(?:عصير|عصائر|مشروب|مشروبات|مرطبات|مياه)/);
+    return { categoryId: c ? c.id : null, suggestedCategoryName: "\u0627\u0644\u0639\u0635\u0627\u0626\u0631 \u0648\u0627\u0644\u0645\u0634\u0631\u0648\u0628\u0627\u062A" };
+  }
+  if (isDairy) {
+    const c = findCat(/(?:ألبان|البان|أجبان|اجبان|حليب|مشتقات)/);
+    return { categoryId: c ? c.id : null, suggestedCategoryName: "\u0627\u0644\u0623\u0644\u0628\u0627\u0646 \u0648\u0627\u0644\u0623\u062C\u0628\u0627\u0646" };
+  }
+  if (isSpices) {
+    const c = findCat(/(?:بهار|بهارات|عطارة|توابل)/);
+    return { categoryId: c ? c.id : null, suggestedCategoryName: "\u0627\u0644\u0628\u0647\u0627\u0631\u0627\u062A \u0648\u0627\u0644\u0639\u0637\u0627\u0631\u0629" };
+  }
+  if (isProduce) {
+    const c = findCat(/(?:خضار|خضروات|فواكه|طازج)/);
+    return { categoryId: c ? c.id : null, suggestedCategoryName: "\u0627\u0644\u062E\u0636\u0631\u0648\u0627\u062A \u0648\u0627\u0644\u0641\u0648\u0627\u0643\u0647" };
+  }
+  if (isCannedOrGrocery) {
+    const c = findCat(/(?:معلبات|بقوليات|مواد غذائية|تموينات|بقالة|أساسية|اساسية|زيوت|حبوب)/);
+    return { categoryId: c ? c.id : null, suggestedCategoryName: "\u0627\u0644\u0645\u0648\u0627\u062F \u0627\u0644\u063A\u0630\u0627\u0626\u064A\u0629 \u0648\u0627\u0644\u0645\u0639\u0644\u0628\u0627\u062A" };
+  }
+  if (isSnacks) {
+    const c = findCat(/(?:بسكويت|حلويات|شيبس|سناك|تسالي|شوكولاتة)/);
+    return { categoryId: c ? c.id : null, suggestedCategoryName: "\u0627\u0644\u0628\u0633\u0643\u0648\u064A\u062A \u0648\u0627\u0644\u062D\u0644\u0648\u064A\u0627\u062A" };
+  }
+  if (isCleaning) {
+    const c = findCat(/(?:منظف|منظفات|عناية|صابون|منزلية)/);
+    return { categoryId: c ? c.id : null, suggestedCategoryName: "\u0627\u0644\u0645\u0646\u0638\u0641\u0627\u062A \u0648\u0627\u0644\u0639\u0646\u0627\u064A\u0629" };
+  }
+  if (aiSuggestedCatId && categories2.some((c) => c.id === aiSuggestedCatId)) {
+    const suggestedCat = categories2.find((c) => c.id === aiSuggestedCatId);
+    if (/(?:ألبان|البان|أجبان|اجبان)/.test(suggestedCat.name) && !isDairy) {
+      return { categoryId: null, suggestedCategoryName: null };
+    }
+    return { categoryId: aiSuggestedCatId, suggestedCategoryName: null };
+  }
+  return { categoryId: null, suggestedCategoryName: null };
+}
 async function analyzeProductImageAI(params) {
-  const fallbackName = (params.fileName || "").replace(/\.[a-zA-Z0-9]+$/, "").replace(/[-_]+/g, " ").replace(/^(IMG|DSC|Screenshot|WhatsApp Image|photo|image)[\s_\-0-9]*/i, "").trim();
-  const catListText = params.categories.length > 0 ? params.categories.map((c) => c.id + ":" + c.name).join(" | ") : "\u0644\u0627 \u062A\u0648\u062C\u062F \u0623\u0642\u0633\u0627\u0645";
-  const prompt = [
-    "\u0623\u0646\u062A \u062E\u0628\u064A\u0631 \u0643\u062A\u0627\u0644\u0648\u062C \u0633\u0648\u0628\u0631\u0645\u0627\u0631\u0643\u062A \u0648\u0645\u0648\u0627\u062F \u063A\u0630\u0627\u0626\u064A\u0629 \u0641\u064A \u0627\u0644\u064A\u0645\u0646 (\u0645\u062A\u062C\u0631 \u0623\u0648\u0631\u062C\u0646\u0627\u0644).",
-    "\u0627\u0646\u0638\u0631 \u0625\u0644\u0649 \u0635\u0648\u0631\u0629 \u0627\u0644\u0645\u0646\u062A\u062C \u0628\u062F\u0642\u0629 \u0648\u0627\u0633\u062A\u062E\u0631\u062C \u0628\u064A\u0627\u0646\u0627\u062A\u0647 \u0628\u0627\u0644\u0644\u063A\u0629 \u0627\u0644\u0639\u0631\u0628\u064A\u0629:",
-    "1. name: \u0627\u0633\u0645 \u0627\u0644\u0645\u0646\u062A\u062C \u0627\u0644\u062A\u062C\u0627\u0631\u064A \u0627\u0644\u0648\u0627\u0636\u062D \u0628\u0627\u0644\u0639\u0631\u0628\u064A\u0629 \u0645\u0639 \u0627\u0644\u0645\u0627\u0631\u0643\u0629 \u0648\u0627\u0644\u062D\u062C\u0645/\u0627\u0644\u0648\u0632\u0646 \u0625\u0646 \u0638\u0647\u0631 \u0639\u0644\u0649 \u0627\u0644\u0639\u0628\u0648\u0629 (\u0645\u062B\u0644\u0627\u064B: \u062D\u0644\u064A\u0628 \u0627\u0644\u0645\u0631\u0627\u0639\u064A \u0643\u0627\u0645\u0644 \u0627\u0644\u062F\u0633\u0645 1 \u0644\u062A\u0631\u060C \u062A\u0648\u0646\u0629 \u0627\u0644\u063A\u0648\u064A\u0632\u064A 185 \u062C\u0631\u0627\u0645\u060C \u0634\u0648\u0641\u0627\u0646 \u0643\u0648\u064A\u0643\u0631 500 \u062C\u0631\u0627\u0645\u060C \u0643\u0645\u0648\u0646 \u0628\u0644\u062F\u064A \u0645\u0637\u062D\u0648\u0646\u060C \u0637\u0645\u0627\u0637\u0645 \u0628\u0644\u062F\u064A \u0637\u0627\u0632\u062C). \u0644\u0627 \u062A\u0643\u062A\u0628 \u0643\u0644\u0645\u0627\u062A \u0645\u062B\u0644 \u0635\u0648\u0631\u0629 \u0623\u0648 \u0645\u0646\u062A\u062C.",
-    "2. description: \u0648\u0635\u0641 \u062A\u0633\u0648\u064A\u0642\u064A \u062C\u0630\u0627\u0628 \u0648\u0645\u062E\u062A\u0635\u0631 \u0641\u064A \u0633\u0637\u0631 \u0648\u0627\u062D\u062F (6 \u0625\u0644\u0649 12 \u0643\u0644\u0645\u0629) \u064A\u0628\u0631\u0632 \u062C\u0648\u062F\u0629 \u0627\u0644\u0645\u0646\u062A\u062C \u0648\u0641\u0627\u0626\u062F\u062A\u0647 \u0644\u0644\u0632\u0628\u0648\u0646.",
-    "3. categoryId: \u0631\u0642\u0645 \u0627\u0644\u0642\u0633\u0645 \u0627\u0644\u0623\u0646\u0633\u0628 \u0645\u0646 \u0647\u0630\u0647 \u0627\u0644\u0642\u0627\u0626\u0645\u0629 \u0641\u0642\u0637: [" + catListText + "] \u0623\u0648 null \u0625\u0630\u0627 \u0644\u0645 \u064A\u0646\u0627\u0633\u0628 \u0623\u064A\u0627\u064B \u0645\u0646\u0647\u0627.",
-    "4. weightEnabled: \u0636\u0639 true \u0641\u0642\u0637 \u0625\u0630\u0627 \u0643\u0627\u0646 \u0627\u0644\u0645\u0646\u062A\u062C \u064A\u0628\u0627\u0639 \u0628\u0627\u0644\u0648\u0632\u0646 \u0627\u0644\u0633\u0627\u0626\u0628 (\u0645\u062B\u0644 \u0628\u0647\u0627\u0631\u0627\u062A\u060C \u062E\u0636\u0631\u0648\u0627\u062A\u060C \u0641\u0648\u0627\u0643\u0647\u060C \u0645\u0643\u0633\u0631\u0627\u062A\u060C \u062D\u0644\u0627\u0648\u0629 \u0637\u062D\u064A\u0646\u064A\u0629 \u0628\u0627\u0644\u0648\u0632\u0646)\u060C \u0648\u0636\u0639 false \u0644\u0644\u0645\u0639\u0644\u0628\u0627\u062A \u0648\u0627\u0644\u0623\u0643\u064A\u0627\u0633 \u0648\u0627\u0644\u0639\u0628\u0648\u0627\u062A \u0627\u0644\u062C\u0627\u0647\u0632\u0629 \u0628\u0627\u0644\u062D\u0628\u0629.",
-    "5. unit: \u0627\u0643\u062A\u0628 '\u0643\u064A\u0644\u0648' \u0625\u0630\u0627 \u0643\u0627\u0646 weightEnabled \u064A\u0633\u0627\u0648\u064A true\u060C \u0648\u0625\u0644\u0627 \u0627\u0643\u062A\u0628 '\u062D\u0628\u0629' \u0623\u0648 '\u0639\u0628\u0648\u0629' \u0623\u0648 '\u0643\u0631\u062A\u0648\u0646' \u062D\u0633\u0628 \u0627\u0644\u0635\u0648\u0631\u0629.",
-    "\u0623\u0639\u062F \u0627\u0644\u0646\u062A\u064A\u062C\u0629 \u0643\u0643\u0627\u0626\u0646 JSON \u0635\u0627\u0644\u062D \u0641\u0642\u0637 \u0628\u062F\u0648\u0646 \u0623\u064A \u0634\u0631\u062D \u0623\u0648 \u0646\u0635 \u0625\u0636\u0627\u0641\u064A:",
-    '{"name":"...","description":"...","categoryId":null,"unit":"\u062D\u0628\u0629","weightEnabled":false}'
-  ].join("\n");
+  const cleanedHint = cleanHintFromFileName(params.fileName);
+  if (cleanedHint.length >= 3) {
+    const localTrans = translateEnglishProductTokensToArabic(cleanedHint);
+    if (localTrans.arabicName.length >= 3 && !localTrans.hadUnknownEnglish) {
+      const finalName2 = localTrans.arabicName;
+      const isPackagedOrDrink2 = /(?:عصير|شراب|حليب|لبن|زبادي|جبن|قشطة|تونة|فول|بسكويت|شيبس|شوكولاتة|مياه|ماء|زيت|سمن|معلب|علبة|عبوة)/.test(finalName2);
+      const weightEnabled = !isPackagedOrDrink2 && /(?:كمون|فلفل|كركم|بهارات|طماطم|بطاط|بصل|خيار|جزر|حلاوة)/.test(finalName2);
+      const catMatch2 = classifyProductCategory(finalName2, "", null, params.categories);
+      return {
+        name: finalName2,
+        description: "\u0645\u0646\u062A\u062C " + finalName2 + " \u0628\u062C\u0648\u062F\u0629 \u0645\u0645\u062A\u0627\u0632\u0629 \u0648\u0633\u0639\u0631 \u0645\u0646\u0627\u0641\u0633 \u0645\u0646 \u0645\u062A\u062C\u0631 \u0623\u0648\u0631\u062C\u0646\u0627\u0644.",
+        categoryId: catMatch2.categoryId,
+        suggestedCategoryName: catMatch2.suggestedCategoryName,
+        unit: weightEnabled ? "\u0643\u064A\u0644\u0648" : "\u062D\u0628\u0629",
+        weightEnabled
+      };
+    }
+  }
+  const catListText = params.categories.map((c) => c.id + ":" + c.name).join("|");
+  const shortVisionPrompt = '\u0627\u0642\u0631\u0623 \u0627\u0644\u0645\u0646\u062A\u062C \u0628\u0627\u0644\u0635\u0648\u0631\u0629 \u0648\u0627\u0643\u062A\u0628 JSON \u0628\u0627\u0644\u0639\u0631\u0628\u064A\u0629 \u0641\u0642\u0637 \u0628\u062F\u0648\u0646 \u0623\u064A \u062D\u0631\u0641 \u0625\u0646\u062C\u0644\u064A\u0632\u064A: {"name":"\u0627\u0633\u0645 \u0627\u0644\u0645\u0646\u062A\u062C \u0628\u0627\u0644\u0639\u0631\u0628\u064A\u0629","productType":"\u0639\u0635\u0627\u0626\u0631/\u0623\u0644\u0628\u0627\u0646/\u0645\u0639\u0644\u0628\u0627\u062A/\u0628\u0647\u0627\u0631\u0627\u062A/\u062E\u0636\u0631\u0648\u0627\u062A/\u062D\u0644\u0648\u064A\u0627\u062A/\u0645\u0646\u0638\u0641\u0627\u062A","categoryId":null,"weightEnabled":false} \u0627\u0644\u0623\u0642\u0633\u0627\u0645:[' + catListText + "]";
   const keys = getAllActiveKeys();
   const P = ["ht", "tps", "://"].join("");
   const visionModels = [
     "meta-llama/llama-4-scout-17b-16e-instruct",
-    "meta-llama/llama-4-maverick-17b-128e-instruct",
-    "llama-3.2-90b-vision-preview",
-    "llama-3.2-11b-vision-preview"
+    "meta-llama/llama-4-maverick-17b-128e-instruct"
   ];
+  let extractedName = "";
+  let extractedType = "";
+  let extractedCatId = null;
+  let extractedWeight = false;
   for (let attempt = 0; attempt < keys.length; attempt++) {
     const idx = (keyIndex + attempt) % keys.length;
     const apiKey = keys[idx];
@@ -2055,141 +2223,73 @@ async function analyzeProductImageAI(params) {
       try {
         const res = await fetch(url, {
           method: "POST",
-          headers: {
-            "content-type": "application/json",
-            authorization: "Bearer " + apiKey
-          },
+          headers: { "content-type": "application/json", authorization: "Bearer " + apiKey },
           body: JSON.stringify({
             model,
-            temperature: 0.2,
-            max_tokens: 320,
-            messages: [
-              {
-                role: "user",
-                content: [
-                  { type: "text", text: prompt },
-                  { type: "image_url", image_url: { url: params.imageDataUrl } }
-                ]
-              }
-            ]
+            temperature: 0.1,
+            max_tokens: 140,
+            messages: [{
+              role: "user",
+              content: [
+                { type: "text", text: shortVisionPrompt },
+                { type: "image_url", image_url: { url: params.imageDataUrl } }
+              ]
+            }]
           })
         });
-        if (res.status === 429 || res.status === 401 || res.status === 402) break;
-        if (!res.ok) continue;
-        const data = await res.json();
-        const rawReply = String(data?.choices?.[0]?.message?.content || "").trim();
-        const jsonMatch = rawReply.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          const parsed = JSON.parse(jsonMatch[0]);
-          const name = String(parsed.name || fallbackName || "").trim().slice(0, 160);
-          const description = String(parsed.description || "").trim().slice(0, 350);
-          let categoryId = null;
-          if (parsed.categoryId !== null && parsed.categoryId !== void 0) {
-            const numId = Number(parsed.categoryId);
-            if (params.categories.some((c) => c.id === numId)) {
-              categoryId = numId;
-            } else {
-              const strCat = String(parsed.categoryId).trim();
-              const found = params.categories.find((c) => c.name.includes(strCat) || strCat.includes(c.name));
-              if (found) categoryId = found.id;
-            }
-          }
-          const weightEnabled = Boolean(parsed.weightEnabled);
-          const unit = weightEnabled ? "\u0643\u064A\u0644\u0648" : String(parsed.unit || "\u062D\u0628\u0629").trim().slice(0, 30) || "\u062D\u0628\u0629";
-          if (name) {
-            keyIndex = idx;
-            return { name, description, categoryId, unit, weightEnabled };
-          }
+        if (res.status === 401 || res.status === 402) break;
+        if (res.status === 429) {
+          await new Promise((r) => setTimeout(r, 500));
+          continue;
         }
-      } catch {
-      }
-    }
-  }
-  return {
-    name: fallbackName,
-    description: fallbackName ? "\u0645\u0646\u062A\u062C " + fallbackName + " \u0628\u062C\u0648\u062F\u0629 \u0645\u0645\u062A\u0627\u0632\u0629 \u0648\u0633\u0639\u0631 \u0645\u0646\u0627\u0641\u0633 \u0645\u0646 \u0645\u062A\u062C\u0631 \u0623\u0648\u0631\u062C\u0646\u0627\u0644." : "",
-    categoryId: params.categories[0]?.id ?? null,
-    unit: "\u062D\u0628\u0629",
-    weightEnabled: false
-  };
-}
-async function parseBulkProductsTextAI(params) {
-  const catListText = params.categories.length > 0 ? params.categories.map((c) => c.id + ":" + c.name).join(" | ") : "\u0644\u0627 \u062A\u0648\u062C\u062F \u0623\u0642\u0633\u0627\u0645";
-  const prompt = [
-    "/no_think",
-    "\u0623\u0646\u062A \u0645\u0633\u0627\u0639\u062F \u0625\u062F\u062E\u0627\u0644 \u0645\u0646\u062A\u062C\u0627\u062A \u0630\u0643\u064A \u0644\u0645\u062A\u062C\u0631 \u0623\u0648\u0631\u062C\u0646\u0627\u0644 \u0641\u064A \u0627\u0644\u064A\u0645\u0646.",
-    "\u062D\u0648\u0644 \u0642\u0627\u0626\u0645\u0629 \u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A \u0627\u0644\u0646\u0635\u064A\u0629 \u0627\u0644\u062A\u0627\u0644\u064A\u0629 \u0625\u0644\u0649 \u0645\u0635\u0641\u0648\u0641\u0629 JSON \u0644\u0644\u0645\u0646\u062A\u062C\u0627\u062A.",
-    "\u0627\u0644\u0623\u0642\u0633\u0627\u0645 \u0627\u0644\u0645\u062A\u0648\u0641\u0631\u0629 \u0641\u064A \u0627\u0644\u0645\u062A\u062C\u0631: [" + catListText + "]",
-    "\u0644\u0643\u0644 \u0645\u0646\u062A\u062C \u0627\u0633\u062A\u062E\u0631\u062C:",
-    "- name: \u0627\u0633\u0645 \u0627\u0644\u0645\u0646\u062A\u062C \u0628\u0627\u0644\u0639\u0631\u0628\u064A\u0629 \u0628\u0634\u0643\u0644 \u0645\u0631\u062A\u0628",
-    "- price: \u0627\u0644\u0633\u0639\u0631 \u0643\u0631\u0642\u0645 \u0635\u062D\u064A\u062D \u0628\u0627\u0644\u0631\u064A\u0627\u0644 \u0627\u0644\u064A\u0645\u0646\u064A (\u0623\u0648 0 \u0625\u0630\u0627 \u0644\u0645 \u064A\u064F\u0630\u0643\u0631 \u0627\u0644\u0633\u0639\u0631 \u0641\u064A \u0627\u0644\u0646\u0635)",
-    "- description: \u0648\u0635\u0641 \u062A\u0633\u0648\u064A\u0642\u064A \u0642\u0635\u064A\u0631 \u0648\u062C\u0630\u0627\u0628 \u0645\u0646 6 \u0625\u0644\u0649 10 \u0643\u0644\u0645\u0627\u062A \u0628\u0627\u0644\u0639\u0631\u0628\u064A\u0629",
-    "- categoryId: \u0631\u0642\u0645 \u0627\u0644\u0642\u0633\u0645 \u0627\u0644\u0623\u0646\u0633\u0628 \u0645\u0646 \u0627\u0644\u0642\u0627\u0626\u0645\u0629 \u0623\u0639\u0644\u0627\u0647 \u0623\u0648 null",
-    "- weightEnabled: true \u0625\u0630\u0627 \u0643\u0627\u0646 \u064A\u0628\u0627\u0639 \u0628\u0627\u0644\u0648\u0632\u0646/\u0627\u0644\u0643\u064A\u0644\u0648 (\u0628\u0647\u0627\u0631\u0627\u062A\u060C \u062E\u0636\u0631\u0648\u0627\u062A\u060C \u0641\u0648\u0627\u0643\u0647\u060C \u0645\u0643\u0633\u0631\u0627\u062A) \u0648 false \u0644\u063A\u064A\u0631 \u0630\u0644\u0643",
-    "- unit: '\u0643\u064A\u0644\u0648' \u0625\u0630\u0627 \u0643\u0627\u0646 \u0628\u0627\u0644\u0648\u0632\u0646 \u0623\u0648 '\u062D\u0628\u0629' \u0644\u0644\u0642\u0637\u0639 \u0648\u0627\u0644\u0639\u0628\u0648\u0627\u062A",
-    "\u0623\u0639\u062F \u0641\u0642\u0637 \u0645\u0635\u0641\u0648\u0641\u0629 JSON \u0635\u0627\u0644\u062D\u0629 \u0628\u0647\u0630\u0627 \u0627\u0644\u0634\u0643\u0644 \u0628\u062F\u0648\u0646 \u0623\u064A \u0643\u0644\u0627\u0645 \u0625\u0636\u0627\u0641\u064A:",
-    '[{"name":"...","price":0,"description":"...","categoryId":null,"unit":"\u062D\u0628\u0629","weightEnabled":false}]',
-    "\u0627\u0644\u0646\u0635 \u0627\u0644\u0645\u0637\u0644\u0648\u0628 \u062A\u062D\u0648\u064A\u0644\u0647:",
-    params.rawText.slice(0, 6e3)
-  ].join("\n");
-  const keys = getAllActiveKeys();
-  const P = ["ht", "tps", "://"].join("");
-  for (let attempt = 0; attempt < keys.length; attempt++) {
-    const idx = (keyIndex + attempt) % keys.length;
-    const apiKey = keys[idx];
-    const isGroq = apiKey.startsWith("gsk_");
-    const url = isGroq ? P + ["api.groq.com", "openai", "v1", "chat", "completions"].join("/") : P + ["openrouter.ai", "api", "v1", "chat", "completions"].join("/");
-    const models = isGroq ? ["llama-3.3-70b-versatile", "qwen/qwen3.8-27b", "openai/gpt-oss-120b"] : ["qwen/qwen3-235b-a22b:free", "meta-llama/llama-3.3-70b-instruct:free"];
-    for (const model of models) {
-      try {
-        const res = await fetch(url, {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            authorization: "Bearer " + apiKey
-          },
-          body: JSON.stringify({
-            model,
-            temperature: 0.2,
-            max_tokens: 1800,
-            messages: [{ role: "user", content: prompt }]
-          })
-        });
-        if (res.status === 429 || res.status === 401 || res.status === 402) break;
         if (!res.ok) continue;
         const data = await res.json();
         const rawReply = String(data?.choices?.[0]?.message?.content || "").replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
-        const arrMatch = rawReply.match(/\[[\s\S]*\]/);
-        if (arrMatch) {
-          const parsed = JSON.parse(arrMatch[0]);
-          if (Array.isArray(parsed) && parsed.length > 0) {
+        const jsonMatch = rawReply.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          const candName = stripNoiseFromArabicName(String(parsed.name || ""));
+          if (candName) {
+            extractedName = candName;
+            extractedType = String(parsed.productType || "");
+            extractedCatId = parsed.categoryId !== null && parsed.categoryId !== void 0 ? Number(parsed.categoryId) : null;
+            extractedWeight = Boolean(parsed.weightEnabled);
             keyIndex = idx;
-            return parsed.slice(0, 50).map((item) => {
-              const name = String(item.name || "").trim().slice(0, 160);
-              const price = Math.max(0, Math.round(Number(item.price) || 0));
-              const description = String(item.description || "\u0645\u0646\u062A\u062C " + name + " \u0628\u062C\u0648\u062F\u0629 \u0639\u0627\u0644\u064A\u0629 \u0648\u0633\u0639\u0631 \u0645\u0645\u064A\u0632.").trim().slice(0, 350);
-              const numId = Number(item.categoryId);
-              const categoryId = params.categories.some((c) => c.id === numId) ? numId : params.categories[0]?.id ?? null;
-              const weightEnabled = Boolean(item.weightEnabled);
-              const unit = weightEnabled ? "\u0643\u064A\u0644\u0648" : String(item.unit || "\u062D\u0628\u0629").trim().slice(0, 30) || "\u062D\u0628\u0629";
-              return { name, price, description, categoryId, unit, weightEnabled };
-            }).filter((x) => x.name.length > 0);
+            break;
           }
         }
       } catch {
       }
     }
+    if (extractedName) break;
   }
+  const finalTrans = translateEnglishProductTokensToArabic(extractedName || cleanedHint);
+  const finalName = finalTrans.arabicName || "\u0645\u0646\u062A\u062C \u062C\u062F\u064A\u062F";
+  const isPackagedOrDrink = /(?:عصير|شراب|حليب|لبن|زبادي|جبن|قشطة|تونة|فول|بسكويت|شيبس|شوكولاتة|مياه|ماء|زيت|سمن|معلب|علبة|عبوة)/.test(finalName + " " + extractedType);
+  const finalWeightEnabled = isPackagedOrDrink ? false : Boolean(extractedWeight);
+  const catMatch = classifyProductCategory(finalName, extractedType, extractedCatId, params.categories);
+  return {
+    name: finalName,
+    description: "\u0645\u0646\u062A\u062C " + finalName + " \u0628\u062C\u0648\u062F\u0629 \u0645\u0645\u062A\u0627\u0632\u0629 \u0648\u0633\u0639\u0631 \u0645\u0646\u0627\u0641\u0633 \u0645\u0646 \u0645\u062A\u062C\u0631 \u0623\u0648\u0631\u062C\u0646\u0627\u0644.",
+    categoryId: catMatch.categoryId,
+    suggestedCategoryName: catMatch.suggestedCategoryName,
+    unit: finalWeightEnabled ? "\u0643\u064A\u0644\u0648" : "\u062D\u0628\u0629",
+    weightEnabled: finalWeightEnabled
+  };
+}
+async function parseBulkProductsTextAI(params) {
   return params.rawText.split(/\n+/).map((l) => l.trim()).filter(Boolean).slice(0, 50).map((line) => {
     const priceMatch = line.match(/(?:[-:–—=]|بـ|بسعر)\s*(\d+(?:\.\d+)?)\s*(?:ر\.?ي|ريال)?$/i) || line.match(/\s+(\d{2,6})\s*(?:ر\.?ي|ريال)?$/);
     const price = priceMatch ? Math.max(0, Math.round(Number(priceMatch[1]) || 0)) : 0;
-    const name = (priceMatch ? line.slice(0, priceMatch.index).trim() : line).replace(/^[-*•\d.)\s]+/, "").trim();
-    const weightEnabled = /(?:كيلو|بهارات|كمون|فلفل|كركم|حلاوة|طماط|بطاط|بصل|خيار|جزر|موز|تفاح)/.test(name);
+    const rawName = (priceMatch ? line.slice(0, priceMatch.index).trim() : line).replace(/^[-*•\d.)\s]+/, "").trim();
+    const name = translateEnglishProductTokensToArabic(rawName).arabicName || rawName;
+    const isDrinkOrPack = /(?:عصير|شراب|حليب|لبن|زبادي|جبن|تونة|فول|بسكويت|شيبس)/.test(name);
+    const weightEnabled = !isDrinkOrPack && /(?:كيلو|بهارات|كمون|فلفل|كركم|حلاوة|طماط|بطاط|بصل|خيار)/.test(name);
     return {
-      name: name || line,
+      name,
       price,
-      description: "\u0645\u0646\u062A\u062C " + (name || line) + " \u0645\u062A\u0648\u0641\u0631 \u0628\u062C\u0648\u062F\u0629 \u0645\u0645\u062A\u0627\u0632\u0629 \u0641\u064A \u0645\u062A\u062C\u0631 \u0623\u0648\u0631\u062C\u0646\u0627\u0644.",
-      categoryId: params.categories[0]?.id ?? null,
+      description: "\u0645\u0646\u062A\u062C " + name + " \u0628\u062C\u0648\u062F\u0629 \u0645\u0645\u062A\u0627\u0632\u0629 \u0648\u0633\u0639\u0631 \u0645\u0646\u0627\u0641\u0633 \u0645\u0646 \u0645\u062A\u062C\u0631 \u0623\u0648\u0631\u062C\u0646\u0627\u0644.",
+      categoryId: classifyProductCategory(name, "", null, params.categories).categoryId,
       unit: weightEnabled ? "\u0643\u064A\u0644\u0648" : "\u062D\u0628\u0629",
       weightEnabled
     };
@@ -4079,7 +4179,36 @@ var commerceRouter = router({
       analyzeImage: requirePermission("products.manage").input(z3.object({ imageDataUrl: z3.string().min(20).max(25e5), fileName: z3.string().max(200).optional() })).mutation(async ({ input }) => {
         const db = await database();
         const catRows = await db.select({ id: categories.id, name: categories.name }).from(categories).orderBy(asc(categories.sortOrder));
-        return analyzeProductImageAI({ imageDataUrl: input.imageDataUrl, fileName: input.fileName, categories: catRows });
+        const res = await analyzeProductImageAI({ imageDataUrl: input.imageDataUrl, fileName: input.fileName, categories: catRows });
+        if (!res.categoryId && res.suggestedCategoryName) {
+          const targetSlug = slugify(res.suggestedCategoryName);
+          const freshCats = await db.select({ id: categories.id, name: categories.name, slug: categories.slug }).from(categories);
+          const existing = freshCats.find((c) => c.name.trim() === res.suggestedCategoryName.trim() || c.slug === targetSlug);
+          if (existing) {
+            res.categoryId = existing.id;
+          } else {
+            try {
+              const ins = await db.insert(categories).values({
+                name: res.suggestedCategoryName,
+                slug: targetSlug,
+                description: "\u0642\u0633\u0645 " + res.suggestedCategoryName,
+                imageUrl: null,
+                isActive: true,
+                sortOrder: freshCats.length
+              });
+              const newId = Number(ins[0]?.insertId || 0);
+              if (newId > 0) {
+                res.categoryId = newId;
+                clearCatalogCache();
+              }
+            } catch {
+              const retryCats = await db.select({ id: categories.id, name: categories.name, slug: categories.slug }).from(categories);
+              const found = retryCats.find((c) => c.name.trim() === res.suggestedCategoryName.trim() || c.slug === targetSlug);
+              if (found) res.categoryId = found.id;
+            }
+          }
+        }
+        return res;
       }),
       parseBulkText: requirePermission("products.manage").input(z3.object({ rawText: z3.string().min(2).max(12e3) })).mutation(async ({ input }) => {
         const db = await database();
