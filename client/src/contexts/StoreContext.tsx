@@ -95,23 +95,30 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const byId = new Map(catalogProducts.map(p => [p.id, p]));
       setCart(current => {
         let changed = false;
-        const next = current.map(line => {
+        const next: CartLine[] = [];
+        for (const line of current) {
           const fresh = byId.get(line.id);
-          if (!fresh) return line;
+          if (!fresh) {
+            changed = true;
+            continue;
+          }
           if (line.customAmount && line.customAmount > 0) {
             if (fresh.imageUrl !== line.imageUrl || fresh.stock !== line.stock) {
               changed = true;
-              return { ...line, imageUrl: fresh.imageUrl, stock: fresh.stock };
+              next.push({ ...line, imageUrl: fresh.imageUrl, stock: fresh.stock });
+            } else {
+              next.push(line);
             }
-            return line;
+            continue;
           }
           const expectedName = line.variant ? fresh.name + " (" + line.variant + ")" : fresh.name;
           if (fresh.price !== line.price || expectedName !== line.name || fresh.unit !== line.unit || fresh.imageUrl !== line.imageUrl || fresh.stock !== line.stock) {
             changed = true;
-            return { ...line, name: expectedName, price: fresh.price, unit: fresh.unit, imageUrl: fresh.imageUrl, stock: fresh.stock };
+            next.push({ ...line, name: expectedName, price: fresh.price, unit: fresh.unit, imageUrl: fresh.imageUrl, stock: fresh.stock });
+          } else {
+            next.push(line);
           }
-          return line;
-        });
+        }
         return changed ? next : current;
       });
     },

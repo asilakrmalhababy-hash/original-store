@@ -982,8 +982,8 @@ function ProductListPage({ data, onOpen, onAiRecipe }: { data: HomeData; onOpen:
   const cachedProducts = !debouncedSearch
     ? data.products.filter(product => categoryId === undefined || product.categoryId === categoryId)
     : [];
-  const input = { search: debouncedSearch || undefined, categoryId, sort: "featured" as const, limit: 60 };
-  const query = trpc.commerce.catalog.listProducts.useQuery(input, { retry: 1, staleTime: 30_000, placeholderData: cachedProducts.length ? cachedProducts : undefined });
+  const input = { search: debouncedSearch || undefined, categoryId, sort: "featured" as const, limit: 500 };
+  const query = trpc.commerce.catalog.listProducts.useQuery(input, { retry: 1, staleTime: 0, refetchOnMount: "always", placeholderData: cachedProducts.length ? cachedProducts : undefined });
 
   return (
     <main className="page-shell inner-page" style={{ paddingTop: "12px" }}>
@@ -1449,6 +1449,7 @@ function CartRow({ line, onQuantity, onRemove }: { line: CartLine; onQuantity: (
 }
 
 function Checkout({ onClose, onSuccess, cart }: { onClose: () => void; onSuccess: () => void; cart: CartLine[] }) {
+  const { remove } = useStore();
   const utils = trpc.useUtils();
   const [, navigate] = useLocation();
   const customer = useCustomer();
@@ -1466,12 +1467,28 @@ function Checkout({ onClose, onSuccess, cart }: { onClose: () => void; onSuccess
   const [saveDeliveryAddress, setSaveDeliveryAddress] = useState(false);
   const [makeDefaultAddress, setMakeDefaultAddress] = useState(customer.addresses.length === 0);
   const [addressLabel, setAddressLabel] = useState("المنزل");
-  const items = cart.map(item => ({ productId: item.id, quantity: item.quantity, ...(item.variant ? { variant: item.variant } : {}), ...(item.customAmount ? { customAmount: item.customAmount } : {}) }));
+  const items = cart.map(item => ({ productId: item.id, quantity: item.quantity, name: item.name, ...(item.variant ? { variant: item.variant } : {}), ...(item.customAmount ? { customAmount: item.customAmount } : {}) }));
   const signature = JSON.stringify({ form, items });
   const keyRef = useRef<{ signature: string; key: string }>({ signature: "", key: "" });
   if (keyRef.current.signature !== signature) keyRef.current = { signature, key: getPendingOrderIdempotencyKey(signature) };
   const [quoteSignature, setQuoteSignature] = useState("");
-  const quoteMutation = trpc.commerce.orders.quote.useMutation({ onError: error => toast.error(error.message || "تعذر حساب ملخص الطلب.") });
+  const handleUnavailableOrderError = (msg: string) => {
+      toast.error(msg || "تعذر إتمام الطلب.");
+      if (msg && (msg.includes("لم يعد متوفراً") || msg.includes("لم يعد متاحًا"))) {
+        const m = msg.match(/«([^»]+)»/);
+        if (m && m[1]) {
+          const missingNames = m[1].split("،").map(s => s.trim()).filter(Boolean);
+          for (const line of cart) {
+            if (missingNames.some(mn => line.name.includes(mn) || mn.includes(line.name))) {
+              remove(line.id, line.variant);
+            }
+          }
+        }
+        void utils.commerce.catalog.home.invalidate();
+        void utils.commerce.catalog.listProducts.invalidate();
+      }
+    };
+    const quoteMutation = trpc.commerce.orders.quote.useMutation({ onError: error => handleUnavailableOrderError(error.message || "تعذر حساب ملخص الطلب.") });
   const quote = quoteSignature === signature ? quoteMutation.data : undefined;
   const mutation = trpc.commerce.orders.place.useMutation({
     onSuccess: result => {
@@ -1507,7 +1524,7 @@ function Checkout({ onClose, onSuccess, cart }: { onClose: () => void; onSuccess
       onClose();
       navigate("/orders?order=" + encodeURIComponent(result.orderNumber) + "&justOrdered=1");
     },
-    onError: error => { setQuoteSignature(""); quoteMutation.reset(); toast.error(error.message || "تعذر إرسال الطلب. لم تُفرغ السلة؛ راجع البيانات وحاول مجددًا."); },
+    onError: error => { setQuoteSignature(""); quoteMutation.reset(); handleUnavailableOrderError(error.message || "تعذر إرسال الطلب. لم تُفرغ السلة؛ راجع البيانات وحاول مجددًا."); },
   });
   const selectAddress = (id: string) => {
     setSelectedAddressId(id);

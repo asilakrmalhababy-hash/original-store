@@ -2670,23 +2670,24 @@ function getCached(key, ttlMs, fetcher) {
     return data;
   });
 }
-function clearCatalogCache() {
+function clearCatalogCache(removedProductId) {
+  __cachedLiveHomeData = null;
+  __lastLiveHomeDataTime = 0;
   try {
     const g = globalThis;
+    if (removedProductId && g.__fastHomeData && Array.isArray(g.__fastHomeData.products)) {
+      g.__fastHomeData.products = g.__fastHomeData.products.filter((p) => p.id !== removedProductId);
+    }
     g.__fastHomeData = null;
     g.__fastHomeTime = 0;
     g.__catalogVer = Date.now();
+    if (typeof g.__resetRefreshingPromise === "function") g.__resetRefreshingPromise();
     if (typeof g.__loadCatalogHome === "function") {
       setTimeout(() => {
         void g.__loadCatalogHome().catch(() => {
         });
-      }, 10);
+      }, 5);
     }
-  } catch {
-  }
-  __catalogCache.clear();
-  try {
-    if (fs2.existsSync(CACHE_FILE)) fs2.unlinkSync(CACHE_FILE);
   } catch {
   }
 }
@@ -3045,14 +3046,15 @@ function formatServerWeightGrams(grams) {
 function aggregateItems(items) {
   const map = /* @__PURE__ */ new Map();
   for (const item of items) {
-    const cur = map.get(item.productId) ?? { quantity: 0, customAmountTotal: 0 };
+    const cur = map.get(item.productId) ?? { quantity: 0, customAmountTotal: 0, name: item.name };
     cur.quantity += item.quantity;
+    if (!cur.name && item.name) cur.name = item.name;
     if (item.customAmount && item.customAmount > 0) {
       cur.customAmountTotal += Math.floor(item.customAmount) * item.quantity;
     }
     map.set(item.productId, cur);
   }
-  return [...map.entries()].map(([productId, v]) => ({ productId, quantity: v.quantity, customAmountTotal: v.customAmountTotal })).sort((a, b) => a.productId - b.productId);
+  return [...map.entries()].map(([productId, v]) => ({ productId, quantity: v.quantity, customAmountTotal: v.customAmountTotal, name: v.name })).sort((a, b) => a.productId - b.productId);
 }
 function quoteFingerprint(lines, totals, currency, offerId) {
   return createHash4("sha256").update(JSON.stringify({ lines, totals, currency, offerId })).digest("hex");
@@ -3163,7 +3165,7 @@ async function refreshHomeCatalogCache() {
       const db = await database();
       const [categoryRows, productRows, bannerRows, offerRows, settings] = await Promise.all([
         db.select().from(categories).where(eq4(categories.isActive, true)).orderBy(asc(categories.sortOrder), asc(categories.id)),
-        db.select().from(products).where(and2(eq4(products.isPublished, true), eq4(products.isAvailable, true))).orderBy(asc(products.sortOrder), desc(products.createdAt)).limit(120),
+        db.select().from(products).where(and2(eq4(products.isPublished, true), eq4(products.isAvailable, true))).orderBy(asc(products.sortOrder), desc(products.createdAt)).limit(500),
         db.select().from(banners).where(and2(eq4(banners.isActive, true))).orderBy(asc(banners.sortOrder), desc(banners.createdAt)),
         db.select().from(offers).where(and2(eq4(offers.isActive, true))).orderBy(desc(offers.createdAt)),
         readSettings(db)
@@ -3229,7 +3231,7 @@ var commerceRouter = router({
       search: z3.string().trim().max(120).optional(),
       categoryId: safeId.optional(),
       sort: z3.enum(["featured", "price-asc", "price-desc", "name"]).default("featured"),
-      limit: z3.number().int().min(1).max(60).default(30)
+      limit: z3.number().int().min(1).max(500).default(250)
     }).optional()).query(async ({ input }) => {
       const g = globalThis;
       let base = g.__fastHomeData?.products;
@@ -3246,7 +3248,7 @@ var commerceRouter = router({
       if (input?.sort === "price-asc") list.sort((a, b) => a.price - b.price);
       else if (input?.sort === "price-desc") list.sort((a, b) => b.price - a.price);
       else if (input?.sort === "name") list.sort((a, b) => String(a.name).localeCompare(String(b.name), "ar"));
-      return list.slice(0, input?.limit ?? 30);
+      return list.slice(0, input?.limit ?? 250);
     }),
     listCategories: publicProcedure.query(async () => {
       const g = globalThis;
@@ -3335,7 +3337,7 @@ var commerceRouter = router({
   }),
   orders: router({
     quote: publicProcedure.input(z3.object({
-      items: z3.array(z3.object({ productId: safeId, quantity: z3.number().int().min(1).max(1e4), variant: z3.string().trim().max(120).optional(), customAmount: z3.number().int().min(1).max(1e8).optional() })).min(1).max(100),
+      items: z3.array(z3.object({ productId: safeId, quantity: z3.number().int().min(1).max(1e4), name: z3.string().trim().max(220).optional(), variant: z3.string().trim().max(120).optional(), customAmount: z3.number().int().min(1).max(1e8).optional() })).min(1).max(100),
       city: z3.string().trim().min(1).max(100),
       offerCode: z3.string().trim().max(40).optional()
     })).mutation(async ({ input }) => {
@@ -3348,7 +3350,15 @@ var commerceRouter = router({
       if (requested.some((item) => item.quantity > 1e4)) throw new TRPCError3({ code: "BAD_REQUEST", message: "\u0627\u0644\u0643\u0645\u064A\u0629 \u0627\u0644\u0625\u062C\u0645\u0627\u0644\u064A\u0629 \u0644\u0623\u062D\u062F \u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A \u062A\u062A\u062C\u0627\u0648\u0632 \u0627\u0644\u062D\u062F \u0627\u0644\u0645\u0633\u0645\u0648\u062D." });
       const productIds = requested.map((item) => item.productId);
       const currentProducts = await db.select().from(products).where(and2(inArray(products.id, productIds), eq4(products.isPublished, true), eq4(products.isAvailable, true)));
-      if (currentProducts.length !== productIds.length) throw new TRPCError3({ code: "PRECONDITION_FAILED", message: "\u0623\u062D\u062F \u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A \u0644\u0645 \u064A\u0639\u062F \u0645\u062A\u0627\u062D\u064B\u0627. \u062D\u062F\u0651\u062B \u0627\u0644\u0633\u0644\u0629 \u062B\u0645 \u062D\u0627\u0648\u0644 \u0645\u062C\u062F\u062F\u064B\u0627." });
+      if (currentProducts.length !== productIds.length) {
+        const foundIds = new Set(currentProducts.map((p) => p.id));
+        const missingReq = requested.filter((r) => !foundIds.has(r.productId));
+        const missingIds = missingReq.map((r) => r.productId);
+        const dbMissing = missingIds.length ? await db.select({ id: products.id, name: products.name }).from(products).where(inArray(products.id, missingIds)) : [];
+        const missingNames = missingReq.map((r) => r.name || dbMissing.find((d) => d.id === r.productId)?.name || "\u0645\u0646\u062A\u062C #" + r.productId);
+        for (const mid of missingIds) clearCatalogCache(mid);
+        throw new TRPCError3({ code: "PRECONDITION_FAILED", message: "\u0627\u0644\u0645\u0646\u062A\u062C \xAB" + missingNames.join("\u060C ") + "\xBB \u0644\u0645 \u064A\u0639\u062F \u0645\u062A\u0648\u0641\u0631\u0627\u064B \u062D\u0627\u0644\u064A\u0627\u064B \u0641\u064A \u0627\u0644\u0645\u062A\u062C\u0631. \u062A\u0645 \u062A\u062D\u062F\u064A\u062B \u0627\u0644\u0633\u0644\u0629 \u062A\u0644\u0642\u0627\u0626\u064A\u0627\u064B." });
+      }
       const lines = requested.map((item) => {
         const product = currentProducts.find((row) => row.id === item.productId);
         const wcfg = unpackServerProductWeightCfg(product.description);
@@ -3450,7 +3460,7 @@ var commerceRouter = router({
       idempotencyKey: z3.string().uuid(),
       expectedTotal: z3.number().int().min(0).max(1e11),
       expectedQuoteHash: z3.string().length(64).regex(/^[a-f0-9]+$/),
-      items: z3.array(z3.object({ productId: safeId, quantity: z3.number().int().min(1).max(1e4), variant: z3.string().trim().max(120).optional(), customAmount: z3.number().int().min(1).max(1e8).optional() })).min(1).max(100),
+      items: z3.array(z3.object({ productId: safeId, quantity: z3.number().int().min(1).max(1e4), name: z3.string().trim().max(220).optional(), variant: z3.string().trim().max(120).optional(), customAmount: z3.number().int().min(1).max(1e8).optional() })).min(1).max(100),
       offerCode: z3.string().trim().max(40).optional(),
       recipientName: z3.string().trim().min(2).max(160),
       phone: z3.string().trim().min(7).max(32).refine(isValidGuestPhone, "\u0623\u062F\u062E\u0644 \u0631\u0642\u0645 \u0647\u0627\u062A\u0641 \u0635\u062D\u064A\u062D\u064B\u0627 \u0644\u064A\u062A\u0645\u0643\u0646 \u0627\u0644\u0645\u062A\u062C\u0631 \u0645\u0646 \u0627\u0644\u0627\u062A\u0635\u0627\u0644 \u0628\u0643."),
@@ -3481,7 +3491,12 @@ var commerceRouter = router({
         let subtotal = 0;
         for (const item of requested) {
           const product = (await tx.select().from(products).where(and2(eq4(products.id, item.productId), eq4(products.isPublished, true), eq4(products.isAvailable, true))).limit(1).for("update"))[0];
-          if (!product) throw new TRPCError3({ code: "PRECONDITION_FAILED", message: "\u0623\u062D\u062F \u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A \u0644\u0645 \u064A\u0639\u062F \u0645\u062A\u0627\u062D\u064B\u0627. \u062D\u062F\u0651\u062B \u0627\u0644\u0633\u0644\u0629 \u062B\u0645 \u062D\u0627\u0648\u0644 \u0645\u062C\u062F\u062F\u064B\u0627." });
+          if (!product) {
+            const anyProd = (await tx.select({ name: products.name }).from(products).where(eq4(products.id, item.productId)).limit(1))[0];
+            const missingName = item.name || anyProd?.name || "\u0645\u0646\u062A\u062C #" + item.productId;
+            clearCatalogCache(item.productId);
+            throw new TRPCError3({ code: "PRECONDITION_FAILED", message: "\u0627\u0644\u0645\u0646\u062A\u062C \xAB" + missingName + "\xBB \u0644\u0645 \u064A\u0639\u062F \u0645\u062A\u0648\u0641\u0631\u0627\u064B \u062D\u0627\u0644\u064A\u0627\u064B \u0641\u064A \u0627\u0644\u0645\u062A\u062C\u0631. \u062A\u0645 \u062A\u062D\u062F\u064A\u062B \u0627\u0644\u0633\u0644\u0629 \u062A\u0644\u0642\u0627\u0626\u064A\u0627\u064B." });
+          }
           const wcfg = unpackServerProductWeightCfg(product.description);
           if (wcfg.enabled && item.customAmountTotal > 0) {
             if (item.customAmountTotal < wcfg.minAmount) {
@@ -4132,6 +4147,8 @@ var commerceRouter = router({
           await tx.update(orderItems).set({ productId: null }).where(eq4(orderItems.productId, input.id));
           await tx.delete(products).where(eq4(products.id, input.id));
         });
+        globalThis.__fastImgCache?.delete("product:" + input.id);
+        clearCatalogCache(input.id);
         return { success: true };
       }),
       list: requireAnyPermission(["products.view", "products.manage", "inventory.manage"]).query(async () => getCached("admin:products", 3e4, async () => {

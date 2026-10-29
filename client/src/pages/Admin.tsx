@@ -116,7 +116,6 @@ type BulkDraftItem = {
 
 function ImageField({ value, onChange, kind, aspect, title }: { value: string; onChange: (value: string) => void; kind: "product" | "category" | "banner" | "icon"; aspect: number; title: string }) {
   const [open, setOpen] = useState(false);
-  const [editorTool, setEditorTool] = useState<"crop" | "lasso">("crop");
   const [compressing, setCompressing] = useState(false);
   const quickInputRef = useRef<HTMLInputElement>(null);
 
@@ -152,10 +151,7 @@ function ImageField({ value, onChange, kind, aspect, title }: { value: string; o
         <button type="button" className="small-button selected" disabled={compressing} onClick={e => { e.preventDefault(); e.stopPropagation(); quickInputRef.current?.click(); }}>
           <ImagePlus size={15} />{compressing ? "جارٍ التجهيز..." : value ? "تغيير سريع ⚡" : "رفع صورة سريع ⚡"}
         </button>
-        <button type="button" className="small-button" onClick={e => { e.preventDefault(); e.stopPropagation(); setEditorTool("lasso"); setOpen(true); }} style={{ background: "#f2f8f4", border: "1px solid #174b36", color: "#174b36", fontWeight: 800 }}>
-          🪄 عزل الخلفية (خلفية بيضاء)
-        </button>
-        <button type="button" className="small-button" onClick={e => { e.preventDefault(); e.stopPropagation(); setEditorTool("crop"); setOpen(true); }}>
+        <button type="button" className="small-button" onClick={e => { e.preventDefault(); e.stopPropagation(); setOpen(true); }}>
           ✂️ قص وتعديل
         </button>
         {value && (
@@ -170,7 +166,6 @@ function ImageField({ value, onChange, kind, aspect, title }: { value: string; o
           aspect={aspect}
           format="webp"
           initialSource={value || undefined}
-          initialTool={editorTool}
           onCancel={() => setOpen(false)}
           onSave={handleCropSave}
         />
@@ -427,7 +422,6 @@ function SmartBulkProductsStudio({
   const [newCatName, setNewCatName] = useState("");
   const [showNewCatInput, setShowNewCatInput] = useState(false);
   const [unifiedPrice, setUnifiedPrice] = useState("");
-  const [lassoEditingUid, setLassoEditingUid] = useState<string | null>(null);
   const multiFileInputRef = useRef<HTMLInputElement>(null);
   const singleRowFileRef = useRef<{ uid: string | null; input: HTMLInputElement | null }>({ uid: null, input: null });
   const priceRefs = useRef<Record<string, HTMLInputElement | null>>({});
@@ -803,16 +797,6 @@ function SmartBulkProductsStudio({
                       <span style={{ fontSize: "10px", fontWeight: 800, color: item.aiStatus === "analyzing" ? "#b27b16" : "#174b36" }}>
                         {item.aiStatus === "analyzing" ? "⏳ يقرأ الصورة..." : ("#" + (idx + 1))}
                       </span>
-                      {item.imageUrl && (
-                        <button
-                          type="button"
-                          className="small-button"
-                          onClick={() => setLassoEditingUid(item.uid)}
-                          style={{ padding: "4px 6px", fontSize: "10px", fontWeight: 900, background: "#174b36", border: "1px solid #174b36", color: "#f1d897", width: "100%", justifyContent: "center" }}
-                        >
-                          🪄 عزل الخلفية
-                        </button>
-                      )}
                     </div>
 
                     <div style={{ display: "grid", gap: "8px" }}>
@@ -919,21 +903,6 @@ function SmartBulkProductsStudio({
             </button>
           </div>
         </div>
-        {lassoEditingUid && (
-          <ImageEditor
-            title="عزل خلفية المنتج بالرسم الذكي (0 توكنز)"
-            aspect={1}
-            format="webp"
-            initialSource={items.find(x => x.uid === lassoEditingUid)?.imageUrl || undefined}
-            initialTool="lasso"
-            onCancel={() => setLassoEditingUid(null)}
-            onSave={(newDataUrl) => {
-              updateItem(lassoEditingUid, { imageUrl: newDataUrl });
-              setLassoEditingUid(null);
-              toast.success("✨ تم عزل خلفية المنتج إلى اللون الأبيض بنجاح!");
-            }}
-          />
-        )}
       </section>
     </div>
   );

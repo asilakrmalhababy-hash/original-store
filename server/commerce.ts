@@ -114,10 +114,20 @@ function getCached<T>(key: string, ttlMs: number, fetcher: () => Promise<T>): Pr
     return data;
   });
 }
-function clearCatalogCache() {
-  try { const g = globalThis as any; g.__fastHomeData = null; g.__fastHomeTime = 0; g.__catalogVer = Date.now(); if (typeof g.__loadCatalogHome === "function") { setTimeout(() => { void g.__loadCatalogHome().catch(() => {}); }, 10); } } catch {}
-  __catalogCache.clear();
-  try { if (fs.existsSync(CACHE_FILE)) fs.unlinkSync(CACHE_FILE); } catch {}
+function clearCatalogCache(removedProductId?: number) {
+  __cachedLiveHomeData = null;
+  __lastLiveHomeDataTime = 0;
+  try {
+    const g = globalThis as any;
+    if (removedProductId && g.__fastHomeData && Array.isArray(g.__fastHomeData.products)) {
+      g.__fastHomeData.products = g.__fastHomeData.products.filter((p: any) => p.id !== removedProductId);
+    }
+    g.__fastHomeData = null;
+    g.__fastHomeTime = 0;
+    g.__catalogVer = Date.now();
+    if (typeof g.__resetRefreshingPromise === "function") g.__resetRefreshingPromise();
+    if (typeof g.__loadCatalogHome === "function") { setTimeout(() => { void g.__loadCatalogHome().catch(() => {}); }, 5); }
+  } catch {}
 }
 
 
@@ -517,17 +527,18 @@ function formatServerWeightGrams(grams: number): string {
   return grams + " جرام";
 }
 
-function aggregateItems(items: Array<{ productId: number; quantity: number; variant?: string; customAmount?: number }>) {
-  const map = new Map<number, { quantity: number; customAmountTotal: number }>();
+function aggregateItems(items: Array<{ productId: number; quantity: number; name?: string; variant?: string; customAmount?: number }>) {
+  const map = new Map<number, { quantity: number; customAmountTotal: number; name?: string }>();
   for (const item of items) {
-    const cur = map.get(item.productId) ?? { quantity: 0, customAmountTotal: 0 };
+    const cur = map.get(item.productId) ?? { quantity: 0, customAmountTotal: 0, name: item.name };
     cur.quantity += item.quantity;
+    if (!cur.name && item.name) cur.name = item.name;
     if (item.customAmount && item.customAmount > 0) {
       cur.customAmountTotal += Math.floor(item.customAmount) * item.quantity;
     }
     map.set(item.productId, cur);
   }
-  return [...map.entries()].map(([productId, v]) => ({ productId, quantity: v.quantity, customAmountTotal: v.customAmountTotal })).sort((a, b) => a.productId - b.productId);
+  return [...map.entries()].map(([productId, v]) => ({ productId, quantity: v.quantity, customAmountTotal: v.customAmountTotal, name: v.name })).sort((a, b) => a.productId - b.productId);
 }
 
 function quoteFingerprint(lines: Array<{ productId: number; name: string; quantity: number; unit: string; price: number; lineTotal: number }>, totals: { subtotal: number; deliveryFee: number; discount: number; total: number }, currency: string, offerId: number | null) {
@@ -648,7 +659,7 @@ async function refreshHomeCatalogCache() {
       const db = await database();
       const [categoryRows, productRows, bannerRows, offerRows, settings] = await Promise.all([
         db.select().from(categories).where(eq(categories.isActive, true)).orderBy(asc(categories.sortOrder), asc(categories.id)),
-        db.select().from(products).where(and(eq(products.isPublished, true), eq(products.isAvailable, true))).orderBy(asc(products.sortOrder), desc(products.createdAt)).limit(120),
+        db.select().from(products).where(and(eq(products.isPublished, true), eq(products.isAvailable, true))).orderBy(asc(products.sortOrder), desc(products.createdAt)).limit(500),
         db.select().from(banners).where(and(eq(banners.isActive, true))).orderBy(asc(banners.sortOrder), desc(banners.createdAt)),
         db.select().from(offers).where(and(eq(offers.isActive, true))).orderBy(desc(offers.createdAt)),
         readSettings(db),
@@ -713,7 +724,7 @@ export const commerceRouter = router({
       search: z.string().trim().max(120).optional(),
       categoryId: safeId.optional(),
       sort: z.enum(["featured", "price-asc", "price-desc", "name"]).default("featured"),
-      limit: z.number().int().min(1).max(60).default(30),
+      limit: z.number().int().min(1).max(500).default(250),
     }).optional()).query(async ({ input }) => {
       const g = globalThis as any;
       let base: any[] = g.__fastHomeData?.products;
@@ -730,7 +741,7 @@ export const commerceRouter = router({
       if (input?.sort === "price-asc") list.sort((a, b) => a.price - b.price);
       else if (input?.sort === "price-desc") list.sort((a, b) => b.price - a.price);
       else if (input?.sort === "name") list.sort((a, b) => String(a.name).localeCompare(String(b.name), "ar"));
-      return list.slice(0, input?.limit ?? 30);
+      return list.slice(0, input?.limit ?? 250);
     }),
     listCategories: publicProcedure.query(async () => {
       const g = globalThis as any;
@@ -816,7 +827,7 @@ export const commerceRouter = router({
 
   orders: router({
     quote: publicProcedure.input(z.object({
-      items: z.array(z.object({ productId: safeId, quantity: z.number().int().min(1).max(10000), variant: z.string().trim().max(120).optional(), customAmount: z.number().int().min(1).max(100000000).optional() })).min(1).max(100),
+      items: z.array(z.object({ productId: safeId, quantity: z.number().int().min(1).max(10000), name: z.string().trim().max(220).optional(), variant: z.string().trim().max(120).optional(), customAmount: z.number().int().min(1).max(100000000).optional() })).min(1).max(100),
       city: z.string().trim().min(1).max(100), offerCode: z.string().trim().max(40).optional(),
     })).mutation(async ({ input }) => {
       const db = await database();
@@ -828,7 +839,15 @@ export const commerceRouter = router({
       if (requested.some(item => item.quantity > 10000)) throw new TRPCError({ code: "BAD_REQUEST", message: "الكمية الإجمالية لأحد المنتجات تتجاوز الحد المسموح." });
       const productIds = requested.map(item => item.productId);
       const currentProducts = await db.select().from(products).where(and(inArray(products.id, productIds), eq(products.isPublished, true), eq(products.isAvailable, true)));
-      if (currentProducts.length !== productIds.length) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "أحد المنتجات لم يعد متاحًا. حدّث السلة ثم حاول مجددًا." });
+      if (currentProducts.length !== productIds.length) {
+        const foundIds = new Set(currentProducts.map(p => p.id));
+        const missingReq = requested.filter(r => !foundIds.has(r.productId));
+        const missingIds = missingReq.map(r => r.productId);
+        const dbMissing = missingIds.length ? await db.select({ id: products.id, name: products.name }).from(products).where(inArray(products.id, missingIds)) : [];
+        const missingNames = missingReq.map(r => r.name || dbMissing.find(d => d.id === r.productId)?.name || ("منتج #" + r.productId));
+        for (const mid of missingIds) clearCatalogCache(mid);
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "المنتج «" + missingNames.join("، ") + "» لم يعد متوفراً حالياً في المتجر. تم تحديث السلة تلقائياً." });
+      }
       const lines = requested.map(item => {
         const product = currentProducts.find(row => row.id === item.productId)!;
         const wcfg = unpackServerProductWeightCfg(product.description);
@@ -933,7 +952,7 @@ export const commerceRouter = router({
       idempotencyKey: z.string().uuid(),
       expectedTotal: z.number().int().min(0).max(100000000000),
       expectedQuoteHash: z.string().length(64).regex(/^[a-f0-9]+$/),
-      items: z.array(z.object({ productId: safeId, quantity: z.number().int().min(1).max(10000), variant: z.string().trim().max(120).optional(), customAmount: z.number().int().min(1).max(100000000).optional() })).min(1).max(100),
+      items: z.array(z.object({ productId: safeId, quantity: z.number().int().min(1).max(10000), name: z.string().trim().max(220).optional(), variant: z.string().trim().max(120).optional(), customAmount: z.number().int().min(1).max(100000000).optional() })).min(1).max(100),
       offerCode: z.string().trim().max(40).optional(),
       recipientName: z.string().trim().min(2).max(160), phone: z.string().trim().min(7).max(32).refine(isValidGuestPhone, "أدخل رقم هاتف صحيحًا ليتمكن المتجر من الاتصال بك."),
       city: z.string().trim().min(1).max(100), district: z.string().trim().min(1).max(120), addressDetails: z.string().trim().max(1000).optional(), customerNote: z.string().trim().max(1000).optional(),
@@ -962,7 +981,12 @@ export const commerceRouter = router({
         let subtotal = 0;
         for (const item of requested) {
           const product = (await tx.select().from(products).where(and(eq(products.id, item.productId), eq(products.isPublished, true), eq(products.isAvailable, true))).limit(1).for("update"))[0];
-          if (!product) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "أحد المنتجات لم يعد متاحًا. حدّث السلة ثم حاول مجددًا." });
+          if (!product) {
+            const anyProd = (await tx.select({ name: products.name }).from(products).where(eq(products.id, item.productId)).limit(1))[0];
+            const missingName = item.name || anyProd?.name || ("منتج #" + item.productId);
+            clearCatalogCache(item.productId);
+            throw new TRPCError({ code: "PRECONDITION_FAILED", message: "المنتج «" + missingName + "» لم يعد متوفراً حالياً في المتجر. تم تحديث السلة تلقائياً." });
+          }
           const wcfg = unpackServerProductWeightCfg(product.description);
           if (wcfg.enabled && item.customAmountTotal > 0) {
             if (item.customAmountTotal < wcfg.minAmount) {
@@ -1604,6 +1628,8 @@ export const commerceRouter = router({
           await tx.update(orderItems).set({ productId: null }).where(eq(orderItems.productId, input.id));
           await tx.delete(products).where(eq(products.id, input.id));
         });
+        (globalThis as any).__fastImgCache?.delete("product:" + input.id);
+        clearCatalogCache(input.id);
         return { success: true };
       }),
       list: requireAnyPermission(["products.view", "products.manage", "inventory.manage"]).query(async () => getCached("admin:products", 30_000, async () => {
