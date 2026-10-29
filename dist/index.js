@@ -752,6 +752,9 @@ import { eq as eq2 } from "drizzle-orm";
 var PERMISSION_KEYS = [
   "overview.view",
   "products.view",
+  "products.add",
+  "products.edit",
+  "products.delete",
   "products.manage",
   "inventory.manage",
   "categories.manage",
@@ -766,12 +769,15 @@ var PERMISSION_KEYS = [
 ];
 var PERMISSION_LABELS = {
   "overview.view": { label: "\u0639\u0631\u0636 \u0627\u0644\u062A\u0642\u0627\u0631\u064A\u0631 \u0648\u0627\u0644\u0625\u062D\u0635\u0627\u0626\u064A\u0627\u062A", group: "\u0627\u0644\u062A\u0642\u0627\u0631\u064A\u0631" },
-  "products.view": { label: "\u0639\u0631\u0636 \u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A", group: "\u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A \u0648\u0627\u0644\u0645\u062E\u0632\u0648\u0646" },
-  "products.manage": { label: "\u0625\u0636\u0627\u0641\u0629 \u0648\u062A\u0639\u062F\u064A\u0644 \u0648\u062D\u0630\u0641 \u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A", group: "\u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A \u0648\u0627\u0644\u0645\u062E\u0632\u0648\u0646" },
-  "inventory.manage": { label: "\u0625\u062F\u0627\u0631\u0629 \u0627\u0644\u0645\u062E\u0632\u0648\u0646 \u0648\u0627\u0644\u0623\u0633\u0639\u0627\u0631", group: "\u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A \u0648\u0627\u0644\u0645\u062E\u0632\u0648\u0646" },
+  "products.view": { label: "\u0639\u0631\u0636 \u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A \u0641\u0642\u0637", group: "\u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A \u0648\u0627\u0644\u0645\u062E\u0632\u0648\u0646" },
+  "products.add": { label: "\u0625\u0636\u0627\u0641\u0629 \u0645\u0646\u062A\u062C\u0627\u062A \u062C\u062F\u064A\u062F\u0629 \u0641\u0642\u0637 (\u0628\u062F\u0648\u0646 \u062D\u0630\u0641)", group: "\u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A \u0648\u0627\u0644\u0645\u062E\u0632\u0648\u0646" },
+  "products.edit": { label: "\u062A\u0639\u062F\u064A\u0644 \u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A \u0648\u0627\u0644\u0623\u0633\u0639\u0627\u0631 (\u0628\u062F\u0648\u0646 \u062D\u0630\u0641)", group: "\u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A \u0648\u0627\u0644\u0645\u062E\u0632\u0648\u0646" },
+  "products.delete": { label: "\u062D\u0630\u0641 \u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A \u0646\u0647\u0627\u0626\u064A\u0627\u064B", group: "\u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A \u0648\u0627\u0644\u0645\u062E\u0632\u0648\u0646", sensitive: true },
+  "products.manage": { label: "\u0625\u062F\u0627\u0631\u0629 \u0643\u0627\u0645\u0644\u0629 \u0644\u0644\u0645\u0646\u062A\u062C\u0627\u062A (\u0625\u0636\u0627\u0641\u0629 \u0648\u062A\u0639\u062F\u064A\u0644 \u0648\u062D\u0630\u0641)", group: "\u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A \u0648\u0627\u0644\u0645\u062E\u0632\u0648\u0646" },
+  "inventory.manage": { label: "\u062A\u062D\u062F\u064A\u062B \u0627\u0644\u0633\u0639\u0631 \u0648\u0627\u0644\u0645\u062E\u0632\u0648\u0646 \u0648\u0627\u0644\u062A\u0648\u0641\u0631 \u0641\u0642\u0637", group: "\u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A \u0648\u0627\u0644\u0645\u062E\u0632\u0648\u0646" },
   "categories.manage": { label: "\u0625\u062F\u0627\u0631\u0629 \u0627\u0644\u0623\u0642\u0633\u0627\u0645 \u0648\u0627\u0644\u062A\u0635\u0646\u064A\u0641\u0627\u062A", group: "\u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A \u0648\u0627\u0644\u0645\u062E\u0632\u0648\u0646" },
   "orders.view": { label: "\u0639\u0631\u0636 \u0627\u0644\u0637\u0644\u0628\u0627\u062A \u0648\u062A\u0635\u062F\u064A\u0631\u0647\u0627", group: "\u0627\u0644\u0637\u0644\u0628\u0627\u062A \u0648\u0627\u0644\u0639\u0645\u0644\u0627\u0621" },
-  "orders.manage": { label: "\u062A\u062D\u062F\u064A\u062B \u062D\u0627\u0644\u0627\u062A \u0627\u0644\u0637\u0644\u0628\u0627\u062A \u0648\u0627\u0644\u062A\u0648\u0635\u064A\u0644", group: "\u0627\u0644\u0637\u0644\u0628\u0627\u062A \u0648\u0627\u0644\u0639\u0645\u0644\u0627\u0621" },
+  "orders.manage": { label: "\u062A\u062D\u062F\u064A\u062B \u062D\u0627\u0644\u0627\u062A \u0627\u0644\u0637\u0644\u0628\u0627\u062A \u0648\u0625\u0644\u063A\u0627\u0621 \u0627\u0644\u0623\u0635\u0646\u0627\u0641 \u0648\u0627\u0644\u062A\u0648\u0635\u064A\u0644", group: "\u0627\u0644\u0637\u0644\u0628\u0627\u062A \u0648\u0627\u0644\u0639\u0645\u0644\u0627\u0621" },
   "customers.view": { label: "\u0639\u0631\u0636 \u0633\u062C\u0644 \u0627\u0644\u0639\u0645\u0644\u0627\u0621", group: "\u0627\u0644\u0637\u0644\u0628\u0627\u062A \u0648\u0627\u0644\u0639\u0645\u0644\u0627\u0621" },
   "chats.manage": { label: "\u0625\u062F\u0627\u0631\u0629 \u0645\u062D\u0627\u062F\u062B\u0627\u062A \u0627\u0644\u0632\u0628\u0627\u0626\u0646 \u0648\u0627\u0644\u0631\u062F \u0627\u0644\u0645\u0628\u0627\u0634\u0631", group: "\u0627\u0644\u0637\u0644\u0628\u0627\u062A \u0648\u0627\u0644\u0639\u0645\u0644\u0627\u0621" },
   "banners.manage": { label: "\u0625\u062F\u0627\u0631\u0629 \u0627\u0644\u0625\u0639\u0644\u0627\u0646\u0627\u062A \u0648\u0627\u0644\u0628\u0646\u0631\u0627\u062A", group: "\u0627\u0644\u0645\u062D\u062A\u0648\u0649 \u0648\u0627\u0644\u0639\u0631\u0648\u0636" },
@@ -799,6 +805,9 @@ var ROLE_DEFINITIONS = {
     defaultPermissions: [
       "overview.view",
       "products.view",
+      "products.add",
+      "products.edit",
+      "products.delete",
       "products.manage",
       "inventory.manage",
       "categories.manage",
@@ -812,18 +821,18 @@ var ROLE_DEFINITIONS = {
   },
   product_manager: {
     label: "\u0645\u062F\u064A\u0631 \u0645\u0646\u062A\u062C\u0627\u062A",
-    description: "\u0625\u0636\u0627\u0641\u0629 \u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A \u0648\u062A\u0639\u062F\u064A\u0644\u0647\u0627 \u0648\u0625\u062F\u0627\u0631\u0629 \u0627\u0644\u0645\u062E\u0632\u0648\u0646 \u0648\u0627\u0644\u0623\u0633\u0639\u0627\u0631 \u0648\u0627\u0644\u062A\u0635\u0646\u064A\u0641\u0627\u062A",
+    description: "\u0625\u0636\u0627\u0641\u0629 \u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A \u0648\u062A\u0639\u062F\u064A\u0644\u0647\u0627 \u0648\u0625\u062F\u0627\u0631\u0629 \u0627\u0644\u0645\u062E\u0632\u0648\u0646 \u0648\u0627\u0644\u0623\u0633\u0639\u0627\u0631 (\u0628\u062F\u0648\u0646 \u062D\u0630\u0641 \u0625\u0644\u0627 \u0628\u062A\u0641\u0648\u064A\u0636)",
     defaultPermissions: [
       "overview.view",
       "products.view",
-      "products.manage",
-      "inventory.manage",
-      "categories.manage"
+      "products.add",
+      "products.edit",
+      "inventory.manage"
     ]
   },
   order_manager: {
     label: "\u0645\u062F\u064A\u0631 \u0637\u0644\u0628\u0627\u062A",
-    description: "\u0639\u0631\u0636 \u0627\u0644\u0637\u0644\u0628\u0627\u062A \u0648\u062A\u062D\u062F\u064A\u062B \u062D\u0627\u0644\u0627\u062A\u0647\u0627 \u0648\u0625\u062F\u0627\u0631\u0629 \u0627\u0644\u062A\u0648\u0635\u064A\u0644 \u0648\u0627\u0644\u0631\u062F \u0639\u0644\u0649 \u0627\u0644\u0632\u0628\u0627\u0626\u0646",
+    description: "\u0639\u0631\u0636 \u0627\u0644\u0637\u0644\u0628\u0627\u062A \u0648\u062A\u062D\u062F\u064A\u062B \u062D\u0627\u0644\u0627\u062A\u0647\u0627 \u0648\u0625\u0644\u063A\u0627\u0621 \u0627\u0644\u0646\u0648\u0627\u0642\u0635 \u0648\u0625\u062F\u0627\u0631\u0629 \u0627\u0644\u062A\u0648\u0635\u064A\u0644 \u0648\u0627\u0644\u0631\u062F \u0639\u0644\u0649 \u0627\u0644\u0632\u0628\u0627\u0626\u0646",
     defaultPermissions: [
       "overview.view",
       "orders.view",
@@ -843,11 +852,11 @@ var ROLE_DEFINITIONS = {
     ]
   },
   staff: {
-    label: "\u0645\u0648\u0638\u0641 / \u0645\u0634\u0631\u0641",
-    description: "\u0635\u0644\u0627\u062D\u064A\u0627\u062A \u0645\u062D\u062F\u0648\u062F\u0629 \u064A\u062D\u062F\u062F\u0647\u0627 \u0645\u0627\u0644\u0643 \u0627\u0644\u0645\u062A\u062C\u0631",
+    label: "\u0645\u0648\u0638\u0641 / \u0645\u0634\u0631\u0641 \u0645\u062E\u0635\u0635",
+    description: "\u0635\u0644\u0627\u062D\u064A\u0627\u062A \u0648\u0623\u0642\u0633\u0627\u0645 \u0645\u062D\u062F\u062F\u0629 \u064A\u062E\u062A\u0627\u0631\u0647\u0627 \u0645\u0627\u0644\u0643 \u0627\u0644\u0645\u062A\u062C\u0631 \u0628\u062F\u0642\u0629",
     defaultPermissions: [
       "products.view",
-      "orders.view"
+      "products.add"
     ]
   }
 };
@@ -863,10 +872,42 @@ function parsePermissionsJson(raw, roleKey) {
     return [...ROLE_DEFINITIONS[roleKey]?.defaultPermissions ?? []];
   }
 }
+function parseAllowedCategoriesJson(raw, roleKey) {
+  if (roleKey === "owner" || !raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    const ids = [];
+    for (const item of parsed) {
+      if (typeof item === "string" && item.startsWith("cat:")) {
+        const n = Number(item.slice(4));
+        if (Number.isInteger(n) && n > 0) ids.push(n);
+      }
+    }
+    return [...new Set(ids)];
+  } catch {
+    return [];
+  }
+}
+function serializePermissionsAndCategories(permissions, allowedCategoryIds) {
+  const uniquePerms = [...new Set(permissions)];
+  const catTags = Array.isArray(allowedCategoryIds) ? [...new Set(allowedCategoryIds.filter((id) => Number.isInteger(id) && id > 0))].map((id) => "cat:" + id) : [];
+  return JSON.stringify([...uniquePerms, ...catTags]);
+}
 function hasPermission(userPermissions, isOwner, required) {
   if (isOwner) return true;
   if (!userPermissions) return false;
-  return userPermissions.includes(required);
+  if (userPermissions.includes(required)) return true;
+  if ((required === "products.view" || required === "products.add" || required === "products.edit" || required === "products.delete" || required === "inventory.manage") && userPermissions.includes("products.manage")) {
+    return true;
+  }
+  if (required === "products.view" && (userPermissions.includes("products.add") || userPermissions.includes("products.edit") || userPermissions.includes("inventory.manage"))) {
+    return true;
+  }
+  if (required === "inventory.manage" && userPermissions.includes("products.edit")) {
+    return true;
+  }
+  return false;
 }
 function canManageTargetStaff(actor, targetRole, requestedPermissions, targetStaffId) {
   if (targetRole === "owner") {
@@ -881,7 +922,7 @@ function canManageTargetStaff(actor, targetRole, requestedPermissions, targetSta
   }
   const actorPerms = new Set(actor.permissions);
   for (const perm of requestedPermissions) {
-    if (!actorPerms.has(perm)) {
+    if (!actorPerms.has(perm) && !hasPermission(actor.permissions, false, perm)) {
       return { allowed: false, reason: "\u0644\u0627 \u064A\u0645\u0643\u0646\u0643 \u0645\u0646\u062D \u0635\u0644\u0627\u062D\u064A\u0629 \u0644\u0627 \u062A\u0645\u0644\u0643\u0647\u0627 \u0641\u064A \u062D\u0633\u0627\u0628\u0643." };
     }
   }
@@ -1138,6 +1179,7 @@ var SDKServer = class {
       }
       const roleKey = staff.roleKey || "staff";
       const perms = parsePermissionsJson(staff.permissionsJson, roleKey);
+      const allowedCategoryIds = parseAllowedCategoriesJson(staff.permissionsJson, roleKey);
       const now = /* @__PURE__ */ new Date();
       return {
         id: linkedUser?.id ?? -1e3 - staff.id,
@@ -1154,6 +1196,7 @@ var SDKServer = class {
         isOwner: false,
         adminRole: roleKey,
         permissions: perms,
+        allowedCategoryIds,
         mustChangePassword: Boolean(staff.mustChangePassword),
         staffId: staff.id,
         staffUsername: staff.username
@@ -1650,7 +1693,15 @@ function recordArabicAdminActivity(ctx, path3, type, rawInput) {
         actionAr = "\u{1F5D1}\uFE0F \u062D\u0630\u0641 \u0642\u0633\u0645";
         targetAr = "\u0642\u0633\u0645 \u0631\u0642\u0645 #" + inp.id;
         detailsAr = "\u0642\u0627\u0645 \u0628\u062D\u0630\u0641 \u0627\u0644\u0642\u0633\u0645 \u0631\u0642\u0645 #" + inp.id;
-      } else if (path3 === "commerce.admin.orders.updateStatus") {
+      } else if (path3 === "commerce.admin.products.bulkAdjustPrices") {
+        actionAr = "\u{1F4B0} \u062A\u0639\u062F\u064A\u0644 \u062C\u0645\u0627\u0639\u064A \u0644\u0623\u0633\u0639\u0627\u0631 \u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A";
+        targetAr = inp.categoryId ? "\u0642\u0633\u0645 \u0631\u0642\u0645 #" + inp.categoryId : "\u0643\u0644 \u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A";
+        detailsAr = "\u0639\u062F\u0651\u0644 \u0627\u0644\u0623\u0633\u0639\u0627\u0631 \u062C\u0645\u0627\u0639\u064A\u0627\u064B (" + (inp.mode === "percent" ? inp.amount + "%" : inp.amount + " \u0631.\u064A") + ")";
+      } else if (path3 === "commerce.admin.orders.removeItem") {
+        actionAr = "\u274C \u0625\u0644\u063A\u0627\u0621 \u0635\u0646\u0641 \u0645\u0646 \u0641\u0627\u062A\u0648\u0631\u0629 \u0637\u0644\u0628";
+        targetAr = "\u0637\u0644\u0628 \u0631\u0642\u0645 #" + inp.orderId;
+        detailsAr = "\u0623\u0644\u063A\u0649 \u0635\u0646\u0641\u0627\u064B \u063A\u064A\u0631 \u0645\u062A\u0648\u0641\u0631 \u0645\u0646 \u0627\u0644\u0637\u0644\u0628 \u0631\u0642\u0645 #" + inp.orderId + " \u2014 \u0627\u0644\u0633\u0628\u0628: " + (inp.reason || "");
+      } else if (path3 === "commerce.admin.orders.updateStatus" || path3 === "commerce.admin.orders.setStatus") {
         actionAr = "\u{1F4E6} \u062A\u062D\u062F\u064A\u062B \u062D\u0627\u0644\u0629 \u0637\u0644\u0628";
         const stAr = ORDER_STATUS_AR[inp.status] || inp.status || "";
         targetAr = "\u0637\u0644\u0628 \u0631\u0642\u0645 #" + inp.id;
@@ -3204,6 +3255,7 @@ var commerceRouter = router({
       isOwner,
       adminRole,
       permissions,
+      allowedCategoryIds: ctx.user?.allowedCategoryIds ?? [],
       mustChangePassword: Boolean(ctx.user?.mustChangePassword),
       staffId: ctx.user?.staffId ?? null,
       staffUsername: ctx.user?.staffUsername ?? null,
@@ -3780,6 +3832,7 @@ var commerceRouter = router({
             roleKey,
             roleLabel: ROLE_DEFINITIONS[roleKey]?.label || row.roleKey,
             permissions: parsePermissionsJson(row.permissionsJson, roleKey),
+            allowedCategoryIds: parseAllowedCategoriesJson(row.permissionsJson, roleKey),
             isActive: row.isActive,
             mustChangePassword: row.mustChangePassword,
             createdBy: row.createdBy,
@@ -3808,6 +3861,7 @@ var commerceRouter = router({
         password: z3.string().min(6).max(128),
         roleKey: z3.enum(["general_manager", "product_manager", "order_manager", "content_manager", "staff"]),
         permissions: z3.array(z3.enum(PERMISSION_KEYS)).max(30),
+        allowedCategoryIds: z3.array(z3.number().int().positive()).max(100).optional(),
         mustChangePassword: z3.boolean().default(true)
       })).mutation(async ({ ctx, input }) => {
         const normalizedUsername = input.username.trim().toLowerCase();
@@ -3838,7 +3892,7 @@ var commerceRouter = router({
           displayName: input.displayName.trim(),
           passwordHash,
           roleKey: input.roleKey,
-          permissionsJson: JSON.stringify(uniquePerms),
+          permissionsJson: serializePermissionsAndCategories(uniquePerms, input.allowedCategoryIds),
           isActive: true,
           mustChangePassword: input.mustChangePassword,
           sessionVersion: 1,
@@ -3860,7 +3914,8 @@ var commerceRouter = router({
         displayName: z3.string().trim().min(2).max(160),
         username: z3.string().trim().min(3).max(120),
         roleKey: z3.enum(["general_manager", "product_manager", "order_manager", "content_manager", "staff"]),
-        permissions: z3.array(z3.enum(PERMISSION_KEYS)).max(30)
+        permissions: z3.array(z3.enum(PERMISSION_KEYS)).max(30),
+        allowedCategoryIds: z3.array(z3.number().int().positive()).max(100).optional()
       })).mutation(async ({ ctx, input }) => {
         const db = await database();
         await ensureRbacTables(db);
@@ -3888,7 +3943,7 @@ var commerceRouter = router({
           displayName: input.displayName.trim(),
           username: normalizedUsername,
           roleKey: input.roleKey,
-          permissionsJson: JSON.stringify(uniquePerms),
+          permissionsJson: serializePermissionsAndCategories(uniquePerms, input.allowedCategoryIds),
           sessionVersion: target.sessionVersion + 1
         }).where(eq4(adminStaff.id, input.id));
         await writeAdminAuditLog({
@@ -4136,31 +4191,21 @@ var commerceRouter = router({
       })
     }),
     products: router({
-      // --- PRODUCT_DELETE_ENDPOINT ---
-      delete: requirePermission("products.manage").use(async ({ next }) => {
-        clearCatalogCache();
-        return next();
-      }).input(z3.object({ id: safeId })).mutation(async ({ input }) => {
+      list: requireAnyPermission(["products.view", "products.add", "products.edit", "products.delete", "products.manage", "inventory.manage"]).query(async ({ ctx }) => {
         const db = await database();
-        await db.transaction(async (tx) => {
-          await tx.delete(productRecommendations).where(or(eq4(productRecommendations.productId, input.id), eq4(productRecommendations.recommendedProductId, input.id)));
-          await tx.delete(favorites).where(eq4(favorites.productId, input.id));
-          await tx.update(orderItems).set({ productId: null }).where(eq4(orderItems.productId, input.id));
-          await tx.delete(products).where(eq4(products.id, input.id));
-        });
-        globalThis.__fastImgCache?.delete("product:" + input.id);
-        clearCatalogCache(input.id);
-        return { success: true };
-      }),
-      list: requireAnyPermission(["products.view", "products.manage", "inventory.manage"]).query(async () => getCached("admin:products", 3e4, async () => {
-        const db = await database();
-        const rows = await db.select().from(products).orderBy(desc(products.updatedAt)).limit(500);
+        const allowedCats = !ctx.user.isOwner && Array.isArray(ctx.user.allowedCategoryIds) && ctx.user.allowedCategoryIds.length > 0 ? ctx.user.allowedCategoryIds : null;
+        const rows = allowedCats ? await db.select().from(products).where(inArray(products.categoryId, allowedCats)).orderBy(desc(products.updatedAt)).limit(500) : await db.select().from(products).orderBy(desc(products.updatedAt)).limit(500);
         return rows.map((r) => toFastImg("product", r));
-      })),
-      create: adminProcedure.use(async ({ next }) => {
-        clearLiveHomeCache();
-        return next();
-      }).input(productInput).mutation(async ({ input }) => {
+      }),
+      create: requireAnyPermission(["products.manage", "products.add"]).use(async ({ next }) => {
+        const res = await next();
+        clearCatalogCache();
+        return res;
+      }).input(productInput).mutation(async ({ ctx, input }) => {
+        const allowedCats = !ctx.user.isOwner && Array.isArray(ctx.user.allowedCategoryIds) && ctx.user.allowedCategoryIds.length > 0 ? ctx.user.allowedCategoryIds : null;
+        if (allowedCats && (!input.categoryId || !allowedCats.includes(input.categoryId))) {
+          throw new TRPCError3({ code: "FORBIDDEN", message: "\u0635\u0644\u0627\u062D\u064A\u062A\u0643 \u0645\u062E\u0635\u0635\u0629 \u0644\u0625\u062F\u0627\u0631\u0629 \u0623\u0642\u0633\u0627\u0645 \u0645\u062D\u062F\u062F\u0629 \u0641\u0642\u0637\u061B \u0627\u062E\u062A\u0631 \u0642\u0633\u0645\u0627\u064B \u0636\u0645\u0646 \u0635\u0644\u0627\u062D\u064A\u0627\u062A\u0643." });
+        }
         const db = await database();
         const result = await db.insert(products).values({ ...input, slug: slugify(input.name), description: input.description ?? null, imageUrl: input.imageUrl ?? null, categoryId: input.categoryId ?? null, stock: input.stock ?? null });
         void (async () => {
@@ -4170,49 +4215,132 @@ var commerceRouter = router({
           } catch {
           }
         })();
-        clearCatalogCache();
         return { id: Number(result[0].insertId) };
       }),
-      update: adminProcedure.use(async ({ next }) => {
-        clearLiveHomeCache();
-        return next();
-      }).input(z3.object({ id: safeId, values: productInput.partial() })).mutation(async ({ input }) => {
+      update: requireAnyPermission(["products.manage", "products.edit", "inventory.manage"]).use(async ({ next }) => {
+        const res = await next();
+        clearCatalogCache();
+        return res;
+      }).input(z3.object({ id: safeId, values: productInput.partial() })).mutation(async ({ ctx, input }) => {
+        const canEditProduct = hasPermission(ctx.user.permissions, ctx.user.isOwner, "products.edit") || hasPermission(ctx.user.permissions, ctx.user.isOwner, "products.manage");
+        if (!canEditProduct) {
+          const allowedKeys = /* @__PURE__ */ new Set(["price", "stock", "isAvailable", "minQuantity", "quantityStep"]);
+          for (const k of Object.keys(input.values)) {
+            if (!allowedKeys.has(k)) throw new TRPCError3({ code: "FORBIDDEN", message: "\u0635\u0644\u0627\u062D\u064A\u062A\u0643 \u062A\u0642\u062A\u0635\u0631 \u0639\u0644\u0649 \u062A\u062D\u062F\u064A\u062B \u0627\u0644\u0633\u0639\u0631 \u0648\u0627\u0644\u0645\u062E\u0632\u0648\u0646 \u0648\u0627\u0644\u062A\u0648\u0641\u0631 \u0641\u0642\u0637." });
+          }
+        }
         const db = await database();
+        const allowedCats = !ctx.user.isOwner && Array.isArray(ctx.user.allowedCategoryIds) && ctx.user.allowedCategoryIds.length > 0 ? ctx.user.allowedCategoryIds : null;
+        if (allowedCats) {
+          const target = (await db.select({ categoryId: products.categoryId }).from(products).where(eq4(products.id, input.id)).limit(1))[0];
+          if (!target || !target.categoryId || !allowedCats.includes(target.categoryId)) {
+            throw new TRPCError3({ code: "FORBIDDEN", message: "\u0644\u0627 \u064A\u0645\u0643\u0646\u0643 \u062A\u0639\u062F\u064A\u0644 \u0645\u0646\u062A\u062C \u062E\u0627\u0631\u062C \u0627\u0644\u0623\u0642\u0633\u0627\u0645 \u0627\u0644\u0645\u062E\u0635\u0635\u0629 \u0644\u0643." });
+          }
+          if (input.values.categoryId !== void 0 && (!input.values.categoryId || !allowedCats.includes(input.values.categoryId))) {
+            throw new TRPCError3({ code: "FORBIDDEN", message: "\u0644\u0627 \u064A\u0645\u0643\u0646\u0643 \u0646\u0642\u0644 \u0627\u0644\u0645\u0646\u062A\u062C \u0625\u0644\u0649 \u0642\u0633\u0645 \u062E\u0627\u0631\u062C \u0635\u0644\u0627\u062D\u064A\u0627\u062A\u0643." });
+          }
+        }
         const cleanVals = { ...input.values };
         if (typeof cleanVals.imageUrl === "string" && cleanVals.imageUrl.startsWith("/api/fast-img/")) delete cleanVals.imageUrl;
         globalThis.__fastImgCache?.delete("product:" + input.id);
         await db.update(products).set(cleanVals).where(eq4(products.id, input.id));
-        clearCatalogCache();
         return { success: true };
       }),
-      archive: adminProcedure.use(async ({ next }) => {
-        clearLiveHomeCache();
-        return next();
-      }).input(z3.object({ id: safeId })).mutation(async ({ input }) => {
+      bulkAdjustPrices: requireAnyPermission(["products.manage", "products.edit", "inventory.manage"]).use(async ({ next }) => {
+        const res = await next();
+        clearCatalogCache();
+        return res;
+      }).input(z3.object({
+        categoryId: z3.number().int().positive().nullable().optional(),
+        mode: z3.enum(["percent", "fixed"]),
+        amount: z3.number().min(-90).max(1e6),
+        roundTo50: z3.boolean().default(true)
+      })).mutation(async ({ ctx, input }) => {
         const db = await database();
+        const allowedCats = !ctx.user.isOwner && Array.isArray(ctx.user.allowedCategoryIds) && ctx.user.allowedCategoryIds.length > 0 ? ctx.user.allowedCategoryIds : null;
+        if (allowedCats && input.categoryId && !allowedCats.includes(input.categoryId)) {
+          throw new TRPCError3({ code: "FORBIDDEN", message: "\u0644\u064A\u0633 \u0644\u062F\u064A\u0643 \u0635\u0644\u0627\u062D\u064A\u0629 \u0644\u062A\u0639\u062F\u064A\u0644 \u0623\u0633\u0639\u0627\u0631 \u0647\u0630\u0627 \u0627\u0644\u0642\u0633\u0645." });
+        }
+        const allRows = await db.select({ id: products.id, price: products.price, categoryId: products.categoryId }).from(products);
+        const targets = allRows.filter((r) => {
+          if (allowedCats && (!r.categoryId || !allowedCats.includes(r.categoryId))) return false;
+          if (input.categoryId && r.categoryId !== input.categoryId) return false;
+          return true;
+        });
+        let updatedCount = 0;
+        for (const row of targets) {
+          let nextPrice = input.mode === "percent" ? Math.round(row.price * (1 + input.amount / 100)) : Math.round(row.price + input.amount);
+          if (input.roundTo50 && nextPrice > 100) {
+            nextPrice = Math.round(nextPrice / 50) * 50;
+          }
+          nextPrice = Math.max(50, nextPrice);
+          if (nextPrice !== row.price) {
+            await db.update(products).set({ price: nextPrice }).where(eq4(products.id, row.id));
+            updatedCount++;
+          }
+        }
+        return { updatedCount };
+      }),
+      archive: requireAnyPermission(["products.manage", "products.edit", "products.delete"]).use(async ({ next }) => {
+        const res = await next();
+        clearCatalogCache();
+        return res;
+      }).input(z3.object({ id: safeId })).mutation(async ({ ctx, input }) => {
+        const db = await database();
+        const allowedCats = !ctx.user.isOwner && Array.isArray(ctx.user.allowedCategoryIds) && ctx.user.allowedCategoryIds.length > 0 ? ctx.user.allowedCategoryIds : null;
+        if (allowedCats) {
+          const target = (await db.select({ categoryId: products.categoryId }).from(products).where(eq4(products.id, input.id)).limit(1))[0];
+          if (!target || !target.categoryId || !allowedCats.includes(target.categoryId)) throw new TRPCError3({ code: "FORBIDDEN", message: "\u0644\u0627 \u064A\u0645\u0643\u0646\u0643 \u062A\u0639\u062F\u064A\u0644 \u0645\u0646\u062A\u062C \u062E\u0627\u0631\u062C \u0627\u0644\u0623\u0642\u0633\u0627\u0645 \u0627\u0644\u0645\u062E\u0635\u0635\u0629 \u0644\u0643." });
+        }
         await db.update(products).set({ isPublished: false, isAvailable: false }).where(eq4(products.id, input.id));
-        clearCatalogCache();
+        clearCatalogCache(input.id);
         return { success: true };
       }),
-      analyzeImage: requirePermission("products.manage").input(z3.object({ imageDataUrl: z3.string().min(20).max(25e5), fileName: z3.string().max(200).optional() })).mutation(async ({ input }) => {
+      // --- PRODUCT_DELETE_ENDPOINT ---
+      delete: requireAnyPermission(["products.manage", "products.delete"]).use(async ({ next }) => {
+        const res = await next();
+        clearCatalogCache();
+        return res;
+      }).input(z3.object({ id: safeId })).mutation(async ({ ctx, input }) => {
         const db = await database();
-        const catRows = await db.select({ id: categories.id, name: categories.name }).from(categories).orderBy(asc(categories.sortOrder));
+        const allowedCats = !ctx.user.isOwner && Array.isArray(ctx.user.allowedCategoryIds) && ctx.user.allowedCategoryIds.length > 0 ? ctx.user.allowedCategoryIds : null;
+        if (allowedCats) {
+          const target = (await db.select({ categoryId: products.categoryId }).from(products).where(eq4(products.id, input.id)).limit(1))[0];
+          if (!target || !target.categoryId || !allowedCats.includes(target.categoryId)) {
+            throw new TRPCError3({ code: "FORBIDDEN", message: "\u0644\u0627 \u064A\u0645\u0643\u0646\u0643 \u062D\u0630\u0641 \u0645\u0646\u062A\u062C \u062E\u0627\u0631\u062C \u0627\u0644\u0623\u0642\u0633\u0627\u0645 \u0627\u0644\u0645\u062E\u0635\u0635\u0629 \u0644\u0643." });
+          }
+        }
+        globalThis.__fastImgCache?.delete("product:" + input.id);
+        await db.transaction(async (tx) => {
+          await tx.delete(productRecommendations).where(or(eq4(productRecommendations.productId, input.id), eq4(productRecommendations.recommendedProductId, input.id)));
+          await tx.delete(favorites).where(eq4(favorites.productId, input.id));
+          await tx.update(orderItems).set({ productId: null }).where(eq4(orderItems.productId, input.id));
+          await tx.delete(products).where(eq4(products.id, input.id));
+        });
+        clearCatalogCache(input.id);
+        return { success: true };
+      }),
+      analyzeImage: requireAnyPermission(["products.manage", "products.add", "products.edit"]).input(z3.object({ imageDataUrl: z3.string().min(20).max(25e5), fileName: z3.string().max(200).optional() })).mutation(async ({ ctx, input }) => {
+        const db = await database();
+        let catRows = await db.select({ id: categories.id, name: categories.name }).from(categories).orderBy(asc(categories.sortOrder));
+        const allowedCats = !ctx.user.isOwner && Array.isArray(ctx.user.allowedCategoryIds) && ctx.user.allowedCategoryIds.length > 0 ? ctx.user.allowedCategoryIds : null;
+        if (allowedCats) catRows = catRows.filter((c) => allowedCats.includes(c.id));
         const res = await analyzeProductImageAI({ imageDataUrl: input.imageDataUrl, fileName: input.fileName, categories: catRows });
-        if (!res.categoryId && res.suggestedCategoryName) {
-          const targetSlug = slugify(res.suggestedCategoryName);
-          const freshCats = await db.select({ id: categories.id, name: categories.name, slug: categories.slug }).from(categories);
-          const existing = freshCats.find((c) => c.name.trim() === res.suggestedCategoryName.trim() || c.slug === targetSlug);
+        if (allowedCats && (!res.categoryId || !allowedCats.includes(res.categoryId))) {
+          res.categoryId = allowedCats[0] ?? null;
+        } else if (!res.categoryId && res.suggestedCategoryName && !allowedCats) {
+          const existing = catRows.find((c) => c.name.trim() === res.suggestedCategoryName.trim());
           if (existing) {
             res.categoryId = existing.id;
           } else {
             try {
               const ins = await db.insert(categories).values({
                 name: res.suggestedCategoryName,
-                slug: targetSlug,
+                slug: slugify(res.suggestedCategoryName),
                 description: "\u0642\u0633\u0645 " + res.suggestedCategoryName,
                 imageUrl: null,
                 isActive: true,
-                sortOrder: freshCats.length
+                sortOrder: catRows.length
               });
               const newId = Number(ins[0]?.insertId || 0);
               if (newId > 0) {
@@ -4220,47 +4348,47 @@ var commerceRouter = router({
                 clearCatalogCache();
               }
             } catch {
-              const retryCats = await db.select({ id: categories.id, name: categories.name, slug: categories.slug }).from(categories);
-              const found = retryCats.find((c) => c.name.trim() === res.suggestedCategoryName.trim() || c.slug === targetSlug);
-              if (found) res.categoryId = found.id;
             }
           }
         }
         return res;
       }),
-      parseBulkText: requirePermission("products.manage").input(z3.object({ rawText: z3.string().min(2).max(12e3) })).mutation(async ({ input }) => {
+      parseBulkText: requireAnyPermission(["products.manage", "products.add", "products.edit"]).input(z3.object({ rawText: z3.string().min(2).max(12e3) })).mutation(async ({ ctx, input }) => {
         const db = await database();
-        const catRows = await db.select({ id: categories.id, name: categories.name }).from(categories).orderBy(asc(categories.sortOrder));
+        let catRows = await db.select({ id: categories.id, name: categories.name }).from(categories).orderBy(asc(categories.sortOrder));
+        const allowedCats = !ctx.user.isOwner && Array.isArray(ctx.user.allowedCategoryIds) && ctx.user.allowedCategoryIds.length > 0 ? ctx.user.allowedCategoryIds : null;
+        if (allowedCats) catRows = catRows.filter((c) => allowedCats.includes(c.id));
         return parseBulkProductsTextAI({ rawText: input.rawText, categories: catRows });
       }),
-      bulkCreate: requirePermission("products.manage").use(async ({ next }) => {
+      bulkCreate: requireAnyPermission(["products.manage", "products.add"]).use(async ({ next }) => {
         const res = await next();
         clearCatalogCache();
         return res;
-      }).input(z3.object({ items: z3.array(productInput).min(1).max(60) })).mutation(async ({ input }) => {
+      }).input(z3.object({ items: z3.array(productInput).min(1).max(60) })).mutation(async ({ ctx, input }) => {
         const db = await database();
+        const allowedCats = !ctx.user.isOwner && Array.isArray(ctx.user.allowedCategoryIds) && ctx.user.allowedCategoryIds.length > 0 ? ctx.user.allowedCategoryIds : null;
         const insertedIds = [];
         for (const item of input.items) {
+          const effectiveCatId = allowedCats ? item.categoryId && allowedCats.includes(item.categoryId) ? item.categoryId : allowedCats[0] : item.categoryId ?? null;
           const result = await db.insert(products).values({
             ...item,
             slug: slugify(item.name),
             description: item.description ?? null,
             imageUrl: item.imageUrl ?? null,
-            categoryId: item.categoryId ?? null,
+            categoryId: effectiveCatId,
             stock: item.stock ?? null
           });
           insertedIds.push(Number(result[0]?.insertId || 0));
         }
         return { count: insertedIds.length, ids: insertedIds };
       }),
-      setRecommendations: requirePermission("products.manage").input(z3.object({ productId: safeId, recommendedIds: z3.array(safeId).max(30) })).mutation(async ({ input }) => {
+      setRecommendations: requireAnyPermission(["products.manage", "products.edit"]).input(z3.object({ productId: safeId, recommendedIds: z3.array(safeId).max(30) })).mutation(async ({ input }) => {
         if (input.recommendedIds.includes(input.productId)) throw new TRPCError3({ code: "BAD_REQUEST", message: "\u0644\u0627 \u064A\u0645\u0643\u0646 \u0627\u0642\u062A\u0631\u0627\u062D \u0627\u0644\u0645\u0646\u062A\u062C \u0646\u0641\u0633\u0647." });
         const db = await database();
         await db.transaction(async (tx) => {
           await tx.delete(productRecommendations).where(eq4(productRecommendations.productId, input.productId));
           if (input.recommendedIds.length) await tx.insert(productRecommendations).values(input.recommendedIds.map((recommendedProductId) => ({ productId: input.productId, recommendedProductId })));
         });
-        clearCatalogCache();
         return { success: true };
       })
     }),
@@ -4277,7 +4405,7 @@ var commerceRouter = router({
         });
         return { success: true };
       }),
-      list: requireAnyPermission(["categories.manage", "products.view", "products.manage"]).query(async () => getCached("admin:categories", 3e4, async () => {
+      list: requireAnyPermission(["categories.manage", "products.view", "products.add", "products.edit", "products.manage"]).query(async () => getCached("admin:categories", 3e4, async () => {
         const db = await database();
         const rows = await db.select().from(categories).orderBy(asc(categories.sortOrder), asc(categories.id));
         return rows.map((r) => toFastImg("category", r));
@@ -4473,6 +4601,61 @@ var commerceRouter = router({
         ]);
         return rows.map((order) => ({ ...order, items: items.filter((item) => item.orderId === order.id), events: events.filter((event) => event.orderId === order.id) }));
       }),
+      removeItem: requirePermission("orders.manage").use(async ({ next }) => {
+        const res = await next();
+        clearCatalogCache();
+        return res;
+      }).input(z3.object({
+        orderId: safeId,
+        itemId: safeId,
+        cancelQty: z3.number().int().min(1).max(1e3).optional(),
+        reason: z3.string().trim().min(1).max(400)
+      })).mutation(async ({ ctx, input }) => {
+        const db = await database();
+        const result = await db.transaction(async (tx) => {
+          const ord = (await tx.select().from(orders).where(eq4(orders.id, input.orderId)).limit(1).for("update"))[0];
+          if (!ord) throw new TRPCError3({ code: "NOT_FOUND", message: "\u0644\u0645 \u064A\u062A\u0645 \u0627\u0644\u0639\u062B\u0648\u0631 \u0639\u0644\u0649 \u0627\u0644\u0637\u0644\u0628." });
+          if (ord.status === "delivered" || ord.status === "cancelled") {
+            throw new TRPCError3({ code: "PRECONDITION_FAILED", message: "\u0644\u0627 \u064A\u0645\u0643\u0646 \u062A\u0639\u062F\u064A\u0644 \u0623\u0635\u0646\u0627\u0641 \u0637\u0644\u0628 \u062A\u0645 \u062A\u0633\u0644\u064A\u0645\u0647 \u0623\u0648 \u0625\u0644\u063A\u0627\u0624\u0647 \u0628\u0627\u0644\u0643\u0627\u0645\u0644." });
+          }
+          const allItems = await tx.select().from(orderItems).where(eq4(orderItems.orderId, input.orderId));
+          const targetItem = allItems.find((it) => it.id === input.itemId);
+          if (!targetItem) throw new TRPCError3({ code: "NOT_FOUND", message: "\u0627\u0644\u0635\u0646\u0641 \u063A\u064A\u0631 \u0645\u0648\u062C\u0648\u062F \u0641\u064A \u0647\u0630\u0647 \u0627\u0644\u0641\u0627\u062A\u0648\u0631\u0629." });
+          const qtyToCancel = input.cancelQty ? Math.min(targetItem.quantity, input.cancelQty) : targetItem.quantity;
+          const isFullCancel = qtyToCancel >= targetItem.quantity;
+          const deductedAmount = isFullCancel ? targetItem.lineTotal : Math.round(targetItem.unitPrice * qtyToCancel);
+          if (targetItem.productId !== null) {
+            const prod = (await tx.select({ stock: products.stock }).from(products).where(eq4(products.id, targetItem.productId)).limit(1).for("update"))[0];
+            if (prod && prod.stock !== null) {
+              await tx.update(products).set({ stock: prod.stock + qtyToCancel }).where(eq4(products.id, targetItem.productId));
+            }
+          }
+          if (isFullCancel) {
+            await tx.delete(orderItems).where(eq4(orderItems.id, targetItem.id));
+          } else {
+            const remainQty = targetItem.quantity - qtyToCancel;
+            const remainLineTotal = Math.max(0, targetItem.lineTotal - deductedAmount);
+            await tx.update(orderItems).set({ quantity: remainQty, lineTotal: remainLineTotal }).where(eq4(orderItems.id, targetItem.id));
+          }
+          const updatedItems = await tx.select().from(orderItems).where(eq4(orderItems.orderId, input.orderId));
+          const newSubtotal = updatedItems.reduce((sum, it) => sum + Number(it.lineTotal || 0), 0);
+          const newStatus = updatedItems.length === 0 ? "cancelled" : ord.status;
+          const newDeliveryFee = updatedItems.length === 0 ? 0 : ord.deliveryFee;
+          const newTotal = updatedItems.length === 0 ? 0 : Math.max(0, newSubtotal + newDeliveryFee - Number(ord.discount || 0));
+          await tx.update(orders).set({ subtotal: newSubtotal, deliveryFee: newDeliveryFee, total: newTotal, status: newStatus }).where(eq4(orders.id, input.orderId));
+          const auditNote = isFullCancel ? "\u274C \u0625\u0644\u063A\u0627\u0621 \u0635\u0646\u0641 \u0645\u0646 \u0627\u0644\u0641\u0627\u062A\u0648\u0631\u0629: \xAB" + targetItem.productName + "\xBB (\u0627\u0644\u0643\u0645\u064A\u0629: " + qtyToCancel + " \xB7 \u062E\u064F\u0635\u0645: " + deductedAmount + " \u0631.\u064A) \u2014 \u0627\u0644\u062A\u0648\u0636\u064A\u062D \u0644\u0644\u0639\u0645\u064A\u0644: " + input.reason + " | \u0627\u0644\u0625\u062C\u0645\u0627\u0644\u064A \u0627\u0644\u062C\u062F\u064A\u062F: " + newTotal + " \u0631.\u064A" : "\u274C \u062A\u0639\u062F\u064A\u0644 \u0643\u0645\u064A\u0629 \u0635\u0646\u0641: \xAB" + targetItem.productName + "\xBB (\u0623\u064F\u0644\u063A\u064A " + qtyToCancel + " \u0648\u0628\u0642\u064A " + (targetItem.quantity - qtyToCancel) + " \xB7 \u062E\u064F\u0635\u0645: " + deductedAmount + " \u0631.\u064A) \u2014 \u0627\u0644\u062A\u0648\u0636\u064A\u062D \u0644\u0644\u0639\u0645\u064A\u0644: " + input.reason + " | \u0627\u0644\u0625\u062C\u0645\u0627\u0644\u064A \u0627\u0644\u062C\u062F\u064A\u062F: " + newTotal + " \u0631.\u064A";
+          await tx.insert(orderEvents).values({
+            orderId: input.orderId,
+            status: newStatus,
+            note: auditNote,
+            changedByUserId: ctx.user.id
+          });
+          return { orderNumber: ord.orderNumber, newStatus, newTotal, deductedAmount, itemName: targetItem.productName, customerNotice: "\u062A\u062D\u062F\u064A\u062B \u0628\u062E\u0635\u0648\u0635 \u0637\u0644\u0628\u0643 " + ord.orderNumber + ": \u062A\u0645 \u0625\u0644\u063A\u0627\u0621 \xAB" + targetItem.productName + "\xBB (" + input.reason + ") \u0648\u062E\u0635\u0645 " + deductedAmount + " \u0631.\u064A \u0645\u0646 \u0627\u0644\u0641\u0627\u062A\u0648\u0631\u0629. \u0627\u0644\u0625\u062C\u0645\u0627\u0644\u064A \u0627\u0644\u062C\u062F\u064A\u062F: " + newTotal + " \u0631.\u064A" };
+        });
+        void notifyCustomerOrderStatus(input.orderId, result.orderNumber, result.newStatus, result.customerNotice).catch(() => {
+        });
+        return result;
+      }),
       sendNote: requirePermission("orders.manage").input(z3.object({ id: safeId, note: z3.string().trim().min(1).max(500) })).mutation(async ({ ctx, input }) => {
         const db = await database();
         const current = (await db.select({ id: orders.id, status: orders.status, orderNumber: orders.orderNumber }).from(orders).where(eq4(orders.id, input.id)).limit(1))[0];
@@ -4542,7 +4725,7 @@ var commerceRouter = router({
         return { success: true };
       })
     }),
-    uploadImage: requireAnyPermission(["products.manage", "categories.manage", "banners.manage", "settings.manage"]).input(z3.object({ dataUrl: z3.string().min(30).max(85e5), kind: z3.enum(["product", "category", "banner", "icon"]) })).mutation(async ({ input }) => {
+    uploadImage: requireAnyPermission(["products.manage", "products.add", "products.edit", "categories.manage", "banners.manage", "settings.manage"]).input(z3.object({ dataUrl: z3.string().min(30).max(85e5), kind: z3.enum(["product", "category", "banner", "icon"]) })).mutation(async ({ input }) => {
       const match = input.dataUrl.match(/^data:(image\/(?:webp|png|jpeg));base64,([A-Za-z0-9+/=]+)$/);
       if (!match) throw new TRPCError3({ code: "BAD_REQUEST", message: "\u0635\u064A\u063A\u0629 \u0627\u0644\u0635\u0648\u0631\u0629 \u063A\u064A\u0631 \u0645\u062F\u0639\u0648\u0645\u0629. \u0627\u0633\u062A\u062E\u062F\u0645 WEBP \u0623\u0648 PNG \u0623\u0648 JPEG." });
       return { imageUrl: input.dataUrl };

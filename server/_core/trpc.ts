@@ -113,7 +113,15 @@ function recordArabicAdminActivity(ctx: TrpcContext, path: string, type: string,
         actionAr = "🗑️ حذف قسم";
         targetAr = "قسم رقم #" + inp.id;
         detailsAr = "قام بحذف القسم رقم #" + inp.id;
-      } else if (path === "commerce.admin.orders.updateStatus") {
+      } else if (path === "commerce.admin.products.bulkAdjustPrices") {
+        actionAr = "💰 تعديل جماعي لأسعار المنتجات";
+        targetAr = inp.categoryId ? ("قسم رقم #" + inp.categoryId) : "كل المنتجات";
+        detailsAr = "عدّل الأسعار جماعياً (" + (inp.mode === "percent" ? (inp.amount + "%") : (inp.amount + " ر.ي")) + ")";
+      } else if (path === "commerce.admin.orders.removeItem") {
+        actionAr = "❌ إلغاء صنف من فاتورة طلب";
+        targetAr = "طلب رقم #" + inp.orderId;
+        detailsAr = "ألغى صنفاً غير متوفر من الطلب رقم #" + inp.orderId + " — السبب: " + (inp.reason || "");
+      } else if (path === "commerce.admin.orders.updateStatus" || path === "commerce.admin.orders.setStatus") {
         actionAr = "📦 تحديث حالة طلب";
         const stAr = ORDER_STATUS_AR[inp.status] || inp.status || "";
         targetAr = "طلب رقم #" + inp.id;

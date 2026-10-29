@@ -1,6 +1,9 @@
 export const PERMISSION_KEYS = [
   "overview.view",
   "products.view",
+  "products.add",
+  "products.edit",
+  "products.delete",
   "products.manage",
   "inventory.manage",
   "categories.manage",
@@ -18,12 +21,15 @@ export type PermissionKey = (typeof PERMISSION_KEYS)[number];
 
 export const PERMISSION_LABELS: Record<PermissionKey, { label: string; group: string; sensitive?: boolean }> = {
   "overview.view": { label: "عرض التقارير والإحصائيات", group: "التقارير" },
-  "products.view": { label: "عرض المنتجات", group: "المنتجات والمخزون" },
-  "products.manage": { label: "إضافة وتعديل وحذف المنتجات", group: "المنتجات والمخزون" },
-  "inventory.manage": { label: "إدارة المخزون والأسعار", group: "المنتجات والمخزون" },
+  "products.view": { label: "عرض المنتجات فقط", group: "المنتجات والمخزون" },
+  "products.add": { label: "إضافة منتجات جديدة فقط (بدون حذف)", group: "المنتجات والمخزون" },
+  "products.edit": { label: "تعديل المنتجات والأسعار (بدون حذف)", group: "المنتجات والمخزون" },
+  "products.delete": { label: "حذف المنتجات نهائياً", group: "المنتجات والمخزون", sensitive: true },
+  "products.manage": { label: "إدارة كاملة للمنتجات (إضافة وتعديل وحذف)", group: "المنتجات والمخزون" },
+  "inventory.manage": { label: "تحديث السعر والمخزون والتوفر فقط", group: "المنتجات والمخزون" },
   "categories.manage": { label: "إدارة الأقسام والتصنيفات", group: "المنتجات والمخزون" },
   "orders.view": { label: "عرض الطلبات وتصديرها", group: "الطلبات والعملاء" },
-  "orders.manage": { label: "تحديث حالات الطلبات والتوصيل", group: "الطلبات والعملاء" },
+  "orders.manage": { label: "تحديث حالات الطلبات وإلغاء الأصناف والتوصيل", group: "الطلبات والعملاء" },
   "customers.view": { label: "عرض سجل العملاء", group: "الطلبات والعملاء" },
   "chats.manage": { label: "إدارة محادثات الزبائن والرد المباشر", group: "الطلبات والعملاء" },
   "banners.manage": { label: "إدارة الإعلانات والبنرات", group: "المحتوى والعروض" },
@@ -53,21 +59,21 @@ export const ROLE_DEFINITIONS: Record<AdminRoleKey, { label: string; description
     label: "مدير عام",
     description: "إدارة العمليات اليومية للمتجر والمنتجات والطلبات والعروض",
     defaultPermissions: [
-      "overview.view", "products.view", "products.manage", "inventory.manage",
+      "overview.view", "products.view", "products.add", "products.edit", "products.delete", "products.manage", "inventory.manage",
       "categories.manage", "orders.view", "orders.manage", "banners.manage",
       "offers.manage", "customers.view", "chats.manage",
     ],
   },
   product_manager: {
     label: "مدير منتجات",
-    description: "إضافة المنتجات وتعديلها وإدارة المخزون والأسعار والتصنيفات",
+    description: "إضافة المنتجات وتعديلها وإدارة المخزون والأسعار (بدون حذف إلا بتفويض)",
     defaultPermissions: [
-      "overview.view", "products.view", "products.manage", "inventory.manage", "categories.manage",
+      "overview.view", "products.view", "products.add", "products.edit", "inventory.manage",
     ],
   },
   order_manager: {
     label: "مدير طلبات",
-    description: "عرض الطلبات وتحديث حالاتها وإدارة التوصيل والرد على الزبائن",
+    description: "عرض الطلبات وتحديث حالاتها وإلغاء النواقص وإدارة التوصيل والرد على الزبائن",
     defaultPermissions: [
       "overview.view", "orders.view", "orders.manage", "customers.view", "chats.manage",
     ],
@@ -80,10 +86,10 @@ export const ROLE_DEFINITIONS: Record<AdminRoleKey, { label: string; description
     ],
   },
   staff: {
-    label: "موظف / مشرف",
-    description: "صلاحيات محدودة يحددها مالك المتجر",
+    label: "موظف / مشرف مخصص",
+    description: "صلاحيات وأقسام محددة يختارها مالك المتجر بدقة",
     defaultPermissions: [
-      "products.view", "orders.view",
+      "products.view", "products.add",
     ],
   },
 };
@@ -101,10 +107,55 @@ export function parsePermissionsJson(raw: string | null | undefined, roleKey: Ad
   }
 }
 
+export function parseAllowedCategoriesJson(raw: string | null | undefined, roleKey?: AdminRoleKey | null): number[] {
+  if (roleKey === "owner" || !raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    const ids: number[] = [];
+    for (const item of parsed) {
+      if (typeof item === "string" && item.startsWith("cat:")) {
+        const n = Number(item.slice(4));
+        if (Number.isInteger(n) && n > 0) ids.push(n);
+      }
+    }
+    return [...new Set(ids)];
+  } catch {
+    return [];
+  }
+}
+
+export function serializePermissionsAndCategories(
+  permissions: readonly PermissionKey[],
+  allowedCategoryIds?: readonly number[] | null,
+): string {
+  const uniquePerms = [...new Set(permissions)];
+  const catTags = Array.isArray(allowedCategoryIds)
+    ? [...new Set(allowedCategoryIds.filter(id => Number.isInteger(id) && id > 0))].map(id => "cat:" + id)
+    : [];
+  return JSON.stringify([...uniquePerms, ...catTags]);
+}
+
 export function hasPermission(userPermissions: readonly string[] | undefined, isOwner: boolean | undefined, required: PermissionKey): boolean {
   if (isOwner) return true;
   if (!userPermissions) return false;
-  return userPermissions.includes(required);
+  if (userPermissions.includes(required)) return true;
+  if (
+    (required === "products.view" || required === "products.add" || required === "products.edit" || required === "products.delete" || required === "inventory.manage") &&
+    userPermissions.includes("products.manage")
+  ) {
+    return true;
+  }
+  if (
+    required === "products.view" &&
+    (userPermissions.includes("products.add") || userPermissions.includes("products.edit") || userPermissions.includes("inventory.manage"))
+  ) {
+    return true;
+  }
+  if (required === "inventory.manage" && userPermissions.includes("products.edit")) {
+    return true;
+  }
+  return false;
 }
 
 export function canManageTargetStaff(
@@ -125,7 +176,7 @@ export function canManageTargetStaff(
   }
   const actorPerms = new Set(actor.permissions);
   for (const perm of requestedPermissions) {
-    if (!actorPerms.has(perm)) {
+    if (!actorPerms.has(perm) && !hasPermission(actor.permissions, false, perm)) {
       return { allowed: false, reason: "لا يمكنك منح صلاحية لا تملكها في حسابك." };
     }
   }

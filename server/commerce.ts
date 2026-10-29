@@ -30,7 +30,7 @@ import {
 } from "../drizzle/schema";
 import { adminAuditLogs, adminStaff } from "../drizzle/schema";
 import { adminProcedure, protectedProcedure, publicProcedure, requireAnyPermission, requirePermission, router } from "./_core/trpc";
-import { PERMISSION_KEYS, PERMISSION_LABELS, ROLE_DEFINITIONS, ROLE_KEYS, canManageTargetStaff, hasPermission, parsePermissionsJson, type AdminRoleKey, type PermissionKey } from "@shared/rbac";
+import { PERMISSION_KEYS, PERMISSION_LABELS, ROLE_DEFINITIONS, ROLE_KEYS, canManageTargetStaff, hasPermission, parseAllowedCategoriesJson, parsePermissionsJson, serializePermissionsAndCategories, type AdminRoleKey, type PermissionKey } from "@shared/rbac";
 import { ensureRbacTables, getClientIp, hashAdminPassword, verifyAdminPassword, writeAdminAuditLog } from "./_core/adminAuth";
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
@@ -696,6 +696,7 @@ export const commerceRouter = router({
       isOwner,
       adminRole,
       permissions,
+      allowedCategoryIds: ctx.user?.allowedCategoryIds ?? [],
       mustChangePassword: Boolean(ctx.user?.mustChangePassword),
       staffId: ctx.user?.staffId ?? null,
       staffUsername: ctx.user?.staffUsername ?? null,
@@ -1265,6 +1266,7 @@ export const commerceRouter = router({
             roleKey,
             roleLabel: ROLE_DEFINITIONS[roleKey]?.label || row.roleKey,
             permissions: parsePermissionsJson(row.permissionsJson, roleKey),
+            allowedCategoryIds: parseAllowedCategoriesJson(row.permissionsJson, roleKey),
             isActive: row.isActive,
             mustChangePassword: row.mustChangePassword,
             createdBy: row.createdBy,
@@ -1293,6 +1295,7 @@ export const commerceRouter = router({
         password: z.string().min(6).max(128),
         roleKey: z.enum(["general_manager", "product_manager", "order_manager", "content_manager", "staff"]),
         permissions: z.array(z.enum(PERMISSION_KEYS)).max(30),
+        allowedCategoryIds: z.array(z.number().int().positive()).max(100).optional(),
         mustChangePassword: z.boolean().default(true),
       })).mutation(async ({ ctx, input }) => {
         const normalizedUsername = input.username.trim().toLowerCase();
@@ -1323,7 +1326,7 @@ export const commerceRouter = router({
           displayName: input.displayName.trim(),
           passwordHash,
           roleKey: input.roleKey,
-          permissionsJson: JSON.stringify(uniquePerms),
+          permissionsJson: serializePermissionsAndCategories(uniquePerms, input.allowedCategoryIds),
           isActive: true,
           mustChangePassword: input.mustChangePassword,
           sessionVersion: 1,
@@ -1346,6 +1349,7 @@ export const commerceRouter = router({
         username: z.string().trim().min(3).max(120),
         roleKey: z.enum(["general_manager", "product_manager", "order_manager", "content_manager", "staff"]),
         permissions: z.array(z.enum(PERMISSION_KEYS)).max(30),
+        allowedCategoryIds: z.array(z.number().int().positive()).max(100).optional(),
       })).mutation(async ({ ctx, input }) => {
         const db = await database();
         await ensureRbacTables(db);
@@ -1373,7 +1377,7 @@ export const commerceRouter = router({
           displayName: input.displayName.trim(),
           username: normalizedUsername,
           roleKey: input.roleKey,
-          permissionsJson: JSON.stringify(uniquePerms),
+          permissionsJson: serializePermissionsAndCategories(uniquePerms, input.allowedCategoryIds),
           sessionVersion: target.sessionVersion + 1,
         }).where(eq(adminStaff.id, input.id));
         await writeAdminAuditLog({
@@ -1620,24 +1624,19 @@ export const commerceRouter = router({
       }),
     }),
     products: router({
-      // --- PRODUCT_DELETE_ENDPOINT ---
-      delete: requirePermission("products.manage").use(async ({ next }) => { clearCatalogCache(); return next(); }).input(z.object({ id: safeId })).mutation(async ({ input }) => {
+      list: requireAnyPermission(["products.view", "products.add", "products.edit", "products.delete", "products.manage", "inventory.manage"]).query(async ({ ctx }) => {
         const db = await database();
-        await db.transaction(async tx => {
-          await tx.delete(productRecommendations).where(or(eq(productRecommendations.productId, input.id), eq(productRecommendations.recommendedProductId, input.id)));
-          await tx.delete(favorites).where(eq(favorites.productId, input.id));
-          await tx.update(orderItems).set({ productId: null }).where(eq(orderItems.productId, input.id));
-          await tx.delete(products).where(eq(products.id, input.id));
-        });
-        (globalThis as any).__fastImgCache?.delete("product:" + input.id);
-        clearCatalogCache(input.id);
-        return { success: true };
+        const allowedCats = (!ctx.user.isOwner && Array.isArray(ctx.user.allowedCategoryIds) && ctx.user.allowedCategoryIds.length > 0) ? ctx.user.allowedCategoryIds : null;
+        const rows = allowedCats
+          ? await db.select().from(products).where(inArray(products.categoryId, allowedCats)).orderBy(desc(products.updatedAt)).limit(500)
+          : await db.select().from(products).orderBy(desc(products.updatedAt)).limit(500);
+        return rows.map(r => toFastImg("product", r));
       }),
-      list: requireAnyPermission(["products.view", "products.manage", "inventory.manage"]).query(async () => getCached("admin:products", 30_000, async () => {
-        const db = await database();
-        const rows = await db.select().from(products).orderBy(desc(products.updatedAt)).limit(500); return rows.map(r => toFastImg("product", r));
-      })),
-      create: adminProcedure.use(async ({ next }) => { clearLiveHomeCache(); return next(); }).input(productInput).mutation(async ({ input }) => {
+      create: requireAnyPermission(["products.manage", "products.add"]).use(async ({ next }) => { const res = await next(); clearCatalogCache(); return res; }).input(productInput).mutation(async ({ ctx, input }) => {
+        const allowedCats = (!ctx.user.isOwner && Array.isArray(ctx.user.allowedCategoryIds) && ctx.user.allowedCategoryIds.length > 0) ? ctx.user.allowedCategoryIds : null;
+        if (allowedCats && (!input.categoryId || !allowedCats.includes(input.categoryId))) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "صلاحيتك مخصصة لإدارة أقسام محددة فقط؛ اختر قسماً ضمن صلاحياتك." });
+        }
         const db = await database();
         const result = await db.insert(products).values({ ...input, slug: slugify(input.name), description: input.description ?? null, imageUrl: input.imageUrl ?? null, categoryId: input.categoryId ?? null, stock: input.stock ?? null });
         void (async () => {
@@ -1646,88 +1645,168 @@ export const commerceRouter = router({
             await generateAndCacheProductAiRecipe(input.name, allRows as AssistantCatalogProduct[]);
           } catch {}
         })();
-        clearCatalogCache(); return { id: Number(result[0].insertId) };
+        return { id: Number(result[0].insertId) };
       }),
-      update: adminProcedure.use(async ({ next }) => { clearLiveHomeCache(); return next(); }).input(z.object({ id: safeId, values: productInput.partial() })).mutation(async ({ input }) => {
+      update: requireAnyPermission(["products.manage", "products.edit", "inventory.manage"]).use(async ({ next }) => { const res = await next(); clearCatalogCache(); return res; }).input(z.object({ id: safeId, values: productInput.partial() })).mutation(async ({ ctx, input }) => {
+        const canEditProduct = hasPermission(ctx.user.permissions, ctx.user.isOwner, "products.edit") || hasPermission(ctx.user.permissions, ctx.user.isOwner, "products.manage");
+        if (!canEditProduct) {
+          const allowedKeys = new Set(["price", "stock", "isAvailable", "minQuantity", "quantityStep"]);
+          for (const k of Object.keys(input.values)) {
+            if (!allowedKeys.has(k)) throw new TRPCError({ code: "FORBIDDEN", message: "صلاحيتك تقتصر على تحديث السعر والمخزون والتوفر فقط." });
+          }
+        }
         const db = await database();
+        const allowedCats = (!ctx.user.isOwner && Array.isArray(ctx.user.allowedCategoryIds) && ctx.user.allowedCategoryIds.length > 0) ? ctx.user.allowedCategoryIds : null;
+        if (allowedCats) {
+          const target = (await db.select({ categoryId: products.categoryId }).from(products).where(eq(products.id, input.id)).limit(1))[0];
+          if (!target || !target.categoryId || !allowedCats.includes(target.categoryId)) {
+            throw new TRPCError({ code: "FORBIDDEN", message: "لا يمكنك تعديل منتج خارج الأقسام المخصصة لك." });
+          }
+          if (input.values.categoryId !== undefined && (!input.values.categoryId || !allowedCats.includes(input.values.categoryId))) {
+            throw new TRPCError({ code: "FORBIDDEN", message: "لا يمكنك نقل المنتج إلى قسم خارج صلاحياتك." });
+          }
+        }
         const cleanVals = { ...input.values }; if (typeof cleanVals.imageUrl === "string" && cleanVals.imageUrl.startsWith("/api/fast-img/")) delete cleanVals.imageUrl; (globalThis as any).__fastImgCache?.delete("product:" + input.id); await db.update(products).set(cleanVals).where(eq(products.id, input.id));
-        clearCatalogCache(); return { success: true };
+        return { success: true };
       }),
-      archive: adminProcedure.use(async ({ next }) => { clearLiveHomeCache(); return next(); }).input(z.object({ id: safeId })).mutation(async ({ input }) => {
+      bulkAdjustPrices: requireAnyPermission(["products.manage", "products.edit", "inventory.manage"]).use(async ({ next }) => { const res = await next(); clearCatalogCache(); return res; }).input(z.object({
+        categoryId: z.number().int().positive().nullable().optional(),
+        mode: z.enum(["percent", "fixed"]),
+        amount: z.number().min(-90).max(1000000),
+        roundTo50: z.boolean().default(true),
+      })).mutation(async ({ ctx, input }) => {
         const db = await database();
-        await db.update(products).set({ isPublished: false, isAvailable: false }).where(eq(products.id, input.id));
-        clearCatalogCache(); return { success: true };
+        const allowedCats = (!ctx.user.isOwner && Array.isArray(ctx.user.allowedCategoryIds) && ctx.user.allowedCategoryIds.length > 0) ? ctx.user.allowedCategoryIds : null;
+        if (allowedCats && input.categoryId && !allowedCats.includes(input.categoryId)) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "ليس لديك صلاحية لتعديل أسعار هذا القسم." });
+        }
+        const allRows = await db.select({ id: products.id, price: products.price, categoryId: products.categoryId }).from(products);
+        const targets = allRows.filter(r => {
+          if (allowedCats && (!r.categoryId || !allowedCats.includes(r.categoryId))) return false;
+          if (input.categoryId && r.categoryId !== input.categoryId) return false;
+          return true;
+        });
+        let updatedCount = 0;
+        for (const row of targets) {
+          let nextPrice = input.mode === "percent"
+            ? Math.round(row.price * (1 + input.amount / 100))
+            : Math.round(row.price + input.amount);
+          if (input.roundTo50 && nextPrice > 100) {
+            nextPrice = Math.round(nextPrice / 50) * 50;
+          }
+          nextPrice = Math.max(50, nextPrice);
+          if (nextPrice !== row.price) {
+            await db.update(products).set({ price: nextPrice }).where(eq(products.id, row.id));
+            updatedCount++;
+          }
+        }
+        return { updatedCount };
       }),
-      analyzeImage: requirePermission("products.manage")
+      archive: requireAnyPermission(["products.manage", "products.edit", "products.delete"]).use(async ({ next }) => { const res = await next(); clearCatalogCache(); return res; }).input(z.object({ id: safeId })).mutation(async ({ ctx, input }) => {
+        const db = await database();
+        const allowedCats = (!ctx.user.isOwner && Array.isArray(ctx.user.allowedCategoryIds) && ctx.user.allowedCategoryIds.length > 0) ? ctx.user.allowedCategoryIds : null;
+        if (allowedCats) {
+          const target = (await db.select({ categoryId: products.categoryId }).from(products).where(eq(products.id, input.id)).limit(1))[0];
+          if (!target || !target.categoryId || !allowedCats.includes(target.categoryId)) throw new TRPCError({ code: "FORBIDDEN", message: "لا يمكنك تعديل منتج خارج الأقسام المخصصة لك." });
+        }
+        await db.update(products).set({ isPublished: false, isAvailable: false }).where(eq(products.id, input.id));
+        clearCatalogCache(input.id);
+        return { success: true };
+      }),
+      // --- PRODUCT_DELETE_ENDPOINT ---
+      delete: requireAnyPermission(["products.manage", "products.delete"]).use(async ({ next }) => { const res = await next(); clearCatalogCache(); return res; }).input(z.object({ id: safeId })).mutation(async ({ ctx, input }) => {
+        const db = await database();
+        const allowedCats = (!ctx.user.isOwner && Array.isArray(ctx.user.allowedCategoryIds) && ctx.user.allowedCategoryIds.length > 0) ? ctx.user.allowedCategoryIds : null;
+        if (allowedCats) {
+          const target = (await db.select({ categoryId: products.categoryId }).from(products).where(eq(products.id, input.id)).limit(1))[0];
+          if (!target || !target.categoryId || !allowedCats.includes(target.categoryId)) {
+            throw new TRPCError({ code: "FORBIDDEN", message: "لا يمكنك حذف منتج خارج الأقسام المخصصة لك." });
+          }
+        }
+        (globalThis as any).__fastImgCache?.delete("product:" + input.id);
+        await db.transaction(async tx => {
+          await tx.delete(productRecommendations).where(or(eq(productRecommendations.productId, input.id), eq(productRecommendations.recommendedProductId, input.id)));
+          await tx.delete(favorites).where(eq(favorites.productId, input.id));
+          await tx.update(orderItems).set({ productId: null }).where(eq(orderItems.productId, input.id));
+          await tx.delete(products).where(eq(products.id, input.id));
+        });
+        clearCatalogCache(input.id);
+        return { success: true };
+      }),
+      analyzeImage: requireAnyPermission(["products.manage", "products.add", "products.edit"])
         .input(z.object({ imageDataUrl: z.string().min(20).max(2_500_000), fileName: z.string().max(200).optional() }))
-        .mutation(async ({ input }) => {
+        .mutation(async ({ ctx, input }) => {
           const db = await database();
-          const catRows = await db.select({ id: categories.id, name: categories.name }).from(categories).orderBy(asc(categories.sortOrder));
+          let catRows = await db.select({ id: categories.id, name: categories.name }).from(categories).orderBy(asc(categories.sortOrder));
+          const allowedCats = (!ctx.user.isOwner && Array.isArray(ctx.user.allowedCategoryIds) && ctx.user.allowedCategoryIds.length > 0) ? ctx.user.allowedCategoryIds : null;
+          if (allowedCats) catRows = catRows.filter(c => allowedCats.includes(c.id));
           const res = await analyzeProductImageAI({ imageDataUrl: input.imageDataUrl, fileName: input.fileName, categories: catRows });
-          if (!res.categoryId && res.suggestedCategoryName) {
-            const targetSlug = slugify(res.suggestedCategoryName);
-            const freshCats = await db.select({ id: categories.id, name: categories.name, slug: categories.slug }).from(categories);
-            const existing = freshCats.find(c => c.name.trim() === res.suggestedCategoryName!.trim() || c.slug === targetSlug);
+          if (allowedCats && (!res.categoryId || !allowedCats.includes(res.categoryId))) {
+            res.categoryId = allowedCats[0] ?? null;
+          } else if (!res.categoryId && res.suggestedCategoryName && !allowedCats) {
+            const existing = catRows.find(c => c.name.trim() === res.suggestedCategoryName!.trim());
             if (existing) {
               res.categoryId = existing.id;
             } else {
               try {
                 const ins = await db.insert(categories).values({
                   name: res.suggestedCategoryName,
-                  slug: targetSlug,
+                  slug: slugify(res.suggestedCategoryName),
                   description: "قسم " + res.suggestedCategoryName,
                   imageUrl: null,
                   isActive: true,
-                  sortOrder: freshCats.length,
+                  sortOrder: catRows.length,
                 });
                 const newId = Number(ins[0]?.insertId || 0);
                 if (newId > 0) {
                   res.categoryId = newId;
                   clearCatalogCache();
                 }
-              } catch {
-                const retryCats = await db.select({ id: categories.id, name: categories.name, slug: categories.slug }).from(categories);
-                const found = retryCats.find(c => c.name.trim() === res.suggestedCategoryName!.trim() || c.slug === targetSlug);
-                if (found) res.categoryId = found.id;
-              }
+              } catch {}
             }
           }
           return res;
         }),
-      parseBulkText: requirePermission("products.manage")
+      parseBulkText: requireAnyPermission(["products.manage", "products.add", "products.edit"])
         .input(z.object({ rawText: z.string().min(2).max(12000) }))
-        .mutation(async ({ input }) => {
+        .mutation(async ({ ctx, input }) => {
           const db = await database();
-          const catRows = await db.select({ id: categories.id, name: categories.name }).from(categories).orderBy(asc(categories.sortOrder));
+          let catRows = await db.select({ id: categories.id, name: categories.name }).from(categories).orderBy(asc(categories.sortOrder));
+          const allowedCats = (!ctx.user.isOwner && Array.isArray(ctx.user.allowedCategoryIds) && ctx.user.allowedCategoryIds.length > 0) ? ctx.user.allowedCategoryIds : null;
+          if (allowedCats) catRows = catRows.filter(c => allowedCats.includes(c.id));
           return parseBulkProductsTextAI({ rawText: input.rawText, categories: catRows });
         }),
-      bulkCreate: requirePermission("products.manage")
+      bulkCreate: requireAnyPermission(["products.manage", "products.add"])
         .use(async ({ next }) => { const res = await next(); clearCatalogCache(); return res; })
         .input(z.object({ items: z.array(productInput).min(1).max(60) }))
-        .mutation(async ({ input }) => {
+        .mutation(async ({ ctx, input }) => {
           const db = await database();
+          const allowedCats = (!ctx.user.isOwner && Array.isArray(ctx.user.allowedCategoryIds) && ctx.user.allowedCategoryIds.length > 0) ? ctx.user.allowedCategoryIds : null;
           const insertedIds: number[] = [];
           for (const item of input.items) {
+            const effectiveCatId = allowedCats
+              ? (item.categoryId && allowedCats.includes(item.categoryId) ? item.categoryId : allowedCats[0])
+              : (item.categoryId ?? null);
             const result = await db.insert(products).values({
               ...item,
               slug: slugify(item.name),
               description: item.description ?? null,
               imageUrl: item.imageUrl ?? null,
-              categoryId: item.categoryId ?? null,
+              categoryId: effectiveCatId,
               stock: item.stock ?? null,
             });
             insertedIds.push(Number(result[0]?.insertId || 0));
           }
           return { count: insertedIds.length, ids: insertedIds };
         }),
-      setRecommendations: requirePermission("products.manage").input(z.object({ productId: safeId, recommendedIds: z.array(safeId).max(30) })).mutation(async ({ input }) => {
+      setRecommendations: requireAnyPermission(["products.manage", "products.edit"]).input(z.object({ productId: safeId, recommendedIds: z.array(safeId).max(30) })).mutation(async ({ input }) => {
         if (input.recommendedIds.includes(input.productId)) throw new TRPCError({ code: "BAD_REQUEST", message: "لا يمكن اقتراح المنتج نفسه." });
         const db = await database();
         await db.transaction(async tx => {
           await tx.delete(productRecommendations).where(eq(productRecommendations.productId, input.productId));
           if (input.recommendedIds.length) await tx.insert(productRecommendations).values(input.recommendedIds.map(recommendedProductId => ({ productId: input.productId, recommendedProductId })));
         });
-        clearCatalogCache(); return { success: true };
+        return { success: true };
       }),
     }),
     categories: router({
@@ -1740,7 +1819,7 @@ export const commerceRouter = router({
         });
         return { success: true };
       }),
-      list: requireAnyPermission(["categories.manage", "products.view", "products.manage"]).query(async () => getCached("admin:categories", 30_000, async () => {
+      list: requireAnyPermission(["categories.manage", "products.view", "products.add", "products.edit", "products.manage"]).query(async () => getCached("admin:categories", 30_000, async () => {
         const db = await database();
         const rows = await db.select().from(categories).orderBy(asc(categories.sortOrder), asc(categories.id)); return rows.map(r => toFastImg("category", r));
       })),
@@ -1897,6 +1976,58 @@ export const commerceRouter = router({
         ]);
         return rows.map(order => ({ ...order, items: items.filter(item => item.orderId === order.id), events: events.filter(event => event.orderId === order.id) }));
       }),
+      removeItem: requirePermission("orders.manage").use(async ({ next }) => { const res = await next(); clearCatalogCache(); return res; }).input(z.object({
+        orderId: safeId,
+        itemId: safeId,
+        cancelQty: z.number().int().min(1).max(1000).optional(),
+        reason: z.string().trim().min(1).max(400),
+      })).mutation(async ({ ctx, input }) => {
+        const db = await database();
+        const result = await db.transaction(async tx => {
+          const ord = (await tx.select().from(orders).where(eq(orders.id, input.orderId)).limit(1).for("update"))[0];
+          if (!ord) throw new TRPCError({ code: "NOT_FOUND", message: "لم يتم العثور على الطلب." });
+          if (ord.status === "delivered" || ord.status === "cancelled") {
+            throw new TRPCError({ code: "PRECONDITION_FAILED", message: "لا يمكن تعديل أصناف طلب تم تسليمه أو إلغاؤه بالكامل." });
+          }
+          const allItems = await tx.select().from(orderItems).where(eq(orderItems.orderId, input.orderId));
+          const targetItem = allItems.find(it => it.id === input.itemId);
+          if (!targetItem) throw new TRPCError({ code: "NOT_FOUND", message: "الصنف غير موجود في هذه الفاتورة." });
+          const qtyToCancel = input.cancelQty ? Math.min(targetItem.quantity, input.cancelQty) : targetItem.quantity;
+          const isFullCancel = qtyToCancel >= targetItem.quantity;
+          const deductedAmount = isFullCancel ? targetItem.lineTotal : Math.round(targetItem.unitPrice * qtyToCancel);
+          if (targetItem.productId !== null) {
+            const prod = (await tx.select({ stock: products.stock }).from(products).where(eq(products.id, targetItem.productId)).limit(1).for("update"))[0];
+            if (prod && prod.stock !== null) {
+              await tx.update(products).set({ stock: prod.stock + qtyToCancel }).where(eq(products.id, targetItem.productId));
+            }
+          }
+          if (isFullCancel) {
+            await tx.delete(orderItems).where(eq(orderItems.id, targetItem.id));
+          } else {
+            const remainQty = targetItem.quantity - qtyToCancel;
+            const remainLineTotal = Math.max(0, targetItem.lineTotal - deductedAmount);
+            await tx.update(orderItems).set({ quantity: remainQty, lineTotal: remainLineTotal }).where(eq(orderItems.id, targetItem.id));
+          }
+          const updatedItems = await tx.select().from(orderItems).where(eq(orderItems.orderId, input.orderId));
+          const newSubtotal = updatedItems.reduce((sum, it) => sum + Number(it.lineTotal || 0), 0);
+          const newStatus = updatedItems.length === 0 ? "cancelled" : ord.status;
+          const newDeliveryFee = updatedItems.length === 0 ? 0 : ord.deliveryFee;
+          const newTotal = updatedItems.length === 0 ? 0 : Math.max(0, newSubtotal + newDeliveryFee - Number(ord.discount || 0));
+          await tx.update(orders).set({ subtotal: newSubtotal, deliveryFee: newDeliveryFee, total: newTotal, status: newStatus }).where(eq(orders.id, input.orderId));
+          const auditNote = isFullCancel
+            ? ("❌ إلغاء صنف من الفاتورة: «" + targetItem.productName + "» (الكمية: " + qtyToCancel + " · خُصم: " + deductedAmount + " ر.ي) — التوضيح للعميل: " + input.reason + " | الإجمالي الجديد: " + newTotal + " ر.ي")
+            : ("❌ تعديل كمية صنف: «" + targetItem.productName + "» (أُلغي " + qtyToCancel + " وبقي " + (targetItem.quantity - qtyToCancel) + " · خُصم: " + deductedAmount + " ر.ي) — التوضيح للعميل: " + input.reason + " | الإجمالي الجديد: " + newTotal + " ر.ي");
+          await tx.insert(orderEvents).values({
+            orderId: input.orderId,
+            status: newStatus,
+            note: auditNote,
+            changedByUserId: ctx.user.id,
+          });
+          return { orderNumber: ord.orderNumber, newStatus, newTotal, deductedAmount, itemName: targetItem.productName, customerNotice: "تحديث بخصوص طلبك " + ord.orderNumber + ": تم إلغاء «" + targetItem.productName + "» (" + input.reason + ") وخصم " + deductedAmount + " ر.ي من الفاتورة. الإجمالي الجديد: " + newTotal + " ر.ي" };
+        });
+        void notifyCustomerOrderStatus(input.orderId, result.orderNumber, result.newStatus, result.customerNotice).catch(() => {});
+        return result;
+      }),
       sendNote: requirePermission("orders.manage").input(z.object({ id: safeId, note: z.string().trim().min(1).max(500) })).mutation(async ({ ctx, input }) => {
         const db = await database();
         const current = (await db.select({ id: orders.id, status: orders.status, orderNumber: orders.orderNumber }).from(orders).where(eq(orders.id, input.id)).limit(1))[0];
@@ -1965,7 +2096,7 @@ export const commerceRouter = router({
         clearCatalogCache(); return { success: true };
       }),
     }),
-    uploadImage: requireAnyPermission(["products.manage", "categories.manage", "banners.manage", "settings.manage"]).input(z.object({ dataUrl: z.string().min(30).max(8_500_000), kind: z.enum(["product", "category", "banner", "icon"]) })).mutation(async ({ input }) => {
+    uploadImage: requireAnyPermission(["products.manage", "products.add", "products.edit", "categories.manage", "banners.manage", "settings.manage"]).input(z.object({ dataUrl: z.string().min(30).max(8_500_000), kind: z.enum(["product", "category", "banner", "icon"]) })).mutation(async ({ input }) => {
       const match = input.dataUrl.match(/^data:(image\/(?:webp|png|jpeg));base64,([A-Za-z0-9+/=]+)$/);
       if (!match) throw new TRPCError({ code: "BAD_REQUEST", message: "صيغة الصورة غير مدعومة. استخدم WEBP أو PNG أو JPEG." });
       return { imageUrl: input.dataUrl };

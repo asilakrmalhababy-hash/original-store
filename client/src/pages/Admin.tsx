@@ -319,20 +319,172 @@ function ForcePasswordChangeGate({ displayName, onSuccess, onLogout }: { display
   );
 }
 
+function buildWhatsAppUrl(rawPhone: string, text: string): string {
+  const digits = String(rawPhone || "").replace(/\D+/g, "");
+  const intl = digits.startsWith("967") ? digits : digits.startsWith("0") ? ("967" + digits.slice(1)) : ("967" + digits);
+  return ["ht", "tps://wa.me/"].join("") + intl + "?text=" + encodeURIComponent(text);
+}
+
 function Overview() {
+  const utils = trpc.useUtils();
+  const [, navigate] = useLocation();
   const query = trpc.commerce.admin.overview.useQuery(undefined, { retry: 1, refetchOnWindowFocus: false });
+  const deleteReqMut = trpc.commerce.admin.orders.delete.useMutation({
+    onSuccess: async () => {
+      toast.success("تم إغلاق وحذف طلب التوفير من القائمة");
+      await Promise.all([utils.commerce.admin.overview.invalidate(), utils.commerce.admin.orders.list.invalidate()]);
+    },
+    onError: err => toast.error(err.message),
+  });
   if (query.isLoading) return <AdminLoading />;
   if (query.error) return <AdminError message={query.error.message} retry={() => void query.refetch()} />;
   const data = query.data!;
-  return <div className="admin-content"><div className="admin-page-heading"><div><span className="eyebrow">لوحة المالك</span><h1>أهلاً بك في أورجنال</h1><p>ابدأ بإعداد متجرك، وأضف محتواه عندما تكون جاهزًا.</p></div><span className="admin-heading-mark"><Leaf size={27} /></span></div><div className="admin-stat-grid">{[
-    { label: "المنتجات", value: data.products, icon: Package }, { label: "الأقسام", value: data.categories, icon: Box }, { label: "كل الطلبات", value: data.orders, icon: ClipboardList }, { label: "العملاء", value: data.customers, icon: Users }, { label: "طلبات قيد المتابعة", value: data.openOrders, icon: Truck }, { label: "قيمة الطلبات غير الملغاة", value: data.orderValue, display: money(data.orderValue), icon: BadgePercent },
-  ].map(item => { const Icon = item.icon; return <div className="admin-stat" key={item.label}><span><Icon size={18} /></span><small>{item.label}</small><strong>{"display" in item ? item.display : item.value.toLocaleString("en-US")}</strong><em>من بيانات المتجر</em></div>; })}</div>
-    <div className="admin-welcome-panel"><div className="welcome-ornament"><span>O</span><i /></div><div><span className="eyebrow">الخطوة الأولى</span><h2>متجرك يبدأ من اختياراتك</h2><p>تحكم بمنتجاتك وأقسامك وطلبات العملاء بسهولة.</p><Link href="/admin/products" className="button button-primary">إضافة أول منتج<ArrowLeft size={16} /></Link></div></div>
-    <div className="admin-section-heading"><div><h2>آخر الطلبات</h2><p>تظهر الطلبات هنا بعد أن يرسلها العملاء.</p></div><Link href="/admin/orders" className="small-button">إدارة الطلبات<ArrowLeft size={15} /></Link></div>
-    {!data.recentOrders.length ? <div className="admin-empty"><ClipboardList size={22} /><strong>لا توجد طلبات بعد</strong><span>تأكد من إعداد التوصيل قبل فتح الطلبات.</span></div> : <div className="admin-order-table">{data.recentOrders.map(order => <div className="admin-order-row" key={order.id}><span className="order-number">{order.orderNumber}</span><span>{order.recipientName}</span><span>{new Date(order.createdAt).toLocaleDateString("ar-YE")}</span><b>{money(order.total)}</b><span className={`status-pill status-${order.status}`}>{labels[order.status]}</span></div>)}</div>}
-  </div>;
-}
+  const an = (data as any).analytics || { todayOrders: 0, todayRevenue: 0, weekOrders: 0, weekRevenue: 0, monthOrders: 0, monthRevenue: 0, topProducts: [], topDistricts: [], cancelledItemsLog: [], missingRequests: [] };
+  return (
+    <div className="admin-content">
+      <div className="admin-page-heading">
+        <div><span className="eyebrow">لوحة القيادة والتقارير الذكية</span><h1>أهلاً بك في أورجنال</h1><p>ملخص شامل للمبيعات، الأرباح، الأصناف الأكثر طلباً، النواقص، وسجل الإلغاءات.</p></div>
+        <span className="admin-heading-mark"><Leaf size={27} /></span>
+      </div>
 
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: "12px", marginBottom: "16px" }}>
+        <div style={{ padding: "16px", borderRadius: "18px", background: "linear-gradient(135deg, #174b36 0%, #0e3323 100%)", color: "#ffffff", boxShadow: "0 10px 24px rgba(15, 51, 36, 0.16)" }}>
+          <small style={{ color: "#cfe6d8", fontSize: "12px", fontWeight: 700 }}>📅 مبيعات اليوم</small>
+          <strong style={{ display: "block", fontSize: "22px", margin: "4px 0", color: "#f1d897" }}>{money(an.todayRevenue)}</strong>
+          <span style={{ fontSize: "12px", color: "#e3f2e9" }}>{an.todayOrders} طلب مؤكّد اليوم</span>
+        </div>
+        <div style={{ padding: "16px", borderRadius: "18px", background: "#ffffff", border: "1.5px solid #cfe0d4", boxShadow: "0 6px 16px rgba(15, 51, 36, 0.05)" }}>
+          <small style={{ color: "#496556", fontSize: "12px", fontWeight: 700 }}>📊 مبيعات هذا الأسبوع (7 أيام)</small>
+          <strong style={{ display: "block", fontSize: "22px", margin: "4px 0", color: "#174b36" }}>{money(an.weekRevenue)}</strong>
+          <span style={{ fontSize: "12px", color: "#5e7568" }}>{an.weekOrders} طلب خلال الأسبوع</span>
+        </div>
+        <div style={{ padding: "16px", borderRadius: "18px", background: "#ffffff", border: "1.5px solid #cfe0d4", boxShadow: "0 6px 16px rgba(15, 51, 36, 0.05)" }}>
+          <small style={{ color: "#496556", fontSize: "12px", fontWeight: 700 }}>🗓️ مبيعات آخر 30 يوماً</small>
+          <strong style={{ display: "block", fontSize: "22px", margin: "4px 0", color: "#174b36" }}>{money(an.monthRevenue)}</strong>
+          <span style={{ fontSize: "12px", color: "#5e7568" }}>{an.monthOrders} طلب خلال الشهر</span>
+        </div>
+      </div>
+
+      <div className="admin-stat-grid">{[
+        { label: "المنتجات", value: data.products, icon: Package },
+        { label: "الأقسام", value: data.categories, icon: Box },
+        { label: "كل الطلبات", value: data.orders, icon: ClipboardList },
+        { label: "العملاء", value: data.customers, icon: Users },
+        { label: "طلبات قيد المتابعة", value: data.openOrders, icon: Truck },
+        { label: "إجمالي المبيعات المعتمدة", value: data.orderValue, display: money(data.orderValue), icon: BadgePercent },
+      ].map(item => { const Icon = item.icon; return <div className="admin-stat" key={item.label}><span><Icon size={18} /></span><small>{item.label}</small><strong>{"display" in item ? item.display : item.value.toLocaleString("en-US")}</strong><em>من بيانات المتجر</em></div>; })}</div>
+
+      <section className="admin-form-card" style={{ marginTop: "18px", border: "1.5px solid #e3c478", background: "linear-gradient(135deg, #fffdf7 0%, #fff9e8 100%)" }}>
+        <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: "10px", marginBottom: "10px" }}>
+          <div>
+            <span className="eyebrow" style={{ color: "#9c6509" }}>ميزة ذكية لزيادة المبيعات</span>
+            <h2 style={{ fontSize: "17px", margin: "2px 0", color: "#173c2a" }}>🔔 طلبات التوفير والنواقص التي بحث عنها الزبائن ({an.missingRequests?.length || 0})</h2>
+            <small style={{ color: "#5e6d63" }}>المنتجات التي طلبها الزبائن من المساعد الذكي ولم تكن متوفرة في المتجر — وفّرها وأبلغ الزبون بضغطة زر!</small>
+          </div>
+          <Link href="/admin/products" className="small-button selected"><Plus size={14} /> فتح قسم المنتجات</Link>
+        </div>
+        {!an.missingRequests?.length ? (
+          <p style={{ margin: 0, fontSize: "12px", color: "#5f7266", padding: "8px 0" }}>لا توجد طلبات نواقص مسجلة حالياً. أي منتج يطلبه الزبون من المساعد الذكي ولا يجده سيظهر هنا تلقائياً مع رقم هاتفه.</p>
+        ) : (
+          <div style={{ display: "grid", gap: "8px" }}>
+            {an.missingRequests.map((req: any) => (
+              <div key={req.id} style={{ padding: "10px 12px", borderRadius: "12px", background: "#ffffff", border: "1px solid #ead8a4", display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
+                <div style={{ display: "grid", gap: "2px" }}>
+                  <strong style={{ fontSize: "13px", color: "#174b36" }}>🛒 مطلوب توفير: «{req.itemText}»</strong>
+                  <small style={{ color: "#52665a" }}>العميل: {req.customerName} · الهاتف: <b dir="ltr">{req.phone}</b> · {new Date(req.createdAt).toLocaleString("ar-YE")}</small>
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                  <button
+                    type="button"
+                    className="small-button selected"
+                    onClick={() => {
+                      try { window.sessionStorage.setItem("prefill_new_product_name", req.itemText); } catch {}
+                      navigate("/admin/products");
+                    }}
+                  >
+                    <Plus size={13} /> أضف هذا المنتج للمتجر
+                  </button>
+                  {req.phone && req.phone !== "غير مسجل بالموقع" && (
+                    <a
+                      href={buildWhatsAppUrl(req.phone, "مرحباً بك من متجر أورجنال 🌿\nبشرى سارة! لقد قمنا بتوفير المنتج الذي طلبته («" + req.itemText + "») في المتجر الآن، يمكنك طلبه في أي وقت.")}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="small-button"
+                      style={{ background: "#e8f8ee", color: "#0f5c3a", borderColor: "#a8dfc0", fontWeight: 800 }}
+                    >
+                      📲 إبلاغ الزبون بتوفره واتساب
+                    </a>
+                  )}
+                  <button type="button" className="small-button danger-soft" onClick={() => deleteReqMut.mutate({ id: req.id })} title="إغلاق الطلب">
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(290px, 1fr))", gap: "14px", marginTop: "16px" }}>
+        <section className="admin-form-card" style={{ margin: 0 }}>
+          <h3 style={{ margin: "0 0 10px", fontSize: "15px", color: "#174b36" }}>🔥 المنتجات الأكثر مبيعاً</h3>
+          {!an.topProducts?.length ? <small style={{ color: "#687b6f" }}>ستظهر هنا فور إتمام الطلبات.</small> : (
+            <div style={{ display: "grid", gap: "8px" }}>
+              {an.topProducts.map((tp: any, i: number) => (
+                <div key={tp.name} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 10px", borderRadius: "10px", background: "#f6faf7", border: "1px solid #dfece3" }}>
+                  <span style={{ fontWeight: 800, fontSize: "12.5px", color: "#143828" }}>#{i + 1} · {tp.name}</span>
+                  <span style={{ fontSize: "11.5px", fontWeight: 700, color: "#174b36" }}>{tp.qty} مباع · <b>{money(tp.revenue)}</b></span>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section className="admin-form-card" style={{ margin: 0 }}>
+          <h3 style={{ margin: "0 0 10px", fontSize: "15px", color: "#174b36" }}>📍 أكثر الأحياء والمناطق طلباً</h3>
+          {!an.topDistricts?.length ? <small style={{ color: "#687b6f" }}>ستظهر هنا إحصائيات الأحياء مع الطلبات.</small> : (
+            <div style={{ display: "grid", gap: "8px" }}>
+              {an.topDistricts.map((td: any, i: number) => (
+                <div key={td.district} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 10px", borderRadius: "10px", background: "#f6faf7", border: "1px solid #dfece3" }}>
+                  <span style={{ fontWeight: 800, fontSize: "12.5px", color: "#143828" }}>#{i + 1} · {td.district}</span>
+                  <span style={{ fontSize: "11.5px", fontWeight: 700, color: "#174b36" }}>{td.count} طلب · <b>{money(td.revenue)}</b></span>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+
+      <section className="admin-form-card" style={{ marginTop: "16px", border: "1px solid #f0cfc9", background: "#fffaf9" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px", marginBottom: "10px" }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: "15px", color: "#8f3225" }}>🚫 تقرير الأصناف الملغاة من الفواتير وأسبابها ({an.cancelledItemsLog?.length || 0})</h3>
+            <small style={{ color: "#6d524e" }}>يوضح أي صنف تم إلغاؤه من فاتورة أي زبون، والمبلغ الذي خُصم، وسبب الإلغاء.</small>
+          </div>
+          <Link href="/admin/orders" className="small-button">فتح الطلبات<ArrowLeft size={14} /></Link>
+        </div>
+        {!an.cancelledItemsLog?.length ? (
+          <small style={{ color: "#786460" }}>لا توجد أصناف ملغاة من الفواتير حتى الآن.</small>
+        ) : (
+          <div style={{ display: "grid", gap: "8px", maxHeight: "280px", overflowY: "auto" }}>
+            {an.cancelledItemsLog.map((cl: any) => (
+              <div key={cl.id} style={{ padding: "9px 12px", borderRadius: "10px", background: "#ffffff", border: "1px solid #f2d6d0", display: "grid", gap: "4px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: "6px", fontSize: "12px" }}>
+                  <strong style={{ color: "#8f3225" }}>طلب {cl.orderNumber} · العميل: {cl.customerName} ({cl.phone})</strong>
+                  <small style={{ color: "#7a6864" }}>{new Date(cl.createdAt).toLocaleString("ar-YE")}</small>
+                </div>
+                <div style={{ fontSize: "12px", color: "#3d2825", lineHeight: 1.5 }}>{cl.note}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <div className="admin-section-heading" style={{ marginTop: "18px" }}><div><h2>آخر الطلبات</h2><p>تظهر الطلبات هنا بعد أن يرسلها العملاء.</p></div><Link href="/admin/orders" className="small-button">إدارة الطلبات<ArrowLeft size={15} /></Link></div>
+      {!data.recentOrders.length ? <div className="admin-empty"><ClipboardList size={22} /><strong>لا توجد طلبات بعد</strong><span>تأكد من إعداد التوصيل قبل فتح الطلبات.</span></div> : <div className="admin-order-table">{data.recentOrders.map(order => <div className="admin-order-row" key={order.id}><span className="order-number">{order.orderNumber}</span><span>{order.recipientName}</span><span>{new Date(order.createdAt).toLocaleDateString("ar-YE")}</span><b>{money(order.total)}</b><span className={"status-pill status-" + order.status}>{labels[order.status]}</span></div>)}</div>}
+    </div>
+  );
+}
 function unpackProductVariants(rawDescription?: string | null): { cleanDescription: string; variants: string[]; weightEnabled: boolean; minWeightAmount: number } {
   let raw = String(rawDescription || "");
   let variants: string[] = [];
@@ -430,6 +582,7 @@ function SmartBulkProductsStudio({
   const multiFileInputRef = useRef<HTMLInputElement>(null);
   const singleRowFileRef = useRef<{ uid: string | null; input: HTMLInputElement | null }>({ uid: null, input: null });
   const priceRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const base64ImageMapRef = useRef<Record<string, string>>({});
 
   const analyzeMut = trpc.commerce.admin.products.analyzeImage.useMutation();
   const parseTextMut = trpc.commerce.admin.products.parseBulkText.useMutation();
@@ -475,7 +628,7 @@ function SmartBulkProductsStudio({
 
     const placeholders: BulkDraftItem[] = createdTasks.map(t => ({
       uid: t.uid,
-      imageUrl: "",
+      imageUrl: URL.createObjectURL(t.file),
       name: "",
       description: "",
       price: "",
@@ -557,7 +710,8 @@ function SmartBulkProductsStudio({
     if (!file || !targetUid) return;
     try {
       const compressed = await quickCompressImageFile(file, "product");
-      updateItem(targetUid, { imageUrl: compressed });
+      base64ImageMapRef.current[targetUid] = compressed;
+      updateItem(targetUid, { imageUrl: URL.createObjectURL(file) });
     } catch {
       toast.error("تعذر قراءة الصورة");
     }
@@ -575,7 +729,7 @@ function SmartBulkProductsStudio({
     const payload = readyItems.map((it, idx) => ({
       name: it.name.trim(),
       description: packProductVariants(it.description, [], it.weightEnabled, 100),
-      imageUrl: it.imageUrl || null,
+      imageUrl: base64ImageMapRef.current[it.uid] || it.imageUrl || null,
       categoryId: it.categoryId,
       price: Math.max(0, Number(it.price) || 0),
       unit: it.weightEnabled ? "كيلو" : (it.unit.trim() || "حبة"),
@@ -913,7 +1067,11 @@ function SmartBulkProductsStudio({
   );
 }
 
-function ProductsPanel() {
+function ProductsPanel({ isOwner = true, permissions = [], allowedCategoryIds = [] }: { isOwner?: boolean; permissions?: PermissionKey[]; allowedCategoryIds?: number[] }) {
+  const canAdd = Boolean(isOwner || permissions.includes("products.manage") || permissions.includes("products.add"));
+  const canEdit = Boolean(isOwner || permissions.includes("products.manage") || permissions.includes("products.edit") || permissions.includes("inventory.manage"));
+  const canDelete = Boolean(isOwner || permissions.includes("products.manage") || permissions.includes("products.delete"));
+  const isCategoryRestricted = !isOwner && Array.isArray(allowedCategoryIds) && allowedCategoryIds.length > 0;
   const utils = trpc.useUtils();
   const [form, setForm] = useState(blankProduct);
   const [editing, setEditing] = useState<number | null>(null);
@@ -929,6 +1087,13 @@ function ProductsPanel() {
   const [searchQuery, setSearchQuery] = useState("");
   const [catFilter, setCatFilter] = useState<string>("all");
   const [pubFilter, setPubFilter] = useState<"all" | "published" | "hidden">("all");
+  const [visibleLimit, setVisibleLimit] = useState(25);
+  const [quickPriceId, setQuickPriceId] = useState<number | null>(null);
+  const [quickPriceVal, setQuickPriceVal] = useState("");
+  const [showBulkPriceBox, setShowBulkPriceBox] = useState(false);
+  const [bulkPriceCatId, setBulkPriceCatId] = useState<string>("all");
+  const [bulkPriceMode, setBulkPriceMode] = useState<"percent" | "fixed">("percent");
+  const [bulkPriceAmount, setBulkPriceAmount] = useState("");
 
   const refreshCatalog = async () => Promise.all([
     utils.commerce.catalog.home.invalidate(),
@@ -938,7 +1103,28 @@ function ProductsPanel() {
   ]);
 
   const query = trpc.commerce.admin.products.list.useQuery(undefined, { retry: 1 });
-  const cats = trpc.commerce.admin.categories.list.useQuery(undefined, { retry: 1 });
+  const rawCats = trpc.commerce.admin.categories.list.useQuery(undefined, { retry: 1 });
+  const allowedCatsList = (rawCats.data ?? []).filter(c => !isCategoryRestricted || allowedCategoryIds.includes(c.id));
+  const cats = { ...rawCats, data: allowedCatsList };
+  useEffect(() => {
+    try {
+      const prefill = window.sessionStorage.getItem("prefill_new_product_name");
+      if (prefill) {
+        window.sessionStorage.removeItem("prefill_new_product_name");
+        setForm(curr => ({ ...curr, name: prefill, categoryId: allowedCatsList[0]?.id ?? curr.categoryId }));
+        toast.info("✨ تم تجهيز اسم المنتج المطلوب توفيره — أضف السعر والصورة واحفظه!");
+      }
+    } catch {}
+  }, [rawCats.data?.length]);
+  const bulkPriceMut = trpc.commerce.admin.products.bulkAdjustPrices.useMutation({
+    onSuccess: async (res) => {
+      toast.success("✅ تم تحديث أسعار " + res.updatedCount + " منتج بنجاح!");
+      setShowBulkPriceBox(false);
+      setBulkPriceAmount("");
+      await Promise.all([utils.commerce.admin.products.list.invalidate(), refreshCatalog()]);
+    },
+    onError: err => toast.error(err.message),
+  });
 
   const create = trpc.commerce.admin.products.create.useMutation({
     onSuccess: async () => {
@@ -1296,6 +1482,54 @@ function ProductsPanel() {
         <span className="count-chip">{filteredProducts.length} / {query.data?.length ?? 0}</span>
       </div>
 
+      {isCategoryRestricted && (
+        <div style={{ marginBottom: "12px", padding: "10px 14px", borderRadius: "12px", background: "#eef7f1", border: "1.5px solid #174b36", color: "#174b36", fontSize: "12.5px", fontWeight: 800 }}>
+          🔒 نطاق صلاحياتك في المنتجات مخصص للأقسام التالية فقط: {allowedCatsList.map(c => "«" + c.name + "»").join("، ") || "أقسام محددة"}
+          {!canDelete ? " · (صلاحية الحذف النهائي غير مفعلة لحسابك لحماية الكتالوج)" : ""}
+        </div>
+      )}
+      {canEdit && (
+        <div style={{ marginBottom: "12px" }}>
+          <button type="button" className={"small-button" + (showBulkPriceBox ? " selected" : "")} onClick={() => setShowBulkPriceBox(v => !v)} style={{ fontWeight: 800 }}>
+            💰 {showBulkPriceBox ? "إخفاء أداة تعديل الأسعار الجماعي" : "تعديل جماعي لأسعار قسم كامل أو كل المنتجات (نسبة % أو مبلغ ثابت)"}
+          </button>
+          {showBulkPriceBox && (
+            <div style={{ marginTop: "8px", padding: "14px", borderRadius: "14px", background: "#f6faf7", border: "1.5px solid #bfd6c7", display: "flex", flexWrap: "wrap", gap: "10px", alignItems: "flex-end" }}>
+              <label style={{ display: "grid", gap: "4px", fontSize: "12px", fontWeight: 800, color: "#174b36" }}>
+                <span>القسم المستهدف:</span>
+                <select value={bulkPriceCatId} onChange={e => setBulkPriceCatId(e.target.value)} style={{ padding: "7px 10px", borderRadius: "10px", background: "#fff" }}>
+                  <option value="all">{isCategoryRestricted ? "كل الأقسام المسموحة لي" : "كل منتجات المتجر"}</option>
+                  {cats.data?.map(c => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
+                </select>
+              </label>
+              <label style={{ display: "grid", gap: "4px", fontSize: "12px", fontWeight: 800, color: "#174b36" }}>
+                <span>طريقة التعديل:</span>
+                <select value={bulkPriceMode} onChange={e => setBulkPriceMode(e.target.value as any)} style={{ padding: "7px 10px", borderRadius: "10px", background: "#fff" }}>
+                  <option value="percent">نسبة مئوية % (مثلاً +10 أو -5)</option>
+                  <option value="fixed">مبلغ ثابت بالريال (مثلاً +100 أو -50)</option>
+                </select>
+              </label>
+              <label style={{ display: "grid", gap: "4px", fontSize: "12px", fontWeight: 800, color: "#174b36" }}>
+                <span>المقدار (موجب للزيادة أو سالب للتخفيض):</span>
+                <input type="number" value={bulkPriceAmount} onChange={e => setBulkPriceAmount(e.target.value)} placeholder={bulkPriceMode === "percent" ? "مثلاً: 10 أو -10" : "مثلاً: 100 أو -100"} style={{ padding: "7px 10px", borderRadius: "10px", background: "#fff", width: "160px" }} />
+              </label>
+              <button
+                type="button"
+                className="button button-primary"
+                disabled={bulkPriceMut.isPending || !bulkPriceAmount.trim() || Number(bulkPriceAmount) === 0}
+                onClick={() => {
+                  const amt = Number(bulkPriceAmount);
+                  if (!amt) return;
+                  if (!window.confirm("هل أنت متأكد من تعديل الأسعار جماعياً بمقدار " + (bulkPriceMode === "percent" ? (amt + "%") : (amt + " ر.ي")) + "؟")) return;
+                  bulkPriceMut.mutate({ categoryId: bulkPriceCatId === "all" ? null : Number(bulkPriceCatId), mode: bulkPriceMode, amount: amt, roundTo50: true });
+                }}
+              >
+                {bulkPriceMut.isPending ? <LoaderCircle size={15} className="spin" /> : <Save size={15} />} تطبيق تعديل الأسعار الآن
+              </button>
+            </div>
+          )}
+        </div>
+      )}
       <div className="filter-bar" style={{ marginBottom: "14px" }}>
         <label className="filter-search"><input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="ابحث باسم المنتج..." /></label>
         <label className="filter-select">
@@ -1316,7 +1550,7 @@ function ProductsPanel() {
 
       {query.isLoading ? <AdminLoading /> : query.error ? <AdminError message={query.error.message} retry={() => void query.refetch()} /> : !filteredProducts.length ? <AdminEmpty title="لا توجد منتجات مطابقة" text="أضف منتجاً جديداً أو غيّر خيارات البحث والفلترة." /> : (
         <div className="entity-list">
-          {filteredProducts.map(item => {
+          {filteredProducts.slice(0, visibleLimit).map(item => {
             const meta = unpackProductVariants(item.description);
             return (
               <article className="entity-row" key={item.id}>
@@ -1328,30 +1562,68 @@ function ProductsPanel() {
                     {meta.variants.length > 0 ? " · الأنواع: " + meta.variants.join(" / ") : ""}
                   </small>
                 </div>
-                <div className="entity-price">{money(item.price)}{meta.weightEnabled ? <small style={{ display: "block", fontSize: "10px", color: "#174b36" }}>لكل كيلو</small> : null}</div>
+                <div className="entity-price">
+                  {quickPriceId === item.id ? (
+                    <div style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                      <input
+                        type="number"
+                        min="0"
+                        autoFocus
+                        value={quickPriceVal}
+                        onChange={e => setQuickPriceVal(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            const nextP = Math.max(0, Number(quickPriceVal) || 0);
+                            toggleVisibility.mutate({ id: item.id, values: { price: nextP } });
+                            setQuickPriceId(null);
+                          } else if (e.key === "Escape") {
+                            setQuickPriceId(null);
+                          }
+                        }}
+                        style={{ width: "86px", padding: "4px 7px", borderRadius: "8px", border: "1.5px solid #174b36", fontWeight: 900, fontSize: "13px" }}
+                      />
+                      <button type="button" className="small-button selected" style={{ padding: "4px 7px", minHeight: "28px" }} onClick={() => { const nextP = Math.max(0, Number(quickPriceVal) || 0); toggleVisibility.mutate({ id: item.id, values: { price: nextP } }); setQuickPriceId(null); }}><Check size={13} /></button>
+                      <button type="button" className="small-button" style={{ padding: "4px 6px", minHeight: "28px" }} onClick={() => setQuickPriceId(null)}><X size={13} /></button>
+                    </div>
+                  ) : (
+                    <span
+                      onClick={() => { if (canEdit) { setQuickPriceId(item.id); setQuickPriceVal(String(item.price)); } }}
+                      title={canEdit ? "اضغط لتعديل السعر فوراً بضغطة واحدة" : undefined}
+                      style={{ cursor: canEdit ? "pointer" : "default", display: "inline-block", padding: "3px 7px", borderRadius: "8px", background: canEdit ? "#f3f8f5" : "transparent", border: canEdit ? "1px dashed #b9d4c3" : "none" }}
+                    >
+                      {money(item.price)} {canEdit && <small style={{ fontSize: "10px", color: "#174b36" }}>✏️</small>}
+                      {meta.weightEnabled ? <small style={{ display: "block", fontSize: "10px", color: "#174b36" }}>لكل كيلو</small> : null}
+                    </span>
+                  )}
+                </div>
                 <span className={"visibility-tag " + (item.isPublished ? "visible" : "hidden")}>{item.isPublished ? "منشور" : "مخفي"}</span>
                 <div className="entity-actions">
-                  <button type="button" className="small-button" onClick={() => selectEdit(item)}>تعديل</button>
-                  <button type="button" className="small-button" onClick={() => { selectEdit(item); setEditing(null); setField("name", item.name + " (نسخة)"); toast.info("تم نسخ بيانات المنتج — عدّل السعر أو الاسم واضغط إضافة"); }}>نسخ</button>
-                  <button
-                    type="button"
-                    className={"small-button " + (item.isPublished ? "" : "selected")}
-                    onClick={() => toggleVisibility.mutate({ id: item.id, values: { isPublished: !item.isPublished, isAvailable: !item.isPublished ? true : item.isAvailable } })}
-                  >
-                    {item.isPublished ? "إخفاء" : "نشر الآن"}
-                  </button>
-                  <button type="button" className="small-button" onClick={() => { setRecommended(recommended === item.id ? null : item.id); setRecommendedIds([]); }}>شبيه</button>
-                  <button
-                    type="button"
-                    className="small-button danger-soft"
-                    onClick={() => {
-                      if (window.confirm("هل أنت متأكد من حذف المنتج «" + item.name + "» نهائياً من المتجر؟")) {
-                        deleteProduct.mutate({ id: item.id });
-                      }
-                    }}
-                  >
-                    <Trash2 size={14} /> حذف
-                  </button>
+                  {canEdit && <button type="button" className="small-button" onClick={() => selectEdit(item)}>تعديل</button>}
+                  {canAdd && <button type="button" className="small-button" onClick={() => { selectEdit(item); setEditing(null); setField("name", item.name + " (نسخة)"); toast.info("تم نسخ بيانات المنتج — عدّل السعر أو الاسم واضغط إضافة"); }}>نسخ</button>}
+                  {canEdit && (
+                    <button
+                      type="button"
+                      className={"small-button " + (item.isPublished ? "" : "selected")}
+                      onClick={() => toggleVisibility.mutate({ id: item.id, values: { isPublished: !item.isPublished, isAvailable: !item.isPublished ? true : item.isAvailable } })}
+                    >
+                      {item.isPublished ? "إخفاء" : "نشر الآن"}
+                    </button>
+                  )}
+                  {canEdit && <button type="button" className="small-button" onClick={() => { setRecommended(recommended === item.id ? null : item.id); setRecommendedIds([]); }}>شبيه</button>}
+                  {canDelete && (
+                    <button
+                      type="button"
+                      className="small-button danger-soft"
+                      onClick={() => {
+                        if (window.confirm("هل أنت متأكد من حذف المنتج «" + item.name + "» نهائياً من المتجر؟")) {
+                          deleteProduct.mutate({ id: item.id });
+                        }
+                      }}
+                    >
+                      <Trash2 size={14} /> حذف
+                    </button>
+                  )}
                 </div>
                 {recommended === item.id && (
                   <div className="recommendation-editor">
@@ -1373,6 +1645,16 @@ function ProductsPanel() {
               </article>
             );
           })}
+          {filteredProducts.length > visibleLimit && (
+            <button
+              type="button"
+              className="button button-outline full-button"
+              onClick={() => setVisibleLimit(l => l + 30)}
+              style={{ marginTop: "10px", fontWeight: 800 }}
+            >
+              عرض المزيد من المنتجات ({filteredProducts.length - visibleLimit} متبقية)
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -1963,26 +2245,73 @@ function OffersPanel() {
   return <div className="admin-content"><AdminHeading eyebrow="تحفيز الشراء" title="العروض والخصومات" text="الخصم يطبّق ويُعاد حسابه على الخادم عند تقديم الطلب." icon={BadgePercent} /><section className="admin-form-card"><div className="form-card-heading"><span className="form-card-number">{editing ? "✳" : "01"}</span><div><h2>{editing ? "تعديل العرض" : "إنشاء عرض"}</h2><p>أضف شروط العرض ورمز الكوبون.</p></div>{editing && <button type="button" className="small-button" onClick={reset}>إلغاء التعديل<X size={14} /></button>}</div><form className="admin-form" onSubmit={submit}><div className="form-fields-grid"><label>اسم العرض<input required value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} /></label><label>رمز الخصم<input required value={form.code} onChange={e => setForm({ ...form, code: e.target.value.toUpperCase() })} /></label><label className="field-wide">وصف العرض<textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} /></label><label>نوع الخصم<select value={form.discountType} onChange={e => setForm({ ...form, discountType: e.target.value as "percent" | "fixed" })}><option value="percent">نسبة مئوية</option><option value="fixed">قيمة ثابتة</option></select></label><label>{form.discountType === "percent" ? "النسبة %" : "قيمة الخصم ر.ي"}<input type="number" min="1" max={form.discountType === "percent" ? "100" : undefined} required value={form.discountValue} onChange={e => setForm({ ...form, discountValue: e.target.value })} /></label><label>الحد الأدنى للطلب ر.ي<input type="number" min="0" step="1" value={form.minimumOrder} onChange={e => setForm({ ...form, minimumOrder: e.target.value })} /></label><label>يبدأ العرض<input type="datetime-local" value={form.startsAt} onChange={e => setForm({ ...form, startsAt: e.target.value })} /></label><label>ينتهي العرض<input type="datetime-local" value={form.endsAt} onChange={e => setForm({ ...form, endsAt: e.target.value })} /></label><label className="toggle-field"><input type="checkbox" checked={form.isActive} onChange={e => setForm({ ...form, isActive: e.target.checked })} /> العرض فعّال</label></div><div className="form-submit-row"><button type="submit" className="button button-primary" disabled={create.isPending || update.isPending}>{create.isPending || update.isPending ? <LoaderCircle className="spin" size={16} /> : editing ? <Save size={16} /> : <Plus size={16} />}{editing ? "حفظ تعديل العرض" : "إنشاء العرض"}</button></div></form></section><div className="admin-section-heading"><div><h2>العروض الحالية</h2><p>رموز العرض تُفحص عند إرسال الطلب.</p></div></div>{!query.data?.length ? <AdminEmpty title="لا توجد عروض مضافة" text="يمكنك إضافة رمز خصم متى أردت." /> : <div className="entity-list">{query.data.map(item => <article className="entity-row" key={item.id}><div className="entity-image offer-art"><BadgePercent size={20} /></div><div className="entity-main"><strong>{item.title}</strong><small>{item.code} · {item.discountType === "percent" ? item.discountValue + "%" : money(item.discountValue)} · حد أدنى {money(item.minimumOrder)} · {item.startsAt ? new Date(item.startsAt).toLocaleDateString("ar-YE") : "دون بداية محددة"} — {item.endsAt ? new Date(item.endsAt).toLocaleDateString("ar-YE") : "دون انتهاء محدد"}</small></div><label className="toggle-field compact-toggle"><input type="checkbox" checked={item.isActive} onChange={e => update.mutate({ id: item.id, values: { isActive: e.target.checked } })} /> فعّال</label><div className="entity-actions"><button type="button" className="small-button" onClick={() => edit(item)}>تعديل</button><button type="button" className="small-button danger-soft" onClick={() => { if (window.confirm("هل أنت متأكد من حذف العرض «" + item.title + "» نهائياً؟")) remove.mutate({ id: item.id }); }}><Trash2 size={14} /> حذف</button></div></article>)}</div>}</div>;
 }
 
+function printOrderInvoiceWindow(order: any) {
+  const w = window.open("", "_blank", "width=460,height=680");
+  if (!w) { toast.error("يرجى السماح بالنوافذ المنبثقة لطباعة الفاتورة"); return; }
+  const cancelledEvents = (order.events || []).filter((ev: any) => String(ev.note || "").startsWith("❌"));
+  const html = [
+    "<!doctype html><html lang=\"ar\" dir=\"rtl\"><head><meta charset=\"utf-8\"><title>فاتورة طلب " + order.orderNumber + "</title>",
+    "<style>body{font-family:Cairo,Tahoma,sans-serif;padding:18px;color:#11261b;max-width:400px;margin:0 auto}h1{font-size:18px;margin:0 0 4px}table{width:100%;border-collapse:collapse;margin:12px 0}th,td{border-bottom:1px solid #d8e3dc;padding:7px 4px;text-align:right;font-size:12.5px}.tot{font-size:15px;font-weight:800;background:#f2f8f4;padding:10px;border-radius:10px;margin-top:10px}.canc{background:#fff5f4;border:1px solid #f1c8c1;padding:8px;border-radius:8px;font-size:11.5px;margin-top:8px;color:#8a2a1e}</style></head><body>",
+    "<h1>🌿 متجر أورجنال — ORIGINAL</h1>",
+    "<div>رقم الفاتورة: <b>" + order.orderNumber + "</b></div>",
+    "<div>التاريخ: " + new Date(order.createdAt).toLocaleString("ar-YE") + "</div>",
+    "<hr style=\"border:none;border-top:1px dashed #b9ccc0;margin:10px 0\"/>",
+    "<div>العميل: <b>" + order.recipientName + "</b></div>",
+    "<div>الهاتف: <b dir=\"ltr\">" + order.phone + "</b></div>",
+    "<div>العنوان: " + order.city + " — " + order.district + (order.addressDetails ? (" (" + order.addressDetails + ")") : "") + "</div>",
+    "<table><thead><tr><th>الصنف</th><th>الكمية</th><th>الإجمالي</th></tr></thead><tbody>",
+    ...(order.items || []).map((it: any) => "<tr><td>" + it.productName + "</td><td>" + it.quantity + "</td><td>" + Number(it.lineTotal).toLocaleString("en-US") + " ر.ي</td></tr>"),
+    "</tbody></table>",
+    cancelledEvents.length ? ("<div class=\"canc\"><b>أصناف ملغاة من الفاتورة:</b><br/>" + cancelledEvents.map((e: any) => "• " + e.note).join("<br/>") + "</div>") : "",
+    "<div class=\"tot\">المجموع الفرعي: " + Number(order.subtotal).toLocaleString("en-US") + " ر.ي<br/>التوصيل: " + Number(order.deliveryFee).toLocaleString("en-US") + " ر.ي" + (order.discount ? ("<br/>الخصم: " + Number(order.discount).toLocaleString("en-US") + " ر.ي") : "") + "<br/>الإجمالي المطلوب: " + Number(order.total).toLocaleString("en-US") + " ر.ي</div>",
+    "<script>window.onload=function(){window.print();}</script></body></html>"
+  ].join("");
+  w.document.open(); w.document.write(html); w.document.close();
+}
+
 function OrdersPanel() {
   const utils = trpc.useUtils();
   const query = trpc.commerce.admin.orders.list.useQuery(undefined, { retry: 1, refetchInterval: 10_000 });
   const nextStates: Record<string, string[]> = { new: ["preparing", "cancelled"], preparing: ["ready", "cancelled"], ready: ["out_for_delivery", "cancelled"], out_for_delivery: ["delivered"], delivered: [], cancelled: [] };
   const [deliveryNotes, setDeliveryNotes] = useState<Record<number, string>>({});
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [orderSearch, setOrderSearch] = useState<string>("");
+  const [cancellingItem, setCancellingItem] = useState<{ orderId: number; itemId: number; itemName: string; maxQty: number; unitPrice: number } | null>(null);
+  const [cancelQty, setCancelQty] = useState<number>(1);
+  const [cancelReason, setCancelReason] = useState<string>("غير متوفر اليوم في المخزون وتم خصم مبلغه من الفاتورة");
+  const [lastWhatsAppAlert, setLastWhatsAppAlert] = useState<{ orderId: number; phone: string; message: string } | null>(null);
+
   const focusedOrderNo = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("order") : null;
   const change = trpc.commerce.admin.orders.setStatus.useMutation({
     onSuccess: async () => {
-      toast.success("تم تحديث حالة الطلب وإرسال إشعار فوري واحد للعميل");
+      toast.success("تم تحديث حالة الطلب وإرسال إشعار فوري للعميل");
       await Promise.all([utils.commerce.admin.orders.list.invalidate(), utils.commerce.admin.overview.invalidate(), utils.commerce.orders.mine.invalidate(), utils.commerce.catalog.home.invalidate(), utils.commerce.catalog.listProducts.invalidate()]);
     },
     onError: error => toast.error(error.message),
   });
   const sendNoteMut = trpc.commerce.admin.orders.sendNote.useMutation({
     onSuccess: async (_res, vars) => {
-      toast.success("تم إرسال رسالتك كإشعار فوري أنيق لجوال العميل");
+      toast.success("تم إرسال رسالتك كإشعار فوري لجوال العميل وحفظها في سجل الطلب");
       setDeliveryNotes(current => ({ ...current, [vars.id]: "" }));
       await utils.commerce.admin.orders.list.invalidate();
     },
     onError: error => toast.error(error.message),
+  });
+  const removeItemMut = trpc.commerce.admin.orders.removeItem.useMutation({
+    onSuccess: async (res, vars) => {
+      toast.success("✅ تم إلغاء الصنف من الفاتورة وتحديث الإجمالي وإشعار العميل!");
+      const targetOrd = (query.data ?? []).find(o => o.id === vars.orderId);
+      if (targetOrd?.phone) {
+        setLastWhatsAppAlert({
+          orderId: vars.orderId,
+          phone: targetOrd.phone,
+          message: "مرحباً " + targetOrd.recipientName + " 🌿\nبخصوص طلبك رقم " + res.orderNumber + " في متجر أورجنال:\nتم إلغاء الصنف «" + res.itemName + "» (" + vars.reason + ") وخصم مبلغه (" + res.deductedAmount.toLocaleString("en-US") + " ر.ي) من الفاتورة.\nالإجمالي الجديد للطلب: " + res.newTotal.toLocaleString("en-US") + " ر.ي.\nشكراً لتفهمك!",
+        });
+      }
+      setCancellingItem(null);
+      await Promise.all([utils.commerce.admin.orders.list.invalidate(), utils.commerce.admin.overview.invalidate(), utils.commerce.orders.mine.invalidate(), utils.commerce.catalog.home.invalidate()]);
+    },
+    onError: err => toast.error(err.message),
   });
   const deleteOrder = trpc.commerce.admin.orders.delete.useMutation({
     onSuccess: async () => {
@@ -1991,50 +2320,394 @@ function OrdersPanel() {
     },
     onError: error => toast.error(error.message),
   });
+
+  const allOrders = (query.data ?? []).filter(o => o.city !== "طلب توفير خاص" && !String(o.orderNumber || "").startsWith("REQ-"));
+
+  const customerSummaryByPhone = new Map<string, {
+    weekOrdersCount: number;
+    weekSpent: number;
+    weekItems: Array<{ name: string; qty: number; total: number }>;
+    weekCancelledNotes: string[];
+    allTimeOrdersCount: number;
+    allTimeSpent: number;
+    allTimeCancelledOrders: number;
+    recentOrderNumbers: Array<{ orderNumber: string; total: number; status: string; createdAt: Date | string }>;
+  }>();
+
+  const weekCutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  for (const ord of allOrders) {
+    const phoneKey = String(ord.phone || "").trim();
+    if (!phoneKey) continue;
+    let rec = customerSummaryByPhone.get(phoneKey);
+    if (!rec) {
+      rec = { weekOrdersCount: 0, weekSpent: 0, weekItems: [], weekCancelledNotes: [], allTimeOrdersCount: 0, allTimeSpent: 0, allTimeCancelledOrders: 0, recentOrderNumbers: [] };
+      customerSummaryByPhone.set(phoneKey, rec);
+    }
+    const ordTime = new Date(ord.createdAt).getTime();
+    const isWeek = ordTime >= weekCutoff;
+    rec.recentOrderNumbers.push({ orderNumber: ord.orderNumber, total: ord.total, status: ord.status, createdAt: ord.createdAt });
+    if (ord.status === "cancelled") {
+      rec.allTimeCancelledOrders += 1;
+    } else {
+      rec.allTimeOrdersCount += 1;
+      rec.allTimeSpent += Number(ord.total || 0);
+      if (isWeek) {
+        rec.weekOrdersCount += 1;
+        rec.weekSpent += Number(ord.total || 0);
+        for (const it of ord.items || []) {
+          const existingIt = rec.weekItems.find(x => x.name === it.productName);
+          if (existingIt) { existingIt.qty += it.quantity; existingIt.total += Number(it.lineTotal || 0); }
+          else { rec.weekItems.push({ name: it.productName, qty: it.quantity, total: Number(it.lineTotal || 0) }); }
+        }
+      }
+    }
+    for (const ev of ord.events || []) {
+      if (String(ev.note || "").startsWith("❌")) {
+        rec.weekCancelledNotes.push("[" + ord.orderNumber + "] " + ev.note);
+      }
+    }
+  }
+
+  const filteredOrders = allOrders.filter(order => {
+    if (statusFilter === "active" && !["new", "preparing", "ready", "out_for_delivery"].includes(order.status)) return false;
+    if (statusFilter !== "all" && statusFilter !== "active" && order.status !== statusFilter) return false;
+    if (orderSearch.trim()) {
+      const q = orderSearch.trim().toLowerCase();
+      const matchNo = order.orderNumber.toLowerCase().includes(q);
+      const matchName = (order.recipientName || "").toLowerCase().includes(q);
+      const matchPhone = (order.phone || "").toLowerCase().includes(q);
+      const matchItem = (order.items || []).some(i => i.productName.toLowerCase().includes(q));
+      if (!matchNo && !matchName && !matchPhone && !matchItem) return false;
+    }
+    return true;
+  });
+
   const exportOrders = () => {
-    if (!query.data?.length) return;
+    if (!filteredOrders.length) return;
     const quote = (value: string | number | null | undefined) => "\"" + String(value ?? "").replace(/"/g, "\"\"") + "\"";
     const rows: Array<Array<string | number | null | undefined>> = [
-      ["رقم الطلب", "التاريخ", "المستلم", "الهاتف", "المدينة", "الحي", "الحالة", "المجموع الفرعي", "التوصيل", "الخصم", "الإجمالي", "طريقة الدفع", "الأصناف"],
-      ...query.data.map(order => [order.orderNumber, new Date(order.createdAt).toLocaleString("ar-YE"), order.recipientName, order.phone, order.city, order.district, labels[order.status], order.subtotal, order.deliveryFee, order.discount, order.total, "نقدًا عند الاستلام", order.items.map(item => item.productName + " × " + item.quantity).join("; ")]),
+      ["رقم الطلب", "التاريخ", "المستلم", "الهاتف", "المدينة", "الحي", "الحالة", "المجموع الفرعي", "التوصيل", "الخصم", "الإجمالي", "طريقة الدفع", "الأصناف المشتراة", "الأصناف الملغاة"],
+      ...filteredOrders.map(order => [
+        order.orderNumber,
+        new Date(order.createdAt).toLocaleString("ar-YE"),
+        order.recipientName,
+        order.phone,
+        order.city,
+        order.district,
+        labels[order.status],
+        order.subtotal,
+        order.deliveryFee,
+        order.discount,
+        order.total,
+        "نقدًا عند الاستلام",
+        order.items.map(item => item.productName + " × " + item.quantity).join("; "),
+        order.events.filter(e => String(e.note || "").startsWith("❌")).map(e => e.note).join(" | "),
+      ]),
     ];
     const blob = new Blob(["\uFEFF", rows.map(row => row.map(quote).join(",")).join("\r\n")], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob); const link = document.createElement("a");
     link.href = url; link.download = "original-orders-" + new Date().toISOString().slice(0, 10) + ".csv"; link.click(); URL.revokeObjectURL(url);
   };
-  const quickNotes = ["طلبك قيد التجهيز الآن 👨‍🍳", "طلبك جاهز للتوصيل ✨", "طلبك خرج للتوصيل 🛵", "المندوب قريب من موقعك 📍"];
-  return <div className="admin-content">
-    <AdminHeading eyebrow="من لحظة الطلب حتى التسليم" title="إدارة الطلبات وإشعارات العملاء" text="حدّث الحالة أو أرسل رسالة إشعار مخصصة تصل فوراً لشاشة جوال العميل." icon={ClipboardList} />
-    <OwnerNotificationControl />
-    {query.data?.length ? <div className="admin-actions-row admin-export-row"><span className="subtle-note">{query.data.length} طلبًا · التصدير يشمل البيانات التي حمّلتها اللوحة</span><button type="button" className="small-button" onClick={exportOrders}><Download size={15} />تصدير CSV</button></div> : null}
-    {query.isLoading ? <AdminLoading /> : query.error ? <AdminError message={query.error.message} retry={() => void query.refetch()} /> : !query.data?.length ? <AdminEmpty title="لا توجد طلبات" text="ستظهر الطلبات الجديدة هنا بعد تفعيل إعدادات التوصيل." /> : <div className="admin-orders">{query.data.map(order => {
-      const allowedStatuses = [order.status, ...(nextStates[order.status] ?? [])];
-      const noteVal = deliveryNotes[order.id] ?? "";
-      const isFocused = focusedOrderNo === order.orderNumber;
-      return <article className="admin-order-card" key={order.id} style={isFocused ? { border: "2px solid #174b36", boxShadow: "0 12px 28px rgba(23, 75, 54, 0.14)" } : undefined}>
-        <div className="admin-order-top"><div><strong className="order-number">{order.orderNumber}</strong><small>{new Date(order.createdAt).toLocaleString("ar-YE")}</small></div><div style={{ display: "flex", gap: "6px", alignItems: "center" }}><span className={"status-pill status-" + order.status}>{labels[order.status]}</span><button type="button" className="small-button danger-soft" onClick={() => { if (window.confirm("هل أنت متأكد من حذف الطلب «" + order.orderNumber + "» نهائياً؟")) deleteOrder.mutate({ id: order.id }); }}><Trash2 size={14} /> حذف</button></div></div>
-        <div className="admin-order-customer"><strong>{order.recipientName}</strong><span dir="ltr">{order.phone}</span><span>{order.city}، {order.district}</span>{order.addressDetails && <small>{order.addressDetails}</small>}{order.customerNote && <small>ملاحظة العميل: {order.customerNote}</small>}</div>
-        <div className="admin-order-lines">{order.items.map(item => <span key={item.id}>{item.productName} × {item.quantity} · {money(item.lineTotal)}</span>)}</div>
-        <div className="admin-order-total"><span>فرعي {money(order.subtotal)} · توصيل {money(order.deliveryFee)}{order.discount ? " · خصم " + money(order.discount) : ""}</span><strong>{money(order.total)}</strong></div>
-        <div className="admin-order-controls"><label>حالة الطلب<select value={order.status} disabled={order.status === "delivered" || order.status === "cancelled" || change.isPending} onChange={e => change.mutate({ id: order.id, status: e.target.value as "new" | "preparing" | "ready" | "out_for_delivery" | "delivered" | "cancelled", note: noteVal.trim() || undefined }, { onSuccess: () => setDeliveryNotes(current => ({ ...current, [order.id]: "" })) })}>{Object.entries(labels).filter(([value]) => allowedStatuses.includes(value)).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><span className="cod-note small"><Truck size={15} /> نقدًا عند الاستلام</span></div>
-        <div className="admin-order-delivery-note" style={{ display: "grid", gap: "6px", marginTop: "8px" }}>
-          <span style={{ fontSize: "11px", fontWeight: 700, color: "#174b36" }}>رسالة الإشعار للعميل (يصل النص الذي تكتبه هنا فقط بإشعار واحد أنيق):</span>
-          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-            <input maxLength={500} value={noteVal} onChange={e => setDeliveryNotes(current => ({ ...current, [order.id]: e.target.value }))} placeholder="اكتب رسالتك للعميل (مثلاً: طلبك خرج للتوصيل)..." style={{ flex: "1 1 200px" }} />
-            <button type="button" className="small-button selected" disabled={!noteVal.trim() || sendNoteMut.isPending} onClick={() => sendNoteMut.mutate({ id: order.id, note: noteVal.trim() })}><BellRing size={14} /> إرسال إشعار فوري</button>
-          </div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
-            {quickNotes.map(qn => (
-              <button key={qn} type="button" className="small-button" style={{ fontSize: "10px", minHeight: "26px", padding: "0 8px" }} onClick={() => setDeliveryNotes(current => ({ ...current, [order.id]: qn }))}>{qn}</button>
-            ))}
-          </div>
-        </div>
-        {order.events.length ? <details className="order-history" open={isFocused}><summary>سجل تغييرات الحالة والإشعارات</summary><ol>{order.events.map(event => <li key={event.id}><span className={"status-pill status-" + event.status}>{labels[event.status]}</span><time>{new Date(event.createdAt).toLocaleString("ar-YE")}</time>{event.note && <small>{event.note}</small>}</li>)}</ol></details> : null}
-      </article>;
-    })}</div>}
-  </div>;
-}
 
+  const quickNotes = ["طلبك قيد التجهيز الآن 👨‍🍳", "طلبك جاهز للتوصيل ✨", "طلبك خرج للتوصيل 🛵", "المندوب قريب من موقعك 📍"];
+  const cancelReasonPresets = [
+    "غير متوفر اليوم في المخزون وتم خصم مبلغه من الفاتورة",
+    "نفدت الكمية الطازجة منه حالياً وخُصم من إجمالي الفاتورة",
+    "تم إلغاء الصنف بناءً على طلب العميل وتحديث الفاتورة",
+  ];
+
+  return (
+    <div className="admin-content">
+      <AdminHeading eyebrow="تحكم كامل بالفواتير والأصناف والتواصل" title="إدارة الطلبات والفواتير الذكية" text="ألغِ أي صنف غير متوفر من الفاتورة مع توضيح السبب للزبون، وشارك الفاتورة عبر واتساب أو اطبعها، وشاهد الملخص الأسبوعي لكل زبون." icon={ClipboardList} />
+      <OwnerNotificationControl />
+
+      <div className="filter-bar" style={{ marginTop: "12px", marginBottom: "12px" }}>
+        <label className="filter-search">
+          <input value={orderSearch} onChange={e => setOrderSearch(e.target.value)} placeholder="ابحث برقم الطلب، اسم الزبون، رقم الهاتف، أو اسم الصنف..." />
+        </label>
+        <label className="filter-select">
+          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+            <option value="all">كل الطلبات ({allOrders.length})</option>
+            <option value="active">طلبات قيد المتابعة الآن</option>
+            <option value="new">جديد</option>
+            <option value="preparing">قيد التجهيز</option>
+            <option value="ready">جاهز للتوصيل</option>
+            <option value="out_for_delivery">خرج للتوصيل</option>
+            <option value="delivered">تم التسليم</option>
+            <option value="cancelled">ملغي</option>
+          </select>
+        </label>
+        {filteredOrders.length > 0 && (
+          <button type="button" className="small-button" onClick={exportOrders}><Download size={15} /> تصدير تقرير CSV ({filteredOrders.length})</button>
+        )}
+      </div>
+
+      {query.isLoading ? <AdminLoading /> : query.error ? <AdminError message={query.error.message} retry={() => void query.refetch()} /> : !filteredOrders.length ? <AdminEmpty title="لا توجد طلبات مطابقة" text="جرب تغيير فلتر الحالة أو البحث." /> : (
+        <div className="admin-orders">
+          {filteredOrders.map(order => {
+            const allowedStatuses = [order.status, ...(nextStates[order.status] ?? [])];
+            const noteVal = deliveryNotes[order.id] ?? "";
+            const isFocused = focusedOrderNo === order.orderNumber;
+            const canModifyItems = order.status !== "delivered" && order.status !== "cancelled";
+            const cancelledEvents = (order.events || []).filter(ev => String(ev.note || "").startsWith("❌"));
+            const custSummary = customerSummaryByPhone.get(String(order.phone || "").trim());
+
+            const driverWhatsAppText = [
+              "🛵 *طلب توصيل — متجر أورجنال*",
+              "رقم الطلب: " + order.orderNumber,
+              "العميل: " + order.recipientName,
+              "الهاتف: " + order.phone,
+              "العنوان: " + order.city + " - " + order.district + (order.addressDetails ? (" (" + order.addressDetails + ")") : ""),
+              order.customerNote ? ("ملاحظة العميل: " + order.customerNote) : "",
+              "------------------",
+              "📦 *الأصناف المطلوبة:*",
+              ...order.items.map(it => "• " + it.productName + " × " + it.quantity + " (" + money(it.lineTotal) + ")"),
+              "------------------",
+              "💰 *المبلغ المطلوب تحصيله نقداً:* " + money(order.total),
+            ].filter(Boolean).join("\n");
+
+            const customerWhatsAppText = [
+              "مرحباً " + order.recipientName + " 🌿",
+              "تفاصيل فاتورة طلبك رقم *" + order.orderNumber + "* من متجر أورجنال:",
+              ...order.items.map(it => "• " + it.productName + " × " + it.quantity + ": " + money(it.lineTotal)),
+              ...(cancelledEvents.length ? ["", "🚫 *تعديلات وإلغاءات الفاتورة:*", ...cancelledEvents.map(c => "• " + c.note)] : []),
+              "------------------",
+              "المجموع الفرعي: " + money(order.subtotal),
+              "رسوم التوصيل: " + money(order.deliveryFee),
+              order.discount ? ("الخصم: " + money(order.discount)) : "",
+              "*الإجمالي النهائي المطلوب:* " + money(order.total),
+              "حالة الطلب الحالية: " + labels[order.status],
+            ].filter(Boolean).join("\n");
+
+            return (
+              <article className="admin-order-card" key={order.id} style={isFocused ? { border: "2px solid #174b36", boxShadow: "0 12px 28px rgba(23, 75, 54, 0.14)" } : undefined}>
+                <div className="admin-order-top">
+                  <div><strong className="order-number">{order.orderNumber}</strong><small>{new Date(order.createdAt).toLocaleString("ar-YE")}</small></div>
+                  <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", alignItems: "center" }}>
+                    <span className={"status-pill status-" + order.status}>{labels[order.status]}</span>
+                    <button type="button" className="small-button" onClick={() => printOrderInvoiceWindow(order)}>🖨️ طباعة فاتورة</button>
+                    <button type="button" className="small-button danger-soft" onClick={() => { if (window.confirm("هل أنت متأكد من حذف الطلب «" + order.orderNumber + "» نهائياً؟")) deleteOrder.mutate({ id: order.id }); }}><Trash2 size={14} /> حذف</button>
+                  </div>
+                </div>
+
+                <div className="admin-order-customer">
+                  <strong>👤 {order.recipientName}</strong>
+                  <span dir="ltr">📞 {order.phone}</span>
+                  <span>📍 {order.city}، {order.district}</span>
+                  {order.addressDetails && <small>تفاصيل العنوان: {order.addressDetails}</small>}
+                  {order.customerNote && <small style={{ color: "#9c6509", fontWeight: 700 }}>📝 ملاحظة العميل: {order.customerNote}</small>}
+                </div>
+
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", margin: "6px 0 10px" }}>
+                  {order.phone && (
+                    <a href={"tel:" + order.phone} className="small-button" style={{ fontSize: "11.5px" }}>📞 اتصال بالعميل</a>
+                  )}
+                  {order.phone && (
+                    <a href={buildWhatsAppUrl(order.phone, customerWhatsAppText)} target="_blank" rel="noreferrer" className="small-button" style={{ background: "#e9f8ef", color: "#0f5c3a", borderColor: "#a8dfc0", fontWeight: 800, fontSize: "11.5px" }}>
+                      📲 إرسال الفاتورة للعميل واتساب
+                    </a>
+                  )}
+                  <a href={["ht", "tps://wa.me/?text="].join("") + encodeURIComponent(driverWhatsAppText)} target="_blank" rel="noreferrer" className="small-button" style={{ background: "#f2f6ff", color: "#1d4ed8", borderColor: "#bfd3fe", fontWeight: 800, fontSize: "11.5px" }}>
+                    🛵 إرسال بيانات التوصيل للمندوب واتساب
+                  </a>
+                </div>
+
+                {lastWhatsAppAlert && lastWhatsAppAlert.orderId === order.id && (
+                  <div style={{ padding: "10px 12px", borderRadius: "12px", background: "#e9f8ef", border: "1.5px solid #174b36", display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: "8px", marginBottom: "10px" }}>
+                    <span style={{ fontSize: "12px", fontWeight: 800, color: "#123b2a" }}>✅ تم تحديث الفاتورة وإشعار الزبون في الموقع! هل تود إرسال توضيح له عبر واتساب أيضاً؟</span>
+                    <div style={{ display: "flex", gap: "6px" }}>
+                      <a href={buildWhatsAppUrl(lastWhatsAppAlert.phone, lastWhatsAppAlert.message)} target="_blank" rel="noreferrer" className="small-button selected">📲 إرسال التوضيح عبر واتساب</a>
+                      <button type="button" className="small-button" onClick={() => setLastWhatsAppAlert(null)}><X size={13} /></button>
+                    </div>
+                  </div>
+                )}
+
+                <div style={{ display: "grid", gap: "6px", padding: "10px", borderRadius: "12px", background: "#f7faf8", border: "1px solid #dce7e0" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <strong style={{ fontSize: "12px", color: "#174b36" }}>🛒 أصناف الفاتورة المعتمدة ({order.items.length}):</strong>
+                    {canModifyItems && <small style={{ fontSize: "11px", color: "#5c7365" }}>اضغط «إلغاء الصنف» لحذفه من الفاتورة وإبلاغ الزبون</small>}
+                  </div>
+                  {order.items.map(item => {
+                    const isEditingThisItem = cancellingItem?.orderId === order.id && cancellingItem?.itemId === item.id;
+                    return (
+                      <div key={item.id} style={{ padding: "7px 10px", borderRadius: "10px", background: "#ffffff", border: "1px solid #e2ece5", display: "grid", gap: "6px" }}>
+                        <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
+                          <span style={{ fontWeight: 800, fontSize: "13px", color: "#132a1f" }}>
+                            {item.productName} <span style={{ color: "#174b36" }}>× {item.quantity}</span> · <b>{money(item.lineTotal)}</b>
+                          </span>
+                          {canModifyItems && (
+                            <button
+                              type="button"
+                              className="small-button danger-soft"
+                              style={{ minHeight: "26px", padding: "2px 9px", fontSize: "11px", fontWeight: 800 }}
+                              onClick={() => {
+                                if (isEditingThisItem) {
+                                  setCancellingItem(null);
+                                } else {
+                                  setCancellingItem({ orderId: order.id, itemId: item.id, itemName: item.productName, maxQty: item.quantity, unitPrice: item.unitPrice });
+                                  setCancelQty(item.quantity);
+                                  setCancelReason("غير متوفر اليوم في المخزون وتم خصم مبلغه من الفاتورة");
+                                }
+                              }}
+                            >
+                              {isEditingThisItem ? "إغلاق" : "❌ إلغاء الصنف / تعديل"}
+                            </button>
+                          )}
+                        </div>
+
+                        {isEditingThisItem && (
+                          <div style={{ padding: "10px", borderRadius: "10px", background: "#fff8f6", border: "1.5px solid #e8b4ab", display: "grid", gap: "8px" }}>
+                            <strong style={{ fontSize: "12px", color: "#8f3225" }}>إلغاء «{item.productName}» من الفاتورة وإبلاغ الزبون بالسبب:</strong>
+                            {item.quantity > 1 && (
+                              <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", fontWeight: 700 }}>
+                                <span>الكمية المراد إلغاؤها (من أصل {item.quantity}):</span>
+                                <input type="number" min={1} max={item.quantity} value={cancelQty} onChange={e => setCancelQty(Math.max(1, Math.min(item.quantity, Number(e.target.value) || 1)))} style={{ width: "75px", padding: "4px 8px", borderRadius: "8px", background: "#fff" }} />
+                                <small style={{ color: "#8f3225" }}>(سيُخصم {money(cancelQty * item.unitPrice)})</small>
+                              </label>
+                            )}
+                            <label style={{ display: "grid", gap: "4px", fontSize: "11.5px", fontWeight: 700, color: "#5e2922" }}>
+                              <span>رسالة التوضيح للزبون (تصل للزبون وتُحفظ في التقارير):</span>
+                              <input value={cancelReason} onChange={e => setCancelReason(e.target.value)} placeholder="اكتب سبب الإلغاء للزبون..." style={{ padding: "7px 10px", borderRadius: "8px", background: "#fff", border: "1px solid #dfa49a" }} />
+                            </label>
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
+                              {cancelReasonPresets.map(pr => (
+                                <button key={pr} type="button" className="small-button" style={{ fontSize: "10px", minHeight: "24px", padding: "2px 8px", background: "#fff" }} onClick={() => setCancelReason(pr)}>{pr}</button>
+                              ))}
+                            </div>
+                            <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end" }}>
+                              <button type="button" className="small-button" onClick={() => setCancellingItem(null)}>تراجع</button>
+                              <button
+                                type="button"
+                                className="small-button selected"
+                                style={{ background: "#9b3b2e", borderColor: "#9b3b2e", color: "#fff" }}
+                                disabled={removeItemMut.isPending || !cancelReason.trim()}
+                                onClick={() => removeItemMut.mutate({ orderId: order.id, itemId: item.id, cancelQty, reason: cancelReason.trim() })}
+                              >
+                                {removeItemMut.isPending ? <LoaderCircle size={13} className="spin" /> : <Check size={13} />} تأكيد الحذف من الفاتورة وإشعار الزبون
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {cancelledEvents.length > 0 && (
+                  <div style={{ marginTop: "8px", padding: "10px 12px", borderRadius: "12px", background: "#fff5f4", border: "1px solid #f0c4bc", display: "grid", gap: "4px" }}>
+                    <strong style={{ fontSize: "12px", color: "#8f3225" }}>🚫 أصناف تم إلغاؤها وخصمها من هذه الفاتورة ({cancelledEvents.length}):</strong>
+                    {cancelledEvents.map(ev => (
+                      <div key={ev.id} style={{ fontSize: "11.5px", color: "#5e251d", lineHeight: 1.5 }}>• {ev.note}</div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="admin-order-total">
+                  <span>فرعي {money(order.subtotal)} · توصيل {money(order.deliveryFee)}{order.discount ? " · خصم " + money(order.discount) : ""}</span>
+                  <strong>الإجمالي النهائي: {money(order.total)}</strong>
+                </div>
+
+                <div className="admin-order-controls">
+                  <label>حالة الطلب
+                    <select value={order.status} disabled={order.status === "delivered" || order.status === "cancelled" || change.isPending} onChange={e => change.mutate({ id: order.id, status: e.target.value as "new" | "preparing" | "ready" | "out_for_delivery" | "delivered" | "cancelled", note: noteVal.trim() || undefined }, { onSuccess: () => setDeliveryNotes(current => ({ ...current, [order.id]: "" })) })}>
+                      {Object.entries(labels).filter(([value]) => allowedStatuses.includes(value)).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                    </select>
+                  </label>
+                  <span className="cod-note small"><Truck size={15} /> نقدًا عند الاستلام</span>
+                </div>
+
+                <div className="admin-order-delivery-note" style={{ display: "grid", gap: "6px", marginTop: "8px" }}>
+                  <span style={{ fontSize: "11px", fontWeight: 700, color: "#174b36" }}>💬 التحدث مع العميل / إرسال توضيح أو إشعار فوري لجواله:</span>
+                  <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                    <input maxLength={500} value={noteVal} onChange={e => setDeliveryNotes(current => ({ ...current, [order.id]: e.target.value }))} placeholder="اكتب رسالتك أو توضيحك للعميل..." style={{ flex: "1 1 200px" }} />
+                    <button type="button" className="small-button selected" disabled={!noteVal.trim() || sendNoteMut.isPending} onClick={() => sendNoteMut.mutate({ id: order.id, note: noteVal.trim() })}><BellRing size={14} /> إرسال إشعار فوري</button>
+                    {order.phone && noteVal.trim() && (
+                      <a href={buildWhatsAppUrl(order.phone, "مرحباً " + order.recipientName + " 🌿\nبخصوص طلبك رقم " + order.orderNumber + ":\n" + noteVal.trim())} target="_blank" rel="noreferrer" className="small-button" style={{ background: "#e9f8ef", color: "#0f5c3a", fontWeight: 800 }}>
+                        📲 إرسالها واتساب أيضاً
+                      </a>
+                    )}
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
+                    {quickNotes.map(qn => (
+                      <button key={qn} type="button" className="small-button" style={{ fontSize: "10px", minHeight: "26px", padding: "0 8px" }} onClick={() => setDeliveryNotes(current => ({ ...current, [order.id]: qn }))}>{qn}</button>
+                    ))}
+                  </div>
+                </div>
+
+                {custSummary && (
+                  <details className="order-history" style={{ marginTop: "10px", background: "#f2f8f4", border: "1.5px solid #c5dfd0", borderRadius: "12px", padding: "10px 12px" }}>
+                    <summary style={{ cursor: "pointer", fontWeight: 900, fontSize: "12.5px", color: "#144530", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "6px" }}>
+                      <span>📊 ملخص الطلبات الأسبوعي والشامل للزبون: {order.recipientName} (<b dir="ltr">{order.phone}</b>)</span>
+                      <span style={{ fontSize: "11px", padding: "2px 8px", borderRadius: "99px", background: "#174b36", color: "#f1d897" }}>
+                        هذا الأسبوع: {custSummary.weekOrdersCount} طلب ({money(custSummary.weekSpent)}) · الكلي: {custSummary.allTimeOrdersCount} طلب
+                      </span>
+                    </summary>
+                    <div style={{ marginTop: "10px", display: "grid", gap: "10px", fontSize: "12px", color: "#1d3b2b" }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "8px" }}>
+                        <div style={{ padding: "8px 10px", borderRadius: "10px", background: "#ffffff", border: "1px solid #d4e6db" }}>
+                          <small style={{ color: "#536e5f", display: "block" }}>طلبات هذا الأسبوع (7 أيام)</small>
+                          <strong style={{ fontSize: "14px", color: "#174b36" }}>{custSummary.weekOrdersCount} طلب · {money(custSummary.weekSpent)}</strong>
+                        </div>
+                        <div style={{ padding: "8px 10px", borderRadius: "10px", background: "#ffffff", border: "1px solid #d4e6db" }}>
+                          <small style={{ color: "#536e5f", display: "block" }}>إجمالي مشتريات الزبون الكلي</small>
+                          <strong style={{ fontSize: "14px", color: "#174b36" }}>{custSummary.allTimeOrdersCount} طلب · {money(custSummary.allTimeSpent)}</strong>
+                        </div>
+                        <div style={{ padding: "8px 10px", borderRadius: "10px", background: "#ffffff", border: "1px solid #d4e6db" }}>
+                          <small style={{ color: "#536e5f", display: "block" }}>الطلبات الملغاة بالكامل</small>
+                          <strong style={{ fontSize: "14px", color: "#8f3225" }}>{custSummary.allTimeCancelledOrders} طلب ملغي</strong>
+                        </div>
+                      </div>
+
+                      <div style={{ padding: "9px 10px", borderRadius: "10px", background: "#ffffff", border: "1px solid #d4e6db" }}>
+                        <strong style={{ display: "block", marginBottom: "5px", color: "#174b36" }}>🛍️ كل الأصناف التي اشتراها هذا الزبون خلال الأسبوع:</strong>
+                        {!custSummary.weekItems.length ? <small style={{ color: "#6c7f73" }}>لا توجد أصناف مشتراة خلال آخر 7 أيام.</small> : (
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                            {custSummary.weekItems.map(wi => (
+                              <span key={wi.name} style={{ padding: "4px 9px", borderRadius: "8px", background: "#eef6f1", border: "1px solid #cbe0d2", fontWeight: 700, fontSize: "11.5px" }}>
+                                {wi.name} × {wi.qty} ({money(wi.total)})
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {custSummary.weekCancelledNotes.length > 0 && (
+                        <div style={{ padding: "9px 10px", borderRadius: "10px", background: "#fff6f5", border: "1px solid #f0c8c0" }}>
+                          <strong style={{ display: "block", marginBottom: "4px", color: "#8f3225" }}>🚫 الأصناف التي أُلغيت لهذا الزبون:</strong>
+                          {custSummary.weekCancelledNotes.map((cn, idx) => (
+                            <div key={idx} style={{ fontSize: "11px", color: "#63261e" }}>• {cn}</div>
+                          ))}
+                        </div>
+                      )}
+
+                      <div style={{ padding: "9px 10px", borderRadius: "10px", background: "#ffffff", border: "1px solid #d4e6db" }}>
+                        <strong style={{ display: "block", marginBottom: "5px", color: "#174b36" }}>📋 فواتير وطلبات هذا الزبون ({custSummary.recentOrderNumbers.length}):</strong>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                          {custSummary.recentOrderNumbers.slice(0, 10).map(ro => (
+                            <span key={ro.orderNumber} style={{ padding: "3px 8px", borderRadius: "7px", background: "#f5f8f6", border: "1px solid #d5e2da", fontSize: "11px" }}>
+                              <b>{ro.orderNumber}</b> · {money(ro.total)} · {labels[ro.status]} ({new Date(ro.createdAt).toLocaleDateString("ar-YE")})
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </details>
+                )}
+
+                {order.events.length ? (
+                  <details className="order-history" open={isFocused}>
+                    <summary>سجل تغييرات الحالة والإشعارات ({order.events.length})</summary>
+                    <ol>{order.events.map(event => <li key={event.id}><span className={"status-pill status-" + event.status}>{labels[event.status]}</span><time>{new Date(event.createdAt).toLocaleString("ar-YE")}</time>{event.note && <small>{event.note}</small>}</li>)}</ol>
+                  </details>
+                ) : null}
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 const OWNER_ORDER_CURSOR_KEY = "original-owner-order-notification-cursor-v1";
 function readOwnerOrderCursor() {
   try {
@@ -2638,6 +3311,7 @@ function StaffManagementPanel({ actorIsOwner, actorPermissions, actorStaffId }: 
   const utils = trpc.useUtils();
   const staffQuery = trpc.commerce.admin.staff.list.useQuery(undefined, { retry: 1 });
   const logsQuery = trpc.commerce.admin.staff.auditLogs.useQuery(undefined, { retry: 1, refetchInterval: 5000 });
+  const catsQuery = trpc.commerce.admin.categories.list.useQuery(undefined, { retry: 1 });
   const [logActorFilter, setLogActorFilter] = useState<string>("all");
 
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -2646,6 +3320,7 @@ function StaffManagementPanel({ actorIsOwner, actorPermissions, actorStaffId }: 
   const [password, setPassword] = useState("");
   const [roleKey, setRoleKey] = useState<"general_manager" | "product_manager" | "order_manager" | "content_manager" | "staff">("product_manager");
   const [permissions, setPermissions] = useState<PermissionKey[]>(ROLE_DEFINITIONS.product_manager.defaultPermissions);
+  const [allowedCategoryIds, setAllowedCategoryIds] = useState<number[]>([]);
   const [mustChangePassword, setMustChangePassword] = useState(true);
 
   const [search, setSearch] = useState("");
@@ -2671,6 +3346,7 @@ function StaffManagementPanel({ actorIsOwner, actorPermissions, actorStaffId }: 
     setPassword("");
     setRoleKey("product_manager");
     setPermissions([...ROLE_DEFINITIONS.product_manager.defaultPermissions]);
+    setAllowedCategoryIds([]);
     setMustChangePassword(true);
   };
 
@@ -2750,13 +3426,13 @@ function StaffManagementPanel({ actorIsOwner, actorPermissions, actorStaffId }: 
       return;
     }
     if (editingId) {
-      updateMut.mutate({ id: editingId, displayName, username, roleKey, permissions });
+      updateMut.mutate({ id: editingId, displayName, username, roleKey, permissions, allowedCategoryIds });
     } else {
       if (password.length < 6) {
         toast.error("كلمة المرور يجب ألا تقل عن 6 أحرف.");
         return;
       }
-      createMut.mutate({ displayName, username, password, roleKey, permissions, mustChangePassword });
+      createMut.mutate({ displayName, username, password, roleKey, permissions, allowedCategoryIds, mustChangePassword });
     }
   };
 
@@ -2768,6 +3444,7 @@ function StaffManagementPanel({ actorIsOwner, actorPermissions, actorStaffId }: 
     const r = (["general_manager", "product_manager", "order_manager", "content_manager", "staff"].includes(item.roleKey) ? item.roleKey : "staff") as "general_manager" | "product_manager" | "order_manager" | "content_manager" | "staff";
     setRoleKey(r);
     setPermissions([...item.permissions]);
+    setAllowedCategoryIds(Array.isArray((item as any).allowedCategoryIds) ? [...(item as any).allowedCategoryIds] : []);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -2845,6 +3522,69 @@ function StaffManagementPanel({ actorIsOwner, actorPermissions, actorStaffId }: 
                 إلزام هذا المدير بتغيير كلمة المرور المؤقتة فور أول تسجيل دخول له
               </label>
             )}
+          </div>
+
+          <div style={{ padding: "12px 14px", borderRadius: "14px", border: "1.5px solid #cfe2d5", background: "#f3f9f5", display: "grid", gap: "8px" }}>
+            <strong style={{ fontSize: "12px", color: "#174b36" }}>⚡ قوالب صلاحيات سريعة جاهزة (اختَر المهمة بنقرة واحدة):</strong>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+              <button type="button" className="small-button" onClick={() => { setRoleKey("staff"); setPermissions(["products.view", "products.add"]); toast.info("تم ضبط الصلاحيات: إضافة منتجات فقط (ممنوع التعديل والحذف)"); }}>
+                ➕ إضافة منتجات فقط (بدون حذف أو تعديل)
+              </button>
+              <button type="button" className="small-button" onClick={() => { setRoleKey("product_manager"); setPermissions(["products.view", "products.add", "products.edit", "inventory.manage"]); toast.info("تم ضبط الصلاحيات: إضافة وتعديل منتجات وأسعار (ممنوع الحذف النهائي)"); }}>
+                ✏️ إضافة وتعديل المنتجات والأسعار (ممنوع الحذف)
+              </button>
+              <button type="button" className="small-button" onClick={() => { setRoleKey("order_manager"); setPermissions(["overview.view", "orders.view", "orders.manage", "customers.view", "chats.manage"]); toast.info("تم ضبط الصلاحيات: إدارة الطلبات والفواتير والرد على الزبائن"); }}>
+                📦 مسؤول طلبات وتواصل مع الزبائن فقط
+              </button>
+              <button type="button" className="small-button" onClick={() => { setRoleKey("general_manager"); setPermissions(actorIsOwner ? [...PERMISSION_KEYS] : [...actorPermissions]); toast.info("تم تحديد كامل الصلاحيات"); }}>
+                👑 مدير شامل بجميع الصلاحيات
+              </button>
+            </div>
+          </div>
+
+          <div style={{ padding: "14px", borderRadius: "14px", border: "1.5px solid #d8e5dc", background: "#ffffff", display: "grid", gap: "10px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
+              <div>
+                <strong style={{ fontSize: "12.5px", color: "#174b36", display: "block" }}>📂 تخصيص الأقسام المسموح لهذا المشرف بالتحكم بها:</strong>
+                <small style={{ color: "#5b7063", fontSize: "11px" }}>
+                  {allowedCategoryIds.length === 0 ? "✅ مسموح له بإدارة جميع أقسام المتجر (اضغط على أي قسم بالأسفل إذا أردت حصره في أقسام معينة فقط مثل الخضروات والفواكه)." : ("🔒 مقيّد بإدارة (" + allowedCategoryIds.length + ") قسم محدد فقط — لن يتمكن من إضافة أو تعديل منتجات خارجها.")}
+                </small>
+              </div>
+              {allowedCategoryIds.length > 0 && (
+                <button type="button" className="small-button selected" onClick={() => setAllowedCategoryIds([])}>إتاحة كل الأقسام</button>
+              )}
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+              {(catsQuery.data ?? []).map(cat => {
+                const isSelected = allowedCategoryIds.includes(cat.id);
+                return (
+                  <label
+                    key={cat.id}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      padding: "6px 12px",
+                      borderRadius: "99px",
+                      border: isSelected ? "2px solid #174b36" : "1px solid #d4e0d8",
+                      background: isSelected ? "#e8f5ec" : "#f8faf9",
+                      fontWeight: 800,
+                      fontSize: "12px",
+                      color: "#153b29",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => setAllowedCategoryIds(curr => curr.includes(cat.id) ? curr.filter(id => id !== cat.id) : [...curr, cat.id])}
+                      style={{ width: "14px", minHeight: "14px", accentColor: "#174b36" }}
+                    />
+                    <span>{cat.name}</span>
+                  </label>
+                );
+              })}
+            </div>
           </div>
 
           <div style={{ padding: "14px", borderRadius: "14px", border: "1px solid #e2ebe4", background: "#f9fbf8" }}>
@@ -2947,6 +3687,15 @@ function StaffManagementPanel({ actorIsOwner, actorPermissions, actorStaffId }: 
                       {PERMISSION_LABELS[p]?.label || p}
                     </span>
                   ))}
+                  {Array.isArray((item as any).allowedCategoryIds) && (item as any).allowedCategoryIds.length > 0 ? (
+                    <span style={{ padding: "3px 9px", borderRadius: "6px", background: "#fff4d9", color: "#8a5a00", fontSize: "10.5px", fontWeight: 800, border: "1px solid #efd595" }}>
+                      🔒 مخصص للأقسام: {(item as any).allowedCategoryIds.map((cid: number) => (catsQuery.data ?? []).find(c => c.id === cid)?.name || ("#" + cid)).join("، ")}
+                    </span>
+                  ) : (
+                    <span style={{ padding: "3px 9px", borderRadius: "6px", background: "#e8f4ec", color: "#174b36", fontSize: "10px", fontWeight: 700 }}>
+                      📂 كل الأقسام المسموحة
+                    </span>
+                  )}
                 </div>
                 <div className="admin-order-customer" style={{ marginTop: "6px", paddingBottom: "8px" }}>
                   <span>تاريخ الإنشاء: {new Date(item.createdAt).toLocaleDateString("ar-YE")}</span>
@@ -3135,7 +3884,7 @@ function canAccessSection(section: Section, isOwner: boolean, perms: PermissionK
   if (isOwner) return true;
   const has = (p: PermissionKey) => perms.includes(p);
   if (section === "overview") return has("overview.view");
-  if (section === "products") return has("products.view") || has("products.manage") || has("inventory.manage");
+  if (section === "products") return has("products.view") || has("products.add") || has("products.edit") || has("products.delete") || has("products.manage") || has("inventory.manage");
   if (section === "categories") return has("categories.manage");
   if (section === "banners") return has("banners.manage");
   if (section === "offers") return has("offers.manage");
@@ -3147,9 +3896,9 @@ function canAccessSection(section: Section, isOwner: boolean, perms: PermissionK
   return false;
 }
 
-function AdminPanel({ section, isOwner, permissions, staffId }: { section: Section; isOwner: boolean; permissions: PermissionKey[]; staffId: number | null }) {
+function AdminPanel({ section, isOwner, permissions, allowedCategoryIds, staffId }: { section: Section; isOwner: boolean; permissions: PermissionKey[]; allowedCategoryIds: number[]; staffId: number | null }) {
   if (section === "chats") return <ChatsPanel />;
-  if (section === "products") return <ProductsPanel />;
+  if (section === "products") return <ProductsPanel isOwner={isOwner} permissions={permissions} allowedCategoryIds={allowedCategoryIds} />;
   if (section === "categories") return <CategoriesPanel />;
   if (section === "banners") return <BannersPanel />;
   if (section === "offers") return <OffersPanel />;
@@ -3179,6 +3928,7 @@ export default function Admin() {
 
   const isOwner = Boolean(access.data.isOwner);
   const permissions = (access.data.permissions ?? []) as PermissionKey[];
+  const allowedCategoryIds = ((access.data as any).allowedCategoryIds ?? []) as number[];
   const staffId = access.data.staffId ?? null;
   const roleLabel = isOwner ? "مالك المتجر" : (ROLE_DEFINITIONS[access.data.adminRole as AdminRoleKey]?.label || "مدير");
 
@@ -3223,7 +3973,7 @@ export default function Admin() {
           <span className="admin-breadcrumb">أورجنال <span>/</span> {allowedSections.find(item => item.id === activeSection)?.label}</span>
           <Link className="small-button" href="/">فتح المتجر<ArrowLeft size={14} /></Link>
         </header>
-        <AdminPanel section={activeSection} isOwner={isOwner} permissions={permissions} staffId={staffId} />
+        <AdminPanel section={activeSection} isOwner={isOwner} permissions={permissions} allowedCategoryIds={allowedCategoryIds} staffId={staffId} />
       </main>
       <div className="admin-mobile-backdrop" onClick={() => document.body.classList.remove("admin-menu-open")} />
     </div>

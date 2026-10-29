@@ -9,7 +9,7 @@ import * as db from "../db";
 import { ENV } from "./env";
 import { eq } from "drizzle-orm";
 import { adminStaff } from "../../drizzle/schema";
-import { PERMISSION_KEYS, parsePermissionsJson, type AdminRoleKey, type PermissionKey } from "@shared/rbac";
+import { PERMISSION_KEYS, parsePermissionsJson, parseAllowedCategoriesJson, type AdminRoleKey, type PermissionKey } from "@shared/rbac";
 import { ensureRbacTables, getOwnerSessionOpenId } from "./adminAuth";
 import { isConfiguredOwnerIdentity, shouldPromoteConfiguredOwner } from "./owner";
 import type {
@@ -345,6 +345,7 @@ class SDKServer {
       }
       const roleKey = (staff.roleKey || "staff") as AdminRoleKey;
       const perms = parsePermissionsJson(staff.permissionsJson, roleKey);
+      const allowedCategoryIds = parseAllowedCategoriesJson(staff.permissionsJson, roleKey);
       const now = new Date();
       return {
         id: linkedUser?.id ?? -1000 - staff.id,
@@ -361,6 +362,7 @@ class SDKServer {
         isOwner: false,
         adminRole: roleKey,
         permissions: perms,
+        allowedCategoryIds,
         mustChangePassword: Boolean(staff.mustChangePassword),
         staffId: staff.id,
         staffUsername: staff.username,
@@ -436,6 +438,7 @@ export type AuthenticatedUser = User & {
   isOwner?: boolean;
   adminRole?: AdminRoleKey;
   permissions?: PermissionKey[];
+  allowedCategoryIds?: number[];
   mustChangePassword?: boolean;
   staffId?: number | null;
   staffUsername?: string;
