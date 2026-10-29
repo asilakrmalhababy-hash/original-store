@@ -29,6 +29,20 @@ const sections: Array<{ id: Section; label: string; icon: typeof LayoutDashboard
   { id: "settings", label: "إعدادات المتجر", icon: Settings2 },
 ];
 
+function encodeCanvasSmartWebp(canvas: HTMLCanvasElement, kind: "product" | "category" | "banner" | "icon"): string {
+  const maxBase64Len = kind === "banner" ? 175000 : kind === "icon" ? 55000 : 96000;
+  let q = kind === "banner" ? 0.82 : 0.80;
+  let out = canvas.toDataURL("image/webp", q);
+  const isWebp = out.startsWith("data:image/webp");
+  const mime = isWebp ? "image/webp" : "image/jpeg";
+  if (!isWebp) out = canvas.toDataURL("image/jpeg", q);
+  while (out.length > maxBase64Len && q > 0.56) {
+    q = Math.round((q - 0.06) * 100) / 100;
+    out = canvas.toDataURL(mime, q);
+  }
+  return out;
+}
+
 async function quickCompressImageFile(file: File, kind: "product" | "category" | "banner" | "icon"): Promise<string> {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
@@ -36,9 +50,9 @@ async function quickCompressImageFile(file: File, kind: "product" | "category" |
     img.onload = () => {
       try {
         URL.revokeObjectURL(url);
-        const maxDim = kind === "banner" ? 1600 : kind === "icon" ? 512 : 1200;
-        let w = img.naturalWidth || img.width || 1000;
-        let h = img.naturalHeight || img.height || 1000;
+        const maxDim = kind === "banner" ? 1280 : kind === "icon" ? 400 : 800;
+        let w = img.naturalWidth || img.width || 800;
+        let h = img.naturalHeight || img.height || 800;
         if (w > maxDim || h > maxDim) {
           const ratio = Math.min(maxDim / w, maxDim / h);
           w = Math.max(1, Math.round(w * ratio));
@@ -52,11 +66,7 @@ async function quickCompressImageFile(file: File, kind: "product" | "category" |
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = "high";
         ctx.drawImage(img, 0, 0, w, h);
-        let out = canvas.toDataURL("image/webp", 0.92);
-        if (!out.startsWith("data:image/webp")) {
-          out = canvas.toDataURL("image/jpeg", 0.92);
-        }
-        resolve(out);
+        resolve(encodeCanvasSmartWebp(canvas, kind));
       } catch (e) {
         reject(e);
       }
@@ -69,6 +79,37 @@ async function quickCompressImageFile(file: File, kind: "product" | "category" |
   });
 }
 
+async function recompressImageUrlToLightWebp(srcUrl: string, kind: "product" | "category" | "banner" = "product"): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      try {
+        const maxDim = kind === "banner" ? 1280 : 800;
+        let w = img.naturalWidth || img.width || 800;
+        let h = img.naturalHeight || img.height || 800;
+        if (w > maxDim || h > maxDim) {
+          const ratio = Math.min(maxDim / w, maxDim / h);
+          w = Math.max(1, Math.round(w * ratio));
+          h = Math.max(1, Math.round(h * ratio));
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) { reject(new Error("تعذر معالجة الصورة")); return; }
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = "high";
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(encodeCanvasSmartWebp(canvas, kind));
+      } catch (e) {
+        reject(e);
+      }
+    };
+    img.onerror = () => reject(new Error("تعذر تحميل الصورة"));
+    img.src = srcUrl;
+  });
+}
 
 async function makeVisionThumbDataUrl(fileOrDataUrl: File | string): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -1094,6 +1135,7 @@ function ProductsPanel({ isOwner = true, permissions = [], allowedCategoryIds = 
   const [bulkPriceCatId, setBulkPriceCatId] = useState<string>("all");
   const [bulkPriceMode, setBulkPriceMode] = useState<"percent" | "fixed">("percent");
   const [bulkPriceAmount, setBulkPriceAmount] = useState("");
+  const [optimizingImages, setOptimizingImages] = useState(false);
 
   const refreshCatalog = async () => Promise.all([
     utils.commerce.catalog.home.invalidate(),
@@ -1490,9 +1532,39 @@ function ProductsPanel({ isOwner = true, permissions = [], allowedCategoryIds = 
       )}
       {canEdit && (
         <div style={{ marginBottom: "12px" }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
           <button type="button" className={"small-button" + (showBulkPriceBox ? " selected" : "")} onClick={() => setShowBulkPriceBox(v => !v)} style={{ fontWeight: 800 }}>
             💰 {showBulkPriceBox ? "إخفاء أداة تعديل الأسعار الجماعي" : "تعديل جماعي لأسعار قسم كامل أو كل المنتجات (نسبة % أو مبلغ ثابت)"}
           </button>
+          <button
+            type="button"
+            className="small-button"
+            disabled={optimizingImages || !query.data?.length}
+            onClick={async () => {
+              const list = (query.data ?? []).filter(p => Boolean(p.imageUrl));
+              if (!list.length) { toast.info("لا توجد صور منتجات لضغطها"); return; }
+              if (!window.confirm("سيقوم النظام الآن بفحص وضغط صور المنتجات الحالية (" + list.length + " صورة) ليصبح حجم كل صورة بين 45 و 70 كيلوبايت فقط مع الحفاظ على دقتها العالية. هل تود البدء؟")) return;
+              setOptimizingImages(true);
+              let count = 0;
+              toast.info("⚡ جارٍ ضغط وتخفيف حجم صور المنتجات الحالية...");
+              for (const prod of list) {
+                try {
+                  if (!prod.imageUrl) continue;
+                  const lightDataUrl = await recompressImageUrlToLightWebp(prod.imageUrl, "product");
+                  await toggleVisibility.mutateAsync({ id: prod.id, values: { imageUrl: lightDataUrl } });
+                  count++;
+                } catch {}
+              }
+              setOptimizingImages(false);
+              await Promise.all([utils.commerce.admin.products.list.invalidate(), refreshCatalog()]);
+              toast.success("🎉 تم ضغط وتخفيف حجم " + count + " صورة منتج بنجاح (أصبحت خفيفة وسريعة جداً)!");
+            }}
+            style={{ fontWeight: 800, background: "#eef7f1", color: "#174b36", borderColor: "#b8d8c4" }}
+          >
+            {optimizingImages ? <LoaderCircle size={14} className="spin" /> : <Sparkles size={14} />}
+            {optimizingImages ? "جارٍ ضغط الصور الحالية..." : "⚡ ضغط وتخفيف صور المنتجات الحالية (إلى ~55 كيلوبايت)"}
+          </button>
+          </div>
           {showBulkPriceBox && (
             <div style={{ marginTop: "8px", padding: "14px", borderRadius: "14px", background: "#f6faf7", border: "1.5px solid #bfd6c7", display: "flex", flexWrap: "wrap", gap: "10px", alignItems: "flex-end" }}>
               <label style={{ display: "grid", gap: "4px", fontSize: "12px", fontWeight: 800, color: "#174b36" }}>
