@@ -1472,23 +1472,48 @@ function Checkout({ onClose, onSuccess, cart }: { onClose: () => void; onSuccess
   const keyRef = useRef<{ signature: string; key: string }>({ signature: "", key: "" });
   if (keyRef.current.signature !== signature) keyRef.current = { signature, key: getPendingOrderIdempotencyKey(signature) };
   const [quoteSignature, setQuoteSignature] = useState("");
-  const handleUnavailableOrderError = (msg: string) => {
-      toast.error(msg || "تعذر إتمام الطلب.");
-      if (msg && (msg.includes("لم يعد متوفراً") || msg.includes("لم يعد متاحًا"))) {
+  const handleUnavailableOrderError = (rawMsg: string) => {
+      let msg = rawMsg || "تعذر إتمام الطلب.";
+      if (msg.includes("لم يعد متوفراً") || msg.includes("لم يعد متاحًا")) {
+        const removedIds = new Set<number>();
+        const removedNames: string[] = [];
+        msg = msg.replace(/منتج\s*#(\d+)/g, (_full, idStr) => {
+          const pid = Number(idStr);
+          removedIds.add(pid);
+          const inCart = cart.find(c => c.id === pid);
+          if (inCart && inCart.name) {
+            if (!removedNames.includes(inCart.name)) removedNames.push(inCart.name);
+            return inCart.name;
+          }
+          return "منتج #" + pid;
+        });
         const m = msg.match(/«([^»]+)»/);
         if (m && m[1]) {
-          const missingNames = m[1].split("،").map(s => s.trim()).filter(Boolean);
+          const parts = m[1].split("،").map(s => s.trim()).filter(Boolean);
           for (const line of cart) {
-            if (missingNames.some(mn => line.name.includes(mn) || mn.includes(line.name))) {
-              remove(line.id, line.variant);
+            if (removedIds.has(line.id) || parts.some(p => line.name === p || line.name.includes(p) || p.includes(line.name))) {
+              removedIds.add(line.id);
+              if (!removedNames.includes(line.name)) removedNames.push(line.name);
             }
           }
         }
+        for (const line of cart) {
+          if (removedIds.has(line.id)) {
+            remove(line.id, line.variant);
+          }
+        }
+        if (removedNames.length > 0) {
+          msg = "المنتج «" + removedNames.join("، ") + "» لم يعد متوفراً حالياً في المتجر. تم حذفه من السلة تلقائياً.";
+        }
+        toast.error(msg);
         void utils.commerce.catalog.home.invalidate();
         void utils.commerce.catalog.listProducts.invalidate();
+        onClose();
+        return;
       }
+      toast.error(msg);
     };
-    const quoteMutation = trpc.commerce.orders.quote.useMutation({ onError: error => handleUnavailableOrderError(error.message || "تعذر حساب ملخص الطلب.") });
+  const quoteMutation = trpc.commerce.orders.quote.useMutation({ onError: error => handleUnavailableOrderError(error.message || "تعذر حساب ملخص الطلب.") });
   const quote = quoteSignature === signature ? quoteMutation.data : undefined;
   const mutation = trpc.commerce.orders.place.useMutation({
     onSuccess: result => {

@@ -1,5 +1,5 @@
-const CACHE = "original-shell-v35";
-const PRECACHE = ["/", "/offline.html", "/manifest.webmanifest", "/app-icon-180-v4.png", "/app-icon-192-v4.png", "/app-icon-512-v4.png", "/notif-icon-v3.png", "/notif-badge-v3.png"];
+const CACHE = "original-shell-v40";
+const PRECACHE = ["/", "/offline.html", "/manifest.webmanifest", "/app-icon-180-v4.png", "/app-icon-192-v4.png", "/app-icon-512-v4.png", "/notif-icon-v3.png", "/notif-badge-v3.png", /*__ASSET_LIST__*/];
 
 self.addEventListener("install", event => {
   self.skipWaiting();
@@ -7,7 +7,17 @@ self.addEventListener("install", event => {
 });
 
 self.addEventListener("activate", event => {
-  event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key.startsWith("original-shell-") && key !== CACHE).map(key => caches.delete(key)))).then(() => self.clients.claim()));
+  event.waitUntil(
+    caches.keys()
+      .then(keys => Promise.all(keys.filter(key => key !== CACHE).map(key => caches.delete(key))))
+      .then(() => self.clients.claim())
+      .then(async () => {
+        const clients = await self.clients.matchAll({ type: "window" });
+        for (const client of clients) {
+          try { await client.navigate(client.url); } catch {}
+        }
+      })
+  );
 });
 
 self.addEventListener("fetch", event => {
@@ -18,13 +28,14 @@ self.addEventListener("fetch", event => {
 
   if (request.mode === "navigate") {
     event.respondWith(caches.open(CACHE).then(async cache => {
-      const cachedRoot = await cache.match("/");
-      const bgFetch = fetch(request).then(response => {
-        if (response.ok) cache.put("/", response.clone());
-        return response;
-      }).catch(() => null);
-      if (cachedRoot) return cachedRoot;
-      return (await bgFetch) || (await cache.match("/offline.html"));
+      try {
+        const response = await fetch(request);
+        if (response && response.ok) {
+          cache.put("/", response.clone());
+          return response;
+        }
+      } catch {}
+      return (await cache.match("/")) || (await cache.match("/offline.html"));
     }));
     return;
   }

@@ -844,7 +844,8 @@ export const commerceRouter = router({
         const missingReq = requested.filter(r => !foundIds.has(r.productId));
         const missingIds = missingReq.map(r => r.productId);
         const dbMissing = missingIds.length ? await db.select({ id: products.id, name: products.name }).from(products).where(inArray(products.id, missingIds)) : [];
-        const missingNames = missingReq.map(r => r.name || dbMissing.find(d => d.id === r.productId)?.name || ("منتج #" + r.productId));
+        const histMissing = missingIds.length ? await db.select({ productId: orderItems.productId, name: orderItems.productName }).from(orderItems).where(inArray(orderItems.productId, missingIds)).limit(30) : [];
+        const missingNames = missingReq.map(r => r.name || dbMissing.find(d => d.id === r.productId)?.name || histMissing.find(h => h.productId === r.productId)?.name || ("منتج #" + r.productId));
         for (const mid of missingIds) clearCatalogCache(mid);
         throw new TRPCError({ code: "PRECONDITION_FAILED", message: "المنتج «" + missingNames.join("، ") + "» لم يعد متوفراً حالياً في المتجر. تم تحديث السلة تلقائياً." });
       }

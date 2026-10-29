@@ -3355,7 +3355,8 @@ var commerceRouter = router({
         const missingReq = requested.filter((r) => !foundIds.has(r.productId));
         const missingIds = missingReq.map((r) => r.productId);
         const dbMissing = missingIds.length ? await db.select({ id: products.id, name: products.name }).from(products).where(inArray(products.id, missingIds)) : [];
-        const missingNames = missingReq.map((r) => r.name || dbMissing.find((d) => d.id === r.productId)?.name || "\u0645\u0646\u062A\u062C #" + r.productId);
+        const histMissing = missingIds.length ? await db.select({ productId: orderItems.productId, name: orderItems.productName }).from(orderItems).where(inArray(orderItems.productId, missingIds)).limit(30) : [];
+        const missingNames = missingReq.map((r) => r.name || dbMissing.find((d) => d.id === r.productId)?.name || histMissing.find((h) => h.productId === r.productId)?.name || "\u0645\u0646\u062A\u062C #" + r.productId);
         for (const mid of missingIds) clearCatalogCache(mid);
         throw new TRPCError3({ code: "PRECONDITION_FAILED", message: "\u0627\u0644\u0645\u0646\u062A\u062C \xAB" + missingNames.join("\u060C ") + "\xBB \u0644\u0645 \u064A\u0639\u062F \u0645\u062A\u0648\u0641\u0631\u0627\u064B \u062D\u0627\u0644\u064A\u0627\u064B \u0641\u064A \u0627\u0644\u0645\u062A\u062C\u0631. \u062A\u0645 \u062A\u062D\u062F\u064A\u062B \u0627\u0644\u0633\u0644\u0629 \u062A\u0644\u0642\u0627\u0626\u064A\u0627\u064B." });
       }
