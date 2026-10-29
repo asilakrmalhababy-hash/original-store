@@ -39,7 +39,7 @@ import { TRPCError } from "@trpc/server";
 import { nanoid } from "nanoid";
 import { analyzeProductImageAI, parseBulkProductsTextAI } from "./_core/llm";
 import { invokeLLM } from "./_core/llm";
-import { hashGuestOrderKey, isValidGuestPhone, matchesGuestOrderKey } from "./guest-orders";
+import { hashGuestOrderKey, isValidGuestPhone, matchesGuestOrderKey, normalizeYemeniPhone } from "./guest-orders";
 import {
   getWebPushPublicKey,
   isAllowedPushEndpoint,
@@ -791,7 +791,7 @@ export const commerceRouter = router({
       const db = await database();
       await db.transaction(async tx => {
         if (input.isDefault) await tx.update(addresses).set({ isDefault: false }).where(eq(addresses.userId, ctx.user.id));
-        const values = { userId: ctx.user.id, label: input.label, recipientName: input.recipientName, phone: input.phone, city: input.city, district: input.district, details: input.details ?? null, isDefault: input.isDefault };
+        const values = { userId: ctx.user.id, label: input.label, recipientName: input.recipientName, phone: normalizeYemeniPhone(input.phone), city: input.city, district: input.district, details: input.details ?? null, isDefault: input.isDefault };
         if (input.id) {
           const owned = (await tx.select({ id: addresses.id }).from(addresses).where(and(eq(addresses.id, input.id), eq(addresses.userId, ctx.user.id))).limit(1))[0];
           if (!owned) throw new TRPCError({ code: "NOT_FOUND", message: "العنوان غير موجود في حسابك." });
@@ -888,7 +888,7 @@ export const commerceRouter = router({
       const db = await database();
       const referenceByNumber = new Map(input.refs.map(reference => [reference.orderNumber, reference.idempotencyKey]));
       const candidates = await db.select().from(orders)
-        .where(inArray(orders.orderNumber, [...referenceByNumber.keys()])).limit(50);
+        .where(inArray(orders.orderNumber, [...referenceByNumber.keys()])).orderBy(desc(orders.createdAt), desc(orders.id)).limit(50);
       const authorized = candidates.filter(order => {
         const key = referenceByNumber.get(order.orderNumber);
         return key ? matchesGuestOrderKey(key, order.idempotencyKey) : false;
@@ -903,7 +903,15 @@ export const commerceRouter = router({
       return authorized.map(order => ({
         orderNumber: order.orderNumber,
         status: order.status,
+        subtotal: order.subtotal,
+        deliveryFee: order.deliveryFee,
+        discount: order.discount,
         total: order.total,
+        city: order.city,
+        district: order.district,
+        addressDetails: order.addressDetails,
+        recipientName: order.recipientName,
+        phone: order.phone,
         createdAt: order.createdAt,
         items: items.filter(item => item.orderId === order.id),
         events: events.filter(event => event.orderId === order.id).map(({ id, status, note, createdAt }) => ({ id, status, note, createdAt })),
@@ -956,7 +964,7 @@ export const commerceRouter = router({
       expectedQuoteHash: z.string().length(64).regex(/^[a-f0-9]+$/),
       items: z.array(z.object({ productId: safeId, quantity: z.number().int().min(1).max(10000), name: z.string().trim().max(220).optional(), variant: z.string().trim().max(120).optional(), customAmount: z.number().int().min(1).max(100000000).optional() })).min(1).max(100),
       offerCode: z.string().trim().max(40).optional(),
-      recipientName: z.string().trim().min(2).max(160), phone: z.string().trim().min(7).max(32).refine(isValidGuestPhone, "أدخل رقم هاتف صحيحًا ليتمكن المتجر من الاتصال بك."),
+      recipientName: z.string().trim().min(2).max(160), phone: z.string().trim().min(7).max(32).refine(isValidGuestPhone, "يرجى إدخال رقم جوال يمني صحيح مكون من 9 أرقام ويبدأ بـ 77 أو 73 أو 78 أو 71 أو 70."),
       city: z.string().trim().min(1).max(100), district: z.string().trim().min(1).max(120), addressDetails: z.string().trim().max(1000).optional(), customerNote: z.string().trim().max(1000).optional(),
     })).mutation(async ({ ctx, input }) => {
       const db = await database();

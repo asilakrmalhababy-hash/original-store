@@ -200,7 +200,7 @@ export default function ImageEditor({ aspect, title, format = "webp", initialSou
       const sw = Math.max(16, Math.min(natW - sx, Math.round((box.w / 100) * natW)));
       const sh = Math.max(16, Math.min(natH - sy, Math.round((box.h / 100) * natH)));
 
-      const maxDim = aspect > 1.5 ? 1280 : 800;
+      const maxDim = aspect > 1.5 ? 1080 : 640;
       let outW = maxDim;
       let outH = Math.round(maxDim / (aspect || 1));
 
@@ -215,31 +215,38 @@ export default function ImageEditor({ aspect, title, format = "webp", initialSou
         }
       }
 
-      const canvas = document.createElement("canvas");
-      canvas.width = outW;
-      canvas.height = outH;
-      const ctx = canvas.getContext("2d");
+      let workCanvas = document.createElement("canvas");
+      workCanvas.width = outW;
+      workCanvas.height = outH;
+      const ctx = workCanvas.getContext("2d");
       if (!ctx) return;
-
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, outW, outH);
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = "high";
       ctx.drawImage(image, sx, sy, sw, sh, 0, 0, outW, outH);
 
-      const mime = format === "png" ? "image/png" : "image/webp";
-      const maxBase64Len = aspect > 1.5 ? 175000 : 96000;
-      let q = 0.80;
-      let data = canvas.toDataURL(mime, q);
-      if (!data.startsWith("data:" + mime)) {
-        data = canvas.toDataURL("image/jpeg", q);
-        while (data.length > maxBase64Len && q > 0.58) {
-          q = Math.round((q - 0.06) * 100) / 100;
-          data = canvas.toDataURL("image/jpeg", q);
+      const maxBase64Len = aspect > 1.5 ? 135000 : 76000;
+      let data = "";
+      for (let pass = 0; pass < 3; pass++) {
+        for (const q of [0.76, 0.68, 0.60, 0.52]) {
+          const wUrl = workCanvas.toDataURL("image/webp", q);
+          const jUrl = workCanvas.toDataURL("image/jpeg", q);
+          const best = (wUrl.startsWith("data:image/webp") && wUrl.length < jUrl.length) ? wUrl : jUrl;
+          data = best;
+          if (best.length <= maxBase64Len) break;
         }
-      } else if (mime === "image/webp") {
-        while (data.length > maxBase64Len && q > 0.58) {
-          q = Math.round((q - 0.06) * 100) / 100;
-          data = canvas.toDataURL("image/webp", q);
-        }
+        if (data.length <= maxBase64Len) break;
+        const nw = Math.max(280, Math.round(workCanvas.width * 0.78));
+        const nh = Math.max(280, Math.round(workCanvas.height * 0.78));
+        const sc = document.createElement("canvas");
+        sc.width = nw; sc.height = nh;
+        const sCtx = sc.getContext("2d");
+        if (!sCtx) break;
+        sCtx.fillStyle = "#ffffff"; sCtx.fillRect(0, 0, nw, nh);
+        sCtx.imageSmoothingEnabled = true; sCtx.imageSmoothingQuality = "high";
+        sCtx.drawImage(workCanvas, 0, 0, nw, nh);
+        workCanvas = sc;
       }
       onSave(data);
     };

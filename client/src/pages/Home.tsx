@@ -22,7 +22,7 @@ import {
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { useStore, type CartLine } from "@/contexts/StoreContext";
-import { clearPendingOrderIdempotencyKey, getPendingOrderIdempotencyKey, useCustomer } from "@/contexts/CustomerContext";
+import { cleanYemeniPhone, clearPendingOrderIdempotencyKey, getPendingOrderIdempotencyKey, isValidYemeniPhone, useCustomer } from "@/contexts/CustomerContext";
 import PWAInstall from "@/components/PWAInstall";
 import { buildMissingIngredientNote } from "@/lib/assistant-note";
 import { ensureBrowserPushSubscription, getExistingBrowserPushSubscription, getPushPermissionState, requestPushPermission } from "@/lib/pushNotifications";
@@ -1448,6 +1448,15 @@ function CartRow({ line, onQuantity, onRemove }: { line: CartLine; onQuantity: (
   return <article className="cart-row"><div className="cart-thumb">{line.imageUrl ? <img src={line.imageUrl} alt="" loading="lazy" decoding="async" /> : <Leaf size={22} />}</div><div className="cart-row-info"><strong>{line.name}</strong><small>{formatPrice(line.price)} / {line.unit}</small><div className="cart-row-tools"><div className="quantity-compact"><button aria-label="تقليل" onClick={() => onQuantity(line.quantity - (line.quantityStep || 1))}><Minus size={14} /></button><b>{line.quantity}</b><button aria-label="زيادة" disabled={line.stock !== null && line.stock !== undefined && line.quantity + (line.quantityStep || 1) > line.stock} onClick={() => onQuantity(line.quantity + (line.quantityStep || 1))}><Plus size={14} /></button></div><button className="remove-line" onClick={onRemove}><Trash2 size={14} /> إزالة</button></div></div><strong className="cart-line-total">{formatPrice(line.price * line.quantity)}</strong></article>;
 }
 
+function getYemenCarrierName(phone: string): string {
+  const clean = cleanYemeniPhone(phone);
+  if (clean.startsWith("77") || clean.startsWith("78")) return "يمن موبايل";
+  if (clean.startsWith("73")) return "YOU";
+  if (clean.startsWith("71")) return "سبأفون";
+  if (clean.startsWith("70")) return "واي";
+  return "";
+}
+
 function Checkout({ onClose, onSuccess, cart }: { onClose: () => void; onSuccess: () => void; cart: CartLine[] }) {
   const { remove } = useStore();
   const utils = trpc.useUtils();
@@ -1457,14 +1466,14 @@ function Checkout({ onClose, onSuccess, cart }: { onClose: () => void; onSuccess
   const [selectedAddressId, setSelectedAddressId] = useState(defaultAddress?.id ?? "new");
   const [form, setForm] = useState(() => ({
     recipientName: defaultAddress?.recipientName ?? customer.name,
-    phone: defaultAddress?.phone ?? customer.phone,
-    city: defaultAddress?.city ?? "",
+    phone: cleanYemeniPhone(defaultAddress?.phone ?? customer.phone),
+    city: defaultAddress?.city || "صنعاء",
     district: defaultAddress?.district ?? "",
     addressDetails: defaultAddress?.details ?? "",
     customerNote: "",
     offerCode: "",
   }));
-  const [saveDeliveryAddress, setSaveDeliveryAddress] = useState(false);
+  const [saveDeliveryAddress, setSaveDeliveryAddress] = useState(true);
   const [makeDefaultAddress, setMakeDefaultAddress] = useState(customer.addresses.length === 0);
   const [addressLabel, setAddressLabel] = useState("المنزل");
   const items = cart.map(item => ({ productId: item.id, quantity: item.quantity, name: item.name, ...(item.variant ? { variant: item.variant } : {}), ...(item.customAmount ? { customAmount: item.customAmount } : {}) }));
@@ -1472,64 +1481,66 @@ function Checkout({ onClose, onSuccess, cart }: { onClose: () => void; onSuccess
   const keyRef = useRef<{ signature: string; key: string }>({ signature: "", key: "" });
   if (keyRef.current.signature !== signature) keyRef.current = { signature, key: getPendingOrderIdempotencyKey(signature) };
   const [quoteSignature, setQuoteSignature] = useState("");
+
   const handleUnavailableOrderError = (rawMsg: string) => {
-      let msg = rawMsg || "تعذر إتمام الطلب.";
-      if (msg.includes("لم يعد متوفراً") || msg.includes("لم يعد متاحًا")) {
-        const removedIds = new Set<number>();
-        const removedNames: string[] = [];
-        msg = msg.replace(/منتج\s*#(\d+)/g, (_full, idStr) => {
-          const pid = Number(idStr);
-          removedIds.add(pid);
-          const inCart = cart.find(c => c.id === pid);
-          if (inCart && inCart.name) {
-            if (!removedNames.includes(inCart.name)) removedNames.push(inCart.name);
-            return inCart.name;
-          }
-          return "منتج #" + pid;
-        });
-        const m = msg.match(/«([^»]+)»/);
-        if (m && m[1]) {
-          const parts = m[1].split("،").map(s => s.trim()).filter(Boolean);
-          for (const line of cart) {
-            if (removedIds.has(line.id) || parts.some(p => line.name === p || line.name.includes(p) || p.includes(line.name))) {
-              removedIds.add(line.id);
-              if (!removedNames.includes(line.name)) removedNames.push(line.name);
-            }
-          }
+    let msg = rawMsg || "تعذر إتمام الطلب.";
+    if (msg.includes("لم يعد متوفراً") || msg.includes("لم يعد متاحًا")) {
+      const removedIds = new Set<number>();
+      const removedNames: string[] = [];
+      msg = msg.replace(/منتج\s*#(\d+)/g, (_full, idStr) => {
+        const pid = Number(idStr);
+        removedIds.add(pid);
+        const inCart = cart.find(c => c.id === pid);
+        if (inCart && inCart.name) {
+          if (!removedNames.includes(inCart.name)) removedNames.push(inCart.name);
+          return inCart.name;
         }
+        return "منتج #" + pid;
+      });
+      const m = msg.match(/«([^»]+)»/);
+      if (m && m[1]) {
+        const parts = m[1].split("،").map(s => s.trim()).filter(Boolean);
         for (const line of cart) {
-          if (removedIds.has(line.id)) {
-            remove(line.id, line.variant);
+          if (removedIds.has(line.id) || parts.some(p => line.name === p || line.name.includes(p) || p.includes(line.name))) {
+            removedIds.add(line.id);
+            if (!removedNames.includes(line.name)) removedNames.push(line.name);
           }
         }
-        if (removedNames.length > 0) {
-          msg = "المنتج «" + removedNames.join("، ") + "» لم يعد متوفراً حالياً في المتجر. تم حذفه من السلة تلقائياً.";
+      }
+      for (const line of cart) {
+        if (removedIds.has(line.id)) {
+          remove(line.id, line.variant);
         }
-        toast.error(msg);
-        void utils.commerce.catalog.home.invalidate();
-        void utils.commerce.catalog.listProducts.invalidate();
-        onClose();
-        return;
+      }
+      if (removedNames.length > 0) {
+        msg = "المنتج «" + removedNames.join("، ") + "» لم يعد متوفراً حالياً في المتجر. تم حذفه من السلة تلقائياً.";
       }
       toast.error(msg);
-    };
+      void utils.commerce.catalog.home.invalidate();
+      void utils.commerce.catalog.listProducts.invalidate();
+      onClose();
+      return;
+    }
+    toast.error(msg);
+  };
+
   const quoteMutation = trpc.commerce.orders.quote.useMutation({ onError: error => handleUnavailableOrderError(error.message || "تعذر حساب ملخص الطلب.") });
   const quote = quoteSignature === signature ? quoteMutation.data : undefined;
   const mutation = trpc.commerce.orders.place.useMutation({
     onSuccess: result => {
-
       const idempotencyKey = keyRef.current.key;
       customer.rememberOrder({ orderNumber: result.orderNumber, idempotencyKey, createdAt: new Date().toISOString() });
       clearPendingOrderIdempotencyKey(idempotencyKey);
       if (result.duplicate) {
-        toast.info(`الطلب مسجل مسبقًا برقم ${result.orderNumber}. احتفظنا بالسلة كما هي؛ راجع «طلباتي» قبل إرسال طلب جديد.`);
+        toast.info("الطلب مسجل مسبقاً برقم " + result.orderNumber + ". راجع «طلباتي».");
         onClose();
         return;
       }
-      customer.saveProfile(form.recipientName, form.phone);
-      if (saveDeliveryAddress) {
+      const cleanPhone = cleanYemeniPhone(form.phone);
+      customer.saveProfile(form.recipientName, cleanPhone);
+      if (saveDeliveryAddress || customer.addresses.length === 0) {
         const matchingAddress = customer.addresses.find(address =>
-          address.recipientName === form.recipientName.trim() && address.phone === form.phone.trim()
+          address.recipientName === form.recipientName.trim() && cleanYemeniPhone(address.phone) === cleanPhone
           && address.city === form.city.trim() && address.district === form.district.trim()
           && address.details === form.addressDetails.trim(),
         );
@@ -1537,55 +1548,233 @@ function Checkout({ onClose, onSuccess, cart }: { onClose: () => void; onSuccess
           if (makeDefaultAddress) customer.setDefaultAddress(matchingAddress.id);
         } else {
           customer.saveAddress({
-            label: addressLabel, recipientName: form.recipientName, phone: form.phone,
-            city: form.city, district: form.district, details: form.addressDetails,
+            label: addressLabel.trim() || "المنزل",
+            recipientName: form.recipientName,
+            phone: cleanPhone,
+            city: form.city,
+            district: form.district,
+            details: form.addressDetails,
             isDefault: makeDefaultAddress || customer.addresses.length === 0,
           });
         }
       }
       onSuccess();
       void utils.commerce.orders.trackMany.invalidate();
-      toast.success("تم استلام طلبك رقم " + result.orderNumber + "! فعّل الإشعارات لمتابعة حالة طلبك لحظة بلحظة.");
+      toast.success("تم استلام طلبك رقم " + result.orderNumber + " بنجاح!");
       onClose();
       navigate("/orders?order=" + encodeURIComponent(result.orderNumber) + "&justOrdered=1");
     },
-    onError: error => { setQuoteSignature(""); quoteMutation.reset(); handleUnavailableOrderError(error.message || "تعذر إرسال الطلب. لم تُفرغ السلة؛ راجع البيانات وحاول مجددًا."); },
+    onError: error => { setQuoteSignature(""); quoteMutation.reset(); handleUnavailableOrderError(error.message || "تعذر إرسال الطلب. راجع البيانات وحاول مجدداً."); },
   });
+
   const selectAddress = (id: string) => {
     setSelectedAddressId(id);
-    if (id === "new") return;
+    setQuoteSignature("");
+    quoteMutation.reset();
+    if (id === "new") {
+      setSaveDeliveryAddress(true);
+      return;
+    }
     const address = customer.addresses.find(item => item.id === id);
-    if (address) setForm(current => ({
-      ...current, recipientName: address.recipientName, phone: address.phone,
-      city: address.city, district: address.district, addressDetails: address.details,
-    }));
-    setSaveDeliveryAddress(false);
+    if (address) {
+      setForm(current => ({
+        ...current,
+        recipientName: address.recipientName,
+        phone: cleanYemeniPhone(address.phone),
+        city: address.city,
+        district: address.district,
+        addressDetails: address.details,
+      }));
+      setSaveDeliveryAddress(false);
+    }
   };
+
   const updateField = (field: keyof typeof form, value: string) => {
-    setForm(current => ({ ...current, [field]: value }));
-    if (["recipientName", "phone", "city", "district", "addressDetails"].includes(field)) setSelectedAddressId("new");
+    const nextVal = field === "phone" ? cleanYemeniPhone(value) : value;
+    setForm(current => ({ ...current, [field]: nextVal }));
+    if (["recipientName", "phone", "city", "district", "addressDetails"].includes(field)) {
+      setSelectedAddressId("new");
+    }
   };
+
+  const phoneValid = isValidYemeniPhone(form.phone);
+
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (mutation.isPending || quoteMutation.isPending) return;
+    if (!phoneValid) {
+      toast.error("يرجى إدخال رقم جوال يمني صحيح مكون من 9 أرقام ويبدأ بـ 77 أو 73 أو 78 أو 71 أو 70.");
+      return;
+    }
     if (!quote) {
       quoteMutation.reset();
       setQuoteSignature(signature);
       quoteMutation.mutate({ items, city: form.city, offerCode: form.offerCode || undefined });
       return;
     }
-    mutation.mutate({ ...form, idempotencyKey: keyRef.current.key, expectedTotal: quote.total, expectedQuoteHash: quote.quoteHash, offerCode: form.offerCode || undefined, items });
+    mutation.mutate({
+      ...form,
+      phone: cleanYemeniPhone(form.phone),
+      idempotencyKey: keyRef.current.key,
+      expectedTotal: quote.total,
+      expectedQuoteHash: quote.quoteHash,
+      offerCode: form.offerCode || undefined,
+      items,
+    });
   };
-  return <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}><section className="checkout-modal" role="dialog" aria-modal="true"><div className="modal-heading"><div><span className="eyebrow"></span><h2>بيانات التوصيل</h2><small></small></div><button type="button" className="icon-button" onClick={onClose}><X size={19} /></button></div><form onSubmit={submit} className="form-stack">
-    {customer.addresses.length > 0 && <label>استخدم عنوانًا محفوظًا في هذا المتصفح<select value={selectedAddressId} onChange={event => selectAddress(event.target.value)}><option value="new">إدخال عنوان جديد</option>{customer.addresses.map(address => <option key={address.id} value={address.id}>{address.label} · {address.city}، {address.district}</option>)}</select></label>}
-    <div className="form-grid"><label>اسم المستلم<input required minLength={2} maxLength={160} autoComplete="name" value={form.recipientName} onChange={event => updateField("recipientName", event.target.value)} /></label><label>رقم الهاتف<input required type="tel" minLength={7} maxLength={32} autoComplete="tel" value={form.phone} onChange={event => updateField("phone", event.target.value)} /></label><label>المدينة/المنطقة<input required maxLength={100} autoComplete="address-level1" value={form.city} onChange={event => updateField("city", event.target.value)} /></label><label>الحي<input required maxLength={120} autoComplete="address-level2" value={form.district} onChange={event => updateField("district", event.target.value)} /></label></div>
-    <label>تفاصيل العنوان (اختياري)<textarea rows={2} maxLength={1000} autoComplete="street-address" value={form.addressDetails} onChange={event => updateField("addressDetails", event.target.value)} /></label>
-    <label className="toggle-field"><input type="checkbox" checked={saveDeliveryAddress} onChange={event => setSaveDeliveryAddress(event.target.checked)} /> احفظ هذا العنوان في هذا المتصفح للطلبات القادمة</label>
-    {saveDeliveryAddress && <div className="form-grid"><label>اسم العنوان<input maxLength={80} value={addressLabel} onChange={event => setAddressLabel(event.target.value)} placeholder="المنزل، العمل..." /></label><label className="toggle-field"><input type="checkbox" checked={makeDefaultAddress} onChange={event => setMakeDefaultAddress(event.target.checked)} /> اجعله العنوان الافتراضي</label></div>}
-    <label>ملاحظة للمتجر (اختياري)<textarea rows={2} maxLength={1000} value={form.customerNote} onChange={event => updateField("customerNote", event.target.value)} /></label><label>رمز خصم (اختياري)<input maxLength={40} value={form.offerCode} onChange={event => updateField("offerCode", event.target.value.toUpperCase())} /></label>
-    {quote && <section className="checkout-quote" aria-live="polite"><h3>راجع تفاصيل طلبك</h3><div className="checkout-quote-lines">{quote.lines.map(line => <div key={line.productId}><span>{line.name} × {line.quantity} {line.unit}</span><strong>{formatPrice(line.lineTotal)}</strong></div>)}</div><div className="summary-line"><span>المجموع الفرعي</span><strong>{formatPrice(quote.subtotal)}</strong></div><div className="summary-line"><span>التوصيل</span><strong>{formatPrice(quote.deliveryFee)}</strong></div>{quote.discount > 0 && <div className="summary-line discount-line"><span>الخصم{quote.offerTitle ? ` · ${quote.offerTitle}` : ""}</span><strong>−{formatPrice(quote.discount)}</strong></div>}<div className="summary-total"><span>الإجمالي · {quote.currency}</span><strong>{formatPrice(quote.total)}</strong></div></section>}
-    <div className="cod-note"><Truck size={17} /><span>الدفع نقدًا عند الاستلام</span></div><div className="modal-footer"><button type="button" className="button button-quiet" onClick={onClose}>رجوع للسلة</button><button className="button button-primary" disabled={mutation.isPending || quoteMutation.isPending}>{mutation.isPending || quoteMutation.isPending ? <LoaderCircle className="spin" size={17} /> : quote ? <Check size={17} /> : <ArrowLeft size={17} />}{mutation.isPending ? "جارٍ إرسال الطلب..." : quoteMutation.isPending ? "جارٍ حساب الإجمالي..." : quote ? "تأكيد الطلب" : "عرض ملخص الطلب"}</button></div>
-  </form></section></div>;
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="checkout-modal" role="dialog" aria-modal="true" style={{ maxWidth: "520px", padding: "18px" }}>
+        <div className="modal-heading" style={{ paddingBottom: "10px", borderBottom: "1px solid #e3ece6", marginBottom: "12px" }}>
+          <div>
+            <span className="eyebrow">إتمام الطلب بسهولة وأمان</span>
+            <h2 style={{ fontSize: "19px", margin: "2px 0" }}>تأكيد بيانات التوصيل</h2>
+            <small style={{ color: "#586d60" }}>اختر عنوانك المحفوظ بنقرة واحدة أو أدخل بيانات التوصيل.</small>
+          </div>
+          <button type="button" className="icon-button" onClick={onClose}><X size={19} /></button>
+        </div>
+
+        <form onSubmit={submit} className="form-stack" style={{ gap: "12px" }}>
+          {customer.addresses.length > 0 && (
+            <div style={{ padding: "12px", borderRadius: "14px", background: "#f4f9f6", border: "1.5px solid #cfe2d5", display: "grid", gap: "8px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <strong style={{ fontSize: "12.5px", color: "#174b36", display: "inline-flex", alignItems: "center", gap: "5px" }}>
+                  <MapPin size={15} /> عناويني المحفوظة (انقر على العنوان لاختياره فوراً):
+                </strong>
+                <button type="button" className={"small-button" + (selectedAddressId === "new" ? " selected" : "")} style={{ minHeight: "26px", padding: "2px 9px", fontSize: "11px" }} onClick={() => selectAddress("new")}>
+                  <Plus size={12} /> عنوان جديد
+                </button>
+              </div>
+              <div style={{ display: "grid", gap: "7px", maxHeight: "175px", overflowY: "auto" }}>
+                {customer.addresses.map(addr => {
+                  const isSelected = selectedAddressId === addr.id;
+                  return (
+                    <div
+                      key={addr.id}
+                      onClick={() => selectAddress(addr.id)}
+                      style={{
+                        padding: "10px 12px",
+                        borderRadius: "12px",
+                        background: isSelected ? "#e8f6ee" : "#ffffff",
+                        border: isSelected ? "2px solid #174b36" : "1px solid #d8e4dc",
+                        cursor: "pointer",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        gap: "8px",
+                        transition: "0.15s",
+                      }}
+                    >
+                      <div style={{ display: "grid", gap: "2px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                          <strong style={{ fontSize: "13px", color: "#123826" }}>📍 {addr.label}</strong>
+                          {addr.isDefault && <span className="default-tag">الافتراضي</span>}
+                          <small style={{ color: "#174b36", fontWeight: 800 }} dir="ltr">{cleanYemeniPhone(addr.phone)}</small>
+                        </div>
+                        <small style={{ color: "#4b6154", fontSize: "11.5px" }}>{addr.recipientName} · {addr.city} — {addr.district}{addr.details ? (" (" + addr.details + ")") : ""}</small>
+                      </div>
+                      <span style={{ width: "24px", height: "24px", borderRadius: "99px", background: isSelected ? "#174b36" : "#eef3ef", color: isSelected ? "#f1d897" : "#8c9c92", display: "grid", placeItems: "center", flexShrink: 0 }}>
+                        <Check size={14} />
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <div style={{ padding: "12px", borderRadius: "14px", background: "#ffffff", border: "1px solid #dce7e0", display: "grid", gap: "10px" }}>
+            <strong style={{ fontSize: "12.5px", color: "#174b36" }}>👤 بيانات المستلم والعنوان:</strong>
+            <div className="form-grid">
+              <label>اسم المستلم *
+                <input required minLength={2} maxLength={160} autoComplete="name" value={form.recipientName} onChange={event => updateField("recipientName", event.target.value)} placeholder="الاسم الكامل..." />
+              </label>
+              <label>
+                <span style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span>رقم الهاتف اليمني (9 أرقام) *</span>
+                  {form.phone && (
+                    <small style={{ fontSize: "10px", fontWeight: 800, color: phoneValid ? "#174b36" : "#b43c2f" }}>
+                      {phoneValid ? ("✓ " + getYemenCarrierName(form.phone) + " (9/9)") : ("يجب 9 أرقام تبدأ بـ 77/73/78/71/70 (" + form.phone.length + "/9)")}
+                    </small>
+                  )}
+                </span>
+                <input
+                  required
+                  type="tel"
+                  inputMode="numeric"
+                  maxLength={9}
+                  dir="ltr"
+                  value={form.phone}
+                  onChange={event => updateField("phone", event.target.value)}
+                  placeholder="77XXXXXXX"
+                  style={{ textAlign: "left", fontWeight: 800, letterSpacing: "0.5px", borderColor: form.phone && !phoneValid ? "#d9534f" : undefined }}
+                />
+              </label>
+              <label>المدينة / المنطقة *
+                <input required maxLength={100} autoComplete="address-level1" value={form.city} onChange={event => updateField("city", event.target.value)} placeholder="مثلاً: صنعاء" />
+              </label>
+              <label>الحي / الشارع *
+                <input required maxLength={120} autoComplete="address-level2" value={form.district} onChange={event => updateField("district", event.target.value)} placeholder="مثلاً: الرقاص، حدة، الحصبة..." />
+              </label>
+            </div>
+            <label>تفاصيل إضافية للعنوان (معلم قريب / جوار)
+              <input maxLength={400} autoComplete="street-address" value={form.addressDetails} onChange={event => updateField("addressDetails", event.target.value)} placeholder="مثلاً: جوار بنك الكريمي، أمام جامع..." />
+            </label>
+
+            {selectedAddressId === "new" && (
+              <div style={{ paddingTop: "6px", borderTop: "1px dashed #dce6df", display: "flex", flexWrap: "wrap", gap: "10px", alignItems: "center", justifyContent: "space-between" }}>
+                <label className="toggle-field" style={{ margin: 0 }}>
+                  <input type="checkbox" checked={saveDeliveryAddress} onChange={event => setSaveDeliveryAddress(event.target.checked)} />
+                  <span style={{ fontSize: "12px", fontWeight: 700 }}>حفظ هذا العنوان في «عناويني المحفوظة» للطلبات القادمة</span>
+                </label>
+                {saveDeliveryAddress && (
+                  <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                    {["المنزل", "العمل", "استراحة"].map(lbl => (
+                      <button key={lbl} type="button" className={"small-button" + (addressLabel === lbl ? " selected" : "")} style={{ minHeight: "26px", padding: "2px 9px", fontSize: "11px" }} onClick={() => setAddressLabel(lbl)}>{lbl}</button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="form-grid">
+            <label>ملاحظة للمتجر (اختياري)
+              <input maxLength={500} value={form.customerNote} onChange={event => updateField("customerNote", event.target.value)} placeholder="أي ملاحظة خاصة بالتجهيز أو وقت التوصيل..." />
+            </label>
+            <label>رمز خصم (اختياري)
+              <input maxLength={40} value={form.offerCode} onChange={event => updateField("offerCode", event.target.value.toUpperCase())} placeholder="أدخل كود الخصم إن وجد" dir="ltr" />
+            </label>
+          </div>
+
+          {quote && (
+            <section className="checkout-quote" aria-live="polite" style={{ padding: "12px 14px", borderRadius: "14px", background: "#f2f8f4", border: "1.5px solid #174b36" }}>
+              <h3 style={{ margin: "0 0 8px", fontSize: "14px", color: "#174b36" }}>🧾 ملخص الفاتورة النهائي</h3>
+              <div className="checkout-quote-lines">
+                {quote.lines.map(line => (
+                  <div key={line.productId}><span>{line.name} × {line.quantity} {line.unit}</span><strong>{formatPrice(line.lineTotal)}</strong></div>
+                ))}
+              </div>
+              <div className="summary-line"><span>المجموع الفرعي</span><strong>{formatPrice(quote.subtotal)}</strong></div>
+              <div className="summary-line"><span>رسوم التوصيل</span><strong>{formatPrice(quote.deliveryFee)}</strong></div>
+              {quote.discount > 0 && <div className="summary-line discount-line"><span>الخصم{quote.offerTitle ? " · " + quote.offerTitle : ""}</span><strong>−{formatPrice(quote.discount)}</strong></div>}
+              <div className="summary-total"><span>الإجمالي المطلوب عند الاستلام</span><strong>{formatPrice(quote.total)}</strong></div>
+            </section>
+          )}
+
+          <div className="cod-note"><Truck size={17} /><span>الدفع نقداً عند الاستلام. يتصل المتجر بالرقم المسجل لتأكيد الطلب والتوصيل.</span></div>
+          <div className="modal-footer">
+            <button type="button" className="button button-quiet" onClick={onClose}>رجوع للسلة</button>
+            <button className="button button-primary" disabled={mutation.isPending || quoteMutation.isPending}>
+              {mutation.isPending || quoteMutation.isPending ? <LoaderCircle className="spin" size={17} /> : quote ? <Check size={17} /> : <ArrowLeft size={17} />}
+              {mutation.isPending ? "جارٍ إرسال الطلب..." : quoteMutation.isPending ? "جارٍ حساب الإجمالي..." : quote ? "تأكيد وإرسال الطلب الآن" : "مراجعة ملخص الفاتورة والتأكيد"}
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+  );
 }
 
 function FavoritesPage() {
@@ -1593,57 +1782,9 @@ function FavoritesPage() {
   const [, navigate] = useLocation();
   const query = trpc.commerce.catalog.productsForReorder.useQuery({ ids: favoriteIds }, { enabled: favoriteIds.length > 0, retry: 1, staleTime: 30_000 });
   const products = query.data ?? [];
-  return <main className="page-shell inner-page"><div className="page-title-row"><div><span className="eyebrow"></span><h1>المفضلة</h1><p></p></div><span className="page-title-icon"><Heart size={23} /></span></div>{query.isLoading ? <Loading /> : query.error ? <LoadError onRetry={() => void query.refetch()} /> : !favoriteIds.length ? <EmptyState icon={Heart} title="لم تحفظ منتجات بعد" description="اضغط علامة القلب على أي منتج لإضافته هنا." action="تصفح المنتجات" href="/products" /> : !products.length ? <EmptyState icon={Heart} title="لا توجد منتجات متاحة من مفضلتك الآن" description="قد تكون المنتجات التي حفظتها أُخفيت أو نفدت." action="تصفح المنتجات" href="/products" /> : <ProductGrid items={products as PublicProduct[]} onOpen={id => navigate(`/product/${id}`)} />}</main>;
+  return <main className="page-shell inner-page"><div className="page-title-row"><div><span className="eyebrow">احتفظ بما تحب</span><h1>المفضلة</h1><p>تُحفظ مفضلتك على هذا المتصفح دون إنشاء حساب.</p></div><span className="page-title-icon"><Heart size={23} /></span></div>{query.isLoading ? <Loading /> : query.error ? <LoadError onRetry={() => void query.refetch()} /> : !favoriteIds.length ? <EmptyState icon={Heart} title="لم تحفظ منتجات بعد" description="اضغط علامة القلب على أي منتج لإضافته هنا." action="تصفح المنتجات" href="/products" /> : !products.length ? <EmptyState icon={Heart} title="لا توجد منتجات متاحة من مفضلتك الآن" description="قد تكون المنتجات التي حفظتها أُخفيت أو نفدت." action="تصفح المنتجات" href="/products" /> : <ProductGrid items={products as PublicProduct[]} onOpen={id => navigate("/product/" + id)} />}</main>;
 }
 
-const CUSTOMER_PUSH_KEY = "original-customer-push-enabled-v1";
-const CUSTOMER_STATUS_MAP_KEY = "original-customer-order-statuses-v1";
-function playCustomerOrderSound() {
-  try {
-    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-    if (!AudioCtx) return;
-    const ctx = new AudioCtx();
-    [523.25, 783.99].forEach((freq, idx) => {
-      const osc = ctx.createOscillator(), gain = ctx.createGain();
-      osc.type = "sine";
-      osc.frequency.setValueAtTime(freq, ctx.currentTime + idx * 0.15);
-      gain.gain.setValueAtTime(0.22, ctx.currentTime + idx * 0.15);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + idx * 0.15 + 0.32);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start(ctx.currentTime + idx * 0.15);
-      osc.stop(ctx.currentTime + idx * 0.15 + 0.34);
-    });
-  } catch {}
-}
-async function showCustomerPhoneNotification(title: string, body: string, tag: string) {
-  try {
-    if ("serviceWorker" in navigator && Notification.permission === "granted") {
-      const reg = await Promise.race([
-        navigator.serviceWorker.ready,
-        new Promise<null>(r => setTimeout(() => r(null), 2000)),
-      ]);
-      if (reg) {
-        await reg.showNotification(title, {
-          body,
-          icon: "/app-icon-192-v2.png",
-          badge: "/app-icon-192-v2.png",
-          tag,
-          dir: "rtl",
-          lang: "ar",
-          vibrate: [220, 100, 220],
-          requireInteraction: true,
-          renotify: true,
-          data: { url: "/orders" },
-        } as any);
-        return;
-      }
-    }
-    if ("Notification" in window && Notification.permission === "granted") {
-      new Notification(title, { body, icon: "/app-icon-192-v2.png", tag, dir: "rtl", lang: "ar" });
-    }
-  } catch {}
-}
 function OrdersPage() {
   const customer = useCustomer();
   const { add } = useStore();
@@ -1693,7 +1834,7 @@ function OrdersPage() {
       const result = await subscribe.mutateAsync({ refs, subscription });
       if (!result.subscribed) throw new Error("لم نعثر على طلب محفوظ صالح لهذا المتصفح.");
       setPushEnabled(true);
-      toast.success("تم تفعيل إشعارات تتبع الطلب بنجاح! سيصلك إشعار واحد أنيق عند كل تحديث.");
+      toast.success("تم تفعيل إشعارات تتبع الطلب بنجاح!");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "تعذر تفعيل الإشعارات الآن.");
     } finally {
@@ -1703,16 +1844,16 @@ function OrdersPage() {
 
   useEffect(() => {
     if (!reorder || !reorderQuery.data) return;
-    let added = 0; let skipped = 0;
+    let added = 0;
     for (const line of reorder) {
       const product = reorderQuery.data.find(candidate => candidate.id === line.productId);
-      if (!product) { skipped += 1; continue; }
+      if (!product) continue;
       const minimum = product.minQuantity || 1; const step = product.quantityStep || 1;
       let quantity = minimum + Math.max(0, Math.floor((Math.max(minimum, line.quantity) - minimum) / step)) * step;
       if (product.stock !== null) {
         const bounded = Math.min(quantity, product.stock);
         quantity = minimum + Math.max(0, Math.floor((bounded - minimum) / step)) * step;
-        if (quantity > product.stock) { skipped += 1; continue; }
+        if (quantity > product.stock) continue;
       }
       add(product, quantity); added += 1;
     }
@@ -1721,7 +1862,12 @@ function OrdersPage() {
     setReorder(null);
   }, [reorder, reorderQuery.data, add]);
 
-  const orders = query.data ?? [];
+  const orders = useMemo(() => {
+    const raw = [...(query.data ?? [])];
+    raw.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return raw;
+  }, [query.data]);
+
   const stepOrder = ["new", "preparing", "ready", "out_for_delivery", "delivered"];
   const stepTitles: Record<string, string> = {
     new: "تم الاستلام",
@@ -1734,20 +1880,19 @@ function OrdersPage() {
   return (
     <main className="page-shell inner-page">
       <div className="page-title-row">
-        <div><span className="eyebrow">متابعة حية ومباشرة</span><h1>طلباتي</h1><p>تابع حالة طلبك خطوة بخطوة واستقبل تنبيهات التجهيز والتوصيل على جوالك.</p></div>
+        <div><span className="eyebrow">متابعة حية ومباشرة</span><h1>طلباتي ({orders.length})</h1><p>مرتبة من الأحدث للأقدم — تابع حالة طلبك وفاتورتك خطوة بخطوة.</p></div>
         <span className="page-title-icon"><Package size={23} /></span>
       </div>
 
       {refs.length > 0 && (
         <section
           style={{
-            marginBottom: "18px",
-            padding: "16px 18px",
-            borderRadius: "18px",
+            marginBottom: "16px",
+            padding: "14px 16px",
+            borderRadius: "16px",
             background: pushEnabled ? "linear-gradient(135deg, #edf7f0, #f7fbf8)" : "linear-gradient(135deg, #113a28, #1d5c41)",
             color: pushEnabled ? "#174b36" : "#ffffff",
             border: pushEnabled ? "1.5px solid #b8dec6" : "1.5px solid #f1d897",
-            boxShadow: pushEnabled ? "0 6px 18px rgba(23, 75, 54, 0.06)" : "0 14px 30px rgba(17, 58, 40, 0.25)",
             display: "flex",
             flexWrap: "wrap",
             alignItems: "center",
@@ -1755,20 +1900,16 @@ function OrdersPage() {
             gap: "12px",
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: "12px", flex: "1 1 230px" }}>
-            <span style={{ width: "44px", height: "44px", borderRadius: "14px", background: pushEnabled ? "#174b36" : "#f1d897", color: pushEnabled ? "#f1d897" : "#113a28", display: "grid", placeItems: "center", flexShrink: 0 }}>
-              {pushEnabled ? <Check size={22} /> : <BellRing size={22} />}
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", flex: "1 1 220px" }}>
+            <span style={{ width: "40px", height: "40px", borderRadius: "12px", background: pushEnabled ? "#174b36" : "#f1d897", color: pushEnabled ? "#f1d897" : "#113a28", display: "grid", placeItems: "center", flexShrink: 0 }}>
+              {pushEnabled ? <Check size={20} /> : <BellRing size={20} />}
             </span>
             <div>
-              <strong style={{ display: "block", fontSize: "14px", marginBottom: "3px", color: pushEnabled ? "#174b36" : "#f9e8b8" }}>
-                {pushEnabled ? "إشعارات تتبع الطلب مفعّلة على جوالك" : (justOrdered ? "تم تأكيد طلبك! فعّل الإشعارات الآن لمتابعته" : "فعّل إشعارات تتبع حالة طلبك")}
+              <strong style={{ display: "block", fontSize: "13.5px", color: pushEnabled ? "#174b36" : "#f9e8b8" }}>
+                {pushEnabled ? "إشعارات تتبع الطلب مفعّلة على جوالك" : (justOrdered ? "تم تأكيد طلبك! فعّل الإشعارات لمتابعته" : "فعّل إشعارات تتبع حالة طلبك")}
               </strong>
-              <small style={{ fontSize: "11px", opacity: 0.92, lineHeight: 1.5, display: "block" }}>
-                {permission === "denied"
-                  ? "الإشعارات محظورة من إعدادات المتصفح؛ يرجى السماح بها من قفل الموقع أعلى المتصفح."
-                  : pushEnabled
-                  ? "سيصلك إشعار واحد أنيق ومباشر بشعار أورجنال فور تجهيز طلبك أو خروجه للتوصيل حتى لو أغلقت التطبيق."
-                  : "اضغط زر التفعيل ليصلك إشعار فوري على شاشة جوالك عندما يصبح طلبك قيد التجهيز أو يخرج للتوصيل."}
+              <small style={{ fontSize: "11px", opacity: 0.92 }}>
+                {pushEnabled ? "يصلك تنبيه فوري عند تجهيز طلبك أو خروجه للتوصيل." : "اضغط زر التفعيل ليصلك إشعار فوري عند تحديث حالة طلبك."}
               </small>
             </div>
           </div>
@@ -1776,24 +1917,10 @@ function OrdersPage() {
             type="button"
             onClick={() => void enableNotifications()}
             disabled={pushPending || permission === "denied" || permission === "unsupported"}
-            style={{
-              minHeight: "42px",
-              padding: "0 18px",
-              borderRadius: "12px",
-              border: pushEnabled ? "1px solid #174b36" : "none",
-              background: pushEnabled ? "#ffffff" : "#f1d897",
-              color: "#113a28",
-              fontWeight: 800,
-              fontSize: "12px",
-              cursor: "pointer",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "7px",
-              boxShadow: pushEnabled ? "none" : "0 6px 16px rgba(0,0,0,0.2)",
-            }}
+            className="small-button"
+            style={{ background: pushEnabled ? "#ffffff" : "#f1d897", color: "#113a28", fontWeight: 800, border: pushEnabled ? "1px solid #174b36" : "none" }}
           >
-            <BellRing size={16} />
-            {pushPending ? "جارٍ التفعيل..." : pushEnabled ? "تحديث الإشعارات" : "تفعيل الإشعارات الآن"}
+            <BellRing size={15} /> {pushPending ? "جارٍ التفعيل..." : pushEnabled ? "تحديث الإشعارات" : "تفعيل الإشعارات"}
           </button>
         </section>
       )}
@@ -1801,58 +1928,113 @@ function OrdersPage() {
       {query.isLoading ? <Loading /> : query.error ? <LoadError onRetry={() => void query.refetch()} /> : !orders.length ? (
         <EmptyState icon={Package} title={refs.length ? "لم نعثر على طلبات محفوظة على هذا الجهاز" : "لا توجد طلبات سابقة"} description="بعد إتمام طلب من هذا المتصفح، ستظهر حالته هنا مباشرة." action="تسوق الآن" href="/products" />
       ) : (
-        <div className="orders-list">
+        <div style={{ display: "grid", gap: "14px" }}>
           {orders.map((order, idx) => {
-            const isFocused = focusedOrderNumber ? order.orderNumber === focusedOrderNumber : idx === 0;
+            const isLatest = idx === 0;
+            const isFocused = focusedOrderNumber ? order.orderNumber === focusedOrderNumber : isLatest;
             const currentStepIdx = stepOrder.indexOf(order.status);
-            const latestNoteEvent = [...(order.events || [])].reverse().find(ev => ev.note && ev.note.trim() && ev.note !== "تم استلام الطلب");
+            const cancelledNotes = (order.events || []).filter(ev => String(ev.note || "").startsWith("❌")).map(ev => String(ev.note || "").replace(/\s*\|\s*الإجمالي الجديد:.*$/, ""));
+            const regularNotes = (order.events || []).filter(ev => ev.note && ev.note.trim() && ev.note !== "تم استلام الطلب" && !String(ev.note).startsWith("❌"));
+            const latestStoreNote = regularNotes.at(-1);
+            const ordAny = order as any;
+
             return (
               <article
-                className="order-card"
                 key={order.orderNumber}
-                style={isFocused ? { border: "2px solid #174b36", boxShadow: "0 12px 28px rgba(23, 75, 54, 0.1)" } : undefined}
+                style={{
+                  padding: "16px",
+                  borderRadius: "18px",
+                  background: "#ffffff",
+                  border: isFocused ? "2px solid #174b36" : "1px solid #dbe6df",
+                  boxShadow: isFocused ? "0 10px 24px rgba(23, 75, 54, 0.09)" : "0 4px 12px rgba(15, 42, 28, 0.04)",
+                  display: "grid",
+                  gap: "12px",
+                }}
               >
-                <div className="order-head">
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-                    <span className="order-number">{order.orderNumber}</span>
-                    {idx === 0 && <span style={{ fontSize: "10px", fontWeight: 700, padding: "2px 8px", borderRadius: "99px", background: "#edf6f0", color: "#174b36" }}>أحدث طلب</span>}
-                    <small>{new Date(order.createdAt).toLocaleString("ar-YE")}</small>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "8px", paddingBottom: "10px", borderBottom: "1px solid #ebf1ed" }}>
+                  <div style={{ display: "grid", gap: "3px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                      <strong style={{ fontSize: "14.5px", color: "#123826", letterSpacing: "0.4px" }} dir="ltr">{order.orderNumber}</strong>
+                      {isLatest && (
+                        <span style={{ fontSize: "10.5px", fontWeight: 800, padding: "2px 9px", borderRadius: "99px", background: "#174b36", color: "#f1d897" }}>
+                          ✨ أحدث طلب
+                        </span>
+                      )}
+                    </div>
+                    <small style={{ color: "#607367", fontSize: "11.5px" }}>
+                      🕒 {new Date(order.createdAt).toLocaleString("ar-YE")}
+                      {ordAny.city ? (" · 📍 " + ordAny.city + (ordAny.district ? (" - " + ordAny.district) : "")) : ""}
+                    </small>
                   </div>
                   <span className={"status-pill status-" + order.status}>{stateLabels[order.status] || order.status}</span>
                 </div>
 
                 {order.status !== "cancelled" && (
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "4px", margin: "12px 0", padding: "10px", borderRadius: "12px", background: "#f5f8f5" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "5px", padding: "10px", borderRadius: "12px", background: "#f4f9f6", border: "1px solid #e1ece5" }}>
                     {stepOrder.map((st, sIdx) => {
                       const done = currentStepIdx >= sIdx;
                       const active = currentStepIdx === sIdx;
                       return (
                         <div key={st} style={{ textAlign: "center", display: "grid", gap: "4px" }}>
-                          <div style={{ height: "5px", borderRadius: "99px", background: done ? "#174b36" : "#dce5de", transition: "0.2s" }} />
-                          <span style={{ fontSize: "9px", fontWeight: active ? 800 : 600, color: done ? "#174b36" : "#8c9990" }}>{stepTitles[st]}</span>
+                          <div style={{ height: "5px", borderRadius: "99px", background: done ? "#174b36" : "#d7e2da" }} />
+                          <span style={{ fontSize: "9.5px", fontWeight: active ? 900 : 600, color: done ? "#174b36" : "#86968c" }}>{stepTitles[st]}</span>
                         </div>
                       );
                     })}
                   </div>
                 )}
 
-                {latestNoteEvent?.note && (
-                  <div style={{ margin: "8px 0 12px", padding: "10px 12px", borderRadius: "12px", background: "#fff9e8", border: "1px solid #f0dc9c", color: "#574208", fontSize: "12px", fontWeight: 700, display: "flex", alignItems: "center", gap: "8px" }}>
-                    <BellRing size={15} />
-                    <span>رسالة المتجر: {latestNoteEvent.note}</span>
+                {cancelledNotes.length > 0 && (
+                  <div style={{ padding: "10px 12px", borderRadius: "12px", background: "#fff6f4", border: "1px solid #f0c6be", display: "grid", gap: "4px" }}>
+                    <strong style={{ fontSize: "12px", color: "#8f3225" }}>🔔 تحديث على فاتورة الطلب:</strong>
+                    {cancelledNotes.map((cn, cIdx) => (
+                      <div key={cIdx} style={{ fontSize: "11.5px", color: "#5e251d", lineHeight: 1.55 }}>{cn}</div>
+                    ))}
                   </div>
                 )}
 
-                <div className="order-items-summary">
-                  {order.items.map(item => <span key={item.id}>{item.productName} × {item.quantity}</span>)}
+                {latestStoreNote?.note && (
+                  <div style={{ padding: "10px 12px", borderRadius: "12px", background: "#fff9e8", border: "1px solid #edd691", color: "#574208", fontSize: "12px", fontWeight: 700, display: "flex", alignItems: "center", gap: "8px" }}>
+                    <BellRing size={15} />
+                    <span>رسالة المتجر: {latestStoreNote.note}</span>
+                  </div>
+                )}
+
+                <div style={{ padding: "10px 12px", borderRadius: "12px", background: "#f8fbf9", border: "1px solid #e2ece5", display: "grid", gap: "6px" }}>
+                  <small style={{ fontSize: "11px", fontWeight: 800, color: "#4d6658" }}>🛒 الأصناف في هذا الطلب ({order.items.length}):</small>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                    {order.items.map(item => (
+                      <span key={item.id} style={{ padding: "5px 10px", borderRadius: "9px", background: "#ffffff", border: "1px solid #d5e3da", fontSize: "12px", fontWeight: 700, color: "#153826" }}>
+                        {item.productName} <strong style={{ color: "#174b36" }}>× {item.quantity}</strong>
+                        {item.lineTotal > 0 ? <small style={{ color: "#576e60", marginRight: "5px" }}>({formatPrice(item.lineTotal)})</small> : null}
+                      </span>
+                    ))}
+                  </div>
                 </div>
-                <div className="order-foot">
-                  <strong>{formatPrice(order.total)}</strong>
-                  <button type="button" className="small-button" disabled={reorderQuery.isFetching} onClick={() => { const items = order.items.filter(item => item.productId !== null).map(item => ({ productId: item.productId!, quantity: item.quantity })); if (!items.length) { toast.error("لم تعد منتجات هذا الطلب متاحة في المتجر."); return; } setReorder(items); }}>إضافة للسلة مجددًا <ArrowLeft size={14} /></button>
+
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px", paddingTop: "4px" }}>
+                  <div>
+                    <small style={{ display: "block", fontSize: "11px", color: "#5c7063" }}>الإجمالي النهائي للفاتورة</small>
+                    <strong style={{ fontSize: "18px", color: "#174b36" }}>{formatPrice(order.total)}</strong>
+                  </div>
+                  <button
+                    type="button"
+                    className="small-button selected"
+                    disabled={reorderQuery.isFetching}
+                    onClick={() => {
+                      const validItems = order.items.filter(item => item.productId !== null).map(item => ({ productId: item.productId!, quantity: item.quantity }));
+                      if (!validItems.length) { toast.error("لم تعد منتجات هذا الطلب متاحة في المتجر."); return; }
+                      setReorder(validItems);
+                    }}
+                    style={{ padding: "8px 14px", borderRadius: "11px", fontWeight: 800 }}
+                  >
+                    إضافة للسلة مجدداً <ArrowLeft size={14} />
+                  </button>
                 </div>
+
                 {order.events.length > 0 && (
-                  <details className="order-history" open={isFocused}>
-                    <summary>سجل حالة الطلب ({order.events.length})</summary>
+                  <details className="order-history">
+                    <summary style={{ fontSize: "11.5px", color: "#53695c", cursor: "pointer" }}>عرض سجل تحركات الطلب ({order.events.length})</summary>
                     <ol>{order.events.map(event => <li key={event.id}><span className={"status-pill status-" + event.status}>{stateLabels[event.status] || event.status}</span><time>{new Date(event.createdAt).toLocaleString("ar-YE")}</time>{event.note && <small>{event.note}</small>}</li>)}</ol>
                   </details>
                 )}
@@ -1888,32 +2070,356 @@ function useGuestPushSubscriptionSync() {
   }, [refs.length]);
 }
 
-
 function AccountPage() {
   const customer = useCustomer();
+  const cleanedCustomerPhone = cleanYemeniPhone(customer.phone);
+  const hasSavedProfile = Boolean(customer.name.trim().length >= 2 && isValidYemeniPhone(cleanedCustomerPhone));
+  const [isEditingProfile, setIsEditingProfile] = useState(!hasSavedProfile);
   const [name, setName] = useState(customer.name);
-  const [phone, setPhone] = useState(customer.phone);
-  const [address, setAddress] = useState({ label: "المنزل", recipientName: customer.name, phone: customer.phone, city: "", district: "", details: "", isDefault: customer.addresses.length === 0 });
+  const [phone, setPhone] = useState(cleanedCustomerPhone);
+
+  const [showAddressForm, setShowAddressForm] = useState(false);
   const [editingAddressId, setEditingAddressId] = useState<string | null>(null);
-  useEffect(() => { setName(customer.name); setPhone(customer.phone); }, [customer.name, customer.phone]);
+  const [address, setAddress] = useState({
+    label: "المنزل",
+    recipientName: customer.name,
+    phone: cleanedCustomerPhone,
+    city: "صنعاء",
+    district: "",
+    details: "",
+    isDefault: customer.addresses.length === 0,
+  });
+
+  useEffect(() => {
+    const cp = cleanYemeniPhone(customer.phone);
+    setName(customer.name);
+    setPhone(cp);
+    if (customer.name.trim().length >= 2 && isValidYemeniPhone(cp)) {
+      setIsEditingProfile(false);
+    }
+  }, [customer.name, customer.phone]);
+
+  const profilePhoneValid = isValidYemeniPhone(phone);
+  const addressPhoneValid = isValidYemeniPhone(address.phone);
+
   const saveProfile = (event: FormEvent) => {
     event.preventDefault();
-    customer.saveProfile(name, phone);
-    toast.success("حُفظت بياناتك في هذا المتصفح.");
+    if (name.trim().length < 2) {
+      toast.error("يرجى كتابة الاسم الكامل.");
+      return;
+    }
+    if (!profilePhoneValid) {
+      toast.error("يرجى إدخال رقم جوال يمني صحيح مكون من 9 أرقام ويبدأ بـ 77 أو 73 أو 78 أو 71 أو 70.");
+      return;
+    }
+    const cleanP = cleanYemeniPhone(phone);
+    customer.saveProfile(name.trim(), cleanP);
+    setIsEditingProfile(false);
+    toast.success("تم حفظ معلومات حسابك بنجاح ✓");
   };
+
   const resetAddressForm = () => {
     setEditingAddressId(null);
-    setAddress({ label: "المنزل", recipientName: name, phone, city: "", district: "", details: "", isDefault: customer.addresses.length === 0 });
+    setShowAddressForm(false);
+    setAddress({
+      label: "المنزل",
+      recipientName: customer.name || name,
+      phone: cleanYemeniPhone(customer.phone || phone),
+      city: "صنعاء",
+      district: "",
+      details: "",
+      isDefault: customer.addresses.length === 0,
+    });
   };
+
   const submitAddress = (event: FormEvent) => {
     event.preventDefault();
-    customer.saveAddress({ ...address, id: editingAddressId ?? undefined });
-    toast.success(editingAddressId ? "تم تحديث العنوان المحفوظ على هذا الجهاز." : "تم حفظ العنوان على هذا الجهاز.");
+    if (!addressPhoneValid) {
+      toast.error("يرجى إدخال رقم جوال يمني صحيح مكون من 9 أرقام ويبدأ بـ 77 أو 73 أو 78 أو 71 أو 70.");
+      return;
+    }
+    customer.saveAddress({
+      ...address,
+      phone: cleanYemeniPhone(address.phone),
+      id: editingAddressId ?? undefined,
+    });
+    toast.success(editingAddressId ? "تم تحديث العنوان المحفوظ بنجاح ✓" : "تم حفظ العنوان الجديد بنجاح ✓");
     resetAddressForm();
   };
-  return <main className="page-shell inner-page"><div className="page-title-row"><div><span className="eyebrow"></span><h1>حسابي</h1><p></p></div><span className="page-title-icon"><UserRound size={23} /></span></div><div className="account-grid"><section className="panel-card"><div className="panel-title"><CircleUserRound size={19} /><h2>بيانات التواصل</h2></div><form className="form-stack" onSubmit={saveProfile}><label>الاسم<input required minLength={2} maxLength={160} autoComplete="name" value={name} onChange={event => setName(event.target.value)} /></label><label>رقم الهاتف<input required type="tel" minLength={7} maxLength={32} autoComplete="tel" value={phone} onChange={event => setPhone(event.target.value)} placeholder="أضف رقمًا يمكن للمتجر الاتصال به" /></label><button className="button button-primary" disabled={name.trim().length < 2 || phone.trim().length < 7}>حفظ البيانات على هذا الجهاز</button><label>لغة الواجهة<select value="ar" disabled><option value="ar">العربية</option></select></label><small className="subtle-note"></small></form></section><section className="panel-card"><div className="panel-title"><MapPin size={19} /><h2>عناويني المحفوظة</h2></div>{customer.addresses.map(item => <div className="saved-address" key={item.id}><div><strong>{item.label}{item.isDefault && <span className="default-tag">افتراضي</span>}</strong><p>{item.recipientName} · {item.phone}<br />{item.city}، {item.district}<br />{item.details}</p></div><div className="address-actions"><button type="button" className="small-button" onClick={() => { setEditingAddressId(item.id); setAddress({ label: item.label, recipientName: item.recipientName, phone: item.phone, city: item.city, district: item.district, details: item.details, isDefault: item.isDefault }); }}>تعديل</button>{!item.isDefault && <button type="button" className="small-button" onClick={() => customer.setDefaultAddress(item.id)}>افتراضي</button>}<button type="button" className="icon-button" aria-label="حذف العنوان" onClick={() => { customer.removeAddress(item.id); toast.success("حُذف العنوان من هذا الجهاز."); if (editingAddressId === item.id) resetAddressForm(); }}><Trash2 size={16} /></button></div></div>)}{!customer.addresses.length && <p className="subtle-note">لا توجد عناوين محفوظة بعد. أضف عنوانًا مرة واحدة لإعادة استخدامه عند الطلب القادم.</p>}<details className="address-add" open={editingAddressId !== null}><summary>{editingAddressId ? "تعديل العنوان" : "إضافة عنوان جديد"} <Plus size={15} /></summary><form className="form-stack" onSubmit={submitAddress}><div className="form-grid"><label>اسم العنوان<input required maxLength={80} value={address.label} onChange={event => setAddress({ ...address, label: event.target.value })} placeholder="المنزل، العمل..." /></label><label>اسم المستلم<input required minLength={2} maxLength={160} autoComplete="name" value={address.recipientName} onChange={event => setAddress({ ...address, recipientName: event.target.value })} /></label><label>الهاتف<input required type="tel" minLength={7} maxLength={32} autoComplete="tel" value={address.phone} onChange={event => setAddress({ ...address, phone: event.target.value })} /></label><label>المدينة/المنطقة<input required maxLength={100} autoComplete="address-level1" value={address.city} onChange={event => setAddress({ ...address, city: event.target.value })} /></label><label>الحي<input required maxLength={120} autoComplete="address-level2" value={address.district} onChange={event => setAddress({ ...address, district: event.target.value })} /></label><label className="form-wide">تفاصيل العنوان<textarea rows={2} maxLength={1000} autoComplete="street-address" value={address.details} onChange={event => setAddress({ ...address, details: event.target.value })} /></label><label className="toggle-field form-wide"><input type="checkbox" checked={address.isDefault} onChange={event => setAddress({ ...address, isDefault: event.target.checked })} /> اجعل هذا العنوان الافتراضي</label></div><div className="address-form-actions"><button className="button button-primary">{editingAddressId ? "حفظ تعديل العنوان" : "حفظ العنوان"}</button>{editingAddressId && <button type="button" className="button button-quiet" onClick={resetAddressForm}>إلغاء</button>}</div></form></details></section></div><p className="local-data-note"></p></main>;
-}
 
+  return (
+    <main className="page-shell inner-page">
+      <div className="page-title-row">
+        <div><span className="eyebrow">مساحتك الخاصة على هذا الجهاز</span><h1>حسابي</h1><p>معلومات حسابك وعناوين التوصيل المحفوظة لإتمام طلباتك بنقرة واحدة.</p></div>
+        <span className="page-title-icon"><UserRound size={23} /></span>
+      </div>
+
+      <div className="account-grid" style={{ gap: "16px", alignItems: "start" }}>
+        <section
+          className="panel-card"
+          style={{
+            padding: 0,
+            overflow: "hidden",
+            borderRadius: "20px",
+            border: "1.5px solid #cfe2d5",
+            boxShadow: "0 8px 24px rgba(17, 58, 40, 0.06)",
+            background: "#ffffff",
+          }}
+        >
+          <div
+            style={{
+              padding: "16px 18px",
+              background: "linear-gradient(135deg, #174b36 0%, #0f3324 100%)",
+              color: "#ffffff",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: "10px",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <span style={{ width: "42px", height: "42px", borderRadius: "13px", background: "rgba(241, 216, 151, 0.18)", border: "1.5px solid #f1d897", color: "#f1d897", display: "grid", placeItems: "center", fontWeight: 900, fontSize: "17px" }}>
+                {(customer.name || name || "أ").trim().slice(0, 1)}
+              </span>
+              <div>
+                <span style={{ fontSize: "10.5px", color: "#f1d897", fontWeight: 800, display: "block" }}>البيانات الشخصية</span>
+                <h2 style={{ margin: 0, fontSize: "17px", color: "#ffffff" }}>معلومات الحساب</h2>
+              </div>
+            </div>
+            {!isEditingProfile && (
+              <button
+                type="button"
+                onClick={() => setIsEditingProfile(true)}
+                style={{
+                  padding: "7px 14px",
+                  borderRadius: "10px",
+                  border: "1px solid #f1d897",
+                  background: "rgba(255,255,255,0.12)",
+                  color: "#f1d897",
+                  fontWeight: 800,
+                  fontSize: "12px",
+                  cursor: "pointer",
+                }}
+              >
+                ✏️ تعديل البيانات
+              </button>
+            )}
+          </div>
+
+          <div style={{ padding: "18px" }}>
+            {!isEditingProfile ? (
+              <div style={{ display: "grid", gap: "14px" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "10px" }}>
+                  <div style={{ padding: "12px 14px", borderRadius: "14px", background: "#f5faf7", border: "1px solid #dce9e0" }}>
+                    <small style={{ color: "#5a7062", fontSize: "11px", display: "block", marginBottom: "3px" }}>👤 اسم العميل</small>
+                    <strong style={{ fontSize: "15px", color: "#123826" }}>{customer.name}</strong>
+                  </div>
+                  <div style={{ padding: "12px 14px", borderRadius: "14px", background: "#f5faf7", border: "1px solid #dce9e0" }}>
+                    <small style={{ color: "#5a7062", fontSize: "11px", display: "block", marginBottom: "3px" }}>📞 رقم الجوال المعتمد</small>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                      <strong style={{ fontSize: "15px", color: "#174b36", letterSpacing: "0.6px" }} dir="ltr">{cleanedCustomerPhone}</strong>
+                      {getYemenCarrierName(cleanedCustomerPhone) && (
+                        <span style={{ fontSize: "10px", fontWeight: 800, padding: "2px 8px", borderRadius: "99px", background: "#e3f3ea", color: "#174b36" }}>
+                          {getYemenCarrierName(cleanedCustomerPhone)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", paddingTop: "6px", borderTop: "1px solid #edf2ee", justifyContent: "space-between", alignItems: "center" }}>
+                  <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                    <Link href="/orders" className="small-button" style={{ background: "#f2f7f4", fontWeight: 800 }}>📦 طلباتي ({customer.orders.length})</Link>
+                    <span className="small-button" style={{ background: "#f2f7f4", cursor: "default" }}>📍 العناوين المحفوظة ({customer.addresses.length})</span>
+                  </div>
+                  <small style={{ color: "#687b6f", fontSize: "11px" }}>✓ محفوظ وجاهز للطلب السريع</small>
+                </div>
+              </div>
+            ) : (
+              <form className="form-stack" onSubmit={saveProfile} style={{ gap: "12px" }}>
+                <label>الاسم الكامل *
+                  <input required minLength={2} maxLength={160} autoComplete="name" value={name} onChange={event => setName(event.target.value)} placeholder="أدخل اسمك الكامل..." />
+                </label>
+                <label>
+                  <span style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span>رقم الجوال اليمني (9 أرقام) *</span>
+                    <small style={{ fontSize: "10.5px", fontWeight: 800, color: profilePhoneValid ? "#174b36" : "#b43c2f" }}>
+                      {profilePhoneValid ? ("✓ رقم صحيح (" + getYemenCarrierName(phone) + ")") : ("يبدأ بـ 77 أو 73 أو 78 أو 71 أو 70 (" + phone.length + "/9)")}
+                    </small>
+                  </span>
+                  <input
+                    required
+                    type="tel"
+                    inputMode="numeric"
+                    maxLength={9}
+                    dir="ltr"
+                    value={phone}
+                    onChange={event => setPhone(cleanYemeniPhone(event.target.value))}
+                    placeholder="مثال: 770731619"
+                    style={{ textAlign: "left", fontWeight: 800, fontSize: "15px", letterSpacing: "0.8px", borderColor: phone && !profilePhoneValid ? "#d9534f" : undefined }}
+                  />
+                </label>
+                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                  <button type="submit" className="button button-primary" disabled={name.trim().length < 2 || !profilePhoneValid} style={{ flex: 1 }}>
+                    <Check size={16} /> حفظ معلومات الحساب
+                  </button>
+                  {hasSavedProfile && (
+                    <button type="button" className="button button-quiet" onClick={() => { setName(customer.name); setPhone(cleanedCustomerPhone); setIsEditingProfile(false); }}>
+                      إلغاء
+                    </button>
+                  )}
+                </div>
+              </form>
+            )}
+          </div>
+        </section>
+
+        <section
+          className="panel-card"
+          style={{
+            padding: "18px",
+            borderRadius: "20px",
+            border: "1.5px solid #cfe2d5",
+            boxShadow: "0 8px 24px rgba(17, 58, 40, 0.06)",
+            background: "#ffffff",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px", paddingBottom: "12px", borderBottom: "1px solid #e6efe9", marginBottom: "14px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <span style={{ width: "36px", height: "36px", borderRadius: "11px", background: "#eaf5ee", color: "#174b36", display: "grid", placeItems: "center" }}>
+                <MapPin size={18} />
+              </span>
+              <div>
+                <h2 style={{ margin: 0, fontSize: "16.5px", color: "#123826" }}>عناويني المحفوظة ({customer.addresses.length})</h2>
+                <small style={{ color: "#5e7265", fontSize: "11px" }}>انقر على أي عنوان عند تأكيد الطلب لاختياره فوراً</small>
+              </div>
+            </div>
+            {!showAddressForm && (
+              <button
+                type="button"
+                className="small-button selected"
+                onClick={() => {
+                  setEditingAddressId(null);
+                  setAddress({ label: "المنزل", recipientName: customer.name || name, phone: cleanedCustomerPhone || phone, city: "صنعاء", district: "", details: "", isDefault: customer.addresses.length === 0 });
+                  setShowAddressForm(true);
+                }}
+              >
+                <Plus size={14} /> إضافة عنوان جديد
+              </button>
+            )}
+          </div>
+
+          {!customer.addresses.length && !showAddressForm ? (
+            <div style={{ textAlign: "center", padding: "18px 12px", borderRadius: "14px", background: "#f7faf8", border: "1px dashed #c8d9ce" }}>
+              <p style={{ margin: "0 0 10px", fontSize: "12.5px", color: "#52685b" }}>لا توجد عناوين محفوظة بعد. سيُحفظ عنوانك تلقائياً عند أول طلب أو يمكنك إضافته الآن.</p>
+              <button type="button" className="small-button selected" onClick={() => setShowAddressForm(true)}><Plus size={14} /> إضافة أول عنوان توصيل</button>
+            </div>
+          ) : (
+            <div style={{ display: "grid", gap: "10px" }}>
+              {customer.addresses.map(item => (
+                <div
+                  key={item.id}
+                  style={{
+                    padding: "12px 14px",
+                    borderRadius: "14px",
+                    background: item.isDefault ? "#f3faf5" : "#ffffff",
+                    border: item.isDefault ? "1.5px solid #174b36" : "1px solid #dce6df",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "flex-start",
+                    flexWrap: "wrap",
+                    gap: "10px",
+                  }}
+                >
+                  <div style={{ display: "grid", gap: "4px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                      <strong style={{ fontSize: "14px", color: "#123826" }}>📍 {item.label}</strong>
+                      {item.isDefault && <span className="default-tag">العنوان الافتراضي ✓</span>}
+                    </div>
+                    <div style={{ fontSize: "12.5px", color: "#2c4738", fontWeight: 700 }}>
+                      {item.recipientName} · <span dir="ltr" style={{ color: "#174b36" }}>{cleanYemeniPhone(item.phone)}</span>
+                    </div>
+                    <div style={{ fontSize: "12px", color: "#516659" }}>
+                      {item.city} — {item.district}{item.details ? (" · " + item.details) : ""}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                    {!item.isDefault && (
+                      <button type="button" className="small-button" onClick={() => { customer.setDefaultAddress(item.id); toast.success("تم تعيينه كعنوان افتراضي ✓"); }}>
+                        تعيين كافتراضي
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="small-button"
+                      onClick={() => {
+                        setEditingAddressId(item.id);
+                        setAddress({
+                          label: item.label,
+                          recipientName: item.recipientName,
+                          phone: cleanYemeniPhone(item.phone),
+                          city: item.city,
+                          district: item.district,
+                          details: item.details,
+                          isDefault: item.isDefault,
+                        });
+                        setShowAddressForm(true);
+                      }}
+                    >
+                      تعديل
+                    </button>
+                    <button
+                      type="button"
+                      className="icon-button"
+                      aria-label="حذف العنوان"
+                      onClick={() => {
+                        customer.removeAddress(item.id);
+                        toast.success("حُذف العنوان من هذا الجهاز.");
+                        if (editingAddressId === item.id) resetAddressForm();
+                      }}
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {showAddressForm && (
+            <form className="form-stack" onSubmit={submitAddress} style={{ marginTop: "14px", paddingTop: "14px", borderTop: "1.5px dashed #cfe0d4", gap: "10px" }}>
+              <strong style={{ fontSize: "13.5px", color: "#174b36" }}>{editingAddressId ? "✏️ تعديل العنوان المحفوظ" : "➕ إضافة عنوان توصيل جديد"}</strong>
+              <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                {["المنزل", "العمل", "منزل العائلة", "استراحة"].map(preset => (
+                  <button key={preset} type="button" className={"small-button" + (address.label === preset ? " selected" : "")} style={{ minHeight: "28px", padding: "2px 10px", fontSize: "11.5px" }} onClick={() => setAddress({ ...address, label: preset })}>{preset}</button>
+                ))}
+              </div>
+              <div className="form-grid">
+                <label>تسمية العنوان *<input required maxLength={80} value={address.label} onChange={event => setAddress({ ...address, label: event.target.value })} placeholder="المنزل، العمل..." /></label>
+                <label>اسم المستلم *<input required minLength={2} maxLength={160} autoComplete="name" value={address.recipientName} onChange={event => setAddress({ ...address, recipientName: event.target.value })} /></label>
+                <label>
+                  <span style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span>رقم الجوال اليمني (9 أرقام) *</span>
+                    <small style={{ fontSize: "10px", fontWeight: 800, color: addressPhoneValid ? "#174b36" : "#b43c2f" }}>{address.phone.length}/9</small>
+                  </span>
+                  <input required type="tel" inputMode="numeric" maxLength={9} dir="ltr" value={address.phone} onChange={event => setAddress({ ...address, phone: cleanYemeniPhone(event.target.value) })} placeholder="77XXXXXXX" style={{ textAlign: "left", fontWeight: 800 }} />
+                </label>
+                <label>المدينة / المنطقة *<input required maxLength={100} value={address.city} onChange={event => setAddress({ ...address, city: event.target.value })} placeholder="صنعاء" /></label>
+                <label className="form-wide">الحي / الشارع *<input required maxLength={120} value={address.district} onChange={event => setAddress({ ...address, district: event.target.value })} placeholder="مثلاً: الرقاص، حدة، الأصبحي..." /></label>
+                <label className="form-wide">تفاصيل إضافية (معلم قريب / جوار)<textarea rows={2} maxLength={1000} value={address.details} onChange={event => setAddress({ ...address, details: event.target.value })} placeholder="مثلاً: جوار بنك الكريمي..." /></label>
+                <label className="toggle-field form-wide"><input type="checkbox" checked={address.isDefault} onChange={event => setAddress({ ...address, isDefault: event.target.checked })} /> اجعل هذا العنوان هو الافتراضي عند الطلب</label>
+              </div>
+              <div className="address-form-actions" style={{ display: "flex", gap: "8px" }}>
+                <button type="submit" className="button button-primary" disabled={!addressPhoneValid}><Check size={16} /> {editingAddressId ? "حفظ تعديل العنوان" : "حفظ العنوان"}</button>
+                <button type="button" className="button button-quiet" onClick={resetAddressForm}>إلغاء</button>
+              </div>
+            </form>
+          )}
+        </section>
+      </div>
+    </main>
+  );
+}
 type AssistantProductLine = { productId: number; name: string; price: number; unit: string; quantity: number; stock: number | null; minQuantity: number; quantityStep: number };
 type AssistantCartAction = { id: string; type: "add" | "remove"; items: AssistantProductLine[]; status: "pending" | "confirmed" | "cancelled" };
 type AssistantMessage = {

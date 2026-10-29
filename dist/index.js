@@ -2349,10 +2349,21 @@ async function parseBulkProductsTextAI(params) {
 
 // server/guest-orders.ts
 import { createHash as createHash2, timingSafeEqual as timingSafeEqual2 } from "node:crypto";
+function normalizeYemeniPhone(value) {
+  const latinDigits = String(value || "").replace(/[٠-٩]/g, (digit) => String(digit.charCodeAt(0) - 1632)).replace(/[۰-۹]/g, (digit) => String(digit.charCodeAt(0) - 1776));
+  let digits = latinDigits.replace(/\D/g, "");
+  if (digits.startsWith("00967") && digits.length >= 14) digits = digits.slice(5);
+  else if (digits.startsWith("967") && digits.length >= 12) digits = digits.slice(3);
+  else if (digits.startsWith("07") && digits.length === 10) digits = digits.slice(1);
+  return digits;
+}
 function isValidGuestPhone(value) {
-  const latinDigits = value.replace(/[٠-٩]/g, (digit) => String(digit.charCodeAt(0) - 1632)).replace(/[۰-۹]/g, (digit) => String(digit.charCodeAt(0) - 1776));
-  const digits = latinDigits.replace(/\D/g, "");
-  return /^\+?[\d\s().-]+$/.test(latinDigits) && digits.length >= 7 && digits.length <= 15;
+  const raw = String(value || "").trim();
+  if (!raw || raw.indexOf("+") > 0) return false;
+  const latinDigits = raw.replace(/[٠-٩]/g, (digit) => String(digit.charCodeAt(0) - 1632)).replace(/[۰-۹]/g, (digit) => String(digit.charCodeAt(0) - 1776));
+  if (!/^\+?[\d\s().-]+$/.test(latinDigits)) return false;
+  const clean = normalizeYemeniPhone(raw);
+  return /^(77|73|78|71|70)\d{7}$/.test(clean);
 }
 function hashGuestOrderKey(key) {
   return createHash2("sha256").update(key, "utf8").digest("hex");
@@ -3354,7 +3365,7 @@ var commerceRouter = router({
       const db = await database();
       await db.transaction(async (tx) => {
         if (input.isDefault) await tx.update(addresses).set({ isDefault: false }).where(eq4(addresses.userId, ctx.user.id));
-        const values = { userId: ctx.user.id, label: input.label, recipientName: input.recipientName, phone: input.phone, city: input.city, district: input.district, details: input.details ?? null, isDefault: input.isDefault };
+        const values = { userId: ctx.user.id, label: input.label, recipientName: input.recipientName, phone: normalizeYemeniPhone(input.phone), city: input.city, district: input.district, details: input.details ?? null, isDefault: input.isDefault };
         if (input.id) {
           const owned = (await tx.select({ id: addresses.id }).from(addresses).where(and2(eq4(addresses.id, input.id), eq4(addresses.userId, ctx.user.id))).limit(1))[0];
           if (!owned) throw new TRPCError3({ code: "NOT_FOUND", message: "\u0627\u0644\u0639\u0646\u0648\u0627\u0646 \u063A\u064A\u0631 \u0645\u0648\u062C\u0648\u062F \u0641\u064A \u062D\u0633\u0627\u0628\u0643." });
@@ -3449,7 +3460,7 @@ var commerceRouter = router({
     })).query(async ({ input }) => {
       const db = await database();
       const referenceByNumber = new Map(input.refs.map((reference) => [reference.orderNumber, reference.idempotencyKey]));
-      const candidates = await db.select().from(orders).where(inArray(orders.orderNumber, [...referenceByNumber.keys()])).limit(50);
+      const candidates = await db.select().from(orders).where(inArray(orders.orderNumber, [...referenceByNumber.keys()])).orderBy(desc(orders.createdAt), desc(orders.id)).limit(50);
       const authorized = candidates.filter((order) => {
         const key = referenceByNumber.get(order.orderNumber);
         return key ? matchesGuestOrderKey(key, order.idempotencyKey) : false;
@@ -3463,7 +3474,15 @@ var commerceRouter = router({
       return authorized.map((order) => ({
         orderNumber: order.orderNumber,
         status: order.status,
+        subtotal: order.subtotal,
+        deliveryFee: order.deliveryFee,
+        discount: order.discount,
         total: order.total,
+        city: order.city,
+        district: order.district,
+        addressDetails: order.addressDetails,
+        recipientName: order.recipientName,
+        phone: order.phone,
         createdAt: order.createdAt,
         items: items.filter((item) => item.orderId === order.id),
         events: events.filter((event) => event.orderId === order.id).map(({ id, status, note, createdAt }) => ({ id, status, note, createdAt }))
@@ -3516,7 +3535,7 @@ var commerceRouter = router({
       items: z3.array(z3.object({ productId: safeId, quantity: z3.number().int().min(1).max(1e4), name: z3.string().trim().max(220).optional(), variant: z3.string().trim().max(120).optional(), customAmount: z3.number().int().min(1).max(1e8).optional() })).min(1).max(100),
       offerCode: z3.string().trim().max(40).optional(),
       recipientName: z3.string().trim().min(2).max(160),
-      phone: z3.string().trim().min(7).max(32).refine(isValidGuestPhone, "\u0623\u062F\u062E\u0644 \u0631\u0642\u0645 \u0647\u0627\u062A\u0641 \u0635\u062D\u064A\u062D\u064B\u0627 \u0644\u064A\u062A\u0645\u0643\u0646 \u0627\u0644\u0645\u062A\u062C\u0631 \u0645\u0646 \u0627\u0644\u0627\u062A\u0635\u0627\u0644 \u0628\u0643."),
+      phone: z3.string().trim().min(7).max(32).refine(isValidGuestPhone, "\u064A\u0631\u062C\u0649 \u0625\u062F\u062E\u0627\u0644 \u0631\u0642\u0645 \u062C\u0648\u0627\u0644 \u064A\u0645\u0646\u064A \u0635\u062D\u064A\u062D \u0645\u0643\u0648\u0646 \u0645\u0646 9 \u0623\u0631\u0642\u0627\u0645 \u0648\u064A\u0628\u062F\u0623 \u0628\u0640 77 \u0623\u0648 73 \u0623\u0648 78 \u0623\u0648 71 \u0623\u0648 70."),
       city: z3.string().trim().min(1).max(100),
       district: z3.string().trim().min(1).max(120),
       addressDetails: z3.string().trim().max(1e3).optional(),

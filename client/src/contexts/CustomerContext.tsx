@@ -35,6 +35,22 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+export function cleanYemeniPhone(raw: unknown): string {
+  const str = typeof raw === "string" ? raw : "";
+  const latin = str
+    .replace(/[٠-٩]/g, d => String(d.charCodeAt(0) - 0x0660))
+    .replace(/[۰-۹]/g, d => String(d.charCodeAt(0) - 0x06f0));
+  let digits = latin.replace(/\D/g, "");
+  if (digits.startsWith("00967") && digits.length >= 14) digits = digits.slice(5);
+  else if (digits.startsWith("967") && digits.length >= 12) digits = digits.slice(3);
+  else if (digits.startsWith("07") && digits.length === 10) digits = digits.slice(1);
+  return digits.slice(0, 9);
+}
+
+export function isValidYemeniPhone(raw: unknown): boolean {
+  return /^(77|73|78|71|70)\d{7}$/.test(cleanYemeniPhone(raw));
+}
+
 function shortText(value: unknown, max: number) {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
 }
@@ -111,7 +127,7 @@ function readCustomerData(): GuestCustomerData {
       if (!isRecord(value)) return [];
       const id = shortText(value.id, 80);
       const recipientName = shortText(value.recipientName, 160);
-      const phone = shortText(value.phone, 32);
+      const phone = cleanYemeniPhone(value.phone) || shortText(value.phone, 32);
       const city = shortText(value.city, 100);
       const district = shortText(value.district, 120);
       if (!id || !recipientName || !phone || !city || !district) return [];
@@ -138,7 +154,7 @@ function readCustomerData(): GuestCustomerData {
     }).slice(0, 50) : [];
     return {
       name: shortText(saved.name, 160),
-      phone: shortText(saved.phone, 32),
+      phone: cleanYemeniPhone(saved.phone) || shortText(saved.phone, 32),
       addresses: normalizedAddresses,
       orders,
     };
@@ -166,7 +182,7 @@ export function CustomerProvider({ children }: { children: ReactNode }) {
   }, [data]);
 
   const saveProfile = useCallback((name: string, phone: string) => {
-    setData(current => ({ ...current, name: name.trim().slice(0, 160), phone: phone.trim().slice(0, 32) }));
+    setData(current => ({ ...current, name: name.trim().slice(0, 160), phone: cleanYemeniPhone(phone) }));
   }, []);
 
   const saveAddress = useCallback((address: Omit<SavedAddress, "id"> & { id?: string }) => {
@@ -179,7 +195,7 @@ export function CustomerProvider({ children }: { children: ReactNode }) {
         id,
         label: address.label.trim().slice(0, 80) || "عنوان محفوظ",
         recipientName: address.recipientName.trim().slice(0, 160),
-        phone: address.phone.trim().slice(0, 32),
+        phone: cleanYemeniPhone(address.phone),
         city: address.city.trim().slice(0, 100),
         district: address.district.trim().slice(0, 120),
         details: address.details.trim().slice(0, 1000),

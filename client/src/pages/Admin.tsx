@@ -29,18 +29,33 @@ const sections: Array<{ id: Section; label: string; icon: typeof LayoutDashboard
   { id: "settings", label: "إعدادات المتجر", icon: Settings2 },
 ];
 
-function encodeCanvasSmartWebp(canvas: HTMLCanvasElement, kind: "product" | "category" | "banner" | "icon"): string {
-  const maxBase64Len = kind === "banner" ? 175000 : kind === "icon" ? 55000 : 96000;
-  let q = kind === "banner" ? 0.82 : 0.80;
-  let out = canvas.toDataURL("image/webp", q);
-  const isWebp = out.startsWith("data:image/webp");
-  const mime = isWebp ? "image/webp" : "image/jpeg";
-  if (!isWebp) out = canvas.toDataURL("image/jpeg", q);
-  while (out.length > maxBase64Len && q > 0.56) {
-    q = Math.round((q - 0.06) * 100) / 100;
-    out = canvas.toDataURL(mime, q);
+function encodeCanvasSmartWebp(sourceCanvas: HTMLCanvasElement, kind: "product" | "category" | "banner" | "icon"): string {
+  const maxBase64Len = kind === "banner" ? 135000 : kind === "icon" ? 45000 : 76000;
+  let workCanvas = sourceCanvas;
+  for (let pass = 0; pass < 3; pass++) {
+    for (const q of [0.76, 0.68, 0.60, 0.52]) {
+      const webp = workCanvas.toDataURL("image/webp", q);
+      const jpeg = workCanvas.toDataURL("image/jpeg", q);
+      const best = (webp.startsWith("data:image/webp") && webp.length < jpeg.length) ? webp : jpeg;
+      if (best.length <= maxBase64Len) return best;
+    }
+    const nextW = Math.max(280, Math.round(workCanvas.width * 0.78));
+    const nextH = Math.max(280, Math.round(workCanvas.height * 0.78));
+    const scaled = document.createElement("canvas");
+    scaled.width = nextW;
+    scaled.height = nextH;
+    const sCtx = scaled.getContext("2d");
+    if (!sCtx) break;
+    sCtx.fillStyle = "#ffffff";
+    sCtx.fillRect(0, 0, nextW, nextH);
+    sCtx.imageSmoothingEnabled = true;
+    sCtx.imageSmoothingQuality = "high";
+    sCtx.drawImage(workCanvas, 0, 0, nextW, nextH);
+    workCanvas = scaled;
   }
-  return out;
+  const finalWebp = workCanvas.toDataURL("image/webp", 0.55);
+  const finalJpeg = workCanvas.toDataURL("image/jpeg", 0.55);
+  return (finalWebp.startsWith("data:image/webp") && finalWebp.length < finalJpeg.length) ? finalWebp : finalJpeg;
 }
 
 async function quickCompressImageFile(file: File, kind: "product" | "category" | "banner" | "icon"): Promise<string> {
@@ -50,9 +65,9 @@ async function quickCompressImageFile(file: File, kind: "product" | "category" |
     img.onload = () => {
       try {
         URL.revokeObjectURL(url);
-        const maxDim = kind === "banner" ? 1280 : kind === "icon" ? 400 : 800;
-        let w = img.naturalWidth || img.width || 800;
-        let h = img.naturalHeight || img.height || 800;
+        const maxDim = kind === "banner" ? 1080 : kind === "icon" ? 360 : 640;
+        let w = img.naturalWidth || img.width || 640;
+        let h = img.naturalHeight || img.height || 640;
         if (w > maxDim || h > maxDim) {
           const ratio = Math.min(maxDim / w, maxDim / h);
           w = Math.max(1, Math.round(w * ratio));
@@ -63,6 +78,8 @@ async function quickCompressImageFile(file: File, kind: "product" | "category" |
         canvas.height = h;
         const ctx = canvas.getContext("2d");
         if (!ctx) { reject(new Error("تعذر معالجة الصورة")); return; }
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, w, h);
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = "high";
         ctx.drawImage(img, 0, 0, w, h);
@@ -85,9 +102,9 @@ async function recompressImageUrlToLightWebp(srcUrl: string, kind: "product" | "
     img.crossOrigin = "anonymous";
     img.onload = () => {
       try {
-        const maxDim = kind === "banner" ? 1280 : 800;
-        let w = img.naturalWidth || img.width || 800;
-        let h = img.naturalHeight || img.height || 800;
+        const maxDim = kind === "banner" ? 1080 : 640;
+        let w = img.naturalWidth || img.width || 640;
+        let h = img.naturalHeight || img.height || 640;
         if (w > maxDim || h > maxDim) {
           const ratio = Math.min(maxDim / w, maxDim / h);
           w = Math.max(1, Math.round(w * ratio));
@@ -98,6 +115,8 @@ async function recompressImageUrlToLightWebp(srcUrl: string, kind: "product" | "
         canvas.height = h;
         const ctx = canvas.getContext("2d");
         if (!ctx) { reject(new Error("تعذر معالجة الصورة")); return; }
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, w, h);
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = "high";
         ctx.drawImage(img, 0, 0, w, h);
@@ -173,7 +192,8 @@ function ImageField({ value, onChange, kind, aspect, title }: { value: string; o
     try {
       const compressed = await quickCompressImageFile(file, kind);
       onChange(compressed);
-      toast.success("تم تجهيز وضغط الصورة فوراً بنجاح ⚡");
+      const kb = Math.max(1, Math.round((compressed.length * 3) / 4 / 1024));
+      toast.success("تم تجهيز وضغط الصورة بنجاح (" + kb + " كيلوبايت فقط) ⚡");
     } catch {
       toast.error("تعذر قراءة الصورة، جرب صورة أخرى.");
     } finally {
