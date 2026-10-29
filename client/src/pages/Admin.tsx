@@ -36,9 +36,9 @@ async function quickCompressImageFile(file: File, kind: "product" | "category" |
     img.onload = () => {
       try {
         URL.revokeObjectURL(url);
-        const maxDim = kind === "banner" ? 1080 : kind === "icon" ? 384 : 680;
-        let w = img.naturalWidth || img.width || 600;
-        let h = img.naturalHeight || img.height || 600;
+        const maxDim = kind === "banner" ? 1600 : kind === "icon" ? 512 : 1200;
+        let w = img.naturalWidth || img.width || 1000;
+        let h = img.naturalHeight || img.height || 1000;
         if (w > maxDim || h > maxDim) {
           const ratio = Math.min(maxDim / w, maxDim / h);
           w = Math.max(1, Math.round(w * ratio));
@@ -49,8 +49,13 @@ async function quickCompressImageFile(file: File, kind: "product" | "category" |
         canvas.height = h;
         const ctx = canvas.getContext("2d");
         if (!ctx) { reject(new Error("تعذر معالجة الصورة")); return; }
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = "high";
         ctx.drawImage(img, 0, 0, w, h);
-        const out = canvas.toDataURL("image/webp", 0.78);
+        let out = canvas.toDataURL("image/webp", 0.92);
+        if (!out.startsWith("data:image/webp")) {
+          out = canvas.toDataURL("image/jpeg", 0.92);
+        }
         resolve(out);
       } catch (e) {
         reject(e);

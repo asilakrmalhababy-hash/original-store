@@ -888,13 +888,13 @@ function CategoryStrip({ data, onSelect }: { data: HomeData["categories"]; onSel
             type="button"
             onClick={() => onSelect(category.id)}
             style={{
-              flex: "0 0 132px",
-              width: "132px",
+              flex: "0 0 156px",
+              width: "156px",
               scrollSnapAlign: "start",
               background: "#ffffff",
               border: "1px solid #e6ece8",
               borderRadius: "18px",
-              padding: "7px 7px 10px",
+              padding: "5px 5px 9px",
               cursor: "pointer",
               boxShadow: "0 4px 12px rgba(17, 58, 40, 0.05)",
               display: "flex",
@@ -903,7 +903,7 @@ function CategoryStrip({ data, onSelect }: { data: HomeData["categories"]; onSel
               gap: "8px",
             }}
           >
-            <div style={{ width: "100%", height: "106px", borderRadius: "13px", overflow: "hidden", background: "#f4f8f5" }}>
+            <div style={{ width: "100%", height: "134px", borderRadius: "14px", overflow: "hidden", background: "#f4f8f5" }}>
               {category.imageUrl ? (
                 <img
                   src={category.imageUrl}
@@ -1147,7 +1147,7 @@ function CategoriesPage({ data }: { data: HomeData }) {
                   width: "100%",
                 }}
               >
-                <div style={{ width: "100%", height: "142px", borderRadius: "13px", overflow: "hidden", background: "#f4f8f5" }}>
+                <div style={{ width: "100%", height: "174px", borderRadius: "14px", overflow: "hidden", background: "#f4f8f5" }}>
                   {category.imageUrl ? (
                     <img
                       src={category.imageUrl}

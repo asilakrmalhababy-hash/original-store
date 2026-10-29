@@ -200,7 +200,7 @@ export default function ImageEditor({ aspect, title, format = "webp", initialSou
       const sw = Math.max(16, Math.min(natW - sx, Math.round((box.w / 100) * natW)));
       const sh = Math.max(16, Math.min(natH - sy, Math.round((box.h / 100) * natH)));
 
-      const maxDim = aspect > 2 ? 840 : 480;
+      const maxDim = aspect > 1.5 ? 1600 : 1200;
       let outW = maxDim;
       let outH = Math.round(maxDim / (aspect || 1));
 
@@ -221,12 +221,14 @@ export default function ImageEditor({ aspect, title, format = "webp", initialSou
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
 
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
       ctx.drawImage(image, sx, sy, sw, sh, 0, 0, outW, outH);
 
       const mime = format === "png" ? "image/png" : "image/webp";
-      let data = canvas.toDataURL(mime, 0.78);
+      let data = canvas.toDataURL(mime, 0.92);
       if (!data.startsWith("data:" + mime)) {
-        data = canvas.toDataURL("image/jpeg", 0.82);
+        data = canvas.toDataURL("image/jpeg", 0.92);
       }
       onSave(data);
     };
