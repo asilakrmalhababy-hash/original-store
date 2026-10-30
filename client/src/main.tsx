@@ -8,6 +8,39 @@ import App from "./App";
 import "./index.css";
 import "./theme-tokens.css";
 import "./pwa.css";
+// --- NATIVE_APP_LOCK_START ---
+if (typeof window !== "undefined" && typeof document !== "undefined") {
+  const isEditableInput = (target: EventTarget | null): boolean => {
+    if (!target || !(target instanceof HTMLElement)) return false;
+    return Boolean(target.closest("input, textarea, [contenteditable='true']"));
+  };
+  document.addEventListener("contextmenu", e => {
+    if (!isEditableInput(e.target)) e.preventDefault();
+  }, { capture: true });
+  document.addEventListener("selectstart", e => {
+    if (!isEditableInput(e.target)) e.preventDefault();
+  }, { capture: true });
+  document.addEventListener("copy", e => {
+    if (!isEditableInput(e.target) && !isEditableInput(document.activeElement)) e.preventDefault();
+  }, { capture: true });
+  document.addEventListener("cut", e => {
+    if (!isEditableInput(e.target) && !isEditableInput(document.activeElement)) e.preventDefault();
+  }, { capture: true });
+  document.addEventListener("dragstart", e => {
+    if (!isEditableInput(e.target)) e.preventDefault();
+  }, { capture: true });
+  document.addEventListener("gesturestart", e => e.preventDefault(), { passive: false });
+  document.addEventListener("gesturechange", e => e.preventDefault(), { passive: false });
+  document.addEventListener("gestureend", e => e.preventDefault(), { passive: false });
+  document.addEventListener("touchmove", e => {
+    if (e.touches && e.touches.length > 1) e.preventDefault();
+  }, { passive: false });
+  document.addEventListener("wheel", e => {
+    if (e.ctrlKey) e.preventDefault();
+  }, { passive: false });
+}
+// --- NATIVE_APP_LOCK_END ---
+
 
 if (typeof window !== "undefined") {
   window.addEventListener("beforeinstallprompt", (event) => {

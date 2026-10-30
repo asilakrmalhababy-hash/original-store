@@ -836,3 +836,31 @@ button, a, input, select, textarea, summary, [role="button"] { touch-action: man
   .entity-image { width: 56px !important; height: 56px !important; flex-basis: 56px !important; }
 }
 /* --- HD_LARGE_IMAGES_END --- */
+
+/* --- NATIVE_APP_SHIELD_START --- */
+html, body {
+  touch-action: pan-x pan-y !important;
+  -webkit-text-size-adjust: 100% !important;
+  overscroll-behavior-x: none;
+}
+body, #root, .store-app, .store-app *, .admin-app, .admin-app * {
+  -webkit-user-select: none !important;
+  user-select: none !important;
+  -webkit-touch-callout: none !important;
+  -webkit-tap-highlight-color: transparent;
+}
+input, textarea, [contenteditable="true"] {
+  -webkit-user-select: text !important;
+  user-select: text !important;
+  -webkit-touch-callout: default !important;
+}
+img, svg, picture, video {
+  -webkit-user-drag: none !important;
+  -webkit-touch-callout: none !important;
+  -webkit-user-select: none !important;
+  user-select: none !important;
+}
+.store-app img {
+  pointer-events: none !important;
+}
+/* --- NATIVE_APP_SHIELD_END --- */
