@@ -1457,11 +1457,235 @@ function getYemenCarrierName(phone: string): string {
   return "";
 }
 
+type PublicDeliveryStreet = { id: string; name: string; fee: number; promoFee: number | null; promoLabel: string; freeAbove: number | null; etaText: string; enabled: boolean };
+type PublicDeliveryArea = { id: string; name: string; defaultFee: number; enabled: boolean; streets: PublicDeliveryStreet[] };
+type PublicDeliveryCity = { id: string; name: string; defaultFee: number; freeDeliveryPromo: boolean; promoBanner: string; enabled: boolean; areas: PublicDeliveryArea[] };
+type PublicDeliveryTree = {
+  strictSelectionOnly: boolean;
+  globalFreeAbove: number | null;
+  cities: PublicDeliveryCity[];
+  vipFreePhones: Array<{ phone: string; name: string; minOrder: number; enabled: boolean }>;
+};
+
+function readPublicDeliveryTree(raw?: string | null): PublicDeliveryTree | null {
+  if (!raw) return null;
+  try {
+    const p = JSON.parse(raw);
+    if (!p || typeof p !== "object" || !Array.isArray(p.cities)) return null;
+    const activeCities = p.cities
+      .filter((c: any) => c && c.enabled !== false)
+      .map((c: any) => ({
+        ...c,
+        areas: (Array.isArray(c.areas) ? c.areas : [])
+          .filter((a: any) => a && a.enabled !== false)
+          .map((a: any) => ({
+            ...a,
+            streets: (Array.isArray(a.streets) ? a.streets : []).filter((s: any) => s && s.enabled !== false),
+          })),
+      }));
+    if (!activeCities.length) return null;
+    return {
+      strictSelectionOnly: p.strictSelectionOnly !== false,
+      globalFreeAbove: p.globalFreeAbove && Number(p.globalFreeAbove) > 0 ? Math.floor(Number(p.globalFreeAbove)) : null,
+      cities: activeCities,
+      vipFreePhones: Array.isArray(p.vipFreePhones) ? p.vipFreePhones.filter((v: any) => v && v.enabled !== false) : [],
+    };
+  } catch {
+    return null;
+  }
+}
+
+function splitDistrictToAreaAndStreet(district: string): { areaName: string; streetName: string } {
+  const parts = String(district || "").split(/\s*[—\-|/]+\s*/).map(s => s.trim()).filter(Boolean);
+  if (parts.length >= 2) return { areaName: parts[0], streetName: parts.slice(1).join(" ") };
+  return { areaName: "", streetName: parts[0] || "" };
+}
+
+function ThreeStepLocationPicker({
+  tree,
+  city,
+  district,
+  phone,
+  subtotal,
+  onChangeLocation,
+}: {
+  tree: PublicDeliveryTree;
+  city: string;
+  district: string;
+  phone: string;
+  subtotal: number;
+  onChangeLocation: (nextCity: string, nextDistrict: string) => void;
+}) {
+  const parsed = splitDistrictToAreaAndStreet(district);
+  const selectedCityObj = tree.cities.find(c => c.name === city) ?? tree.cities[0] ?? null;
+  const selectedAreaObj = selectedCityObj?.areas.find(a => a.name === parsed.areaName || district.includes(a.name)) ?? selectedCityObj?.areas[0] ?? null;
+  const selectedStreetObj = selectedAreaObj?.streets.find(s => s.name === parsed.streetName || district.endsWith(s.name)) ?? null;
+
+  useEffect(() => {
+    if (selectedCityObj && (!city || !district)) {
+      const firstArea = selectedCityObj.areas[0];
+      const firstStreet = firstArea?.streets[0];
+      const nextDist = firstArea ? (firstStreet ? (firstArea.name + " — " + firstStreet.name) : firstArea.name) : "";
+      if (nextDist) onChangeLocation(selectedCityObj.name, nextDist);
+    }
+  }, [tree]);
+
+  const cleanP = cleanYemeniPhone(phone);
+  const vipMatch = cleanP ? tree.vipFreePhones.find(v => cleanYemeniPhone(v.phone) === cleanP && subtotal >= Number(v.minOrder || 0)) : null;
+  const isGlobalFree = Boolean(tree.globalFreeAbove && subtotal >= tree.globalFreeAbove);
+  const isCityFree = Boolean(selectedCityObj?.freeDeliveryPromo);
+  const isStreetFreeAbove = Boolean(selectedStreetObj?.freeAbove && subtotal >= selectedStreetObj.freeAbove);
+  const hasStreetPromo = selectedStreetObj && selectedStreetObj.promoFee !== null && selectedStreetObj.promoFee !== undefined;
+  const baseFee = selectedStreetObj ? selectedStreetObj.fee : (selectedAreaObj ? selectedAreaObj.defaultFee : (selectedCityObj?.defaultFee ?? 0));
+  const effectiveFee = (vipMatch || isGlobalFree || isCityFree || isStreetFreeAbove) ? 0 : (hasStreetPromo ? selectedStreetObj!.promoFee! : baseFee);
+
+  return (
+    <div style={{ display: "grid", gap: "10px", padding: "12px", borderRadius: "14px", background: "#f4f9f6", border: "1.5px solid #c6dfd0" }}>
+      <div>
+        <span style={{ fontSize: "11.5px", fontWeight: 900, color: "#174b36", display: "block", marginBottom: "6px" }}>
+          1️⃣ اختر المحافظة / المدينة:
+        </span>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+          {tree.cities.map(c => {
+            const active = selectedCityObj?.id === c.id;
+            return (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => {
+                  const firstArea = c.areas[0];
+                  const firstStreet = firstArea?.streets[0];
+                  const nextDist = firstArea ? (firstStreet ? (firstArea.name + " — " + firstStreet.name) : firstArea.name) : "";
+                  onChangeLocation(c.name, nextDist);
+                }}
+                style={{
+                  padding: "7px 14px",
+                  borderRadius: "10px",
+                  border: active ? "2px solid #174b36" : "1px solid #cbd9d0",
+                  background: active ? "#174b36" : "#ffffff",
+                  color: active ? "#f1d897" : "#153826",
+                  fontWeight: 800,
+                  fontSize: "12.5px",
+                  cursor: "pointer",
+                }}
+              >
+                🏙️ {c.name} {c.freeDeliveryPromo ? "🎁" : ""}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {selectedCityObj && selectedCityObj.areas.length > 0 && (
+        <div>
+          <span style={{ fontSize: "11.5px", fontWeight: 900, color: "#174b36", display: "block", marginBottom: "6px" }}>
+            2️⃣ اختر المديرية / المنطقة داخل «{selectedCityObj.name}»:
+          </span>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+            {selectedCityObj.areas.map(a => {
+              const active = selectedAreaObj?.id === a.id;
+              return (
+                <button
+                  key={a.id}
+                  type="button"
+                  onClick={() => {
+                    const firstStreet = a.streets[0];
+                    const nextDist = firstStreet ? (a.name + " — " + firstStreet.name) : a.name;
+                    onChangeLocation(selectedCityObj.name, nextDist);
+                  }}
+                  style={{
+                    padding: "6px 12px",
+                    borderRadius: "10px",
+                    border: active ? "2px solid #174b36" : "1px solid #cbd9d0",
+                    background: active ? "#e3f3ea" : "#ffffff",
+                    color: "#123826",
+                    fontWeight: 800,
+                    fontSize: "12px",
+                    cursor: "pointer",
+                  }}
+                >
+                  📍 {a.name}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {selectedCityObj && selectedAreaObj && selectedAreaObj.streets.length > 0 && (
+        <div>
+          <span style={{ fontSize: "11.5px", fontWeight: 900, color: "#174b36", display: "block", marginBottom: "6px" }}>
+            3️⃣ اختر الشارع / الحي داخل «{selectedAreaObj.name}»:
+          </span>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(135px, 1fr))", gap: "6px" }}>
+            {selectedAreaObj.streets.map(st => {
+              const active = selectedStreetObj?.id === st.id;
+              const stHasPromo = st.promoFee !== null && st.promoFee !== undefined;
+              const dispFee = stHasPromo ? st.promoFee! : st.fee;
+              return (
+                <button
+                  key={st.id}
+                  type="button"
+                  onClick={() => onChangeLocation(selectedCityObj.name, selectedAreaObj.name + " — " + st.name)}
+                  style={{
+                    padding: "8px 10px",
+                    borderRadius: "10px",
+                    border: active ? "2px solid #174b36" : stHasPromo ? "1.5px solid #e0a82e" : "1px solid #d4e2d9",
+                    background: active ? "#174b36" : stHasPromo ? "#fffdf5" : "#ffffff",
+                    color: active ? "#ffffff" : "#123826",
+                    textAlign: "right",
+                    cursor: "pointer",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "2px",
+                  }}
+                >
+                  <strong style={{ fontSize: "12.5px" }}>{active ? "✓ " : "🛣️ "}{st.name}</strong>
+                  <small style={{ fontSize: "10.5px", color: active ? "#f1d897" : stHasPromo ? "#9c6509" : "#4f6658", fontWeight: 800 }}>
+                    {dispFee === 0 ? "🎁 توصيل مجاني!" : ("التوصيل: " + formatPrice(dispFee))}
+                    {stHasPromo && st.promoFee !== st.fee ? " 🔥" : ""}
+                  </small>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {selectedCityObj && (
+        <div style={{ padding: "10px 12px", borderRadius: "12px", background: effectiveFee === 0 ? "linear-gradient(135deg, #fff9e6, #fff2c6)" : "#ffffff", border: effectiveFee === 0 ? "1.5px solid #e0b44c" : "1.5px solid #174b36", display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
+          <div style={{ display: "grid", gap: "2px" }}>
+            <strong style={{ fontSize: "12.5px", color: "#123826" }}>
+              🛵 التوصيل إلى: {selectedCityObj.name}{selectedAreaObj ? (" ➔ " + selectedAreaObj.name) : ""}{selectedStreetObj ? (" ➔ " + selectedStreetObj.name) : ""}
+            </strong>
+            <small style={{ fontSize: "11px", color: "#52685b" }}>
+              {vipMatch ? "🌟 رقمك مسجل في قائمة التوصيل المجاني الخاص!" : isCityFree ? "🎁 عرض توصيل مجاني شامل لهذه المحافظة!" : isGlobalFree || isStreetFreeAbove ? "🎁 حصلت على توصيل مجاني لتجاوز الحد الأدنى!" : (selectedStreetObj?.etaText ? ("⏱️ الوقت المتوقع: " + selectedStreetObj.etaText) : "يتبقى عليك فقط كتابة معلم قريب بالأسفل")}
+              {selectedStreetObj?.freeAbove && effectiveFee > 0 ? (" · (مجاني للطلبات فوق " + formatPrice(selectedStreetObj.freeAbove) + ")") : ""}
+            </small>
+          </div>
+          <div style={{ textAlign: "left" }}>
+            {hasStreetPromo && effectiveFee > 0 && selectedStreetObj!.fee > effectiveFee && (
+              <small style={{ textDecoration: "line-through", color: "#9b5346", display: "block", fontSize: "10.5px" }}>{formatPrice(selectedStreetObj!.fee)}</small>
+            )}
+            <strong style={{ fontSize: "15px", color: effectiveFee === 0 ? "#9c6509" : "#174b36", fontWeight: 900 }}>
+              {effectiveFee === 0 ? "مجاناً (0 ر.ي) 🎉" : formatPrice(effectiveFee)}
+            </strong>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Checkout({ onClose, onSuccess, cart }: { onClose: () => void; onSuccess: () => void; cart: CartLine[] }) {
   const { remove } = useStore();
   const utils = trpc.useUtils();
   const [, navigate] = useLocation();
   const customer = useCustomer();
+  const homeCatalog = trpc.commerce.catalog.home.useQuery(undefined, { staleTime: 60_000 });
+  const deliveryTree = useMemo(() => readPublicDeliveryTree((homeCatalog.data?.settings as any)?.deliveryTreeConfig), [homeCatalog.data?.settings]);
+  const subtotal = useMemo(() => cart.reduce((s, l) => s + l.price * l.quantity, 0), [cart]);
+
   const defaultAddress = customer.addresses.find(address => address.isDefault) ?? customer.addresses[0];
   const [selectedAddressId, setSelectedAddressId] = useState(defaultAddress?.id ?? "new");
   const [form, setForm] = useState(() => ({
@@ -1606,10 +1830,14 @@ function Checkout({ onClose, onSuccess, cart }: { onClose: () => void; onSuccess
       toast.error("يرجى إدخال رقم جوال يمني صحيح مكون من 9 أرقام ويبدأ بـ 77 أو 73 أو 78 أو 71 أو 70.");
       return;
     }
+    if (deliveryTree && !form.addressDetails.trim()) {
+      toast.error("يرجى كتابة معلم قريب يوضح مكانك بالضبط (مثلاً: بجوار ماذا أو أمام أي مكان).");
+      return;
+    }
     if (!quote) {
       quoteMutation.reset();
       setQuoteSignature(signature);
-      quoteMutation.mutate({ items, city: form.city, offerCode: form.offerCode || undefined });
+      quoteMutation.mutate({ items, city: form.city, district: form.district, phone: cleanYemeniPhone(form.phone), offerCode: form.offerCode || undefined } as any);
       return;
     }
     mutation.mutate({
@@ -1625,12 +1853,12 @@ function Checkout({ onClose, onSuccess, cart }: { onClose: () => void; onSuccess
 
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
-      <section className="checkout-modal" role="dialog" aria-modal="true" style={{ maxWidth: "520px", padding: "18px" }}>
+      <section className="checkout-modal" role="dialog" aria-modal="true" style={{ maxWidth: "540px", padding: "18px" }}>
         <div className="modal-heading" style={{ paddingBottom: "10px", borderBottom: "1px solid #e3ece6", marginBottom: "12px" }}>
           <div>
             <span className="eyebrow">إتمام الطلب بسهولة وأمان</span>
-            <h2 style={{ fontSize: "19px", margin: "2px 0" }}>تأكيد بيانات التوصيل</h2>
-            <small style={{ color: "#586d60" }}>اختر عنوانك المحفوظ بنقرة واحدة أو أدخل بيانات التوصيل.</small>
+            <h2 style={{ fontSize: "19px", margin: "2px 0" }}>تأكيد منطقة وبيانات التوصيل</h2>
+            <small style={{ color: "#586d60" }}>اختر عنوانك المحفوظ بنقرة واحدة أو حدد المحافظة والمنطقة والشارع.</small>
           </div>
           <button type="button" className="icon-button" onClick={onClose}><X size={19} /></button>
         </div>
@@ -1685,7 +1913,7 @@ function Checkout({ onClose, onSuccess, cart }: { onClose: () => void; onSuccess
           )}
 
           <div style={{ padding: "12px", borderRadius: "14px", background: "#ffffff", border: "1px solid #dce7e0", display: "grid", gap: "10px" }}>
-            <strong style={{ fontSize: "12.5px", color: "#174b36" }}>👤 بيانات المستلم والعنوان:</strong>
+            <strong style={{ fontSize: "12.5px", color: "#174b36" }}>👤 بيانات المستلم ورقم الجوال:</strong>
             <div className="form-grid">
               <label>اسم المستلم *
                 <input required minLength={2} maxLength={160} autoComplete="name" value={form.recipientName} onChange={event => updateField("recipientName", event.target.value)} placeholder="الاسم الكامل..." />
@@ -1711,15 +1939,46 @@ function Checkout({ onClose, onSuccess, cart }: { onClose: () => void; onSuccess
                   style={{ textAlign: "left", fontWeight: 800, letterSpacing: "0.5px", borderColor: form.phone && !phoneValid ? "#d9534f" : undefined }}
                 />
               </label>
-              <label>المدينة / المنطقة *
-                <input required maxLength={100} autoComplete="address-level1" value={form.city} onChange={event => updateField("city", event.target.value)} placeholder="مثلاً: صنعاء" />
-              </label>
-              <label>الحي / الشارع *
-                <input required maxLength={120} autoComplete="address-level2" value={form.district} onChange={event => updateField("district", event.target.value)} placeholder="مثلاً: الرقاص، حدة، الحصبة..." />
-              </label>
             </div>
-            <label>تفاصيل إضافية للعنوان (معلم قريب / جوار)
-              <input maxLength={400} autoComplete="street-address" value={form.addressDetails} onChange={event => updateField("addressDetails", event.target.value)} placeholder="مثلاً: جوار بنك الكريمي، أمام جامع..." />
+
+            {deliveryTree ? (
+              <ThreeStepLocationPicker
+                tree={deliveryTree}
+                city={form.city}
+                district={form.district}
+                phone={form.phone}
+                subtotal={subtotal}
+                onChangeLocation={(nextCity, nextDist) => {
+                  setForm(curr => ({ ...curr, city: nextCity, district: nextDist }));
+                  setSelectedAddressId("new");
+                  setQuoteSignature("");
+                  quoteMutation.reset();
+                }}
+              />
+            ) : (
+              <div className="form-grid">
+                <label>المدينة / المحافظة *
+                  <input required maxLength={100} autoComplete="address-level1" value={form.city} onChange={event => updateField("city", event.target.value)} placeholder="مثلاً: صنعاء" />
+                </label>
+                <label>المنطقة / الشارع *
+                  <input required maxLength={120} autoComplete="address-level2" value={form.district} onChange={event => updateField("district", event.target.value)} placeholder="مثلاً: معين — الرقاص" />
+                </label>
+              </div>
+            )}
+
+            <label style={{ padding: "10px 12px", borderRadius: "12px", background: "#fffdf6", border: "1.5px solid #e5cb83" }}>
+              <span style={{ fontWeight: 900, color: "#123826", fontSize: "12.5px" }}>
+                📌 الآن اكتب عنواناً أو معلماً قريباً يعرفنا مكانك بالضبط (بجوار ماذا أو أمام أي مكان) *
+              </span>
+              <input
+                required={Boolean(deliveryTree)}
+                maxLength={400}
+                autoComplete="street-address"
+                value={form.addressDetails}
+                onChange={event => updateField("addressDetails", event.target.value)}
+                placeholder="مثلاً: بجوار بنك الكريمي، أمام جامع...، جولة...، لون البوابة..."
+                style={{ marginTop: "6px", background: "#ffffff", border: "1px solid #c9d8ce" }}
+              />
             </label>
 
             {selectedAddressId === "new" && (
@@ -1757,7 +2016,7 @@ function Checkout({ onClose, onSuccess, cart }: { onClose: () => void; onSuccess
                 ))}
               </div>
               <div className="summary-line"><span>المجموع الفرعي</span><strong>{formatPrice(quote.subtotal)}</strong></div>
-              <div className="summary-line"><span>رسوم التوصيل</span><strong>{formatPrice(quote.deliveryFee)}</strong></div>
+              <div className="summary-line"><span>رسوم التوصيل ({form.city} — {form.district})</span><strong>{quote.deliveryFee === 0 ? "مجاناً 🎉" : formatPrice(quote.deliveryFee)}</strong></div>
               {quote.discount > 0 && <div className="summary-line discount-line"><span>الخصم{quote.offerTitle ? " · " + quote.offerTitle : ""}</span><strong>−{formatPrice(quote.discount)}</strong></div>}
               <div className="summary-total"><span>الإجمالي المطلوب عند الاستلام</span><strong>{formatPrice(quote.total)}</strong></div>
             </section>
@@ -2072,6 +2331,8 @@ function useGuestPushSubscriptionSync() {
 
 function AccountPage() {
   const customer = useCustomer();
+  const homeCatalog = trpc.commerce.catalog.home.useQuery(undefined, { staleTime: 60_000 });
+  const deliveryTree = useMemo(() => readPublicDeliveryTree((homeCatalog.data?.settings as any)?.deliveryTreeConfig), [homeCatalog.data?.settings]);
   const cleanedCustomerPhone = cleanYemeniPhone(customer.phone);
   const hasSavedProfile = Boolean(customer.name.trim().length >= 2 && isValidYemeniPhone(cleanedCustomerPhone));
   const [isEditingProfile, setIsEditingProfile] = useState(!hasSavedProfile);
@@ -2397,16 +2658,31 @@ function AccountPage() {
               <div className="form-grid">
                 <label>تسمية العنوان *<input required maxLength={80} value={address.label} onChange={event => setAddress({ ...address, label: event.target.value })} placeholder="المنزل، العمل..." /></label>
                 <label>اسم المستلم *<input required minLength={2} maxLength={160} autoComplete="name" value={address.recipientName} onChange={event => setAddress({ ...address, recipientName: event.target.value })} /></label>
-                <label>
+                <label className="form-wide">
                   <span style={{ display: "flex", justifyContent: "space-between" }}>
                     <span>رقم الجوال اليمني (9 أرقام) *</span>
                     <small style={{ fontSize: "10px", fontWeight: 800, color: addressPhoneValid ? "#174b36" : "#b43c2f" }}>{address.phone.length}/9</small>
                   </span>
                   <input required type="tel" inputMode="numeric" maxLength={9} dir="ltr" value={address.phone} onChange={event => setAddress({ ...address, phone: cleanYemeniPhone(event.target.value) })} placeholder="77XXXXXXX" style={{ textAlign: "left", fontWeight: 800 }} />
                 </label>
-                <label>المدينة / المنطقة *<input required maxLength={100} value={address.city} onChange={event => setAddress({ ...address, city: event.target.value })} placeholder="صنعاء" /></label>
-                <label className="form-wide">الحي / الشارع *<input required maxLength={120} value={address.district} onChange={event => setAddress({ ...address, district: event.target.value })} placeholder="مثلاً: الرقاص، حدة، الأصبحي..." /></label>
-                <label className="form-wide">تفاصيل إضافية (معلم قريب / جوار)<textarea rows={2} maxLength={1000} value={address.details} onChange={event => setAddress({ ...address, details: event.target.value })} placeholder="مثلاً: جوار بنك الكريمي..." /></label>
+                {deliveryTree ? (
+                  <div className="form-wide">
+                    <ThreeStepLocationPicker
+                      tree={deliveryTree}
+                      city={address.city}
+                      district={address.district}
+                      phone={address.phone}
+                      subtotal={0}
+                      onChangeLocation={(nextCity, nextDist) => setAddress(curr => ({ ...curr, city: nextCity, district: nextDist }))}
+                    />
+                  </div>
+                ) : (
+                  <>
+                    <label>المدينة / المنطقة *<input required maxLength={100} value={address.city} onChange={event => setAddress({ ...address, city: event.target.value })} placeholder="صنعاء" /></label>
+                    <label className="form-wide">الحي / الشارع *<input required maxLength={120} value={address.district} onChange={event => setAddress({ ...address, district: event.target.value })} placeholder="مثلاً: الرقاص، حدة، الأصبحي..." /></label>
+                  </>
+                )}
+                <label className="form-wide">📌 الآن اكتب معلماً قريباً يعرفنا مكانك بالضبط (بجوار ماذا أو أمام أي مكان) *<textarea required rows={2} maxLength={1000} value={address.details} onChange={event => setAddress({ ...address, details: event.target.value })} placeholder="مثلاً: بجوار بنك الكريمي، أمام جامع..." /></label>
                 <label className="toggle-field form-wide"><input type="checkbox" checked={address.isDefault} onChange={event => setAddress({ ...address, isDefault: event.target.checked })} /> اجعل هذا العنوان هو الافتراضي عند الطلب</label>
               </div>
               <div className="address-form-actions" style={{ display: "flex", gap: "8px" }}>

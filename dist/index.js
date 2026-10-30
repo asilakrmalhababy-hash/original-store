@@ -2946,7 +2946,8 @@ var settingSchema = z3.object({
   rewardEnabled: z3.boolean().optional(),
   rewardType: z3.enum(["free_delivery", "discount_percent"]).optional(),
   rewardValue: z3.number().int().min(0).max(100).optional(),
-  aiInstructions: z3.string().trim().max(3e3).optional()
+  aiInstructions: z3.string().trim().max(3e3).optional(),
+  deliveryTreeConfig: z3.string().max(6e5).optional()
 });
 function slugify(value) {
   const slug = value.trim().toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "").slice(0, 160);
@@ -2968,7 +2969,8 @@ var PUBLIC_STORE_SETTING_KEYS = /* @__PURE__ */ new Set([
   "rewardType",
   "rewardValue",
   "rewardsMessage",
-  "aiInstructions"
+  "aiInstructions",
+  "deliveryTreeConfig"
 ]);
 var __orderRateBuckets = /* @__PURE__ */ new Map();
 function enforceOrderCreateRateLimit(ip) {
@@ -3000,19 +3002,74 @@ async function readSettings(db) {
     return { deliveryEnabled: "true", deliveryFee: "0" };
   }
 }
-function deliveryFeeForCity(settings, city) {
+function deliveryFeeForCity(settings, city, district, phone, subtotal = 0) {
   if (settings.deliveryEnabled === "false") return null;
+  const cleanCity = String(city || "").trim();
+  const cleanDistrict = String(district || "").trim();
+  const cleanPhone = normalizeYemeniPhone(String(phone || ""));
+  if (settings.deliveryTreeConfig) {
+    try {
+      const tree = JSON.parse(settings.deliveryTreeConfig);
+      if (tree && typeof tree === "object") {
+        if (cleanPhone && Array.isArray(tree.vipFreePhones)) {
+          const vip = tree.vipFreePhones.find((v) => v && v.enabled !== false && normalizeYemeniPhone(String(v.phone || "")) === cleanPhone);
+          if (vip) {
+            const minOrd = Number(vip.minOrder || 0);
+            if (subtotal >= minOrd) return 0;
+          }
+        }
+        if (tree.globalFreeAbove && Number(tree.globalFreeAbove) > 0 && subtotal >= Number(tree.globalFreeAbove)) {
+          return 0;
+        }
+        const activeCities = Array.isArray(tree.cities) ? tree.cities.filter((c) => c && c.enabled !== false) : [];
+        if (activeCities.length > 0) {
+          const matchedCity = activeCities.find((c) => String(c.name || "").trim() === cleanCity);
+          if (matchedCity) {
+            if (matchedCity.freeDeliveryPromo) return 0;
+            const activeAreas = Array.isArray(matchedCity.areas) ? matchedCity.areas.filter((a) => a && a.enabled !== false) : [];
+            const parts = cleanDistrict.split(/\s*[—\-|/]+\s*/).map((s) => s.trim()).filter(Boolean);
+            const areaPart = parts[0] || "";
+            const streetPart = parts.slice(1).join(" ") || parts[0] || "";
+            for (const area of activeAreas) {
+              const areaMatch = !areaPart || String(area.name || "").trim() === areaPart || cleanDistrict.includes(String(area.name || "").trim());
+              if (!areaMatch) continue;
+              const activeStreets = Array.isArray(area.streets) ? area.streets.filter((st) => st && st.enabled !== false) : [];
+              const matchedStreet = activeStreets.find((st) => {
+                const sName = String(st.name || "").trim();
+                return sName === streetPart || sName === cleanDistrict || cleanDistrict.endsWith(sName);
+              });
+              if (matchedStreet) {
+                if (matchedStreet.freeAbove && Number(matchedStreet.freeAbove) > 0 && subtotal >= Number(matchedStreet.freeAbove)) return 0;
+                if (matchedStreet.promoFee !== null && matchedStreet.promoFee !== void 0 && matchedStreet.promoFee !== "" && Number.isFinite(Number(matchedStreet.promoFee)) && Number(matchedStreet.promoFee) >= 0) {
+                  return Math.floor(Number(matchedStreet.promoFee));
+                }
+                if (Number.isFinite(Number(matchedStreet.fee)) && Number(matchedStreet.fee) >= 0) {
+                  return Math.floor(Number(matchedStreet.fee));
+                }
+              }
+              if (Number.isFinite(Number(area.defaultFee)) && Number(area.defaultFee) >= 0) {
+                return Math.floor(Number(area.defaultFee));
+              }
+            }
+            if (Number.isFinite(Number(matchedCity.defaultFee)) && Number(matchedCity.defaultFee) >= 0) {
+              return Math.floor(Number(matchedCity.defaultFee));
+            }
+          }
+        }
+      }
+    } catch {
+    }
+  }
   if (settings.deliveryZones) {
     try {
       const zones = JSON.parse(settings.deliveryZones);
-      const zone = zones.find((item) => item.enabled && item.name.trim().toLocaleLowerCase() === city.trim().toLocaleLowerCase());
+      const zone = zones.find((item) => item.enabled && item.name.trim().toLocaleLowerCase() === cleanCity.toLocaleLowerCase());
       if (zone && Number.isInteger(zone.fee) && zone.fee >= 0) return zone.fee;
     } catch {
     }
   }
-  if (settings.deliveryFee === void 0 || settings.deliveryFee === "") return 0;
-  const baseFee = Number(settings.deliveryFee);
-  return Number.isInteger(baseFee) && baseFee >= 0 ? baseFee : 0;
+  const baseFee = Number(settings.deliveryFee ?? "");
+  return Number.isInteger(baseFee) && baseFee >= 0 ? baseFee : null;
 }
 function unpackServerRewardConfig(rawMsg, fallbackType) {
   const defaultCfg = {
@@ -3402,13 +3459,15 @@ var commerceRouter = router({
     quote: publicProcedure.input(z3.object({
       items: z3.array(z3.object({ productId: safeId, quantity: z3.number().int().min(1).max(1e4), name: z3.string().trim().max(220).optional(), variant: z3.string().trim().max(120).optional(), customAmount: z3.number().int().min(1).max(1e8).optional() })).min(1).max(100),
       city: z3.string().trim().min(1).max(100),
+      district: z3.string().trim().max(160).optional(),
+      phone: z3.string().trim().max(40).optional(),
       offerCode: z3.string().trim().max(40).optional()
     })).mutation(async ({ input }) => {
       const db = await database();
       const settings = await readSettings(db);
       if (settings.orderPaused === "true") throw new TRPCError3({ code: "PRECONDITION_FAILED", message: settings.pausedMessage || "\u0627\u0633\u062A\u0642\u0628\u0627\u0644 \u0627\u0644\u0637\u0644\u0628\u0627\u062A \u0645\u062A\u0648\u0642\u0641 \u0645\u0624\u0642\u062A\u064B\u0627." });
-      const deliveryFee = deliveryFeeForCity(settings, input.city);
-      if (deliveryFee === null) throw new TRPCError3({ code: "PRECONDITION_FAILED", message: settings.deliveryEnabled === "true" ? "\u0645\u0646\u0637\u0642\u0629 \u0627\u0644\u062A\u0648\u0635\u064A\u0644 \u0623\u0648 \u0631\u0633\u0648\u0645\u0647\u0627 \u063A\u064A\u0631 \u0645\u062D\u062F\u062F\u0629 \u0628\u0639\u062F." : "\u0644\u0645 \u064A\u0641\u0639\u0651\u0644 \u0627\u0644\u0645\u062A\u062C\u0631 \u0627\u0644\u062A\u0648\u0635\u064A\u0644 \u0628\u0639\u062F." });
+      const prelimFee = deliveryFeeForCity(settings, input.city, input.district, input.phone, 0);
+      if (prelimFee === null) throw new TRPCError3({ code: "PRECONDITION_FAILED", message: settings.deliveryEnabled === "true" ? "\u0645\u0646\u0637\u0642\u0629 \u0627\u0644\u062A\u0648\u0635\u064A\u0644 \u0623\u0648 \u0631\u0633\u0648\u0645\u0647\u0627 \u063A\u064A\u0631 \u0645\u062D\u062F\u062F\u0629 \u0628\u0639\u062F." : "\u0644\u0645 \u064A\u0641\u0639\u0651\u0644 \u0627\u0644\u0645\u062A\u062C\u0631 \u0627\u0644\u062A\u0648\u0635\u064A\u0644 \u0628\u0639\u062F." });
       const requested = aggregateItems(input.items);
       if (requested.some((item) => item.quantity > 1e4)) throw new TRPCError3({ code: "BAD_REQUEST", message: "\u0627\u0644\u0643\u0645\u064A\u0629 \u0627\u0644\u0625\u062C\u0645\u0627\u0644\u064A\u0629 \u0644\u0623\u062D\u062F \u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A \u062A\u062A\u062C\u0627\u0648\u0632 \u0627\u0644\u062D\u062F \u0627\u0644\u0645\u0633\u0645\u0648\u062D." });
       const productIds = requested.map((item) => item.productId);
@@ -3448,6 +3507,7 @@ var commerceRouter = router({
         appliedOffer = (await db.select().from(offers).where(and2(eq4(offers.code, input.offerCode.trim().toUpperCase()), eq4(offers.isActive, true), sql2`(${offers.startsAt} is null or ${offers.startsAt} <= now())`, sql2`(${offers.endsAt} is null or ${offers.endsAt} >= now())`)).limit(1))[0] ?? null;
         if (!appliedOffer) throw new TRPCError3({ code: "BAD_REQUEST", message: "\u0631\u0645\u0632 \u0627\u0644\u0639\u0631\u0636 \u063A\u064A\u0631 \u0635\u0627\u0644\u062D \u0623\u0648 \u063A\u064A\u0631 \u0646\u0634\u0637." });
       }
+      const deliveryFee = deliveryFeeForCity(settings, input.city, input.district, input.phone, subtotal) ?? prelimFee;
       const totals = orderTotals(subtotal, deliveryFee, appliedOffer, settings);
       const currency = settings.currency || "\u0631.\u064A";
       return { lines, ...totals, currency, quoteHash: quoteFingerprint(lines, totals, currency, appliedOffer?.id ?? null), offerTitle: appliedOffer?.title ?? null };
@@ -3550,8 +3610,8 @@ var commerceRouter = router({
       if (typeof enforceOrderCreateRateLimit === "function") enforceOrderCreateRateLimit(getClientIp(ctx.req));
       const settings = await readSettings(db);
       if (settings.orderPaused === "true") throw new TRPCError3({ code: "PRECONDITION_FAILED", message: settings.pausedMessage || "\u0627\u0633\u062A\u0642\u0628\u0627\u0644 \u0627\u0644\u0637\u0644\u0628\u0627\u062A \u0645\u062A\u0648\u0642\u0641 \u0645\u0624\u0642\u062A\u064B\u0627." });
-      const deliveryFee = deliveryFeeForCity(settings, input.city);
-      if (deliveryFee === null) throw new TRPCError3({ code: "PRECONDITION_FAILED", message: "\u0645\u0646\u0637\u0642\u0629 \u0627\u0644\u062A\u0648\u0635\u064A\u0644 \u0623\u0648 \u0631\u0633\u0648\u0645\u0647\u0627 \u063A\u064A\u0631 \u0645\u062D\u062F\u062F\u0629 \u0628\u0639\u062F." });
+      const prelimDeliveryFee = deliveryFeeForCity(settings, input.city, input.district, input.phone, 0);
+      if (prelimDeliveryFee === null) throw new TRPCError3({ code: "PRECONDITION_FAILED", message: "\u0645\u0646\u0637\u0642\u0629 \u0627\u0644\u062A\u0648\u0635\u064A\u0644 \u0623\u0648 \u0631\u0633\u0648\u0645\u0647\u0627 \u063A\u064A\u0631 \u0645\u062D\u062F\u062F\u0629 \u0628\u0639\u062F." });
       let appliedOffer = null;
       if (input.offerCode) {
         const code = input.offerCode.trim().toUpperCase();
@@ -3591,7 +3651,8 @@ var commerceRouter = router({
             orderLines.push({ product, quantity: item.quantity, effectiveUnit: product.unit, effectivePrice: product.price, effectiveLineTotal: lineTotal, isWeighed: false });
           }
         }
-        const totals = orderTotals(subtotal, deliveryFee, appliedOffer, settings);
+        const finalDeliveryFee = deliveryFeeForCity(settings, input.city, input.district, input.phone, subtotal) ?? prelimDeliveryFee;
+        const totals = orderTotals(subtotal, finalDeliveryFee, appliedOffer, settings);
         const currency = settings.currency || "\u0631.\u064A";
         const currentLines = orderLines.map((line) => ({ productId: line.product.id, name: line.product.name, quantity: line.quantity, unit: line.effectiveUnit, price: line.effectivePrice, lineTotal: line.effectiveLineTotal }));
         const currentQuoteHash = quoteFingerprint(currentLines, totals, currency, appliedOffer?.id ?? null);
@@ -3603,7 +3664,7 @@ var commerceRouter = router({
           userId: null,
           offerId: appliedOffer?.id ?? null,
           recipientName: input.recipientName,
-          phone: input.phone,
+          phone: normalizeYemeniPhone(input.phone),
           city: input.city,
           district: input.district,
           addressDetails: input.addressDetails ?? null,

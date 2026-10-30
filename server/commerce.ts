@@ -347,6 +347,7 @@ const settingSchema = z.object({
   rewardType: z.enum(["free_delivery", "discount_percent"]).optional(),
   rewardValue: z.number().int().min(0).max(100).optional(),
   aiInstructions: z.string().trim().max(3000).optional(),
+  deliveryTreeConfig: z.string().max(600000).optional(),
 });
 
 function slugify(value: string) {
@@ -358,7 +359,7 @@ const PUBLIC_STORE_SETTING_KEYS = new Set([
   "storeName", "storeDescription", "contactPhone", "currency", "storeIconUrl",
   "deliveryEnabled", "deliveryFee", "deliveryZones", "orderPaused", "pausedMessage",
   "rewardEnabled", "rewardsThreshold", "rewardType", "rewardValue", "rewardsMessage",
-  "aiInstructions",
+  "aiInstructions", "deliveryTreeConfig",
 ]);
 
 const __orderRateBuckets = new Map<string, { count: number; resetAt: number }>();
@@ -407,18 +408,80 @@ async function readSettings(db: NonNullable<Awaited<ReturnType<typeof getDb>>>) 
   }
 }
 
-function deliveryFeeForCity(settings: Record<string, string>, city: string): number | null {
+function deliveryFeeForCity(
+  settings: Record<string, string>,
+  city: string,
+  district?: string,
+  phone?: string,
+  subtotal = 0,
+): number | null {
   if (settings.deliveryEnabled === "false") return null;
+  const cleanCity = String(city || "").trim();
+  const cleanDistrict = String(district || "").trim();
+  const cleanPhone = normalizeYemeniPhone(String(phone || ""));
+
+  if (settings.deliveryTreeConfig) {
+    try {
+      const tree = JSON.parse(settings.deliveryTreeConfig);
+      if (tree && typeof tree === "object") {
+        if (cleanPhone && Array.isArray(tree.vipFreePhones)) {
+          const vip = tree.vipFreePhones.find((v: any) => v && v.enabled !== false && normalizeYemeniPhone(String(v.phone || "")) === cleanPhone);
+          if (vip) {
+            const minOrd = Number(vip.minOrder || 0);
+            if (subtotal >= minOrd) return 0;
+          }
+        }
+        if (tree.globalFreeAbove && Number(tree.globalFreeAbove) > 0 && subtotal >= Number(tree.globalFreeAbove)) {
+          return 0;
+        }
+        const activeCities = Array.isArray(tree.cities) ? tree.cities.filter((c: any) => c && c.enabled !== false) : [];
+        if (activeCities.length > 0) {
+          const matchedCity = activeCities.find((c: any) => String(c.name || "").trim() === cleanCity);
+          if (matchedCity) {
+            if (matchedCity.freeDeliveryPromo) return 0;
+            const activeAreas = Array.isArray(matchedCity.areas) ? matchedCity.areas.filter((a: any) => a && a.enabled !== false) : [];
+            const parts = cleanDistrict.split(/\s*[—\-|/]+\s*/).map(s => s.trim()).filter(Boolean);
+            const areaPart = parts[0] || "";
+            const streetPart = parts.slice(1).join(" ") || parts[0] || "";
+            for (const area of activeAreas) {
+              const areaMatch = !areaPart || String(area.name || "").trim() === areaPart || cleanDistrict.includes(String(area.name || "").trim());
+              if (!areaMatch) continue;
+              const activeStreets = Array.isArray(area.streets) ? area.streets.filter((st: any) => st && st.enabled !== false) : [];
+              const matchedStreet = activeStreets.find((st: any) => {
+                const sName = String(st.name || "").trim();
+                return sName === streetPart || sName === cleanDistrict || cleanDistrict.endsWith(sName);
+              });
+              if (matchedStreet) {
+                if (matchedStreet.freeAbove && Number(matchedStreet.freeAbove) > 0 && subtotal >= Number(matchedStreet.freeAbove)) return 0;
+                if (matchedStreet.promoFee !== null && matchedStreet.promoFee !== undefined && matchedStreet.promoFee !== "" && Number.isFinite(Number(matchedStreet.promoFee)) && Number(matchedStreet.promoFee) >= 0) {
+                  return Math.floor(Number(matchedStreet.promoFee));
+                }
+                if (Number.isFinite(Number(matchedStreet.fee)) && Number(matchedStreet.fee) >= 0) {
+                  return Math.floor(Number(matchedStreet.fee));
+                }
+              }
+              if (Number.isFinite(Number(area.defaultFee)) && Number(area.defaultFee) >= 0) {
+                return Math.floor(Number(area.defaultFee));
+              }
+            }
+            if (Number.isFinite(Number(matchedCity.defaultFee)) && Number(matchedCity.defaultFee) >= 0) {
+              return Math.floor(Number(matchedCity.defaultFee));
+            }
+          }
+        }
+      }
+    } catch {}
+  }
+
   if (settings.deliveryZones) {
     try {
       const zones = JSON.parse(settings.deliveryZones) as Array<{ name: string; fee: number; enabled: boolean }>;
-      const zone = zones.find(item => item.enabled && item.name.trim().toLocaleLowerCase() === city.trim().toLocaleLowerCase());
+      const zone = zones.find(item => item.enabled && item.name.trim().toLocaleLowerCase() === cleanCity.toLocaleLowerCase());
       if (zone && Number.isInteger(zone.fee) && zone.fee >= 0) return zone.fee;
-    } catch { /* malformed zone data falls through to a configured base fee */ }
+    } catch {}
   }
-  if (settings.deliveryFee === undefined || settings.deliveryFee === "") return 0;
-  const baseFee = Number(settings.deliveryFee);
-  return Number.isInteger(baseFee) && baseFee >= 0 ? baseFee : 0;
+  const baseFee = Number(settings.deliveryFee ?? "");
+  return Number.isInteger(baseFee) && baseFee >= 0 ? baseFee : null;
 }
 
 type RewardConfigMeta = {
@@ -829,13 +892,13 @@ export const commerceRouter = router({
   orders: router({
     quote: publicProcedure.input(z.object({
       items: z.array(z.object({ productId: safeId, quantity: z.number().int().min(1).max(10000), name: z.string().trim().max(220).optional(), variant: z.string().trim().max(120).optional(), customAmount: z.number().int().min(1).max(100000000).optional() })).min(1).max(100),
-      city: z.string().trim().min(1).max(100), offerCode: z.string().trim().max(40).optional(),
+      city: z.string().trim().min(1).max(100), district: z.string().trim().max(160).optional(), phone: z.string().trim().max(40).optional(), offerCode: z.string().trim().max(40).optional(),
     })).mutation(async ({ input }) => {
       const db = await database();
       const settings = await readSettings(db);
       if (settings.orderPaused === "true") throw new TRPCError({ code: "PRECONDITION_FAILED", message: settings.pausedMessage || "استقبال الطلبات متوقف مؤقتًا." });
-      const deliveryFee = deliveryFeeForCity(settings, input.city);
-      if (deliveryFee === null) throw new TRPCError({ code: "PRECONDITION_FAILED", message: settings.deliveryEnabled === "true" ? "منطقة التوصيل أو رسومها غير محددة بعد." : "لم يفعّل المتجر التوصيل بعد." });
+      const prelimFee = deliveryFeeForCity(settings, input.city, input.district, input.phone, 0);
+      if (prelimFee === null) throw new TRPCError({ code: "PRECONDITION_FAILED", message: settings.deliveryEnabled === "true" ? "منطقة التوصيل أو رسومها غير محددة بعد." : "لم يفعّل المتجر التوصيل بعد." });
       const requested = aggregateItems(input.items);
       if (requested.some(item => item.quantity > 10000)) throw new TRPCError({ code: "BAD_REQUEST", message: "الكمية الإجمالية لأحد المنتجات تتجاوز الحد المسموح." });
       const productIds = requested.map(item => item.productId);
@@ -875,6 +938,7 @@ export const commerceRouter = router({
         appliedOffer = (await db.select().from(offers).where(and(eq(offers.code, input.offerCode.trim().toUpperCase()), eq(offers.isActive, true), sql`(${offers.startsAt} is null or ${offers.startsAt} <= now())`, sql`(${offers.endsAt} is null or ${offers.endsAt} >= now())`)).limit(1))[0] ?? null;
         if (!appliedOffer) throw new TRPCError({ code: "BAD_REQUEST", message: "رمز العرض غير صالح أو غير نشط." });
       }
+      const deliveryFee = deliveryFeeForCity(settings, input.city, input.district, input.phone, subtotal) ?? prelimFee;
       const totals = orderTotals(subtotal, deliveryFee, appliedOffer, settings);
       const currency = settings.currency || "ر.ي";
       return { lines, ...totals, currency, quoteHash: quoteFingerprint(lines, totals, currency, appliedOffer?.id ?? null), offerTitle: appliedOffer?.title ?? null };
@@ -976,8 +1040,8 @@ export const commerceRouter = router({
       if (typeof enforceOrderCreateRateLimit === "function") enforceOrderCreateRateLimit(getClientIp(ctx.req));
       const settings = await readSettings(db);
       if (settings.orderPaused === "true") throw new TRPCError({ code: "PRECONDITION_FAILED", message: settings.pausedMessage || "استقبال الطلبات متوقف مؤقتًا." });
-      const deliveryFee = deliveryFeeForCity(settings, input.city);
-      if (deliveryFee === null) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "منطقة التوصيل أو رسومها غير محددة بعد." });
+      const prelimDeliveryFee = deliveryFeeForCity(settings, input.city, input.district, input.phone, 0);
+      if (prelimDeliveryFee === null) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "منطقة التوصيل أو رسومها غير محددة بعد." });
 
       let appliedOffer: typeof offers.$inferSelect | null = null;
       if (input.offerCode) {
@@ -1019,7 +1083,8 @@ export const commerceRouter = router({
             orderLines.push({ product, quantity: item.quantity, effectiveUnit: product.unit, effectivePrice: product.price, effectiveLineTotal: lineTotal, isWeighed: false });
           }
         }
-        const totals = orderTotals(subtotal, deliveryFee, appliedOffer, settings);
+        const finalDeliveryFee = deliveryFeeForCity(settings, input.city, input.district, input.phone, subtotal) ?? prelimDeliveryFee;
+        const totals = orderTotals(subtotal, finalDeliveryFee, appliedOffer, settings);
         const currency = settings.currency || "ر.ي";
         const currentLines = orderLines.map(line => ({ productId: line.product.id, name: line.product.name, quantity: line.quantity, unit: line.effectiveUnit, price: line.effectivePrice, lineTotal: line.effectiveLineTotal }));
         const currentQuoteHash = quoteFingerprint(currentLines, totals, currency, appliedOffer?.id ?? null);
@@ -1027,7 +1092,7 @@ export const commerceRouter = router({
         const orderNumber = "OR-" + Date.now().toString(36).toUpperCase() + "-" + nanoid(5).toUpperCase();
         const inserted = await tx.insert(orders).values({
           orderNumber, idempotencyKey: storedIdempotencyKey, userId: null, offerId: appliedOffer?.id ?? null,
-          recipientName: input.recipientName, phone: input.phone, city: input.city, district: input.district,
+          recipientName: input.recipientName, phone: normalizeYemeniPhone(input.phone), city: input.city, district: input.district,
           addressDetails: input.addressDetails ?? null, customerNote: input.customerNote ?? null,
           subtotal, deliveryFee: totals.deliveryFee, discount: totals.discount, total: totals.total, status: "new",
         });
