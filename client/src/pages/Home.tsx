@@ -14,7 +14,7 @@ function getInstantLocalCatalog(): HomeData {
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Link, useLocation, useSearch } from "wouter";
 import {
-  ArrowDownWideNarrow, ArrowLeft, ArrowUpDown, BadgePercent, BellRing, Check, ChevronLeft, ChevronRight, CircleUserRound, Copy,
+  ArrowDownWideNarrow, ArrowLeft, ArrowUpDown, BadgePercent, BellRing, Check, ChevronDown, ChevronLeft, ChevronRight, CircleUserRound, Copy,
   Heart, Home as HomeIcon, Leaf, LoaderCircle, MapPin, Menu, MessageCircle, Minus, Package,
   Plus, Search, ShoppingBag, ShoppingCart, SlidersHorizontal, Sparkles, Trash2, Truck, UserRound,
   X, Bot, Clock3, ShieldCheck,
@@ -1555,6 +1555,26 @@ function splitDistrictToAreaAndStreet(district: string): { areaName: string; str
   return { areaName: "", streetName: parts[0] || "" };
 }
 
+function computeLocalDeliveryFee(
+  tree: PublicDeliveryTree,
+  cityObj: PublicDeliveryCity | null,
+  areaObj: PublicDeliveryArea | null,
+  streetObj: PublicDeliveryStreet | null,
+  phone: string,
+  subtotal: number,
+): number {
+  const cleanP = cleanYemeniPhone(phone);
+  const vipMatch = cleanP ? tree.vipFreePhones.find(v => cleanYemeniPhone(v.phone) === cleanP && subtotal >= Number(v.minOrder || 0)) : null;
+  if (vipMatch) return 0;
+  if (tree.globalFreeAbove && subtotal >= tree.globalFreeAbove) return 0;
+  if (cityObj?.freeDeliveryPromo) return 0;
+  if (streetObj?.freeAbove && subtotal >= streetObj.freeAbove) return 0;
+  if (streetObj && streetObj.promoFee !== null && streetObj.promoFee !== undefined) return streetObj.promoFee;
+  if (streetObj) return streetObj.fee;
+  if (areaObj) return areaObj.defaultFee;
+  return cityObj?.defaultFee ?? 500;
+}
+
 function ThreeStepLocationPicker({
   tree,
   city,
@@ -1571,121 +1591,317 @@ function ThreeStepLocationPicker({
   onChangeLocation: (nextCity: string, nextDistrict: string) => void;
 }) {
   const parsed = splitDistrictToAreaAndStreet(district);
-  const selectedCityObj = tree.cities.find(c => c.name === city) ?? tree.cities[0] ?? null;
-  const selectedAreaObj = selectedCityObj?.areas.find(a => a.name === parsed.areaName || district.includes(a.name)) ?? selectedCityObj?.areas[0] ?? null;
-  const selectedStreetObj = selectedAreaObj?.streets.find(s => s.name === parsed.streetName || district.endsWith(s.name)) ?? selectedAreaObj?.streets[0] ?? null;
+  const committedCity = tree.cities.find(c => c.name === city) ?? null;
+  const committedArea = committedCity?.areas.find(a => a.name === parsed.areaName) ?? null;
+  const committedStreet = committedArea?.streets.find(s => s.name === parsed.streetName) ?? null;
+  const isSelectionComplete = Boolean(committedCity && committedArea && (committedArea.streets.length === 0 || committedStreet));
+
+  const [isOpen, setIsOpen] = useState<boolean>(false);
+  const [step, setStep] = useState<"city" | "area" | "street">("city");
+  const [draftCity, setDraftCity] = useState<PublicDeliveryCity | null>(committedCity);
+  const [draftArea, setDraftArea] = useState<PublicDeliveryArea | null>(committedArea);
 
   useEffect(() => {
-    if (selectedCityObj) {
-      const targetArea = selectedAreaObj ?? selectedCityObj.areas[0];
-      const targetStreet = selectedStreetObj ?? targetArea?.streets[0];
-      const expectedDist = targetArea ? (targetStreet ? (targetArea.name + " — " + targetStreet.name) : targetArea.name) : "";
-      if (city !== selectedCityObj.name || (expectedDist && district !== expectedDist)) {
-        onChangeLocation(selectedCityObj.name, expectedDist);
-      }
+    setDraftCity(committedCity);
+    setDraftArea(committedArea);
+  }, [city, district, tree]);
+
+  const handleToggleOpen = () => {
+    if (isOpen) {
+      setIsOpen(false);
+      return;
     }
-  }, [tree]);
-
-  const cleanP = cleanYemeniPhone(phone);
-  const vipMatch = cleanP ? tree.vipFreePhones.find(v => cleanYemeniPhone(v.phone) === cleanP && subtotal >= Number(v.minOrder || 0)) : null;
-  const isGlobalFree = Boolean(tree.globalFreeAbove && subtotal >= tree.globalFreeAbove);
-  const isCityFree = Boolean(selectedCityObj?.freeDeliveryPromo);
-  const isStreetFreeAbove = Boolean(selectedStreetObj?.freeAbove && subtotal >= selectedStreetObj.freeAbove);
-  const hasStreetPromo = selectedStreetObj && selectedStreetObj.promoFee !== null && selectedStreetObj.promoFee !== undefined;
-  const baseFee = selectedStreetObj ? selectedStreetObj.fee : (selectedAreaObj ? selectedAreaObj.defaultFee : (selectedCityObj?.defaultFee ?? 500));
-  const effectiveFee = (vipMatch || isGlobalFree || isCityFree || isStreetFreeAbove) ? 0 : (hasStreetPromo ? selectedStreetObj!.promoFee! : baseFee);
-
-  const selectStyle: React.CSSProperties = {
-    width: "100%",
-    minHeight: "44px",
-    padding: "8px 12px",
-    borderRadius: "11px",
-    border: "1.5px solid #bfd4c7",
-    background: "#ffffff",
-    color: "#123826",
-    fontWeight: 800,
-    fontSize: "13.5px",
-    cursor: "pointer",
+    setDraftCity(committedCity);
+    setDraftArea(committedArea);
+    setStep("city");
+    setIsOpen(true);
   };
 
+  const handleSelectCity = (c: PublicDeliveryCity) => {
+    setDraftCity(c);
+    setDraftArea(null);
+    if (city !== c.name) {
+      onChangeLocation("", "");
+    }
+    if (c.areas.length > 0) {
+      setStep("area");
+    } else {
+      onChangeLocation(c.name, c.name);
+      setIsOpen(false);
+    }
+  };
+
+  const handleSelectArea = (a: PublicDeliveryArea) => {
+    if (!draftCity) return;
+    setDraftArea(a);
+    if (a.streets.length > 0) {
+      setStep("street");
+    } else {
+      onChangeLocation(draftCity.name, a.name);
+      setIsOpen(false);
+    }
+  };
+
+  const handleSelectStreet = (st: PublicDeliveryStreet) => {
+    if (!draftCity || !draftArea) return;
+    onChangeLocation(draftCity.name, draftArea.name + " — " + st.name);
+    setIsOpen(false);
+  };
+
+  const effectiveFee = isSelectionComplete
+    ? computeLocalDeliveryFee(tree, committedCity, committedArea, committedStreet, phone, subtotal)
+    : null;
+
+  const fullAddressLabel = isSelectionComplete
+    ? [committedCity?.name, committedArea?.name, committedStreet?.name].filter(Boolean).join(" – ")
+    : "";
+
   return (
-    <div style={{ display: "grid", gap: "10px" }}>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(145px, 1fr))", gap: "8px" }}>
-        <label style={{ display: "grid", gap: "4px", fontSize: "12px", fontWeight: 800, color: "#174b36" }}>
-          <span>1. المحافظة / المدينة</span>
-          <select
-            value={selectedCityObj?.name ?? ""}
-            onChange={e => {
-              const nextCity = tree.cities.find(c => c.name === e.target.value) ?? tree.cities[0];
-              if (!nextCity) return;
-              const firstArea = nextCity.areas[0];
-              const firstStreet = firstArea?.streets[0];
-              const nextDist = firstArea ? (firstStreet ? (firstArea.name + " — " + firstStreet.name) : firstArea.name) : "";
-              onChangeLocation(nextCity.name, nextDist);
-            }}
-            style={selectStyle}
-          >
-            {tree.cities.map(c => (
-              <option key={c.id} value={c.name}>🏙️ {c.name}</option>
-            ))}
-          </select>
-        </label>
+    <div style={{ display: "grid", gap: "6px" }}>
+      <span style={{ fontSize: "12.5px", fontWeight: 700, color: "#1c3326" }}>عنوان التوصيل</span>
 
-        {selectedCityObj && selectedCityObj.areas.length > 0 && (
-          <label style={{ display: "grid", gap: "4px", fontSize: "12px", fontWeight: 800, color: "#174b36" }}>
-            <span>2. المنطقة / المديرية</span>
-            <select
-              value={selectedAreaObj?.name ?? ""}
-              onChange={e => {
-                const nextArea = selectedCityObj.areas.find(a => a.name === e.target.value) ?? selectedCityObj.areas[0];
-                if (!nextArea) return;
-                const firstStreet = nextArea.streets[0];
-                const nextDist = firstStreet ? (nextArea.name + " — " + firstStreet.name) : nextArea.name;
-                onChangeLocation(selectedCityObj.name, nextDist);
-              }}
-              style={selectStyle}
-            >
-              {selectedCityObj.areas.map(a => (
-                <option key={a.id} value={a.name}>📍 {a.name}</option>
-              ))}
-            </select>
-          </label>
-        )}
-
-        {selectedCityObj && selectedAreaObj && selectedAreaObj.streets.length > 0 && (
-          <label style={{ display: "grid", gap: "4px", fontSize: "12px", fontWeight: 800, color: "#174b36" }}>
-            <span>3. الشارع / الحي</span>
-            <select
-              value={selectedStreetObj?.name ?? ""}
-              onChange={e => {
-                const nextSt = selectedAreaObj.streets.find(s => s.name === e.target.value) ?? selectedAreaObj.streets[0];
-                if (!nextSt) return;
-                onChangeLocation(selectedCityObj.name, selectedAreaObj.name + " — " + nextSt.name);
-              }}
-              style={selectStyle}
-            >
-              {selectedAreaObj.streets.map(st => {
-                const stHasPromo = st.promoFee !== null && st.promoFee !== undefined;
-                const dispFee = stHasPromo ? st.promoFee! : st.fee;
-                return (
-                  <option key={st.id} value={st.name}>
-                    🛣️ {st.name} ({dispFee === 0 ? "توصيل مجاني 🎁" : formatPrice(dispFee)})
-                  </option>
-                );
-              })}
-            </select>
-          </label>
-        )}
-      </div>
-
-      {selectedCityObj && (
-        <div style={{ padding: "9px 12px", borderRadius: "11px", background: effectiveFee === 0 ? "#fff9e6" : "#edf7f1", border: effectiveFee === 0 ? "1px solid #e2be62" : "1px solid #b8d8c4", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "6px" }}>
-          <span style={{ fontSize: "12px", fontWeight: 800, color: "#143b29" }}>
-            🛵 التوصيل إلى ({selectedCityObj.name}{selectedAreaObj ? " - " + selectedAreaObj.name : ""}{selectedStreetObj ? " - " + selectedStreetObj.name : ""}):
+      <button
+        type="button"
+        onClick={handleToggleOpen}
+        style={{
+          width: "100%",
+          minHeight: isSelectionComplete ? "64px" : "50px",
+          padding: "12px 14px",
+          borderRadius: "12px",
+          border: isOpen ? "1.5px solid #174b36" : "1px solid #d8e1db",
+          background: "#ffffff",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: "10px",
+          cursor: "pointer",
+          textAlign: "right",
+          transition: "border-color 0.2s ease, box-shadow 0.2s ease",
+          boxShadow: isOpen ? "0 4px 14px rgba(23, 75, 54, 0.08)" : "0 1px 3px rgba(15, 42, 28, 0.03)",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "flex-start", gap: "10px", minWidth: 0, flex: 1 }}>
+          <span style={{ width: "32px", height: "32px", borderRadius: "9px", background: "#f2f7f4", color: "#174b36", display: "grid", placeItems: "center", flexShrink: 0, marginTop: isSelectionComplete ? "2px" : "0" }}>
+            <MapPin size={17} />
           </span>
-          <strong style={{ fontSize: "14px", color: effectiveFee === 0 ? "#9c6509" : "#174b36", fontWeight: 900 }}>
-            {effectiveFee === 0 ? "مجاناً (0 ر.ي) 🎉" : formatPrice(effectiveFee)}
-          </strong>
+          {!isSelectionComplete ? (
+            <span style={{ fontSize: "13.5px", fontWeight: 700, color: "#2d4537", alignSelf: "center" }}>
+              اختر منطقة التوصيل
+            </span>
+          ) : (
+            <div style={{ display: "grid", gap: "3px", minWidth: 0 }}>
+              <strong style={{ fontSize: "13.5px", color: "#122b1e", fontWeight: 800, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {fullAddressLabel}
+              </strong>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                <span style={{ fontSize: "12px", color: effectiveFee === 0 ? "#174b36" : "#516659", fontWeight: 700 }}>
+                  رسوم التوصيل: {effectiveFee === 0 ? "مجاني" : formatPrice(effectiveFee ?? 0)}
+                </span>
+                {effectiveFee === 0 && (
+                  <span style={{ fontSize: "10.5px", fontWeight: 700, padding: "1px 8px", borderRadius: "99px", background: "#eaf4ee", color: "#174b36" }}>
+                    توصيل مجاني
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {!isSelectionComplete ? (
+          <ChevronDown
+            size={18}
+            style={{
+              color: "#5b7063",
+              flexShrink: 0,
+              transform: isOpen ? "rotate(180deg)" : "rotate(0deg)",
+              transition: "transform 0.2s ease",
+            }}
+          />
+        ) : (
+          <span style={{ fontSize: "12px", fontWeight: 700, color: "#174b36", display: "inline-flex", alignItems: "center", gap: "4px", flexShrink: 0 }}>
+            {isOpen ? "إغلاق" : "تعديل العنوان ←"}
+          </span>
+        )}
+      </button>
+
+      {isOpen && (
+        <div
+          style={{
+            padding: "14px",
+            borderRadius: "12px",
+            background: "#fafcfa",
+            border: "1px solid #dce5df",
+            display: "grid",
+            gap: "12px",
+            animation: "fadeIn 0.18s ease-out",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", paddingBottom: "8px", borderBottom: "1px solid #e9efeb", flexWrap: "wrap" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={() => setStep("city")}
+                style={{
+                  border: "none",
+                  background: step === "city" ? "#174b36" : "#eef3f0",
+                  color: step === "city" ? "#ffffff" : "#2c4537",
+                  padding: "4px 10px",
+                  borderRadius: "8px",
+                  fontSize: "11.5px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                {draftCity ? draftCity.name : "المدينة"}
+              </button>
+              {draftCity && (
+                <>
+                  <span style={{ color: "#95a59b", fontSize: "11px" }}>/</span>
+                  <button
+                    type="button"
+                    onClick={() => setStep("area")}
+                    style={{
+                      border: "none",
+                      background: step === "area" ? "#174b36" : "#eef3f0",
+                      color: step === "area" ? "#ffffff" : "#2c4537",
+                      padding: "4px 10px",
+                      borderRadius: "8px",
+                      fontSize: "11.5px",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {draftArea ? draftArea.name : "المنطقة"}
+                  </button>
+                </>
+              )}
+              {draftCity && draftArea && (
+                <>
+                  <span style={{ color: "#95a59b", fontSize: "11px" }}>/</span>
+                  <span
+                    style={{
+                      background: step === "street" ? "#174b36" : "#eef3f0",
+                      color: step === "street" ? "#ffffff" : "#2c4537",
+                      padding: "4px 10px",
+                      borderRadius: "8px",
+                      fontSize: "11.5px",
+                      fontWeight: 700,
+                    }}
+                  >
+                    الشارع
+                  </span>
+                </>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsOpen(false)}
+              style={{ border: "none", background: "transparent", color: "#687b6f", fontSize: "11.5px", cursor: "pointer", padding: "2px 4px" }}
+            >
+              إغلاق
+            </button>
+          </div>
+
+          {step === "city" && (
+            <div style={{ display: "grid", gap: "8px" }}>
+              <small style={{ fontSize: "11.5px", color: "#586d60", fontWeight: 600 }}>اختر المدينة أو المحافظة:</small>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                {tree.cities.map(c => {
+                  const isSelected = draftCity?.id === c.id;
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => handleSelectCity(c)}
+                      style={{
+                        padding: "9px 18px",
+                        borderRadius: "10px",
+                        border: isSelected ? "1.5px solid #174b36" : "1px solid #d5e0d9",
+                        background: isSelected ? "#174b36" : "#ffffff",
+                        color: isSelected ? "#ffffff" : "#1c3326",
+                        fontSize: "13px",
+                        fontWeight: 700,
+                        cursor: "pointer",
+                        transition: "all 0.15s ease",
+                      }}
+                    >
+                      {c.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {step === "area" && draftCity && (
+            <div style={{ display: "grid", gap: "8px" }}>
+              <small style={{ fontSize: "11.5px", color: "#586d60", fontWeight: 600 }}>اختر المنطقة أو المديرية في {draftCity.name}:</small>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "7px" }}>
+                {draftCity.areas.map(a => {
+                  const isSelected = draftArea?.id === a.id;
+                  return (
+                    <button
+                      key={a.id}
+                      type="button"
+                      onClick={() => handleSelectArea(a)}
+                      style={{
+                        padding: "8px 14px",
+                        borderRadius: "10px",
+                        border: isSelected ? "1.5px solid #174b36" : "1px solid #d5e0d9",
+                        background: isSelected ? "#174b36" : "#ffffff",
+                        color: isSelected ? "#ffffff" : "#1c3326",
+                        fontSize: "12.5px",
+                        fontWeight: 700,
+                        cursor: "pointer",
+                        transition: "all 0.15s ease",
+                      }}
+                    >
+                      {a.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {step === "street" && draftCity && draftArea && (
+            <div style={{ display: "grid", gap: "8px" }}>
+              <small style={{ fontSize: "11.5px", color: "#586d60", fontWeight: 600 }}>اختر الشارع أو الحي في {draftArea.name}:</small>
+              <div style={{ display: "grid", gap: "6px", maxHeight: "210px", overflowY: "auto", paddingLeft: "2px" }}>
+                {draftArea.streets.map(st => {
+                  const isSelected = committedCity?.id === draftCity.id && committedArea?.id === draftArea.id && committedStreet?.id === st.id;
+                  const stFee = computeLocalDeliveryFee(tree, draftCity, draftArea, st, phone, subtotal);
+                  return (
+                    <button
+                      key={st.id}
+                      type="button"
+                      onClick={() => handleSelectStreet(st)}
+                      style={{
+                        width: "100%",
+                        padding: "10px 12px",
+                        borderRadius: "10px",
+                        border: isSelected ? "1.5px solid #174b36" : "1px solid #dde6e0",
+                        background: isSelected ? "#f0f7f3" : "#ffffff",
+                        color: "#1c3326",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: "8px",
+                        cursor: "pointer",
+                        textAlign: "right",
+                        transition: "all 0.15s ease",
+                      }}
+                    >
+                      <span style={{ fontSize: "13px", fontWeight: isSelected ? 800 : 600 }}>{st.name}</span>
+                      <span style={{ fontSize: "12px", fontWeight: 700, color: stFee === 0 ? "#174b36" : "#5a6f62" }}>
+                        {stFee === 0 ? "مجاني" : formatPrice(stFee)}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -1702,19 +1918,13 @@ function Checkout({ onClose, onSuccess, cart }: { onClose: () => void; onSuccess
   const subtotal = useMemo(() => cart.reduce((s, l) => s + l.price * l.quantity, 0), [cart]);
 
   const defaultAddress = customer.addresses.find(address => address.isDefault) ?? customer.addresses[0];
-  const initialCity = defaultAddress?.city || deliveryTree.cities[0]?.name || "صنعاء";
-  const firstCityObj = deliveryTree.cities.find(c => c.name === initialCity) ?? deliveryTree.cities[0];
-  const firstAreaObj = firstCityObj?.areas[0];
-  const firstStreetObj = firstAreaObj?.streets[0];
-  const fallbackDistrict = firstAreaObj ? (firstStreetObj ? (firstAreaObj.name + " — " + firstStreetObj.name) : firstAreaObj.name) : "";
-
   const [selectedAddressId, setSelectedAddressId] = useState(defaultAddress?.id ?? "new");
   const [showExtras, setShowExtras] = useState(false);
   const [form, setForm] = useState(() => ({
     recipientName: defaultAddress?.recipientName ?? customer.name,
     phone: cleanYemeniPhone(defaultAddress?.phone ?? customer.phone),
-    city: initialCity,
-    district: defaultAddress?.district || fallbackDistrict,
+    city: defaultAddress?.city ?? "",
+    district: defaultAddress?.district ?? "",
     addressDetails: defaultAddress?.details ?? "",
     customerNote: "",
     offerCode: "",
@@ -1771,11 +1981,11 @@ function Checkout({ onClose, onSuccess, cart }: { onClose: () => void; onSuccess
   const quote = quoteSignature === signature ? quoteMutation.data : undefined;
 
   useEffect(() => {
-    if (!form.city || !items.length) return;
+    if (!form.city || !form.district || !items.length) return;
     const timer = setTimeout(() => {
       setQuoteSignature(signature);
       quoteMutation.mutate({ items, city: form.city, district: form.district, phone: cleanYemeniPhone(form.phone), offerCode: form.offerCode || undefined } as any);
-    }, 180);
+    }, 150);
     return () => clearTimeout(timer);
   }, [form.city, form.district, form.phone, form.offerCode, signature]);
 
@@ -1807,7 +2017,7 @@ function Checkout({ onClose, onSuccess, cart }: { onClose: () => void; onSuccess
       }
       onSuccess();
       void utils.commerce.orders.trackMany.invalidate();
-      toast.success("تم استلام طلبك رقم " + result.orderNumber + " بنجاح!");
+      toast.success("تم استلام طلبك رقم " + result.orderNumber + " بنجاح");
       onClose();
       navigate("/orders?order=" + encodeURIComponent(result.orderNumber) + "&justOrdered=1");
     },
@@ -1851,8 +2061,12 @@ function Checkout({ onClose, onSuccess, cart }: { onClose: () => void; onSuccess
       toast.error("يرجى إدخال رقم جوال يمني صحيح مكون من 9 أرقام ويبدأ بـ 77 أو 73 أو 78 أو 71 أو 70.");
       return;
     }
+    if (!form.city.trim() || !form.district.trim()) {
+      toast.error("يرجى الضغط على حقل عنوان التوصيل واختيار المدينة والمنطقة والشارع.");
+      return;
+    }
     if (!form.addressDetails.trim()) {
-      toast.error("يرجى كتابة المعلم القريب (بجوار ماذا أو أمام أي مكان).");
+      toast.error("يرجى كتابة أقرب معلم للعنوان.");
       return;
     }
     try {
@@ -1871,56 +2085,53 @@ function Checkout({ onClose, onSuccess, cart }: { onClose: () => void; onSuccess
 
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
-      <section className="checkout-modal" role="dialog" aria-modal="true" style={{ maxWidth: "490px", padding: "18px", borderRadius: "22px" }}>
-        <div className="modal-heading" style={{ paddingBottom: "10px", borderBottom: "1px solid #e4ede7", marginBottom: "12px" }}>
+      <section className="checkout-modal" role="dialog" aria-modal="true" style={{ maxWidth: "470px", padding: "20px", borderRadius: "18px", background: "#ffffff" }}>
+        <div className="modal-heading" style={{ paddingBottom: "12px", borderBottom: "1px solid #ebefec", marginBottom: "14px" }}>
           <div>
-            <h2 style={{ fontSize: "18px", margin: 0, color: "#123826" }}>تأكيد الطلب وعنوان التوصيل</h2>
-            <small style={{ color: "#5c7063", fontSize: "11.5px" }}>اختر منطقتك من القائمة واكتب المعلم القريب فقط</small>
+            <h2 style={{ fontSize: "17.5px", margin: 0, color: "#122b1e", fontWeight: 800 }}>إتمام الطلب</h2>
+            <small style={{ color: "#687b6f", fontSize: "12px" }}>أدخل بيانات الاستلام واختر عنوان التوصيل</small>
           </div>
-          <button type="button" className="icon-button" onClick={onClose}><X size={19} /></button>
+          <button type="button" className="icon-button" onClick={onClose}><X size={18} /></button>
         </div>
 
-        <form onSubmit={e => void submit(e)} className="form-stack" style={{ gap: "12px" }}>
+        <form onSubmit={e => void submit(e)} className="form-stack" style={{ gap: "14px" }}>
           {customer.addresses.length > 0 && (
-            <div style={{ display: "grid", gap: "6px" }}>
-              <span style={{ fontSize: "11.5px", fontWeight: 800, color: "#174b36" }}>📍 عناويني المحفوظة (اضغط للاختيار الفوري):</span>
-              <div style={{ display: "flex", gap: "6px", overflowX: "auto", paddingBottom: "4px" }}>
-                {customer.addresses.map(addr => {
-                  const isSel = selectedAddressId === addr.id;
-                  return (
-                    <button
-                      key={addr.id}
-                      type="button"
-                      onClick={() => selectAddress(addr.id)}
-                      style={{
-                        flex: "0 0 auto",
-                        padding: "8px 12px",
-                        borderRadius: "12px",
-                        border: isSel ? "2px solid #174b36" : "1px solid #cfe0d5",
-                        background: isSel ? "#e8f6ee" : "#ffffff",
-                        color: "#123826",
-                        textAlign: "right",
-                        cursor: "pointer",
-                      }}
-                    >
-                      <strong style={{ fontSize: "12px", display: "block" }}>{isSel ? "✓ " : "📍 "}{addr.label} ({addr.district})</strong>
-                      <small style={{ fontSize: "10.5px", color: "#52685b" }}>{addr.details || addr.city}</small>
-                    </button>
-                  );
-                })}
-              </div>
+            <div style={{ display: "flex", gap: "6px", overflowX: "auto", paddingBottom: "2px" }}>
+              {customer.addresses.map(addr => {
+                const isSel = selectedAddressId === addr.id;
+                return (
+                  <button
+                    key={addr.id}
+                    type="button"
+                    onClick={() => selectAddress(addr.id)}
+                    style={{
+                      flex: "0 0 auto",
+                      padding: "6px 12px",
+                      borderRadius: "10px",
+                      border: isSel ? "1.5px solid #174b36" : "1px solid #dce4de",
+                      background: isSel ? "#f0f7f3" : "#ffffff",
+                      color: "#1c3326",
+                      fontSize: "12px",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {addr.label} ({addr.district.replace("—", "–")})
+                  </button>
+                );
+              })}
             </div>
           )}
 
-          <div className="form-grid" style={{ gap: "8px" }}>
-            <label style={{ fontSize: "12px", fontWeight: 800, color: "#174b36" }}>
-              <span>الاسم الكامل *</span>
-              <input required minLength={2} maxLength={160} autoComplete="name" value={form.recipientName} onChange={event => updateField("recipientName", event.target.value)} placeholder="اسم المستلم..." />
+          <div className="form-grid" style={{ gap: "10px" }}>
+            <label style={{ fontSize: "12.5px", fontWeight: 700, color: "#1c3326" }}>
+              <span>الاسم الكامل</span>
+              <input required minLength={2} maxLength={160} autoComplete="name" value={form.recipientName} onChange={event => updateField("recipientName", event.target.value)} placeholder="اسم المستلم" />
             </label>
-            <label style={{ fontSize: "12px", fontWeight: 800, color: "#174b36" }}>
+            <label style={{ fontSize: "12.5px", fontWeight: 700, color: "#1c3326" }}>
               <span style={{ display: "flex", justifyContent: "space-between" }}>
-                <span>رقم الجوال (9 أرقام) *</span>
-                {form.phone && <small style={{ color: phoneValid ? "#174b36" : "#b43c2f", fontSize: "10px" }}>{phoneValid ? ("✓ " + getYemenCarrierName(form.phone)) : (form.phone.length + "/9")}</small>}
+                <span>رقم الهاتف</span>
+                {form.phone && <small style={{ color: phoneValid ? "#174b36" : "#b43c2f", fontSize: "10.5px" }}>{phoneValid ? getYemenCarrierName(form.phone) : (form.phone.length + "/9")}</small>}
               </span>
               <input
                 required
@@ -1931,82 +2142,79 @@ function Checkout({ onClose, onSuccess, cart }: { onClose: () => void; onSuccess
                 value={form.phone}
                 onChange={event => updateField("phone", event.target.value)}
                 placeholder="77XXXXXXX"
-                style={{ textAlign: "left", fontWeight: 800, borderColor: form.phone && !phoneValid ? "#d9534f" : undefined }}
+                style={{ textAlign: "left", fontWeight: 700, borderColor: form.phone && !phoneValid ? "#d9534f" : undefined }}
               />
             </label>
           </div>
 
-          <div style={{ padding: "12px", borderRadius: "16px", background: "#f7fbf8", border: "1.5px solid #cfe2d5", display: "grid", gap: "10px" }}>
-            <ThreeStepLocationPicker
-              tree={deliveryTree}
-              city={form.city}
-              district={form.district}
-              phone={form.phone}
-              subtotal={subtotal}
-              onChangeLocation={(nextCity, nextDist) => {
-                setForm(curr => ({ ...curr, city: nextCity, district: nextDist }));
-                setSelectedAddressId("new");
-              }}
+          <ThreeStepLocationPicker
+            tree={deliveryTree}
+            city={form.city}
+            district={form.district}
+            phone={form.phone}
+            subtotal={subtotal}
+            onChangeLocation={(nextCity, nextDist) => {
+              setForm(curr => ({ ...curr, city: nextCity, district: nextDist }));
+              setSelectedAddressId("new");
+            }}
+          />
+
+          <label style={{ fontSize: "12.5px", fontWeight: 700, color: "#1c3326" }}>
+            <span>أقرب معلم للعنوان</span>
+            <input
+              required
+              maxLength={400}
+              autoComplete="street-address"
+              value={form.addressDetails}
+              onChange={event => updateField("addressDetails", event.target.value)}
+              placeholder="مثال: بجوار بنك الكريمي، أمام جامع..."
             />
-
-            <label style={{ display: "grid", gap: "4px", fontSize: "12.5px", fontWeight: 900, color: "#123826" }}>
-              <span>📌 المعلم القريب (بجوار ماذا أو أمام أي مكان؟) *</span>
-              <input
-                required
-                maxLength={400}
-                autoComplete="street-address"
-                value={form.addressDetails}
-                onChange={event => updateField("addressDetails", event.target.value)}
-                placeholder="اكتب المعلم فقط، مثلاً: بجوار بنك الكريمي، أمام جامع..."
-                style={{ background: "#ffffff", border: "1.5px solid #174b36", fontWeight: 700 }}
-              />
-            </label>
-          </div>
+          </label>
 
           <div>
             <button
               type="button"
               onClick={() => setShowExtras(v => !v)}
-              style={{ background: "none", border: "none", padding: 0, color: "#397a54", fontSize: "12px", fontWeight: 800, cursor: "pointer" }}
+              style={{ background: "none", border: "none", padding: 0, color: "#4e6658", fontSize: "12px", fontWeight: 600, cursor: "pointer" }}
             >
-              {showExtras ? "− إخفاء الملاحظة وكود الخصم" : "+ هل لديك ملاحظة للمتجر أو كود خصم؟ (اختياري)"}
+              {showExtras ? "إخفاء الملاحظة ورمز الخصم" : "إضافة ملاحظة أو رمز خصم (اختياري)"}
             </button>
             {showExtras && (
               <div className="form-grid" style={{ marginTop: "8px", gap: "8px" }}>
-                <label style={{ fontSize: "11.5px" }}>ملاحظة للمتجر<input maxLength={500} value={form.customerNote} onChange={event => updateField("customerNote", event.target.value)} placeholder="وقت التوصيل المفضل أو ملاحظة..." /></label>
-                <label style={{ fontSize: "11.5px" }}>كود خصم<input maxLength={40} value={form.offerCode} onChange={event => updateField("offerCode", event.target.value.toUpperCase())} placeholder="أدخل الكود" dir="ltr" /></label>
+                <label style={{ fontSize: "12px" }}>ملاحظة التوصيل<input maxLength={500} value={form.customerNote} onChange={event => updateField("customerNote", event.target.value)} placeholder="ملاحظة اختيارية..." /></label>
+                <label style={{ fontSize: "12px" }}>رمز الخصم<input maxLength={40} value={form.offerCode} onChange={event => updateField("offerCode", event.target.value.toUpperCase())} placeholder="الكود" dir="ltr" /></label>
               </div>
             )}
           </div>
 
-          <section style={{ padding: "12px 14px", borderRadius: "14px", background: "#f2f8f4", border: "1.5px solid #174b36", display: "grid", gap: "6px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12.5px", color: "#355242" }}>
-              <span>قيمة المنتجات ({cart.length} أصناف)</span>
+          <section style={{ padding: "14px", borderRadius: "12px", background: "#f8faf8", border: "1px solid #e1e9e3", display: "grid", gap: "7px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12.5px", color: "#4a5e52" }}>
+              <span>المجموع الفرعي ({cart.length} أصناف)</span>
               <strong>{formatPrice(quote ? quote.subtotal : subtotal)}</strong>
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12.5px", color: "#355242" }}>
-              <span>سعر التوصيل ({form.city} - {form.district})</span>
-              <strong style={{ color: "#174b36" }}>
-                {quote ? (quote.deliveryFee === 0 ? "مجاناً 🎉" : formatPrice(quote.deliveryFee)) : "يُحسب تلقائياً..."}
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12.5px", color: "#4a5e52" }}>
+              <span>رسوم التوصيل</span>
+              <strong style={{ color: quote && quote.deliveryFee === 0 ? "#174b36" : "#1c3326" }}>
+                {!form.city || !form.district ? "يحدد بعد اختيار العنوان" : quote ? (quote.deliveryFee === 0 ? "مجاني" : formatPrice(quote.deliveryFee)) : "..."}
               </strong>
             </div>
             {quote && quote.discount > 0 && (
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12.5px", color: "#174b36", fontWeight: 800 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12.5px", color: "#174b36", fontWeight: 700 }}>
                 <span>الخصم</span>
                 <strong>−{formatPrice(quote.discount)}</strong>
               </div>
             )}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: "8px", marginTop: "2px", borderTop: "1px solid #cbe0d2" }}>
-              <strong style={{ fontSize: "14px", color: "#123826" }}>الإجمالي المطلوب عند الاستلام</strong>
-              <strong style={{ fontSize: "18px", color: "#174b36", fontWeight: 900 }}>{formatPrice(quote ? quote.total : subtotal)}</strong>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: "8px", marginTop: "2px", borderTop: "1px solid #e2eae4" }}>
+              <strong style={{ fontSize: "14px", color: "#122b1e" }}>الإجمالي</strong>
+              <strong style={{ fontSize: "17px", color: "#174b36", fontWeight: 800 }}>{formatPrice(quote ? quote.total : subtotal)}</strong>
             </div>
           </section>
 
           <div className="modal-footer" style={{ marginTop: "2px" }}>
             <button type="button" className="button button-quiet" onClick={onClose}>رجوع</button>
-            <button type="submit" className="button button-primary" disabled={mutation.isPending} style={{ flex: 1, fontSize: "14px", fontWeight: 900 }}>
-              {mutation.isPending ? <LoaderCircle className="spin" size={17} /> : <Check size={17} />}
-              {mutation.isPending ? "جارٍ إرسال الطلب..." : "تأكيد وإرسال الطلب الآن"}
+            <button type="submit" className="button button-primary" disabled={mutation.isPending} style={{ flex: 1, fontSize: "14px", fontWeight: 800 }}>
+              {mutation.isPending ? <LoaderCircle className="spin" size={17} /> : null}
+              {mutation.isPending ? "جارٍ إرسال الطلب..." : "تأكيد الطلب"}
             </button>
           </div>
         </form>
@@ -2377,6 +2585,14 @@ function AccountPage() {
       toast.error("يرجى إدخال رقم جوال يمني صحيح مكون من 9 أرقام ويبدأ بـ 77 أو 73 أو 78 أو 71 أو 70.");
       return;
     }
+    if (!address.city.trim() || !address.district.trim()) {
+      toast.error("يرجى اختيار منطقة التوصيل (المدينة والمنطقة والشارع).");
+      return;
+    }
+    if (!address.city.trim() || !address.district.trim()) {
+      toast.error("يرجى اختيار منطقة التوصيل (المدينة والمنطقة والشارع).");
+      return;
+    }
     customer.saveAddress({
       ...address,
       phone: cleanYemeniPhone(address.phone),
@@ -2660,7 +2876,7 @@ function AccountPage() {
                     <label className="form-wide">الحي / الشارع *<input required maxLength={120} value={address.district} onChange={event => setAddress({ ...address, district: event.target.value })} placeholder="مثلاً: الرقاص، حدة، الأصبحي..." /></label>
                   </>
                 )}
-                <label className="form-wide">📌 الآن اكتب معلماً قريباً يعرفنا مكانك بالضبط (بجوار ماذا أو أمام أي مكان) *<textarea required rows={2} maxLength={1000} value={address.details} onChange={event => setAddress({ ...address, details: event.target.value })} placeholder="مثلاً: بجوار بنك الكريمي، أمام جامع..." /></label>
+                <label className="form-wide">أقرب معلم للعنوان<textarea required rows={2} maxLength={1000} value={address.details} onChange={event => setAddress({ ...address, details: event.target.value })} placeholder="مثال: بجوار بنك الكريمي، أمام جامع..." /></label>
                 <label className="toggle-field form-wide"><input type="checkbox" checked={address.isDefault} onChange={event => setAddress({ ...address, isDefault: event.target.checked })} /> اجعل هذا العنوان هو الافتراضي عند الطلب</label>
               </div>
               <div className="address-form-actions" style={{ display: "flex", gap: "8px" }}>

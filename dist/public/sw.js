@@ -1,7 +1,7 @@
-const CACHE = "original-shell-v46";
-const PRECACHE = ["/", "/offline.html", "/manifest.webmanifest", "/app-icon-180-v4.png", "/app-icon-192-v4.png", "/app-icon-512-v4.png", "/notif-icon-v3.png", "/notif-badge-v3.png", "/assets/Admin-BUFoS7km.js",
-  "/assets/index-BNbd9dOv.css",
-  "/assets/index-ClPCboOm.js"];
+const CACHE = "original-shell-v47";
+const PRECACHE = ["/", "/offline.html", "/manifest.webmanifest", "/app-icon-180-v4.png", "/app-icon-192-v4.png", "/app-icon-512-v4.png", "/notif-icon-v3.png", "/notif-badge-v3.png", "/assets/Admin-nIehiiYH.js",
+  "/assets/index-DSJBzWoJ.js",
+  "/assets/index-DlUMDRsn.css"];
 
 self.addEventListener("install", event => {
   self.skipWaiting();
