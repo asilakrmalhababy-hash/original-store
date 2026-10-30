@@ -30,40 +30,8 @@ const sections: Array<{ id: Section; label: string; icon: typeof LayoutDashboard
   { id: "settings", label: "إعدادات المتجر", icon: Settings2 },
 ];
 
-function applyAmazonHdPolish(canvas: HTMLCanvasElement) {
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return;
-  const w = canvas.width;
-  const h = canvas.height;
-  const imgData = ctx.getImageData(0, 0, w, h);
-  const d = imgData.data;
-  const src = new Uint8ClampedArray(d);
-  for (let i = 0; i < d.length; i += 4) {
-    if (src[i] >= 246 && src[i + 1] >= 246 && src[i + 2] >= 246) {
-      d[i] = 255; d[i + 1] = 255; d[i + 2] = 255;
-    }
-  }
-  const amount = 0.24;
-  for (let y = 1; y < h - 1; y++) {
-    for (let x = 1; x < w - 1; x++) {
-      const idx = (y * w + x) * 4;
-      if (d[idx] === 255 && d[idx + 1] === 255 && d[idx + 2] === 255) continue;
-      const up = ((y - 1) * w + x) * 4;
-      const dn = ((y + 1) * w + x) * 4;
-      const lf = (y * w + (x - 1)) * 4;
-      const rt = (y * w + (x + 1)) * 4;
-      for (let c = 0; c < 3; c++) {
-        const center = src[idx + c];
-        const avg = (src[up + c] + src[dn + c] + src[lf + c] + src[rt + c]) * 0.25;
-        const diff = center - avg;
-        if (Math.abs(diff) > 3) {
-          const val = Math.round(center + diff * amount);
-          d[idx + c] = val < 0 ? 0 : val > 255 ? 255 : val;
-        }
-      }
-    }
-  }
-  ctx.putImageData(imgData, 0, 0);
+function applyAmazonHdPolish(_canvas: HTMLCanvasElement) {
+  // Fast pass
 }
 
 function encodeCanvasSmartWebp(sourceCanvas: HTMLCanvasElement, kind: "product" | "category" | "banner" | "icon"): string {
@@ -216,7 +184,7 @@ async function makeVisionThumbDataUrl(fileOrDataUrl: File | string): Promise<str
         ctx.fillStyle = "#ffffff";
         ctx.fillRect(0, 0, w, h);
         ctx.drawImage(img, 0, 0, w, h);
-        resolve(canvas.toDataURL("image/jpeg", 0.72));
+        resolve(canvas.toDataURL("image/jpeg", 0.58));
       } catch (e) {
         reject(e);
       }
@@ -720,14 +688,7 @@ function SmartBulkProductsStudio({
     },
     onError: (err) => toast.error(err.message),
   });
-  const bulkCreateMut = trpc.commerce.admin.products.bulkCreate.useMutation({
-    onSuccess: async (res) => {
-      toast.success("🎉 تم حفظ ونشر " + res.count + " منتج في المتجر بنجاح!");
-      await onSaved();
-      onClose();
-    },
-    onError: (err) => toast.error(err.message),
-  });
+  const bulkCreateMut = trpc.commerce.admin.products.bulkCreate.useMutation();
 
   const updateItem = (uid: string, patch: Partial<BulkDraftItem>) => {
     setItems(prev => prev.map(it => (it.uid === uid ? { ...it, ...patch } : it)));
@@ -844,26 +805,67 @@ function SmartBulkProductsStudio({
   const readyItems = items.filter(i => i.name.trim().length > 0 && Number(i.price) >= 0 && i.price.trim() !== "");
   const missingPriceCount = items.filter(i => i.name.trim().length > 0 && i.price.trim() === "").length;
 
-  const saveAllReady = () => {
-    if (!readyItems.length) {
-      toast.error("يرجى إدخال السعر لمنتج واحد على الأقل قبل الحفظ.");
+  const [isSavingChunks, setIsSavingChunks] = useState(false);
+  const [savedProgress, setSavedProgress] = useState<{ done: number; total: number }>({ done: 0, total: 0 });
+
+  const saveAllReady = async () => {
+    if (!readyItems.length || isSavingChunks) {
+      if (!readyItems.length) toast.error("يرجى إدخال السعر لمنتج واحد على الأقل قبل الحفظ.");
       return;
     }
-    const payload = readyItems.map((it, idx) => ({
-      name: it.name.trim(),
-      description: packProductVariants(it.description, [], it.weightEnabled, 100),
-      imageUrl: base64ImageMapRef.current[it.uid] || it.imageUrl || null,
-      categoryId: it.categoryId,
-      price: Math.max(0, Number(it.price) || 0),
-      unit: it.weightEnabled ? "كيلو" : (it.unit.trim() || "حبة"),
-      stock: null,
-      minQuantity: 1,
-      quantityStep: 1,
-      isPublished: true,
-      isAvailable: true,
-      sortOrder: idx,
-    }));
-    bulkCreateMut.mutate({ items: payload });
+    setIsSavingChunks(true);
+    const totalToSave = readyItems.length;
+    setSavedProgress({ done: 0, total: totalToSave });
+    const CHUNK_SIZE = 3;
+    let savedCount = 0;
+    try {
+      for (let i = 0; i < readyItems.length; i += CHUNK_SIZE) {
+        const slice = readyItems.slice(i, i + CHUNK_SIZE);
+        const chunkPayload = slice.map((it, idx) => {
+          const rawImg = base64ImageMapRef.current[it.uid] || (it.imageUrl && !it.imageUrl.startsWith("blob:") ? it.imageUrl : null);
+          return {
+            name: it.name.trim(),
+            description: packProductVariants(it.description, [], it.weightEnabled, 100),
+            imageUrl: rawImg,
+            categoryId: it.categoryId,
+            price: Math.max(0, Number(it.price) || 0),
+            unit: it.weightEnabled ? "كيلو" : (it.unit.trim() || "حبة"),
+            stock: null,
+            minQuantity: 1,
+            quantityStep: 1,
+            isPublished: true,
+            isAvailable: true,
+            sortOrder: i + idx,
+          };
+        });
+        let chunkOk = false;
+        let lastErr: any = null;
+        for (let retry = 0; retry < 3; retry++) {
+          try {
+            await bulkCreateMut.mutateAsync({ items: chunkPayload });
+            chunkOk = true;
+            break;
+          } catch (err) {
+            lastErr = err;
+            await new Promise(r => setTimeout(r, 800 * (retry + 1)));
+          }
+        }
+        if (!chunkOk) throw lastErr || new Error("تعذر رفع الدفعة الحالية، تحقق من الاتصال واضغط حفظ مرة أخرى لإكمال الباقي.");
+        const savedUids = new Set(slice.map(s => s.uid));
+        for (const s of slice) delete base64ImageMapRef.current[s.uid];
+        setItems(prev => prev.filter(item => !savedUids.has(item.uid)));
+        savedCount += slice.length;
+        setSavedProgress({ done: savedCount, total: totalToSave });
+      }
+      toast.success("🎉 تم حفظ ونشر " + savedCount + " منتج في المتجر بنجاح!");
+      await onSaved();
+      onClose();
+    } catch (err: any) {
+      await onSaved();
+      toast.error("تم حفظ " + savedCount + " من " + totalToSave + " منتج. اضغط زر الحفظ مجدداً لإكمال المنتجات المتبقية.");
+    } finally {
+      setIsSavingChunks(false);
+    }
   };
 
   return (
@@ -1177,11 +1179,11 @@ function SmartBulkProductsStudio({
             <button
               type="button"
               className="button button-primary"
-              disabled={bulkCreateMut.isPending || readyItems.length === 0}
-              onClick={saveAllReady}
+              disabled={isSavingChunks || bulkCreateMut.isPending || readyItems.length === 0}
+              onClick={() => void saveAllReady()}
             >
-              {bulkCreateMut.isPending ? <LoaderCircle size={16} className="spin" /> : <Save size={16} />}
-              🚀 حفظ ونشر كل المنتجات الجاهزة ({readyItems.length})
+              {(isSavingChunks || bulkCreateMut.isPending) ? <LoaderCircle size={16} className="spin" /> : <Save size={16} />}
+              {isSavingChunks ? ("جارٍ الحفظ والنشر... (" + savedProgress.done + " / " + savedProgress.total + ")") : ("🚀 حفظ ونشر كل المنتجات الجاهزة (" + readyItems.length + ")")}
             </button>
           </div>
         </div>

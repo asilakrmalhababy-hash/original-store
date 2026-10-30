@@ -541,8 +541,7 @@ export async function analyzeProductImageAI(params: {
   const keys = getAllActiveKeys();
   const P = ["ht", "tps", "://"].join("");
   const visionModels = [
-    "meta-llama/llama-4-scout-17b-16e-instruct",
-    "meta-llama/llama-4-maverick-17b-128e-instruct"
+    "meta-llama/llama-4-scout-17b-16e-instruct"
   ];
 
   let extractedName = "";
@@ -571,7 +570,7 @@ export async function analyzeProductImageAI(params: {
               role: "user",
               content: [
                 { type: "text", text: shortVisionPrompt },
-                { type: "image_url", image_url: { url: params.imageDataUrl } }
+                { type: "image_url", image_url: { url: params.imageDataUrl, detail: "low" } }
               ]
             }]
           }),

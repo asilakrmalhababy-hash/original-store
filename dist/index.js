@@ -2266,8 +2266,7 @@ async function analyzeProductImageAI(params) {
   const keys = getAllActiveKeys();
   const P = ["ht", "tps", "://"].join("");
   const visionModels = [
-    "meta-llama/llama-4-scout-17b-16e-instruct",
-    "meta-llama/llama-4-maverick-17b-128e-instruct"
+    "meta-llama/llama-4-scout-17b-16e-instruct"
   ];
   let extractedName = "";
   let extractedType = "";
@@ -2291,7 +2290,7 @@ async function analyzeProductImageAI(params) {
               role: "user",
               content: [
                 { type: "text", text: shortVisionPrompt },
-                { type: "image_url", image_url: { url: params.imageDataUrl } }
+                { type: "image_url", image_url: { url: params.imageDataUrl, detail: "low" } }
               ]
             }]
           })
@@ -4516,8 +4515,10 @@ var commerceRouter = router({
         return { success: true };
       }),
       analyzeImage: requireAnyPermission(["products.manage", "products.add", "products.edit"]).input(z3.object({ imageDataUrl: z3.string().min(20).max(25e5), fileName: z3.string().max(200).optional() })).mutation(async ({ ctx, input }) => {
-        const db = await database();
-        let catRows = await db.select({ id: categories.id, name: categories.name }).from(categories).orderBy(asc(categories.sortOrder));
+        const g = globalThis;
+        const cachedCats = Array.isArray(g.__fastHomeData?.categories) ? g.__fastHomeData.categories.map((c) => ({ id: c.id, name: c.name })) : null;
+        const db = cachedCats ? null : await database();
+        let catRows = cachedCats || await db.select({ id: categories.id, name: categories.name }).from(categories).orderBy(asc(categories.sortOrder));
         const allowedCats = !ctx.user.isOwner && Array.isArray(ctx.user.allowedCategoryIds) && ctx.user.allowedCategoryIds.length > 0 ? ctx.user.allowedCategoryIds : null;
         if (allowedCats) catRows = catRows.filter((c) => allowedCats.includes(c.id));
         const res = await analyzeProductImageAI({ imageDataUrl: input.imageDataUrl, fileName: input.fileName, categories: catRows });
@@ -4529,7 +4530,8 @@ var commerceRouter = router({
             res.categoryId = existing.id;
           } else {
             try {
-              const ins = await db.insert(categories).values({
+              const activeDb2 = db || await database();
+              const ins = await activeDb2.insert(categories).values({
                 name: res.suggestedCategoryName,
                 slug: slugify(res.suggestedCategoryName),
                 description: "\u0642\u0633\u0645 " + res.suggestedCategoryName,

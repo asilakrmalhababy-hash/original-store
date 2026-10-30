@@ -1907,8 +1907,10 @@ export const commerceRouter = router({
       analyzeImage: requireAnyPermission(["products.manage", "products.add", "products.edit"])
         .input(z.object({ imageDataUrl: z.string().min(20).max(2_500_000), fileName: z.string().max(200).optional() }))
         .mutation(async ({ ctx, input }) => {
-          const db = await database();
-          let catRows = await db.select({ id: categories.id, name: categories.name }).from(categories).orderBy(asc(categories.sortOrder));
+          const g = globalThis as any;
+          const cachedCats = Array.isArray(g.__fastHomeData?.categories) ? g.__fastHomeData.categories.map((c: any) => ({ id: c.id, name: c.name })) : null;
+          const db = cachedCats ? null : await database();
+          let catRows: Array<{ id: number; name: string }> = cachedCats || await (db!).select({ id: categories.id, name: categories.name }).from(categories).orderBy(asc(categories.sortOrder));
           const allowedCats = (!ctx.user.isOwner && Array.isArray(ctx.user.allowedCategoryIds) && ctx.user.allowedCategoryIds.length > 0) ? ctx.user.allowedCategoryIds : null;
           if (allowedCats) catRows = catRows.filter(c => allowedCats.includes(c.id));
           const res = await analyzeProductImageAI({ imageDataUrl: input.imageDataUrl, fileName: input.fileName, categories: catRows });
@@ -1920,7 +1922,8 @@ export const commerceRouter = router({
               res.categoryId = existing.id;
             } else {
               try {
-                const ins = await db.insert(categories).values({
+                const activeDb = db || await database();
+                const ins = await activeDb.insert(categories).values({
                   name: res.suggestedCategoryName,
                   slug: slugify(res.suggestedCategoryName),
                   description: "قسم " + res.suggestedCategoryName,
