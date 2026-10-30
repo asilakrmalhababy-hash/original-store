@@ -3370,48 +3370,6 @@ async function ensureOrderItemsFastSchema(dbInstance) {
   } catch {
   }
 }
-var fastProductCols = {
-  id: products.id,
-  name: products.name,
-  slug: products.slug,
-  description: products.description,
-  imageUrl: sql2.raw("CASE WHEN products.imageUrl IS NULL OR products.imageUrl = '' THEN NULL WHEN products.imageUrl LIKE 'data:image/%' THEN CONCAT('/api/fast-img/product/', products.id, '?v=', COALESCE(UNIX_TIMESTAMP(products.updatedAt), 1)) ELSE products.imageUrl END"),
-  categoryId: products.categoryId,
-  price: products.price,
-  unit: products.unit,
-  stock: products.stock,
-  minQuantity: products.minQuantity,
-  quantityStep: products.quantityStep,
-  isPublished: products.isPublished,
-  isAvailable: products.isAvailable,
-  sortOrder: products.sortOrder,
-  createdAt: products.createdAt,
-  updatedAt: products.updatedAt
-};
-var fastCategoryCols = {
-  id: categories.id,
-  name: categories.name,
-  slug: categories.slug,
-  description: categories.description,
-  imageUrl: sql2.raw("CASE WHEN categories.imageUrl IS NULL OR categories.imageUrl = '' THEN NULL WHEN categories.imageUrl LIKE 'data:image/%' THEN CONCAT('/api/fast-img/category/', categories.id, '?v=', COALESCE(UNIX_TIMESTAMP(categories.updatedAt), 1)) ELSE categories.imageUrl END"),
-  color: categories.color,
-  isActive: categories.isActive,
-  sortOrder: categories.sortOrder,
-  createdAt: categories.createdAt,
-  updatedAt: categories.updatedAt
-};
-var fastBannerCols = {
-  id: banners.id,
-  title: banners.title,
-  body: banners.body,
-  imageUrl: sql2.raw("CASE WHEN banners.imageUrl IS NULL OR banners.imageUrl = '' THEN NULL WHEN banners.imageUrl LIKE 'data:image/%' THEN CONCAT('/api/fast-img/banner/', banners.id, '?v=', COALESCE(UNIX_TIMESTAMP(banners.updatedAt), 1)) ELSE banners.imageUrl END"),
-  actionText: banners.actionText,
-  actionUrl: banners.actionUrl,
-  isActive: banners.isActive,
-  sortOrder: banners.sortOrder,
-  createdAt: banners.createdAt,
-  updatedAt: banners.updatedAt
-};
 async function refreshHomeCatalogCache() {
   if (__refreshingHomePromise) return __refreshingHomePromise;
   __refreshingHomePromise = (async () => {
@@ -3419,9 +3377,9 @@ async function refreshHomeCatalogCache() {
       const db = await database();
       void ensureOrderItemsFastSchema(db);
       const [categoryRows, productRows, bannerRows, offerRows, settings] = await Promise.all([
-        db.select(fastCategoryCols).from(categories).where(eq4(categories.isActive, true)).orderBy(asc(categories.sortOrder), asc(categories.id)),
-        db.select(fastProductCols).from(products).where(and2(eq4(products.isPublished, true), eq4(products.isAvailable, true))).orderBy(asc(products.sortOrder), desc(products.createdAt)).limit(500),
-        db.select(fastBannerCols).from(banners).where(and2(eq4(banners.isActive, true))).orderBy(asc(banners.sortOrder), desc(banners.createdAt)),
+        db.select().from(categories).where(eq4(categories.isActive, true)).orderBy(asc(categories.sortOrder), asc(categories.id)),
+        db.select().from(products).where(and2(eq4(products.isPublished, true), eq4(products.isAvailable, true))).orderBy(asc(products.sortOrder), desc(products.createdAt)).limit(500),
+        db.select().from(banners).where(and2(eq4(banners.isActive, true))).orderBy(asc(banners.sortOrder), desc(banners.createdAt)),
         db.select().from(offers).where(and2(eq4(offers.isActive, true))).orderBy(desc(offers.createdAt)),
         readSettings(db)
       ]);
@@ -4425,7 +4383,7 @@ var commerceRouter = router({
       list: requireAnyPermission(["products.view", "products.add", "products.edit", "products.delete", "products.manage", "inventory.manage"]).query(async ({ ctx }) => {
         const db = await database();
         const allowedCats = !ctx.user.isOwner && Array.isArray(ctx.user.allowedCategoryIds) && ctx.user.allowedCategoryIds.length > 0 ? ctx.user.allowedCategoryIds : null;
-        const rows = allowedCats ? await db.select(fastProductCols).from(products).where(inArray(products.categoryId, allowedCats)).orderBy(desc(products.updatedAt)).limit(500) : await db.select(fastProductCols).from(products).orderBy(desc(products.updatedAt)).limit(500);
+        const rows = allowedCats ? await db.select().from(products).where(inArray(products.categoryId, allowedCats)).orderBy(desc(products.updatedAt)).limit(500) : await db.select().from(products).orderBy(desc(products.updatedAt)).limit(500);
         return rows.map((r) => toFastImg("product", r));
       }),
       create: requireAnyPermission(["products.manage", "products.add"]).use(async ({ next }) => {
@@ -4638,7 +4596,7 @@ var commerceRouter = router({
       }),
       list: requireAnyPermission(["categories.manage", "products.view", "products.add", "products.edit", "products.manage"]).query(async () => getCached("admin:categories", 3e4, async () => {
         const db = await database();
-        const rows = await db.select(fastCategoryCols).from(categories).orderBy(asc(categories.sortOrder), asc(categories.id));
+        const rows = await db.select().from(categories).orderBy(asc(categories.sortOrder), asc(categories.id));
         return rows.map((r) => toFastImg("category", r));
       })),
       create: adminProcedure.use(async ({ next }) => {
@@ -4675,7 +4633,7 @@ var commerceRouter = router({
     banners: router({
       list: requirePermission("banners.manage").query(async () => {
         const db = await database();
-        const rows = await db.select(fastBannerCols).from(banners).orderBy(asc(banners.sortOrder), desc(banners.createdAt));
+        const rows = await db.select().from(banners).orderBy(asc(banners.sortOrder), desc(banners.createdAt));
         return rows.map((r) => toFastImg("banner", r));
       }),
       create: requirePermission("banners.manage").use(async ({ next }) => {

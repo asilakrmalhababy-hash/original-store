@@ -793,49 +793,6 @@ function normalizeOrderItemImage<T extends { productId?: number | null; productI
   return item;
 }
 
-const fastProductCols = {
-  id: products.id,
-  name: products.name,
-  slug: products.slug,
-  description: products.description,
-  imageUrl: sql.raw("CASE WHEN products.imageUrl IS NULL OR products.imageUrl = '' THEN NULL WHEN products.imageUrl LIKE 'data:image/%' THEN CONCAT('/api/fast-img/product/', products.id, '?v=', COALESCE(UNIX_TIMESTAMP(products.updatedAt), 1)) ELSE products.imageUrl END") as unknown as typeof products.imageUrl,
-  categoryId: products.categoryId,
-  price: products.price,
-  unit: products.unit,
-  stock: products.stock,
-  minQuantity: products.minQuantity,
-  quantityStep: products.quantityStep,
-  isPublished: products.isPublished,
-  isAvailable: products.isAvailable,
-  sortOrder: products.sortOrder,
-  createdAt: products.createdAt,
-  updatedAt: products.updatedAt,
-};
-const fastCategoryCols = {
-  id: categories.id,
-  name: categories.name,
-  slug: categories.slug,
-  description: categories.description,
-  imageUrl: sql.raw("CASE WHEN categories.imageUrl IS NULL OR categories.imageUrl = '' THEN NULL WHEN categories.imageUrl LIKE 'data:image/%' THEN CONCAT('/api/fast-img/category/', categories.id, '?v=', COALESCE(UNIX_TIMESTAMP(categories.updatedAt), 1)) ELSE categories.imageUrl END") as unknown as typeof categories.imageUrl,
-  color: categories.color,
-  isActive: categories.isActive,
-  sortOrder: categories.sortOrder,
-  createdAt: categories.createdAt,
-  updatedAt: categories.updatedAt,
-};
-const fastBannerCols = {
-  id: banners.id,
-  title: banners.title,
-  body: banners.body,
-  imageUrl: sql.raw("CASE WHEN banners.imageUrl IS NULL OR banners.imageUrl = '' THEN NULL WHEN banners.imageUrl LIKE 'data:image/%' THEN CONCAT('/api/fast-img/banner/', banners.id, '?v=', COALESCE(UNIX_TIMESTAMP(banners.updatedAt), 1)) ELSE banners.imageUrl END") as unknown as typeof banners.imageUrl,
-  actionText: banners.actionText,
-  actionUrl: banners.actionUrl,
-  isActive: banners.isActive,
-  sortOrder: banners.sortOrder,
-  createdAt: banners.createdAt,
-  updatedAt: banners.updatedAt,
-};
-
 async function refreshHomeCatalogCache() {
   if (__refreshingHomePromise) return __refreshingHomePromise;
   __refreshingHomePromise = (async () => {
@@ -843,9 +800,9 @@ async function refreshHomeCatalogCache() {
       const db = await database();
       void ensureOrderItemsFastSchema(db);
       const [categoryRows, productRows, bannerRows, offerRows, settings] = await Promise.all([
-        db.select(fastCategoryCols).from(categories).where(eq(categories.isActive, true)).orderBy(asc(categories.sortOrder), asc(categories.id)),
-        db.select(fastProductCols).from(products).where(and(eq(products.isPublished, true), eq(products.isAvailable, true))).orderBy(asc(products.sortOrder), desc(products.createdAt)).limit(500),
-        db.select(fastBannerCols).from(banners).where(and(eq(banners.isActive, true))).orderBy(asc(banners.sortOrder), desc(banners.createdAt)),
+        db.select().from(categories).where(eq(categories.isActive, true)).orderBy(asc(categories.sortOrder), asc(categories.id)),
+        db.select().from(products).where(and(eq(products.isPublished, true), eq(products.isAvailable, true))).orderBy(asc(products.sortOrder), desc(products.createdAt)).limit(500),
+        db.select().from(banners).where(and(eq(banners.isActive, true))).orderBy(asc(banners.sortOrder), desc(banners.createdAt)),
         db.select().from(offers).where(and(eq(offers.isActive, true))).orderBy(desc(offers.createdAt)),
         readSettings(db),
       ]);
@@ -1837,8 +1794,8 @@ export const commerceRouter = router({
         const db = await database();
         const allowedCats = (!ctx.user.isOwner && Array.isArray(ctx.user.allowedCategoryIds) && ctx.user.allowedCategoryIds.length > 0) ? ctx.user.allowedCategoryIds : null;
         const rows = allowedCats
-          ? await db.select(fastProductCols).from(products).where(inArray(products.categoryId, allowedCats)).orderBy(desc(products.updatedAt)).limit(500)
-          : await db.select(fastProductCols).from(products).orderBy(desc(products.updatedAt)).limit(500);
+          ? await db.select().from(products).where(inArray(products.categoryId, allowedCats)).orderBy(desc(products.updatedAt)).limit(500)
+          : await db.select().from(products).orderBy(desc(products.updatedAt)).limit(500);
         return rows.map(r => toFastImg("product", r));
       }),
       create: requireAnyPermission(["products.manage", "products.add"]).use(async ({ next }) => { const res = await next(); clearCatalogCache(); return res; }).input(productInput).mutation(async ({ ctx, input }) => {
@@ -2030,7 +1987,7 @@ export const commerceRouter = router({
       }),
       list: requireAnyPermission(["categories.manage", "products.view", "products.add", "products.edit", "products.manage"]).query(async () => getCached("admin:categories", 30_000, async () => {
         const db = await database();
-        const rows = await db.select(fastCategoryCols).from(categories).orderBy(asc(categories.sortOrder), asc(categories.id)); return rows.map(r => toFastImg("category", r));
+        const rows = await db.select().from(categories).orderBy(asc(categories.sortOrder), asc(categories.id)); return rows.map(r => toFastImg("category", r));
       })),
       create: adminProcedure.use(async ({ next }) => { clearLiveHomeCache(); return next(); }).input(categoryInput).mutation(async ({ input }) => {
         const db = await database();
@@ -2051,7 +2008,7 @@ export const commerceRouter = router({
     banners: router({
       list: requirePermission("banners.manage").query(async () => {
         const db = await database();
-        const rows = await db.select(fastBannerCols).from(banners).orderBy(asc(banners.sortOrder), desc(banners.createdAt)); return rows.map(r => toFastImg("banner", r));
+        const rows = await db.select().from(banners).orderBy(asc(banners.sortOrder), desc(banners.createdAt)); return rows.map(r => toFastImg("banner", r));
       }),
       create: requirePermission("banners.manage").use(async ({ next }) => { clearLiveHomeCache(); return next(); }).input(z.object({ title: z.string().trim().min(1).max(160), body: z.string().trim().max(1000).optional(), imageUrl: z.string().max(8500000).optional(), actionText: z.string().trim().max(60).optional(), actionUrl: z.string().trim().max(2000).optional(), isActive: z.boolean().default(false), sortOrder: z.number().int().min(-10000).max(10000).default(0) })).mutation(async ({ input }) => {
         const db = await database();
