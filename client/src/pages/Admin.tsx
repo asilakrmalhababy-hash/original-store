@@ -2101,14 +2101,14 @@ function makeDefaultYemenDeliveryTree(): AdminDeliveryTreeConfig {
 }
 
 function parseAdminDeliveryTree(raw?: string | null): AdminDeliveryTreeConfig {
-  if (!raw) return { strictSelectionOnly: true, globalFreeAbove: null, cities: [], vipFreePhones: [] };
+  if (!raw) return makeDefaultYemenDeliveryTree();
   try {
     const p = JSON.parse(raw);
     if (!p || typeof p !== "object") return { strictSelectionOnly: true, globalFreeAbove: null, cities: [], vipFreePhones: [] };
     return {
       strictSelectionOnly: p.strictSelectionOnly !== false,
       globalFreeAbove: p.globalFreeAbove && Number(p.globalFreeAbove) > 0 ? Math.floor(Number(p.globalFreeAbove)) : null,
-      cities: Array.isArray(p.cities) ? p.cities : [],
+      cities: Array.isArray(p.cities) && p.cities.length > 0 ? p.cities : makeDefaultYemenDeliveryTree().cities,
       vipFreePhones: Array.isArray(p.vipFreePhones) ? p.vipFreePhones : [],
     };
   } catch {

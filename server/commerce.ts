@@ -408,6 +408,60 @@ async function readSettings(db: NonNullable<Awaited<ReturnType<typeof getDb>>>) 
   }
 }
 
+const DEFAULT_SERVER_DELIVERY_TREE = {
+  strictSelectionOnly: true,
+  globalFreeAbove: null,
+  vipFreePhones: [],
+  cities: [
+    {
+      id: "city_sanaa", name: "صنعاء", defaultFee: 500, freeDeliveryPromo: false, promoBanner: "", enabled: true,
+      areas: [
+        { id: "area_maeen", name: "معين", defaultFee: 500, enabled: true, streets: [
+          { id: "st_raqqas", name: "الرقاص", fee: 500, promoFee: null, promoLabel: "", freeAbove: null, etaText: "25 - 35 دقيقة", enabled: true },
+          { id: "st_daeri", name: "الدائري", fee: 500, promoFee: null, promoLabel: "", freeAbove: null, etaText: "25 - 35 دقيقة", enabled: true },
+          { id: "st_hael", name: "شارع هائل", fee: 500, promoFee: null, promoLabel: "", freeAbove: null, etaText: "25 - 35 دقيقة", enabled: true },
+          { id: "st_sunaina", name: "السنينة", fee: 600, promoFee: null, promoLabel: "", freeAbove: null, etaText: "30 - 45 دقيقة", enabled: true },
+          { id: "st_asr", name: "عصر", fee: 600, promoFee: null, promoLabel: "", freeAbove: null, etaText: "30 - 45 دقيقة", enabled: true },
+          { id: "st_madhbah", name: "مذبح", fee: 600, promoFee: null, promoLabel: "", freeAbove: null, etaText: "30 - 45 دقيقة", enabled: true },
+        ]},
+        { id: "area_sabeen", name: "السبعين", defaultFee: 600, enabled: true, streets: [
+          { id: "st_haddah", name: "حدة", fee: 600, promoFee: null, promoLabel: "", freeAbove: null, etaText: "30 - 40 دقيقة", enabled: true },
+          { id: "st_asbahi", name: "الأصبحي", fee: 600, promoFee: null, promoLabel: "", freeAbove: null, etaText: "30 - 45 دقيقة", enabled: true },
+          { id: "st_baitbaws", name: "بيت بوس", fee: 700, promoFee: null, promoLabel: "", freeAbove: null, etaText: "35 - 50 دقيقة", enabled: true },
+          { id: "st_maqaleh", name: "شارع المقالح", fee: 600, promoFee: null, promoLabel: "", freeAbove: null, etaText: "30 - 45 دقيقة", enabled: true },
+          { id: "st_shumaila", name: "شميلة", fee: 600, promoFee: null, promoLabel: "", freeAbove: null, etaText: "30 - 45 دقيقة", enabled: true },
+        ]},
+        { id: "area_wahdah", name: "الوحدة", defaultFee: 500, enabled: true, streets: [
+          { id: "st_jazaer", name: "شارع الجزائر", fee: 500, promoFee: null, promoLabel: "", freeAbove: null, etaText: "25 - 35 دقيقة", enabled: true },
+          { id: "st_baghdad", name: "شارع بغداد", fee: 500, promoFee: null, promoLabel: "", freeAbove: null, etaText: "25 - 35 دقيقة", enabled: true },
+          { id: "st_siyasi", name: "الحي السياسي", fee: 500, promoFee: null, promoLabel: "", freeAbove: null, etaText: "25 - 35 دقيقة", enabled: true },
+          { id: "st_tahrir", name: "التحرير", fee: 500, promoFee: null, promoLabel: "", freeAbove: null, etaText: "25 - 40 دقيقة", enabled: true },
+        ]},
+        { id: "area_shoub", name: "شعوب والثورة", defaultFee: 600, enabled: true, streets: [
+          { id: "st_hasaba", name: "الحصبة", fee: 600, promoFee: null, promoLabel: "", freeAbove: null, etaText: "30 - 45 دقيقة", enabled: true },
+          { id: "st_juraf", name: "الجراف", fee: 700, promoFee: null, promoLabel: "", freeAbove: null, etaText: "35 - 50 دقيقة", enabled: true },
+          { id: "st_sawan", name: "سعوان", fee: 700, promoFee: null, promoLabel: "", freeAbove: null, etaText: "35 - 50 دقيقة", enabled: true },
+          { id: "st_sheraton", name: "شيراتون", fee: 600, promoFee: null, promoLabel: "", freeAbove: null, etaText: "30 - 45 دقيقة", enabled: true },
+        ]},
+      ],
+    },
+    {
+      id: "city_ibb", name: "إب", defaultFee: 500, freeDeliveryPromo: false, promoBanner: "", enabled: true,
+      areas: [
+        { id: "area_dhihar", name: "الظهار", defaultFee: 500, enabled: true, streets: [
+          { id: "st_ibb_taiz", name: "شارع تعز", fee: 500, promoFee: null, promoLabel: "", freeAbove: null, etaText: "25 - 40 دقيقة", enabled: true },
+          { id: "st_ibb_daeri", name: "الدائري", fee: 500, promoFee: null, promoLabel: "", freeAbove: null, etaText: "25 - 40 دقيقة", enabled: true },
+          { id: "st_ibb_subul", name: "السبل", fee: 500, promoFee: null, promoLabel: "", freeAbove: null, etaText: "25 - 40 دقيقة", enabled: true },
+        ]},
+        { id: "area_mashanah", name: "المشنة", defaultFee: 500, enabled: true, streets: [
+          { id: "st_ibb_odain", name: "شارع العدين", fee: 500, promoFee: null, promoLabel: "", freeAbove: null, etaText: "25 - 40 دقيقة", enabled: true },
+          { id: "st_ibb_maayen", name: "المعاين", fee: 500, promoFee: null, promoLabel: "", freeAbove: null, etaText: "25 - 40 دقيقة", enabled: true },
+        ]},
+      ],
+    },
+  ],
+};
+
 function deliveryFeeForCity(
   settings: Record<string, string>,
   city: string,
@@ -420,57 +474,62 @@ function deliveryFeeForCity(
   const cleanDistrict = String(district || "").trim();
   const cleanPhone = normalizeYemeniPhone(String(phone || ""));
 
+  let tree: any = DEFAULT_SERVER_DELIVERY_TREE;
   if (settings.deliveryTreeConfig) {
     try {
-      const tree = JSON.parse(settings.deliveryTreeConfig);
-      if (tree && typeof tree === "object") {
-        if (cleanPhone && Array.isArray(tree.vipFreePhones)) {
-          const vip = tree.vipFreePhones.find((v: any) => v && v.enabled !== false && normalizeYemeniPhone(String(v.phone || "")) === cleanPhone);
-          if (vip) {
-            const minOrd = Number(vip.minOrder || 0);
-            if (subtotal >= minOrd) return 0;
-          }
-        }
-        if (tree.globalFreeAbove && Number(tree.globalFreeAbove) > 0 && subtotal >= Number(tree.globalFreeAbove)) {
-          return 0;
-        }
-        const activeCities = Array.isArray(tree.cities) ? tree.cities.filter((c: any) => c && c.enabled !== false) : [];
-        if (activeCities.length > 0) {
-          const matchedCity = activeCities.find((c: any) => String(c.name || "").trim() === cleanCity);
-          if (matchedCity) {
-            if (matchedCity.freeDeliveryPromo) return 0;
-            const activeAreas = Array.isArray(matchedCity.areas) ? matchedCity.areas.filter((a: any) => a && a.enabled !== false) : [];
-            const parts = cleanDistrict.split(/\s*[—\-|/]+\s*/).map(s => s.trim()).filter(Boolean);
-            const areaPart = parts[0] || "";
-            const streetPart = parts.slice(1).join(" ") || parts[0] || "";
-            for (const area of activeAreas) {
-              const areaMatch = !areaPart || String(area.name || "").trim() === areaPart || cleanDistrict.includes(String(area.name || "").trim());
-              if (!areaMatch) continue;
-              const activeStreets = Array.isArray(area.streets) ? area.streets.filter((st: any) => st && st.enabled !== false) : [];
-              const matchedStreet = activeStreets.find((st: any) => {
-                const sName = String(st.name || "").trim();
-                return sName === streetPart || sName === cleanDistrict || cleanDistrict.endsWith(sName);
-              });
-              if (matchedStreet) {
-                if (matchedStreet.freeAbove && Number(matchedStreet.freeAbove) > 0 && subtotal >= Number(matchedStreet.freeAbove)) return 0;
-                if (matchedStreet.promoFee !== null && matchedStreet.promoFee !== undefined && matchedStreet.promoFee !== "" && Number.isFinite(Number(matchedStreet.promoFee)) && Number(matchedStreet.promoFee) >= 0) {
-                  return Math.floor(Number(matchedStreet.promoFee));
-                }
-                if (Number.isFinite(Number(matchedStreet.fee)) && Number(matchedStreet.fee) >= 0) {
-                  return Math.floor(Number(matchedStreet.fee));
-                }
-              }
-              if (Number.isFinite(Number(area.defaultFee)) && Number(area.defaultFee) >= 0) {
-                return Math.floor(Number(area.defaultFee));
-              }
-            }
-            if (Number.isFinite(Number(matchedCity.defaultFee)) && Number(matchedCity.defaultFee) >= 0) {
-              return Math.floor(Number(matchedCity.defaultFee));
-            }
-          }
-        }
+      const parsed = JSON.parse(settings.deliveryTreeConfig);
+      if (parsed && typeof parsed === "object" && Array.isArray(parsed.cities) && parsed.cities.length > 0) {
+        tree = parsed;
       }
     } catch {}
+  }
+
+  if (tree && typeof tree === "object") {
+    if (cleanPhone && Array.isArray(tree.vipFreePhones)) {
+      const vip = tree.vipFreePhones.find((v: any) => v && v.enabled !== false && normalizeYemeniPhone(String(v.phone || "")) === cleanPhone);
+      if (vip) {
+        const minOrd = Number(vip.minOrder || 0);
+        if (subtotal >= minOrd) return 0;
+      }
+    }
+    if (tree.globalFreeAbove && Number(tree.globalFreeAbove) > 0 && subtotal >= Number(tree.globalFreeAbove)) {
+      return 0;
+    }
+    const activeCities = Array.isArray(tree.cities) ? tree.cities.filter((c: any) => c && c.enabled !== false) : [];
+    if (activeCities.length > 0) {
+      const matchedCity = activeCities.find((c: any) => String(c.name || "").trim() === cleanCity);
+      if (matchedCity) {
+        if (matchedCity.freeDeliveryPromo) return 0;
+        const activeAreas = Array.isArray(matchedCity.areas) ? matchedCity.areas.filter((a: any) => a && a.enabled !== false) : [];
+        const parts = cleanDistrict.split(/\s*[—\-|/]+\s*/).map(s => s.trim()).filter(Boolean);
+        const areaPart = parts[0] || "";
+        const streetPart = parts.slice(1).join(" ") || parts[0] || "";
+        for (const area of activeAreas) {
+          const areaMatch = !areaPart || String(area.name || "").trim() === areaPart || cleanDistrict.includes(String(area.name || "").trim());
+          if (!areaMatch) continue;
+          const activeStreets = Array.isArray(area.streets) ? area.streets.filter((st: any) => st && st.enabled !== false) : [];
+          const matchedStreet = activeStreets.find((st: any) => {
+            const sName = String(st.name || "").trim();
+            return sName === streetPart || sName === cleanDistrict || cleanDistrict.endsWith(sName);
+          });
+          if (matchedStreet) {
+            if (matchedStreet.freeAbove && Number(matchedStreet.freeAbove) > 0 && subtotal >= Number(matchedStreet.freeAbove)) return 0;
+            if (matchedStreet.promoFee !== null && matchedStreet.promoFee !== undefined && matchedStreet.promoFee !== "" && Number.isFinite(Number(matchedStreet.promoFee)) && Number(matchedStreet.promoFee) >= 0) {
+              return Math.floor(Number(matchedStreet.promoFee));
+            }
+            if (Number.isFinite(Number(matchedStreet.fee)) && Number(matchedStreet.fee) >= 0) {
+              return Math.floor(Number(matchedStreet.fee));
+            }
+          }
+          if (Number.isFinite(Number(area.defaultFee)) && Number(area.defaultFee) >= 0) {
+            return Math.floor(Number(area.defaultFee));
+          }
+        }
+        if (Number.isFinite(Number(matchedCity.defaultFee)) && Number(matchedCity.defaultFee) >= 0) {
+          return Math.floor(Number(matchedCity.defaultFee));
+        }
+      }
+    }
   }
 
   if (settings.deliveryZones) {
@@ -481,7 +540,7 @@ function deliveryFeeForCity(
     } catch {}
   }
   const baseFee = Number(settings.deliveryFee ?? "");
-  return Number.isInteger(baseFee) && baseFee >= 0 ? baseFee : null;
+  return Number.isInteger(baseFee) && baseFee >= 0 ? baseFee : 500;
 }
 
 type RewardConfigMeta = {
