@@ -72,6 +72,7 @@ async function startServer() {
           const mime = m[1].toLowerCase();
           if (!ALLOWED_IMG_MIMES.has(mime)) return res.status(415).end();
           entry = { contentType: mime, buf: Buffer.from(m[2], "base64") };
+          if (cacheMap.size > 250) { const firstK = cacheMap.keys().next().value; if (firstK) cacheMap.delete(firstK); }
           cacheMap.set(cacheKey, entry);
         } else if (raw.startsWith(HTTP_PREFIX)) {
           if (!isSafeExternalImageUrl(raw)) return res.status(403).end();

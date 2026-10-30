@@ -3122,7 +3122,8 @@ function printOrderInvoiceWindow(order: any) {
 
 function OrdersPanel() {
   const utils = trpc.useUtils();
-  const query = trpc.commerce.admin.orders.list.useQuery(undefined, { retry: 1, refetchInterval: 10_000 });
+  const query = trpc.commerce.admin.orders.list.useQuery(undefined, { retry: 1, staleTime: 10_000, refetchInterval: 25_000 });
+  const [visibleOrdersCount, setVisibleOrdersCount] = useState<number>(25);
   const nextStates: Record<string, string[]> = { new: ["preparing", "cancelled"], preparing: ["ready", "cancelled"], ready: ["out_for_delivery", "cancelled"], out_for_delivery: ["delivered"], delivered: [], cancelled: [] };
   const [deliveryNotes, setDeliveryNotes] = useState<Record<number, string>>({});
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -4161,7 +4162,7 @@ function ChatsPanel() {
 function StaffManagementPanel({ actorIsOwner, actorPermissions, actorStaffId }: { actorIsOwner: boolean; actorPermissions: PermissionKey[]; actorStaffId: number | null }) {
   const utils = trpc.useUtils();
   const staffQuery = trpc.commerce.admin.staff.list.useQuery(undefined, { retry: 1 });
-  const logsQuery = trpc.commerce.admin.staff.auditLogs.useQuery(undefined, { retry: 1, refetchInterval: 5000 });
+  const logsQuery = trpc.commerce.admin.staff.auditLogs.useQuery(undefined, { retry: 1, refetchInterval: 25000 });
   const catsQuery = trpc.commerce.admin.categories.list.useQuery(undefined, { retry: 1 });
   const [logActorFilter, setLogActorFilter] = useState<string>("all");
 

@@ -1208,6 +1208,7 @@ function ProductDetail({ id, allProducts = [], onSelectProduct, onBack, onAiReci
   useEffect(() => {
     setQuantity(product?.minQuantity || 1);
     setSelectedDetailVariant("");
+    try { window.scrollTo({ top: 0, left: 0, behavior: "instant" as ScrollBehavior }); document.documentElement.scrollTop = 0; document.body.scrollTop = 0; } catch {}
   }, [id, product?.minQuantity]);
 
   const currentIndex = useMemo(() => allProducts.findIndex(p => p.id === id), [allProducts, id]);
@@ -1264,9 +1265,9 @@ function ProductDetail({ id, allProducts = [], onSelectProduct, onBack, onAiReci
   };
 
   return (
-    <main className="page-shell inner-page">
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "14px", gap: "10px" }}>
-        <button type="button" className="back-link" style={{ marginBottom: 0 }} onClick={onBack}><ArrowLeft size={16} /> العودة للمتجر</button>
+    <main className="page-shell inner-page" style={{ paddingTop: "10px" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px", gap: "10px" }}>
+        <button type="button" className="back-link" style={{ marginBottom: 0, padding: "6px 12px", borderRadius: "10px", background: "#ffffff", border: "1px solid #dce5de", color: "#174b36", fontWeight: 700 }} onClick={onBack}><ArrowLeft size={15} /> العودة للمتجر</button>
         {hasGallery && (
           <div style={{ display: "inline-flex", alignItems: "center", gap: "8px", background: "#ffffff", border: "1px solid #dfe7e0", borderRadius: "999px", padding: "4px 10px", fontSize: "11px", fontWeight: 700, color: "#174b36" }}>
             <button type="button" onClick={goNext} style={{ border: 0, background: "transparent", cursor: "pointer", padding: "2px 6px", fontWeight: 800, color: "#174b36" }} title="المنتج التالي">‹ التالي</button>
@@ -1275,13 +1276,12 @@ function ProductDetail({ id, allProducts = [], onSelectProduct, onBack, onAiReci
           </div>
         )}
       </div>
-      <div className="detail-layout">
+      <div className="detail-layout" style={{ background: "#ffffff", border: "1px solid #dce6df", borderRadius: "22px", padding: "14px", boxShadow: "0 10px 28px rgba(18, 53, 36, 0.06)", marginBottom: "18px" }}>
         <div
           className="detail-visual"
-          onClick={handleImageClick}
           onTouchStart={handleTouchStart}
           onTouchEnd={handleTouchEnd}
-          style={{ position: "relative", cursor: hasGallery ? "pointer" : "default", userSelect: "none" }}
+          style={{ position: "relative", userSelect: "none", maxHeight: "320px" }}
         >
           {product.imageUrl ? (
             <img key={product.id} src={product.imageUrl} alt={product.name} decoding="async" fetchPriority="high" draggable={false} />
@@ -3615,7 +3615,7 @@ function GamifiedRewardBar({ settings, location }: { settings: Record<string, st
 
   useEffect(() => {
     if (!enabled || !cfg.endsAt) return;
-    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
+    const timer = window.setInterval(() => setNowMs(Date.now()), 10000);
     return () => window.clearInterval(timer);
   }, [enabled, cfg.endsAt]);
 
@@ -3638,7 +3638,7 @@ function GamifiedRewardBar({ settings, location }: { settings: Record<string, st
 
   const isHome = location === "/";
   const isCart = location === "/cart";
-  const isCatalog = location.startsWith("/products") || location.startsWith("/categories") || location.startsWith("/product/");
+  const isCatalog = location.startsWith("/products") || location.startsWith("/categories");
   const showMainCard =
     cfg.placement === "everywhere" ? (isHome || isCart || isCatalog) :
     cfg.placement === "home_and_cart" ? (isHome || isCart) :
@@ -3808,7 +3808,7 @@ export default function Home() {
     }
   }, [home.data]);
   const data = ((home.data && home.data.products ? home.data : instantStoreData) ?? { categories: [], products: [], banners: [], offers: [], settings: {} }) as HomeData;
-  const openProduct = (id: number) => navigate(`/product/${id}`);
+  const openProduct = (id: number) => { try { window.scrollTo({ top: 0, left: 0, behavior: "instant" as ScrollBehavior }); document.documentElement.scrollTop = 0; document.body.scrollTop = 0; } catch {} navigate("/product/" + id); };
   const currentNav = location.startsWith("/categories") ? "/categories" : location.startsWith("/products") ? "/products" : location.startsWith("/assistant") ? "/assistant" : location.startsWith("/account") ? "/account" : "/";
   const productPath = location.startsWith("/product/");
   const productId = productPath ? Number(location.split("/")[2]) : 0;
