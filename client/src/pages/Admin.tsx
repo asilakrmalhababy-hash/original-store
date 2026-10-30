@@ -30,18 +30,55 @@ const sections: Array<{ id: Section; label: string; icon: typeof LayoutDashboard
   { id: "settings", label: "إعدادات المتجر", icon: Settings2 },
 ];
 
+function applyAmazonHdPolish(canvas: HTMLCanvasElement) {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  const w = canvas.width;
+  const h = canvas.height;
+  const imgData = ctx.getImageData(0, 0, w, h);
+  const d = imgData.data;
+  const src = new Uint8ClampedArray(d);
+  for (let i = 0; i < d.length; i += 4) {
+    if (src[i] >= 246 && src[i + 1] >= 246 && src[i + 2] >= 246) {
+      d[i] = 255; d[i + 1] = 255; d[i + 2] = 255;
+    }
+  }
+  const amount = 0.24;
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const idx = (y * w + x) * 4;
+      if (d[idx] === 255 && d[idx + 1] === 255 && d[idx + 2] === 255) continue;
+      const up = ((y - 1) * w + x) * 4;
+      const dn = ((y + 1) * w + x) * 4;
+      const lf = (y * w + (x - 1)) * 4;
+      const rt = (y * w + (x + 1)) * 4;
+      for (let c = 0; c < 3; c++) {
+        const center = src[idx + c];
+        const avg = (src[up + c] + src[dn + c] + src[lf + c] + src[rt + c]) * 0.25;
+        const diff = center - avg;
+        if (Math.abs(diff) > 3) {
+          const val = Math.round(center + diff * amount);
+          d[idx + c] = val < 0 ? 0 : val > 255 ? 255 : val;
+        }
+      }
+    }
+  }
+  ctx.putImageData(imgData, 0, 0);
+}
+
 function encodeCanvasSmartWebp(sourceCanvas: HTMLCanvasElement, kind: "product" | "category" | "banner" | "icon"): string {
-  const maxBase64Len = kind === "banner" ? 135000 : kind === "icon" ? 45000 : 76000;
+  const maxBase64Len = kind === "banner" ? 92000 : kind === "icon" ? 32000 : 47500;
   let workCanvas = sourceCanvas;
+  try { applyAmazonHdPolish(workCanvas); } catch {}
   for (let pass = 0; pass < 3; pass++) {
-    for (const q of [0.76, 0.68, 0.60, 0.52]) {
+    for (const q of [0.80, 0.74, 0.68, 0.62, 0.56, 0.50]) {
       const webp = workCanvas.toDataURL("image/webp", q);
       const jpeg = workCanvas.toDataURL("image/jpeg", q);
       const best = (webp.startsWith("data:image/webp") && webp.length < jpeg.length) ? webp : jpeg;
       if (best.length <= maxBase64Len) return best;
     }
-    const nextW = Math.max(280, Math.round(workCanvas.width * 0.78));
-    const nextH = Math.max(280, Math.round(workCanvas.height * 0.78));
+    const nextW = Math.max(300, Math.round(workCanvas.width * 0.82));
+    const nextH = Math.max(300, Math.round(workCanvas.height * 0.82));
     const scaled = document.createElement("canvas");
     scaled.width = nextW;
     scaled.height = nextH;
@@ -52,27 +89,54 @@ function encodeCanvasSmartWebp(sourceCanvas: HTMLCanvasElement, kind: "product" 
     sCtx.imageSmoothingEnabled = true;
     sCtx.imageSmoothingQuality = "high";
     sCtx.drawImage(workCanvas, 0, 0, nextW, nextH);
+    try { applyAmazonHdPolish(scaled); } catch {}
     workCanvas = scaled;
   }
-  const finalWebp = workCanvas.toDataURL("image/webp", 0.55);
-  const finalJpeg = workCanvas.toDataURL("image/jpeg", 0.55);
+  const finalWebp = workCanvas.toDataURL("image/webp", 0.52);
+  const finalJpeg = workCanvas.toDataURL("image/jpeg", 0.52);
   return (finalWebp.startsWith("data:image/webp") && finalWebp.length < finalJpeg.length) ? finalWebp : finalJpeg;
 }
 
 async function quickCompressImageFile(file: File, kind: "product" | "category" | "banner" | "icon"): Promise<string> {
+  if (file.size <= 38912 && (file.type === "image/webp" || file.type === "image/jpeg" || file.type === "image/png")) {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => typeof r.result === "string" ? resolve(r.result) : reject(new Error("تعذر قراءة الصورة"));
+      r.onerror = () => reject(new Error("تعذر قراءة الصورة"));
+      r.readAsDataURL(file);
+    });
+  }
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => {
       try {
         URL.revokeObjectURL(url);
-        const maxDim = kind === "banner" ? 1080 : kind === "icon" ? 360 : 640;
+        const maxDim = kind === "banner" ? 1020 : kind === "icon" ? 340 : 680;
         let w = img.naturalWidth || img.width || 640;
         let h = img.naturalHeight || img.height || 640;
         if (w > maxDim || h > maxDim) {
           const ratio = Math.min(maxDim / w, maxDim / h);
           w = Math.max(1, Math.round(w * ratio));
           h = Math.max(1, Math.round(h * ratio));
+        }
+        let curSource: CanvasImageSource = img;
+        let curW = img.naturalWidth || w;
+        let curH = img.naturalHeight || h;
+        while (curW * 0.5 > w && curH * 0.5 > h) {
+          curW = Math.round(curW * 0.5);
+          curH = Math.round(curH * 0.5);
+          const stepCanvas = document.createElement("canvas");
+          stepCanvas.width = curW;
+          stepCanvas.height = curH;
+          const stCtx = stepCanvas.getContext("2d");
+          if (!stCtx) break;
+          stCtx.fillStyle = "#ffffff";
+          stCtx.fillRect(0, 0, curW, curH);
+          stCtx.imageSmoothingEnabled = true;
+          stCtx.imageSmoothingQuality = "high";
+          stCtx.drawImage(curSource, 0, 0, curW, curH);
+          curSource = stepCanvas;
         }
         const canvas = document.createElement("canvas");
         canvas.width = w;
@@ -83,7 +147,7 @@ async function quickCompressImageFile(file: File, kind: "product" | "category" |
         ctx.fillRect(0, 0, w, h);
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = "high";
-        ctx.drawImage(img, 0, 0, w, h);
+        ctx.drawImage(curSource, 0, 0, w, h);
         resolve(encodeCanvasSmartWebp(canvas, kind));
       } catch (e) {
         reject(e);
@@ -103,7 +167,7 @@ async function recompressImageUrlToLightWebp(srcUrl: string, kind: "product" | "
     img.crossOrigin = "anonymous";
     img.onload = () => {
       try {
-        const maxDim = kind === "banner" ? 1080 : 640;
+        const maxDim = kind === "banner" ? 1020 : 680;
         let w = img.naturalWidth || img.width || 640;
         let h = img.naturalHeight || img.height || 640;
         if (w > maxDim || h > maxDim) {
@@ -1564,7 +1628,7 @@ function ProductsPanel({ isOwner = true, permissions = [], allowedCategoryIds = 
             onClick={async () => {
               const list = (query.data ?? []).filter(p => Boolean(p.imageUrl));
               if (!list.length) { toast.info("لا توجد صور منتجات لضغطها"); return; }
-              if (!window.confirm("سيقوم النظام الآن بفحص وضغط صور المنتجات الحالية (" + list.length + " صورة) ليصبح حجم كل صورة بين 45 و 70 كيلوبايت فقط مع الحفاظ على دقتها العالية. هل تود البدء؟")) return;
+              if (!window.confirm("سيقوم النظام الآن بفحص وضغط صور المنتجات الحالية (" + list.length + " صورة) ليصبح حجم كل صورة بين 22 و 35 كيلوبايت بتقنية أمازون فائقة الوضوح فقط مع الحفاظ على دقتها العالية. هل تود البدء؟")) return;
               setOptimizingImages(true);
               let count = 0;
               toast.info("⚡ جارٍ ضغط وتخفيف حجم صور المنتجات الحالية...");
@@ -1583,7 +1647,7 @@ function ProductsPanel({ isOwner = true, permissions = [], allowedCategoryIds = 
             style={{ fontWeight: 800, background: "#eef7f1", color: "#174b36", borderColor: "#b8d8c4" }}
           >
             {optimizingImages ? <LoaderCircle size={14} className="spin" /> : <Sparkles size={14} />}
-            {optimizingImages ? "جارٍ ضغط الصور الحالية..." : "⚡ ضغط وتخفيف صور المنتجات الحالية (إلى ~55 كيلوبايت)"}
+            {optimizingImages ? "جارٍ ضغط الصور الحالية..." : "⚡ ضغط وتخفيف صور المنتجات الحالية (بتقنية أمازون 22–35 كيلوبايت)"}
           </button>
           </div>
           {showBulkPriceBox && (

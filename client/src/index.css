@@ -794,7 +794,9 @@ button, a, input, select, textarea, summary, [role="button"] { touch-action: man
 .product-visual > img, .detail-visual > img, .cart-thumb > img, .entity-image > img {
   width: 100% !important;
   height: 100% !important;
-  object-fit: cover !important;
+  object-fit: contain !important;
+  background: #ffffff !important;
+  padding: 4px;
   image-rendering: -webkit-optimize-contrast;
 }
 .detail-visual {

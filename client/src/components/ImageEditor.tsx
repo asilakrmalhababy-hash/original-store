@@ -200,7 +200,8 @@ export default function ImageEditor({ aspect, title, format = "webp", initialSou
       const sw = Math.max(16, Math.min(natW - sx, Math.round((box.w / 100) * natW)));
       const sh = Math.max(16, Math.min(natH - sy, Math.round((box.h / 100) * natH)));
 
-      const maxDim = aspect > 1.5 ? 1080 : 640;
+      const maxCap = aspect > 1.5 ? 1020 : 680;
+      const maxDim = Math.min(maxCap, Math.max(240, Math.max(sw, sh)));
       let outW = maxDim;
       let outH = Math.round(maxDim / (aspect || 1));
 
@@ -225,11 +226,19 @@ export default function ImageEditor({ aspect, title, format = "webp", initialSou
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = "high";
       ctx.drawImage(image, sx, sy, sw, sh, 0, 0, outW, outH);
+      try {
+        const imgData = ctx.getImageData(0, 0, outW, outH);
+        const d = imgData.data;
+        for (let i = 0; i < d.length; i += 4) {
+          if (d[i] >= 246 && d[i + 1] >= 246 && d[i + 2] >= 246) { d[i] = 255; d[i + 1] = 255; d[i + 2] = 255; }
+        }
+        ctx.putImageData(imgData, 0, 0);
+      } catch {}
 
-      const maxBase64Len = aspect > 1.5 ? 135000 : 76000;
+      const maxBase64Len = aspect > 1.5 ? 92000 : 47500;
       let data = "";
       for (let pass = 0; pass < 3; pass++) {
-        for (const q of [0.76, 0.68, 0.60, 0.52]) {
+        for (const q of [0.80, 0.74, 0.68, 0.62, 0.56, 0.50]) {
           const wUrl = workCanvas.toDataURL("image/webp", q);
           const jUrl = workCanvas.toDataURL("image/jpeg", q);
           const best = (wUrl.startsWith("data:image/webp") && wUrl.length < jUrl.length) ? wUrl : jUrl;
