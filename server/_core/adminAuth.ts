@@ -20,6 +20,8 @@ export async function ensureRbacTables(dbInstance?: any): Promise<void> {
     try { await db.execute(sql.raw("ALTER TABLE categories MODIFY COLUMN imageUrl LONGTEXT NULL")); } catch {}
     try { await db.execute(sql.raw("ALTER TABLE banners MODIFY COLUMN imageUrl LONGTEXT NULL")); } catch {}
     try { await db.execute(sql.raw("ALTER TABLE store_settings MODIFY COLUMN value LONGTEXT NOT NULL")); } catch {}
+    try { await db.execute(sql.raw("ALTER TABLE order_items MODIFY COLUMN productImage LONGTEXT NULL")); } catch {}
+    try { await db.execute(sql.raw("UPDATE order_items SET productImage = CONCAT('/api/fast-img/product/', productId) WHERE productId IS NOT NULL AND productImage LIKE 'data:image/%'")); } catch {}
     __rbacTablesEnsured = true;
   } catch (err) {
     console.warn("[RBAC] Table init notice:", err instanceof Error ? err.message : "unknown");

@@ -774,11 +774,31 @@ function toFastImg<T extends { id: number; imageUrl?: string | null; updatedAt?:
 }
 
 let __refreshingHomePromise: Promise<any> | null = null;
+let __orderItemsSchemaFixed = false;
+async function ensureOrderItemsFastSchema(dbInstance?: any) {
+  if (__orderItemsSchemaFixed) return;
+  try {
+    const db = dbInstance || (await database());
+    if (!db) return;
+    __orderItemsSchemaFixed = true;
+    try { await db.execute(sql.raw("ALTER TABLE order_items MODIFY COLUMN productImage LONGTEXT NULL")); } catch {}
+    try { await db.execute(sql.raw("UPDATE order_items SET productImage = CONCAT('/api/fast-img/product/', productId) WHERE productId IS NOT NULL AND productImage LIKE 'data:image/%'")); } catch {}
+  } catch {}
+}
+function normalizeOrderItemImage<T extends { productId?: number | null; productImage?: string | null }>(item: T): T {
+  if (!item || !item.productImage) return item;
+  if (item.productImage.startsWith("data:image/")) {
+    return { ...item, productImage: item.productId ? ("/api/fast-img/product/" + item.productId) : null };
+  }
+  return item;
+}
+
 async function refreshHomeCatalogCache() {
   if (__refreshingHomePromise) return __refreshingHomePromise;
   __refreshingHomePromise = (async () => {
     try {
       const db = await database();
+      void ensureOrderItemsFastSchema(db);
       const [categoryRows, productRows, bannerRows, offerRows, settings] = await Promise.all([
         db.select().from(categories).where(eq(categories.isActive, true)).orderBy(asc(categories.sortOrder), asc(categories.id)),
         db.select().from(products).where(and(eq(products.isPublished, true), eq(products.isAvailable, true))).orderBy(asc(products.sortOrder), desc(products.createdAt)).limit(500),
@@ -886,7 +906,7 @@ export const commerceRouter = router({
     })),
     productsForReorder: publicProcedure.input(z.object({ ids: z.array(safeId).min(1).max(500) })).query(async ({ input }) => {
       const db = await database();
-      return db.select().from(products).where(and(inArray(products.id, [...new Set(input.ids)]), eq(products.isPublished, true), eq(products.isAvailable, true)));
+      const rows = await db.select().from(products).where(and(inArray(products.id, [...new Set(input.ids)]), eq(products.isPublished, true), eq(products.isAvailable, true))); return rows.map(r => toFastImg('product', r));
     }),
   }),
 
@@ -961,7 +981,7 @@ export const commerceRouter = router({
       const requested = aggregateItems(input.items);
       if (requested.some(item => item.quantity > 10000)) throw new TRPCError({ code: "BAD_REQUEST", message: "الكمية الإجمالية لأحد المنتجات تتجاوز الحد المسموح." });
       const productIds = requested.map(item => item.productId);
-      const currentProducts = await db.select().from(products).where(and(inArray(products.id, productIds), eq(products.isPublished, true), eq(products.isAvailable, true)));
+      const currentProducts = await db.select({ id: products.id, name: products.name, description: products.description, price: products.price, unit: products.unit, stock: products.stock, minQuantity: products.minQuantity, quantityStep: products.quantityStep }).from(products).where(and(inArray(products.id, productIds), eq(products.isPublished, true), eq(products.isAvailable, true)));
       if (currentProducts.length !== productIds.length) {
         const foundIds = new Set(currentProducts.map(p => p.id));
         const missingReq = requested.filter(r => !foundIds.has(r.productId));
@@ -1109,11 +1129,21 @@ export const commerceRouter = router({
         if (!appliedOffer) throw new TRPCError({ code: "BAD_REQUEST", message: "رمز العرض غير صالح أو غير نشط." });
       }
 
+      await ensureOrderItemsFastSchema(db);
       const result = await db.transaction(async tx => {
-        const orderLines: Array<{ product: typeof products.$inferSelect; quantity: number; effectiveUnit: string; effectivePrice: number; effectiveLineTotal: number; isWeighed: boolean }> = [];
+        const orderLines: Array<{ product: { id: number; name: string; description: string | null; price: number; unit: string; stock: number | null; minQuantity: number; quantityStep: number }; quantity: number; effectiveUnit: string; effectivePrice: number; effectiveLineTotal: number; isWeighed: boolean }> = [];
         let subtotal = 0;
         for (const item of requested) {
-          const product = (await tx.select().from(products).where(and(eq(products.id, item.productId), eq(products.isPublished, true), eq(products.isAvailable, true))).limit(1).for("update"))[0];
+          const product = (await tx.select({
+            id: products.id,
+            name: products.name,
+            description: products.description,
+            price: products.price,
+            unit: products.unit,
+            stock: products.stock,
+            minQuantity: products.minQuantity,
+            quantityStep: products.quantityStep,
+          }).from(products).where(and(eq(products.id, item.productId), eq(products.isPublished, true), eq(products.isAvailable, true))).limit(1).for("update"))[0];
           if (!product) {
             const anyProd = (await tx.select({ name: products.name }).from(products).where(eq(products.id, item.productId)).limit(1))[0];
             const missingName = item.name || anyProd?.name || ("منتج #" + item.productId);
@@ -1161,7 +1191,7 @@ export const commerceRouter = router({
           const baseTitle = vParts.length > 0 ? (line.product.name + " (" + vParts.join("، ") + ")") : (line.isWeighed ? (line.product.name + " (⚖️ " + line.effectiveUnit + ")") : line.product.name);
           const finalProdName = baseTitle.slice(0, 180);
           await tx.insert(orderItems).values({
-            orderId, productId: line.product.id, productName: finalProdName, productImage: line.product.imageUrl,
+            orderId, productId: line.product.id, productName: finalProdName, productImage: "/api/fast-img/product/" + line.product.id,
             unit: line.effectiveUnit, unitPrice: line.effectivePrice, quantity: line.quantity, lineTotal: line.effectiveLineTotal,
           });
           if (line.product.stock !== null) {
@@ -1181,9 +1211,13 @@ export const commerceRouter = router({
         await tx.insert(orderEvents).values({ orderId, status: "new", note: "تم استلام الطلب", changedByUserId: null });
         return { id: orderId, orderNumber, total: totals.total, duplicate: false };
       }).catch(async error => {
-        if (!isDuplicateEntry(error)) throw error;
+        if (!isDuplicateEntry(error)) {
+          if (error instanceof TRPCError) throw error;
+          console.error("[Order Place Error]", String(error?.message || error).slice(0, 300));
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "تعذر حفظ الطلب مؤقتاً، يرجى الضغط على تأكيد الطلب مرة أخرى." });
+        }
         const concurrent = (await db.select().from(orders).where(inArray(orders.idempotencyKey, [storedIdempotencyKey, input.idempotencyKey])).limit(1))[0];
-        if (!concurrent) throw error;
+        if (!concurrent) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "تعذر التحقق من الطلب، يرجى المحاولة مرة أخرى." });
         return { id: concurrent.id, orderNumber: concurrent.orderNumber, total: concurrent.total, duplicate: true };
       });
       if (!result.duplicate) {

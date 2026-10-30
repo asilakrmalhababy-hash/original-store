@@ -612,6 +612,14 @@ async function ensureRbacTables(dbInstance) {
       await db.execute(sql.raw("ALTER TABLE store_settings MODIFY COLUMN value LONGTEXT NOT NULL"));
     } catch {
     }
+    try {
+      await db.execute(sql.raw("ALTER TABLE order_items MODIFY COLUMN productImage LONGTEXT NULL"));
+    } catch {
+    }
+    try {
+      await db.execute(sql.raw("UPDATE order_items SET productImage = CONCAT('/api/fast-img/product/', productId) WHERE productId IS NOT NULL AND productImage LIKE 'data:image/%'"));
+    } catch {
+    }
     __rbacTablesEnsured = true;
   } catch (err) {
     console.warn("[RBAC] Table init notice:", err instanceof Error ? err.message : "unknown");
@@ -3344,11 +3352,30 @@ function toFastImg(kind, row) {
   }
 }
 var __refreshingHomePromise = null;
+var __orderItemsSchemaFixed = false;
+async function ensureOrderItemsFastSchema(dbInstance) {
+  if (__orderItemsSchemaFixed) return;
+  try {
+    const db = dbInstance || await database();
+    if (!db) return;
+    __orderItemsSchemaFixed = true;
+    try {
+      await db.execute(sql2.raw("ALTER TABLE order_items MODIFY COLUMN productImage LONGTEXT NULL"));
+    } catch {
+    }
+    try {
+      await db.execute(sql2.raw("UPDATE order_items SET productImage = CONCAT('/api/fast-img/product/', productId) WHERE productId IS NOT NULL AND productImage LIKE 'data:image/%'"));
+    } catch {
+    }
+  } catch {
+  }
+}
 async function refreshHomeCatalogCache() {
   if (__refreshingHomePromise) return __refreshingHomePromise;
   __refreshingHomePromise = (async () => {
     try {
       const db = await database();
+      void ensureOrderItemsFastSchema(db);
       const [categoryRows, productRows, bannerRows, offerRows, settings] = await Promise.all([
         db.select().from(categories).where(eq4(categories.isActive, true)).orderBy(asc(categories.sortOrder), asc(categories.id)),
         db.select().from(products).where(and2(eq4(products.isPublished, true), eq4(products.isAvailable, true))).orderBy(asc(products.sortOrder), desc(products.createdAt)).limit(500),
@@ -3456,7 +3483,8 @@ var commerceRouter = router({
     })),
     productsForReorder: publicProcedure.input(z3.object({ ids: z3.array(safeId).min(1).max(500) })).query(async ({ input }) => {
       const db = await database();
-      return db.select().from(products).where(and2(inArray(products.id, [...new Set(input.ids)]), eq4(products.isPublished, true), eq4(products.isAvailable, true)));
+      const rows = await db.select().from(products).where(and2(inArray(products.id, [...new Set(input.ids)]), eq4(products.isPublished, true), eq4(products.isAvailable, true)));
+      return rows.map((r) => toFastImg("product", r));
     })
   }),
   profile: router({
@@ -3538,7 +3566,7 @@ var commerceRouter = router({
       const requested = aggregateItems(input.items);
       if (requested.some((item) => item.quantity > 1e4)) throw new TRPCError3({ code: "BAD_REQUEST", message: "\u0627\u0644\u0643\u0645\u064A\u0629 \u0627\u0644\u0625\u062C\u0645\u0627\u0644\u064A\u0629 \u0644\u0623\u062D\u062F \u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A \u062A\u062A\u062C\u0627\u0648\u0632 \u0627\u0644\u062D\u062F \u0627\u0644\u0645\u0633\u0645\u0648\u062D." });
       const productIds = requested.map((item) => item.productId);
-      const currentProducts = await db.select().from(products).where(and2(inArray(products.id, productIds), eq4(products.isPublished, true), eq4(products.isAvailable, true)));
+      const currentProducts = await db.select({ id: products.id, name: products.name, description: products.description, price: products.price, unit: products.unit, stock: products.stock, minQuantity: products.minQuantity, quantityStep: products.quantityStep }).from(products).where(and2(inArray(products.id, productIds), eq4(products.isPublished, true), eq4(products.isAvailable, true)));
       if (currentProducts.length !== productIds.length) {
         const foundIds = new Set(currentProducts.map((p) => p.id));
         const missingReq = requested.filter((r) => !foundIds.has(r.productId));
@@ -3685,11 +3713,21 @@ var commerceRouter = router({
         appliedOffer = (await db.select().from(offers).where(and2(eq4(offers.code, code), eq4(offers.isActive, true), sql2`(${offers.startsAt} is null or ${offers.startsAt} <= now())`, sql2`(${offers.endsAt} is null or ${offers.endsAt} >= now())`)).limit(1))[0] ?? null;
         if (!appliedOffer) throw new TRPCError3({ code: "BAD_REQUEST", message: "\u0631\u0645\u0632 \u0627\u0644\u0639\u0631\u0636 \u063A\u064A\u0631 \u0635\u0627\u0644\u062D \u0623\u0648 \u063A\u064A\u0631 \u0646\u0634\u0637." });
       }
+      await ensureOrderItemsFastSchema(db);
       const result = await db.transaction(async (tx) => {
         const orderLines = [];
         let subtotal = 0;
         for (const item of requested) {
-          const product = (await tx.select().from(products).where(and2(eq4(products.id, item.productId), eq4(products.isPublished, true), eq4(products.isAvailable, true))).limit(1).for("update"))[0];
+          const product = (await tx.select({
+            id: products.id,
+            name: products.name,
+            description: products.description,
+            price: products.price,
+            unit: products.unit,
+            stock: products.stock,
+            minQuantity: products.minQuantity,
+            quantityStep: products.quantityStep
+          }).from(products).where(and2(eq4(products.id, item.productId), eq4(products.isPublished, true), eq4(products.isAvailable, true))).limit(1).for("update"))[0];
           if (!product) {
             const anyProd = (await tx.select({ name: products.name }).from(products).where(eq4(products.id, item.productId)).limit(1))[0];
             const missingName = item.name || anyProd?.name || "\u0645\u0646\u062A\u062C #" + item.productId;
@@ -3751,7 +3789,7 @@ var commerceRouter = router({
             orderId,
             productId: line.product.id,
             productName: finalProdName,
-            productImage: line.product.imageUrl,
+            productImage: "/api/fast-img/product/" + line.product.id,
             unit: line.effectiveUnit,
             unitPrice: line.effectivePrice,
             quantity: line.quantity,
@@ -3780,9 +3818,13 @@ var commerceRouter = router({
         await tx.insert(orderEvents).values({ orderId, status: "new", note: "\u062A\u0645 \u0627\u0633\u062A\u0644\u0627\u0645 \u0627\u0644\u0637\u0644\u0628", changedByUserId: null });
         return { id: orderId, orderNumber, total: totals.total, duplicate: false };
       }).catch(async (error) => {
-        if (!isDuplicateEntry(error)) throw error;
+        if (!isDuplicateEntry(error)) {
+          if (error instanceof TRPCError3) throw error;
+          console.error("[Order Place Error]", String(error?.message || error).slice(0, 300));
+          throw new TRPCError3({ code: "INTERNAL_SERVER_ERROR", message: "\u062A\u0639\u0630\u0631 \u062D\u0641\u0638 \u0627\u0644\u0637\u0644\u0628 \u0645\u0624\u0642\u062A\u0627\u064B\u060C \u064A\u0631\u062C\u0649 \u0627\u0644\u0636\u063A\u0637 \u0639\u0644\u0649 \u062A\u0623\u0643\u064A\u062F \u0627\u0644\u0637\u0644\u0628 \u0645\u0631\u0629 \u0623\u062E\u0631\u0649." });
+        }
         const concurrent = (await db.select().from(orders).where(inArray(orders.idempotencyKey, [storedIdempotencyKey, input.idempotencyKey])).limit(1))[0];
-        if (!concurrent) throw error;
+        if (!concurrent) throw new TRPCError3({ code: "INTERNAL_SERVER_ERROR", message: "\u062A\u0639\u0630\u0631 \u0627\u0644\u062A\u062D\u0642\u0642 \u0645\u0646 \u0627\u0644\u0637\u0644\u0628\u060C \u064A\u0631\u062C\u0649 \u0627\u0644\u0645\u062D\u0627\u0648\u0644\u0629 \u0645\u0631\u0629 \u0623\u062E\u0631\u0649." });
         return { id: concurrent.id, orderNumber: concurrent.orderNumber, total: concurrent.total, duplicate: true };
       });
       if (!result.duplicate) {

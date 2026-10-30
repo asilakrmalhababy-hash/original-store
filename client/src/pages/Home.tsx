@@ -1937,6 +1937,9 @@ function Checkout({ onClose, onSuccess, cart }: { onClose: () => void; onSuccess
 
   const handleUnavailableOrderError = (rawMsg: string) => {
     let msg = rawMsg || "تعذر إتمام الطلب.";
+    if (msg.includes("Failed query:") || msg.includes("data:image/") || msg.length > 260) {
+      msg = "تعذر حفظ الطلب مؤقتاً، يرجى الضغط على تأكيد الطلب مرة أخرى.";
+    }
     if (msg.includes("لم يعد متوفراً") || msg.includes("لم يعد متاحًا")) {
       const removedIds = new Set<number>();
       const removedNames: string[] = [];
