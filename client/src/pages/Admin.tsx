@@ -72,9 +72,8 @@ function encodeCanvasSmartWebp(sourceCanvas: HTMLCanvasElement, kind: "product" 
   try { applyAmazonHdPolish(workCanvas); } catch {}
   for (let pass = 0; pass < 3; pass++) {
     for (const q of [0.80, 0.74, 0.68, 0.62, 0.56, 0.50]) {
-      const webp = workCanvas.toDataURL("image/webp", q);
       const jpeg = workCanvas.toDataURL("image/jpeg", q);
-      const best = (webp.startsWith("data:image/webp") && webp.length < jpeg.length) ? webp : jpeg;
+      const best = jpeg;
       if (best.length <= maxBase64Len) return best;
     }
     const nextW = Math.max(300, Math.round(workCanvas.width * 0.82));
@@ -92,9 +91,7 @@ function encodeCanvasSmartWebp(sourceCanvas: HTMLCanvasElement, kind: "product" 
     try { applyAmazonHdPolish(scaled); } catch {}
     workCanvas = scaled;
   }
-  const finalWebp = workCanvas.toDataURL("image/webp", 0.52);
-  const finalJpeg = workCanvas.toDataURL("image/jpeg", 0.52);
-  return (finalWebp.startsWith("data:image/webp") && finalWebp.length < finalJpeg.length) ? finalWebp : finalJpeg;
+  return workCanvas.toDataURL("image/jpeg", 0.54);
 }
 
 async function quickCompressImageFile(file: File, kind: "product" | "category" | "banner" | "icon"): Promise<string> {
@@ -1222,12 +1219,15 @@ function ProductsPanel({ isOwner = true, permissions = [], allowedCategoryIds = 
   const [bulkPriceAmount, setBulkPriceAmount] = useState("");
   const [optimizingImages, setOptimizingImages] = useState(false);
 
-  const refreshCatalog = async () => Promise.all([
-    utils.commerce.catalog.home.invalidate(),
-    utils.commerce.catalog.listProducts.invalidate(),
-    utils.commerce.catalog.listCategories.invalidate(),
-    utils.commerce.catalog.product.invalidate(),
-  ]);
+  const refreshCatalog = async () => {
+    try { (window as any).__INITIAL_CATALOG__ = null; localStorage.removeItem("original-catalog-instant-v2"); } catch {}
+    return Promise.all([
+      utils.commerce.catalog.home.invalidate(),
+      utils.commerce.catalog.listProducts.invalidate(),
+      utils.commerce.catalog.listCategories.invalidate(),
+      utils.commerce.catalog.product.invalidate(),
+    ]);
+  };
 
   const query = trpc.commerce.admin.products.list.useQuery(undefined, { retry: 1 });
   const rawCats = trpc.commerce.admin.categories.list.useQuery(undefined, { retry: 1 });

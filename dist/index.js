@@ -3558,21 +3558,26 @@ var commerceRouter = router({
       phone: z3.string().trim().max(40).optional(),
       offerCode: z3.string().trim().max(40).optional()
     })).mutation(async ({ input }) => {
-      const db = await database();
-      const settings = await readSettings(db);
+      const g = globalThis;
+      const fastHome = g.__fastHomeData;
+      const db = !fastHome || input.offerCode ? await database() : null;
+      const settings = fastHome?.settings ? fastHome.settings : await readSettings(db || await database());
       if (settings.orderPaused === "true") throw new TRPCError3({ code: "PRECONDITION_FAILED", message: settings.pausedMessage || "\u0627\u0633\u062A\u0642\u0628\u0627\u0644 \u0627\u0644\u0637\u0644\u0628\u0627\u062A \u0645\u062A\u0648\u0642\u0641 \u0645\u0624\u0642\u062A\u064B\u0627." });
       const prelimFee = deliveryFeeForCity(settings, input.city, input.district, input.phone, 0);
       if (prelimFee === null) throw new TRPCError3({ code: "PRECONDITION_FAILED", message: settings.deliveryEnabled === "true" ? "\u0645\u0646\u0637\u0642\u0629 \u0627\u0644\u062A\u0648\u0635\u064A\u0644 \u0623\u0648 \u0631\u0633\u0648\u0645\u0647\u0627 \u063A\u064A\u0631 \u0645\u062D\u062F\u062F\u0629 \u0628\u0639\u062F." : "\u0644\u0645 \u064A\u0641\u0639\u0651\u0644 \u0627\u0644\u0645\u062A\u062C\u0631 \u0627\u0644\u062A\u0648\u0635\u064A\u0644 \u0628\u0639\u062F." });
       const requested = aggregateItems(input.items);
       if (requested.some((item) => item.quantity > 1e4)) throw new TRPCError3({ code: "BAD_REQUEST", message: "\u0627\u0644\u0643\u0645\u064A\u0629 \u0627\u0644\u0625\u062C\u0645\u0627\u0644\u064A\u0629 \u0644\u0623\u062D\u062F \u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A \u062A\u062A\u062C\u0627\u0648\u0632 \u0627\u0644\u062D\u062F \u0627\u0644\u0645\u0633\u0645\u0648\u062D." });
       const productIds = requested.map((item) => item.productId);
-      const currentProducts = await db.select({ id: products.id, name: products.name, description: products.description, price: products.price, unit: products.unit, stock: products.stock, minQuantity: products.minQuantity, quantityStep: products.quantityStep }).from(products).where(and2(inArray(products.id, productIds), eq4(products.isPublished, true), eq4(products.isAvailable, true)));
+      const idSet = new Set(productIds);
+      const cachedProds = Array.isArray(fastHome?.products) ? fastHome.products.filter((p) => idSet.has(p.id) && p.isPublished && p.isAvailable) : [];
+      const currentProducts = cachedProds.length === productIds.length ? cachedProds : await (db || await database()).select({ id: products.id, name: products.name, description: products.description, price: products.price, unit: products.unit, stock: products.stock, minQuantity: products.minQuantity, quantityStep: products.quantityStep }).from(products).where(and2(inArray(products.id, productIds), eq4(products.isPublished, true), eq4(products.isAvailable, true)));
       if (currentProducts.length !== productIds.length) {
         const foundIds = new Set(currentProducts.map((p) => p.id));
         const missingReq = requested.filter((r) => !foundIds.has(r.productId));
         const missingIds = missingReq.map((r) => r.productId);
-        const dbMissing = missingIds.length ? await db.select({ id: products.id, name: products.name }).from(products).where(inArray(products.id, missingIds)) : [];
-        const histMissing = missingIds.length ? await db.select({ productId: orderItems.productId, name: orderItems.productName }).from(orderItems).where(inArray(orderItems.productId, missingIds)).limit(30) : [];
+        const activeDb2 = db || await database();
+        const dbMissing = missingIds.length ? await activeDb2.select({ id: products.id, name: products.name }).from(products).where(inArray(products.id, missingIds)) : [];
+        const histMissing = missingIds.length ? await activeDb2.select({ productId: orderItems.productId, name: orderItems.productName }).from(orderItems).where(inArray(orderItems.productId, missingIds)).limit(30) : [];
         const missingNames = missingReq.map((r) => r.name || dbMissing.find((d) => d.id === r.productId)?.name || histMissing.find((h) => h.productId === r.productId)?.name || "\u0645\u0646\u062A\u062C #" + r.productId);
         for (const mid of missingIds) clearCatalogCache(mid);
         throw new TRPCError3({ code: "PRECONDITION_FAILED", message: "\u0627\u0644\u0645\u0646\u062A\u062C \xAB" + missingNames.join("\u060C ") + "\xBB \u0644\u0645 \u064A\u0639\u062F \u0645\u062A\u0648\u0641\u0631\u0627\u064B \u062D\u0627\u0644\u064A\u0627\u064B \u0641\u064A \u0627\u0644\u0645\u062A\u062C\u0631. \u062A\u0645 \u062A\u062D\u062F\u064A\u062B \u0627\u0644\u0633\u0644\u0629 \u062A\u0644\u0642\u0627\u0626\u064A\u0627\u064B." });
@@ -3599,7 +3604,8 @@ var commerceRouter = router({
       if (!Number.isSafeInteger(subtotal) || subtotal > 1e11) throw new TRPCError3({ code: "BAD_REQUEST", message: "\u0625\u062C\u0645\u0627\u0644\u064A \u0627\u0644\u0633\u0644\u0629 \u064A\u062A\u062C\u0627\u0648\u0632 \u0627\u0644\u062D\u062F \u0627\u0644\u0645\u0633\u0645\u0648\u062D." });
       let appliedOffer = null;
       if (input.offerCode) {
-        appliedOffer = (await db.select().from(offers).where(and2(eq4(offers.code, input.offerCode.trim().toUpperCase()), eq4(offers.isActive, true), sql2`(${offers.startsAt} is null or ${offers.startsAt} <= now())`, sql2`(${offers.endsAt} is null or ${offers.endsAt} >= now())`)).limit(1))[0] ?? null;
+        const activeDbOffer = db || await database();
+        appliedOffer = (await activeDbOffer.select().from(offers).where(and2(eq4(offers.code, input.offerCode.trim().toUpperCase()), eq4(offers.isActive, true), sql2`(${offers.startsAt} is null or ${offers.startsAt} <= now())`, sql2`(${offers.endsAt} is null or ${offers.endsAt} >= now())`)).limit(1))[0] ?? null;
         if (!appliedOffer) throw new TRPCError3({ code: "BAD_REQUEST", message: "\u0631\u0645\u0632 \u0627\u0644\u0639\u0631\u0636 \u063A\u064A\u0631 \u0635\u0627\u0644\u062D \u0623\u0648 \u063A\u064A\u0631 \u0646\u0634\u0637." });
       }
       const deliveryFee = deliveryFeeForCity(settings, input.city, input.district, input.phone, subtotal) ?? prelimFee;
@@ -4388,7 +4394,7 @@ var commerceRouter = router({
       }),
       create: requireAnyPermission(["products.manage", "products.add"]).use(async ({ next }) => {
         const res = await next();
-        clearCatalogCache();
+        await clearCatalogCache();
         return res;
       }).input(productInput).mutation(async ({ ctx, input }) => {
         const allowedCats = !ctx.user.isOwner && Array.isArray(ctx.user.allowedCategoryIds) && ctx.user.allowedCategoryIds.length > 0 ? ctx.user.allowedCategoryIds : null;
@@ -4408,7 +4414,7 @@ var commerceRouter = router({
       }),
       update: requireAnyPermission(["products.manage", "products.edit", "inventory.manage"]).use(async ({ next }) => {
         const res = await next();
-        clearCatalogCache();
+        await clearCatalogCache();
         return res;
       }).input(z3.object({ id: safeId, values: productInput.partial() })).mutation(async ({ ctx, input }) => {
         const canEditProduct = hasPermission(ctx.user.permissions, ctx.user.isOwner, "products.edit") || hasPermission(ctx.user.permissions, ctx.user.isOwner, "products.manage");
@@ -4437,7 +4443,7 @@ var commerceRouter = router({
       }),
       bulkAdjustPrices: requireAnyPermission(["products.manage", "products.edit", "inventory.manage"]).use(async ({ next }) => {
         const res = await next();
-        clearCatalogCache();
+        await clearCatalogCache();
         return res;
       }).input(z3.object({
         categoryId: z3.number().int().positive().nullable().optional(),
@@ -4472,7 +4478,7 @@ var commerceRouter = router({
       }),
       archive: requireAnyPermission(["products.manage", "products.edit", "products.delete"]).use(async ({ next }) => {
         const res = await next();
-        clearCatalogCache();
+        await clearCatalogCache();
         return res;
       }).input(z3.object({ id: safeId })).mutation(async ({ ctx, input }) => {
         const db = await database();
@@ -4488,7 +4494,7 @@ var commerceRouter = router({
       // --- PRODUCT_DELETE_ENDPOINT ---
       delete: requireAnyPermission(["products.manage", "products.delete"]).use(async ({ next }) => {
         const res = await next();
-        clearCatalogCache();
+        await clearCatalogCache();
         return res;
       }).input(z3.object({ id: safeId })).mutation(async ({ ctx, input }) => {
         const db = await database();
@@ -4551,7 +4557,7 @@ var commerceRouter = router({
       }),
       bulkCreate: requireAnyPermission(["products.manage", "products.add"]).use(async ({ next }) => {
         const res = await next();
-        clearCatalogCache();
+        await clearCatalogCache();
         return res;
       }).input(z3.object({ items: z3.array(productInput).min(1).max(60) })).mutation(async ({ ctx, input }) => {
         const db = await database();
@@ -4792,7 +4798,7 @@ var commerceRouter = router({
       }),
       removeItem: requirePermission("orders.manage").use(async ({ next }) => {
         const res = await next();
-        clearCatalogCache();
+        await clearCatalogCache();
         return res;
       }).input(z3.object({
         orderId: safeId,

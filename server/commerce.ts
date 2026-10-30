@@ -973,27 +973,32 @@ export const commerceRouter = router({
       items: z.array(z.object({ productId: safeId, quantity: z.number().int().min(1).max(10000), name: z.string().trim().max(220).optional(), variant: z.string().trim().max(120).optional(), customAmount: z.number().int().min(1).max(100000000).optional() })).min(1).max(100),
       city: z.string().trim().min(1).max(100), district: z.string().trim().max(160).optional(), phone: z.string().trim().max(40).optional(), offerCode: z.string().trim().max(40).optional(),
     })).mutation(async ({ input }) => {
-      const db = await database();
-      const settings = await readSettings(db);
+      const g = globalThis as any;
+      const fastHome = g.__fastHomeData;
+      const db = (!fastHome || input.offerCode) ? await database() : null;
+      const settings = fastHome?.settings ? fastHome.settings : await readSettings(db || await database());
       if (settings.orderPaused === "true") throw new TRPCError({ code: "PRECONDITION_FAILED", message: settings.pausedMessage || "استقبال الطلبات متوقف مؤقتًا." });
       const prelimFee = deliveryFeeForCity(settings, input.city, input.district, input.phone, 0);
       if (prelimFee === null) throw new TRPCError({ code: "PRECONDITION_FAILED", message: settings.deliveryEnabled === "true" ? "منطقة التوصيل أو رسومها غير محددة بعد." : "لم يفعّل المتجر التوصيل بعد." });
       const requested = aggregateItems(input.items);
       if (requested.some(item => item.quantity > 10000)) throw new TRPCError({ code: "BAD_REQUEST", message: "الكمية الإجمالية لأحد المنتجات تتجاوز الحد المسموح." });
       const productIds = requested.map(item => item.productId);
-      const currentProducts = await db.select({ id: products.id, name: products.name, description: products.description, price: products.price, unit: products.unit, stock: products.stock, minQuantity: products.minQuantity, quantityStep: products.quantityStep }).from(products).where(and(inArray(products.id, productIds), eq(products.isPublished, true), eq(products.isAvailable, true)));
+      const idSet = new Set(productIds);
+      const cachedProds = Array.isArray(fastHome?.products) ? fastHome.products.filter((p: any) => idSet.has(p.id) && p.isPublished && p.isAvailable) : [];
+      const currentProducts = (cachedProds.length === productIds.length) ? cachedProds : await (db || await database()).select({ id: products.id, name: products.name, description: products.description, price: products.price, unit: products.unit, stock: products.stock, minQuantity: products.minQuantity, quantityStep: products.quantityStep }).from(products).where(and(inArray(products.id, productIds), eq(products.isPublished, true), eq(products.isAvailable, true)));
       if (currentProducts.length !== productIds.length) {
-        const foundIds = new Set(currentProducts.map(p => p.id));
+        const foundIds = new Set(currentProducts.map((p: any) => p.id));
         const missingReq = requested.filter(r => !foundIds.has(r.productId));
         const missingIds = missingReq.map(r => r.productId);
-        const dbMissing = missingIds.length ? await db.select({ id: products.id, name: products.name }).from(products).where(inArray(products.id, missingIds)) : [];
-        const histMissing = missingIds.length ? await db.select({ productId: orderItems.productId, name: orderItems.productName }).from(orderItems).where(inArray(orderItems.productId, missingIds)).limit(30) : [];
+        const activeDb = db || await database();
+        const dbMissing = missingIds.length ? await activeDb.select({ id: products.id, name: products.name }).from(products).where(inArray(products.id, missingIds)) : [];
+        const histMissing = missingIds.length ? await activeDb.select({ productId: orderItems.productId, name: orderItems.productName }).from(orderItems).where(inArray(orderItems.productId, missingIds)).limit(30) : [];
         const missingNames = missingReq.map(r => r.name || dbMissing.find(d => d.id === r.productId)?.name || histMissing.find(h => h.productId === r.productId)?.name || ("منتج #" + r.productId));
         for (const mid of missingIds) clearCatalogCache(mid);
         throw new TRPCError({ code: "PRECONDITION_FAILED", message: "المنتج «" + missingNames.join("، ") + "» لم يعد متوفراً حالياً في المتجر. تم تحديث السلة تلقائياً." });
       }
       const lines = requested.map(item => {
-        const product = currentProducts.find(row => row.id === item.productId)!;
+        const product = currentProducts.find((row: any) => row.id === item.productId)!;
         const wcfg = unpackServerProductWeightCfg(product.description);
         if (wcfg.enabled && item.customAmountTotal > 0) {
           if (item.customAmountTotal < wcfg.minAmount) {
@@ -1014,7 +1019,7 @@ export const commerceRouter = router({
       if (!Number.isSafeInteger(subtotal) || subtotal > 100000000000) throw new TRPCError({ code: "BAD_REQUEST", message: "إجمالي السلة يتجاوز الحد المسموح." });
       let appliedOffer: typeof offers.$inferSelect | null = null;
       if (input.offerCode) {
-        appliedOffer = (await db.select().from(offers).where(and(eq(offers.code, input.offerCode.trim().toUpperCase()), eq(offers.isActive, true), sql`(${offers.startsAt} is null or ${offers.startsAt} <= now())`, sql`(${offers.endsAt} is null or ${offers.endsAt} >= now())`)).limit(1))[0] ?? null;
+        const activeDbOffer = db || await database(); appliedOffer = (await activeDbOffer.select().from(offers).where(and(eq(offers.code, input.offerCode.trim().toUpperCase()), eq(offers.isActive, true), sql`(${offers.startsAt} is null or ${offers.startsAt} <= now())`, sql`(${offers.endsAt} is null or ${offers.endsAt} >= now())`)).limit(1))[0] ?? null;
         if (!appliedOffer) throw new TRPCError({ code: "BAD_REQUEST", message: "رمز العرض غير صالح أو غير نشط." });
       }
       const deliveryFee = deliveryFeeForCity(settings, input.city, input.district, input.phone, subtotal) ?? prelimFee;
@@ -1798,7 +1803,7 @@ export const commerceRouter = router({
           : await db.select().from(products).orderBy(desc(products.updatedAt)).limit(500);
         return rows.map(r => toFastImg("product", r));
       }),
-      create: requireAnyPermission(["products.manage", "products.add"]).use(async ({ next }) => { const res = await next(); clearCatalogCache(); return res; }).input(productInput).mutation(async ({ ctx, input }) => {
+      create: requireAnyPermission(["products.manage", "products.add"]).use(async ({ next }) => { const res = await next(); await clearCatalogCache(); return res; }).input(productInput).mutation(async ({ ctx, input }) => {
         const allowedCats = (!ctx.user.isOwner && Array.isArray(ctx.user.allowedCategoryIds) && ctx.user.allowedCategoryIds.length > 0) ? ctx.user.allowedCategoryIds : null;
         if (allowedCats && (!input.categoryId || !allowedCats.includes(input.categoryId))) {
           throw new TRPCError({ code: "FORBIDDEN", message: "صلاحيتك مخصصة لإدارة أقسام محددة فقط؛ اختر قسماً ضمن صلاحياتك." });
@@ -1813,7 +1818,7 @@ export const commerceRouter = router({
         })();
         return { id: Number(result[0].insertId) };
       }),
-      update: requireAnyPermission(["products.manage", "products.edit", "inventory.manage"]).use(async ({ next }) => { const res = await next(); clearCatalogCache(); return res; }).input(z.object({ id: safeId, values: productInput.partial() })).mutation(async ({ ctx, input }) => {
+      update: requireAnyPermission(["products.manage", "products.edit", "inventory.manage"]).use(async ({ next }) => { const res = await next(); await clearCatalogCache(); return res; }).input(z.object({ id: safeId, values: productInput.partial() })).mutation(async ({ ctx, input }) => {
         const canEditProduct = hasPermission(ctx.user.permissions, ctx.user.isOwner, "products.edit") || hasPermission(ctx.user.permissions, ctx.user.isOwner, "products.manage");
         if (!canEditProduct) {
           const allowedKeys = new Set(["price", "stock", "isAvailable", "minQuantity", "quantityStep"]);
@@ -1835,7 +1840,7 @@ export const commerceRouter = router({
         const cleanVals = { ...input.values }; if (typeof cleanVals.imageUrl === "string" && cleanVals.imageUrl.startsWith("/api/fast-img/")) delete cleanVals.imageUrl; (globalThis as any).__fastImgCache?.delete("product:" + input.id); await db.update(products).set(cleanVals).where(eq(products.id, input.id));
         return { success: true };
       }),
-      bulkAdjustPrices: requireAnyPermission(["products.manage", "products.edit", "inventory.manage"]).use(async ({ next }) => { const res = await next(); clearCatalogCache(); return res; }).input(z.object({
+      bulkAdjustPrices: requireAnyPermission(["products.manage", "products.edit", "inventory.manage"]).use(async ({ next }) => { const res = await next(); await clearCatalogCache(); return res; }).input(z.object({
         categoryId: z.number().int().positive().nullable().optional(),
         mode: z.enum(["percent", "fixed"]),
         amount: z.number().min(-90).max(1000000),
@@ -1868,7 +1873,7 @@ export const commerceRouter = router({
         }
         return { updatedCount };
       }),
-      archive: requireAnyPermission(["products.manage", "products.edit", "products.delete"]).use(async ({ next }) => { const res = await next(); clearCatalogCache(); return res; }).input(z.object({ id: safeId })).mutation(async ({ ctx, input }) => {
+      archive: requireAnyPermission(["products.manage", "products.edit", "products.delete"]).use(async ({ next }) => { const res = await next(); await clearCatalogCache(); return res; }).input(z.object({ id: safeId })).mutation(async ({ ctx, input }) => {
         const db = await database();
         const allowedCats = (!ctx.user.isOwner && Array.isArray(ctx.user.allowedCategoryIds) && ctx.user.allowedCategoryIds.length > 0) ? ctx.user.allowedCategoryIds : null;
         if (allowedCats) {
@@ -1880,7 +1885,7 @@ export const commerceRouter = router({
         return { success: true };
       }),
       // --- PRODUCT_DELETE_ENDPOINT ---
-      delete: requireAnyPermission(["products.manage", "products.delete"]).use(async ({ next }) => { const res = await next(); clearCatalogCache(); return res; }).input(z.object({ id: safeId })).mutation(async ({ ctx, input }) => {
+      delete: requireAnyPermission(["products.manage", "products.delete"]).use(async ({ next }) => { const res = await next(); await clearCatalogCache(); return res; }).input(z.object({ id: safeId })).mutation(async ({ ctx, input }) => {
         const db = await database();
         const allowedCats = (!ctx.user.isOwner && Array.isArray(ctx.user.allowedCategoryIds) && ctx.user.allowedCategoryIds.length > 0) ? ctx.user.allowedCategoryIds : null;
         if (allowedCats) {
@@ -1943,7 +1948,7 @@ export const commerceRouter = router({
           return parseBulkProductsTextAI({ rawText: input.rawText, categories: catRows });
         }),
       bulkCreate: requireAnyPermission(["products.manage", "products.add"])
-        .use(async ({ next }) => { const res = await next(); clearCatalogCache(); return res; })
+        .use(async ({ next }) => { const res = await next(); await clearCatalogCache(); return res; })
         .input(z.object({ items: z.array(productInput).min(1).max(60) }))
         .mutation(async ({ ctx, input }) => {
           const db = await database();
@@ -2142,7 +2147,7 @@ export const commerceRouter = router({
         ]);
         return rows.map(order => ({ ...order, items: items.filter(item => item.orderId === order.id), events: events.filter(event => event.orderId === order.id) }));
       }),
-      removeItem: requirePermission("orders.manage").use(async ({ next }) => { const res = await next(); clearCatalogCache(); return res; }).input(z.object({
+      removeItem: requirePermission("orders.manage").use(async ({ next }) => { const res = await next(); await clearCatalogCache(); return res; }).input(z.object({
         orderId: safeId,
         itemId: safeId,
         cancelQty: z.number().int().min(1).max(1000).optional(),

@@ -239,9 +239,7 @@ export default function ImageEditor({ aspect, title, format = "webp", initialSou
       let data = "";
       for (let pass = 0; pass < 3; pass++) {
         for (const q of [0.80, 0.74, 0.68, 0.62, 0.56, 0.50]) {
-          const wUrl = workCanvas.toDataURL("image/webp", q);
-          const jUrl = workCanvas.toDataURL("image/jpeg", q);
-          const best = (wUrl.startsWith("data:image/webp") && wUrl.length < jUrl.length) ? wUrl : jUrl;
+          const best = workCanvas.toDataURL("image/jpeg", q);
           data = best;
           if (best.length <= maxBase64Len) break;
         }

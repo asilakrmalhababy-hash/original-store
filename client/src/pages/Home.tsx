@@ -1988,7 +1988,7 @@ function Checkout({ onClose, onSuccess, cart }: { onClose: () => void; onSuccess
     const timer = setTimeout(() => {
       setQuoteSignature(signature);
       quoteMutation.mutate({ items, city: form.city, district: form.district, phone: cleanYemeniPhone(form.phone), offerCode: form.offerCode || undefined } as any);
-    }, 150);
+    }, 20);
     return () => clearTimeout(timer);
   }, [form.city, form.district, form.phone, form.offerCode, signature]);
 
@@ -2225,12 +2225,13 @@ function Checkout({ onClose, onSuccess, cart }: { onClose: () => void; onSuccess
     </div>
   );
 }
-function FavoritesPage() {
+function FavoritesPage({ allProducts = [], onOpen, onAiRecipe }: { allProducts?: PublicProduct[]; onOpen?: (id: number) => void; onAiRecipe?: (p: PublicProduct) => void }) {
   const { favoriteIds } = useStore();
   const [, navigate] = useLocation();
-  const query = trpc.commerce.catalog.productsForReorder.useQuery({ ids: favoriteIds }, { enabled: favoriteIds.length > 0, retry: 1, staleTime: 30_000 });
-  const products = query.data ?? [];
-  return <main className="page-shell inner-page"><div className="page-title-row"><div><span className="eyebrow">احتفظ بما تحب</span><h1>المفضلة</h1><p>تُحفظ مفضلتك على هذا المتصفح دون إنشاء حساب.</p></div><span className="page-title-icon"><Heart size={23} /></span></div>{query.isLoading ? <Loading /> : query.error ? <LoadError onRetry={() => void query.refetch()} /> : !favoriteIds.length ? <EmptyState icon={Heart} title="لم تحفظ منتجات بعد" description="اضغط علامة القلب على أي منتج لإضافته هنا." action="تصفح المنتجات" href="/products" /> : !products.length ? <EmptyState icon={Heart} title="لا توجد منتجات متاحة من مفضلتك الآن" description="قد تكون المنتجات التي حفظتها أُخفيت أو نفدت." action="تصفح المنتجات" href="/products" /> : <ProductGrid items={products as PublicProduct[]} onOpen={id => navigate("/product/" + id)} />}</main>;
+  const localFavs = useMemo(() => allProducts.filter(p => favoriteIds.includes(p.id)), [allProducts, favoriteIds]);
+  const query = trpc.commerce.catalog.productsForReorder.useQuery({ ids: favoriteIds }, { enabled: favoriteIds.length > 0 && localFavs.length === 0, retry: 1, staleTime: 60_000 });
+  const products = localFavs.length > 0 ? localFavs : (query.data ?? []);
+  return <main className="page-shell inner-page"><div className="page-title-row"><div><span className="eyebrow">احتفظ بما تحب</span><h1>المفضلة ({products.length})</h1><p>تُحفظ مفضلتك على هذا المتصفح وتفتح فوراً دون انتظار.</p></div><span className="page-title-icon"><Heart size={23} /></span></div>{!favoriteIds.length ? <EmptyState icon={Heart} title="لم تحفظ منتجات بعد" description="اضغط علامة القلب على أي منتج لإضافته هنا." action="تصفح المنتجات" href="/products" /> : (query.isLoading && !products.length) ? <Loading /> : !products.length ? <EmptyState icon={Heart} title="لا توجد منتجات متاحة من مفضلتك الآن" description="قد تكون المنتجات التي حفظتها أُخفيت أو نفدت." action="تصفح المنتجات" href="/products" /> : <ProductGrid items={products as PublicProduct[]} onOpen={id => onOpen ? onOpen(id) : navigate("/product/" + id)} onAiRecipe={onAiRecipe} />}</main>;
 }
 
 function OrdersPage() {
@@ -2241,7 +2242,19 @@ function OrdersPage() {
   const focusedOrderNumber = searchParams.get("order");
   const justOrdered = searchParams.get("justOrdered") === "1";
   const refs = useMemo(() => customer.orders.slice(0, 50).map(({ orderNumber, idempotencyKey }) => ({ orderNumber, idempotencyKey })), [customer.orders]);
-  const query = trpc.commerce.orders.trackMany.useQuery({ refs }, { enabled: refs.length > 0, retry: 1, staleTime: 5_000, refetchInterval: refs.length ? 8_000 : false });
+  const cachedOrdersData = useMemo(() => {
+    try {
+      const raw = localStorage.getItem("original-orders-track-cache-v1");
+      const parsed = raw ? JSON.parse(raw) : null;
+      return Array.isArray(parsed) && parsed.length > 0 ? parsed : undefined;
+    } catch { return undefined; }
+  }, [refs.length]);
+  const query = trpc.commerce.orders.trackMany.useQuery({ refs }, { enabled: refs.length > 0, retry: 1, staleTime: 4_000, refetchInterval: refs.length ? 8_000 : false, placeholderData: cachedOrdersData });
+  useEffect(() => {
+    if (query.data && Array.isArray(query.data) && query.data.length > 0) {
+      try { localStorage.setItem("original-orders-track-cache-v1", JSON.stringify(query.data)); } catch {}
+    }
+  }, [query.data]);
   const publicKey = trpc.commerce.notifications.publicKey.useQuery(undefined, { enabled: false, retry: 1 });
   const subscribe = trpc.commerce.orders.subscribeToStatus.useMutation();
   const [permission, setPermission] = useState(getPushPermissionState);
@@ -2373,7 +2386,7 @@ function OrdersPage() {
         </section>
       )}
 
-      {query.isLoading ? <Loading /> : query.error ? <LoadError onRetry={() => void query.refetch()} /> : !orders.length ? (
+      {(query.isLoading && !orders.length) ? <Loading /> : (query.error && !orders.length) ? <LoadError onRetry={() => void query.refetch()} /> : !orders.length ? (
         <EmptyState icon={Package} title={refs.length ? "لم نعثر على طلبات محفوظة على هذا الجهاز" : "لا توجد طلبات سابقة"} description="بعد إتمام طلب من هذا المتصفح، ستظهر حالته هنا مباشرة." action="تسوق الآن" href="/products" />
       ) : (
         <div style={{ display: "grid", gap: "14px" }}>
@@ -3817,7 +3830,7 @@ export default function Home() {
     if (location === "/products" || location.startsWith("/products?")) return <ProductListPage data={data} onOpen={openProduct} />;
     if (location === "/categories") return <CategoriesPage data={data} />;
     if (location === "/cart") return <CartPage minOrder={Number(data.settings?.minOrderAmount || 0)} />;
-    if (location === "/favorites") return <FavoritesPage />;
+    if (location === "/favorites") return <FavoritesPage allProducts={data.products} onOpen={openProduct} onAiRecipe={setActiveAiProduct} />;
     if (location === "/orders") return <OrdersPage />;
     if (location === "/account") return <AccountPage />;
     if (location === "/assistant") return <AssistantPage />;
