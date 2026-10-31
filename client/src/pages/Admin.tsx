@@ -674,6 +674,7 @@ function SmartBulkProductsStudio({
   const singleRowFileRef = useRef<{ uid: string | null; input: HTMLInputElement | null }>({ uid: null, input: null });
   const priceRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const base64ImageMapRef = useRef<Record<string, string>>({});
+  const imageCompressionPromisesRef = useRef<Record<string, Promise<string[]>>>({});
   const rawFilesRef = useRef<Record<string, File>>({});
 
   const analyzeMut = trpc.commerce.admin.products.analyzeImage.useMutation();
@@ -698,6 +699,7 @@ function SmartBulkProductsStudio({
   const removeItem = (uid: string) => {
     delete rawFilesRef.current[uid];
     delete base64ImageMapRef.current[uid];
+    delete imageCompressionPromisesRef.current[uid];
     setItems(prev => prev.filter(it => it.uid !== uid));
   };
 
@@ -728,14 +730,21 @@ function SmartBulkProductsStudio({
 
     setItems(prev => [...prev, ...placeholders]);
 
-    void (async () => {
+    const compressionTask = (async () => {
+      const failed: string[] = [];
       for (const t of createdTasks) {
         try {
           const storeImg = await quickCompressImageFile(t.file, 'product');
           base64ImageMapRef.current[t.uid] = storeImg;
-        } catch {}
+        } catch {
+          failed.push(t.file.name);
+        }
       }
+      return failed;
     })();
+    for (const t of createdTasks) {
+      imageCompressionPromisesRef.current[t.uid] = compressionTask;
+    }
   };
 
   const analyzeSingleItem = async (uid: string) => {
@@ -844,6 +853,21 @@ function SmartBulkProductsStudio({
     const CHUNK_SIZE = 3;
     let savedCount = 0;
     try {
+      const compressionTasks = Array.from(new Set(
+        readyItems
+          .map(it => imageCompressionPromisesRef.current[it.uid])
+          .filter((task): task is Promise<string[]> => Boolean(task))
+      ));
+      await Promise.all(compressionTasks);
+
+      const missingImages = readyItems.filter(
+        it => rawFilesRef.current[it.uid] && !base64ImageMapRef.current[it.uid]
+      );
+      if (missingImages.length) {
+        toast.error("تعذر تجهيز صور " + missingImages.length + " منتج. أعد اختيار الصور التي لم تجهز ثم احفظ.");
+        return;
+      }
+
       for (let i = 0; i < readyItems.length; i += CHUNK_SIZE) {
         const slice = readyItems.slice(i, i + CHUNK_SIZE);
         const chunkPayload = slice.map((it, idx) => {
@@ -877,7 +901,11 @@ function SmartBulkProductsStudio({
         }
         if (!chunkOk) throw lastErr || new Error("تعذر رفع الدفعة الحالية، تحقق من الاتصال واضغط حفظ مرة أخرى لإكمال الباقي.");
         const savedUids = new Set(slice.map(s => s.uid));
-        for (const s of slice) delete base64ImageMapRef.current[s.uid];
+        for (const s of slice) {
+          delete base64ImageMapRef.current[s.uid];
+          delete rawFilesRef.current[s.uid];
+          delete imageCompressionPromisesRef.current[s.uid];
+        }
         setItems(prev => prev.filter(item => !savedUids.has(item.uid)));
         savedCount += slice.length;
         setSavedProgress({ done: savedCount, total: totalToSave });
