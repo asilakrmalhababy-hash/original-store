@@ -674,6 +674,7 @@ function SmartBulkProductsStudio({
   const singleRowFileRef = useRef<{ uid: string | null; input: HTMLInputElement | null }>({ uid: null, input: null });
   const priceRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const base64ImageMapRef = useRef<Record<string, string>>({});
+  const rawFilesRef = useRef<Record<string, File>>({});
 
   const analyzeMut = trpc.commerce.admin.products.analyzeImage.useMutation();
   const parseTextMut = trpc.commerce.admin.products.parseBulkText.useMutation();
@@ -695,66 +696,89 @@ function SmartBulkProductsStudio({
   };
 
   const removeItem = (uid: string) => {
+    delete rawFilesRef.current[uid];
+    delete base64ImageMapRef.current[uid];
     setItems(prev => prev.filter(it => it.uid !== uid));
   };
 
   const handleFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const fileList = Array.from(e.target.files ?? []).slice(0, 35);
-    e.target.value = "";
+    e.target.value = '';
     if (!fileList.length) return;
 
-    toast.info("📸 جارٍ تجهيز " + fileList.length + " صورة واستخراج الأسماء بالعربية وتصنيف الأقسام...");
+    toast.info('📸 تم إدراج ' + fileList.length + ' صورة فوراً! اكتب الأسماء والأسعار، أو اضغط على 🤖 بجانب أي منتج لقراءته.');
 
-    const createdTasks: Array<{ uid: string; file: File }> = fileList.map((file, idx) => ({
-      uid: "bulk_" + Date.now() + "_" + idx + "_" + Math.random().toString(36).slice(2, 6),
-      file,
-    }));
+    const createdTasks = fileList.map((file, idx) => {
+      const uid = 'bulk_' + Date.now() + '_' + idx + '_' + Math.random().toString(36).slice(2, 6);
+      rawFilesRef.current[uid] = file;
+      return { uid, file };
+    });
 
     const placeholders: BulkDraftItem[] = createdTasks.map(t => ({
       uid: t.uid,
       imageUrl: URL.createObjectURL(t.file),
-      name: "",
-      description: "",
-      price: "",
+      name: '',
+      description: '',
+      price: unifiedPrice || '',
       categoryId: defaultCatId,
-      unit: "حبة",
+      unit: 'حبة',
       weightEnabled: false,
-      aiStatus: "analyzing",
+      aiStatus: 'idle',
     }));
 
     setItems(prev => [...prev, ...placeholders]);
 
-    for (const task of createdTasks) {
-      try {
-        const [storeImg, visionThumb] = await Promise.all([
-          quickCompressImageFile(task.file, "product"),
-          makeVisionThumbDataUrl(task.file),
-        ]);
-        updateItem(task.uid, { imageUrl: storeImg });
-        const aiRes = await analyzeMut.mutateAsync({
-          imageDataUrl: visionThumb,
-          fileName: task.file.name,
-        });
-        if (aiRes.categoryId && !categories.some(c => c.id === aiRes.categoryId)) {
-          await utils.commerce.admin.categories.list.invalidate();
-        }
-        updateItem(task.uid, {
-          name: aiRes.name || "منتج جديد",
-          description: aiRes.description || "",
-          categoryId: defaultCatId !== null ? defaultCatId : aiRes.categoryId,
-          unit: aiRes.unit || (aiRes.weightEnabled ? "كيلو" : "حبة"),
-          weightEnabled: Boolean(aiRes.weightEnabled),
-          aiStatus: "done",
-        });
-      } catch {
-        updateItem(task.uid, {
-          name: "منتج جديد",
-          aiStatus: "error",
-        });
+    void (async () => {
+      for (const t of createdTasks) {
+        try {
+          const storeImg = await quickCompressImageFile(t.file, 'product');
+          base64ImageMapRef.current[t.uid] = storeImg;
+        } catch {}
       }
+    })();
+  };
+
+  const analyzeSingleItem = async (uid: string) => {
+    const item = items.find(it => it.uid === uid);
+    if (!item || item.aiStatus === 'analyzing') return;
+
+    updateItem(uid, { aiStatus: 'analyzing' });
+    try {
+      const file = rawFilesRef.current[uid];
+      let visionThumb = '';
+      if (file) {
+        visionThumb = await makeVisionThumbDataUrl(file);
+      } else if (base64ImageMapRef.current[uid]) {
+        visionThumb = await makeVisionThumbDataUrl(base64ImageMapRef.current[uid]);
+      } else if (item.imageUrl && !item.imageUrl.startsWith('blob:')) {
+        visionThumb = await makeVisionThumbDataUrl(item.imageUrl);
+      }
+      if (!visionThumb) throw new Error('لا توجد صورة لتحليلها');
+
+      const aiRes = await analyzeMut.mutateAsync({
+        imageDataUrl: visionThumb,
+        fileName: file?.name,
+      });
+
+      const recognizedName = (aiRes.name || '').trim();
+      if (recognizedName && recognizedName !== 'منتج جديد') {
+        updateItem(uid, {
+          name: recognizedName,
+          description: aiRes.description || item.description || '',
+          categoryId: item.categoryId ?? aiRes.categoryId,
+          unit: aiRes.unit || (aiRes.weightEnabled ? 'كيلو' : 'حبة'),
+          weightEnabled: Boolean(aiRes.weightEnabled),
+          aiStatus: 'done',
+        });
+        toast.success('🤖 تم التعرف على: «' + recognizedName + '»!');
+      } else {
+        updateItem(uid, { aiStatus: 'idle' });
+        toast.info('لم يتعرف الذكاء الاصطناعي على اسم المنتج بدقة، يرجى كتابة الاسم يدوياً.');
+      }
+    } catch {
+      updateItem(uid, { aiStatus: 'idle' });
+      toast.error('تعذر قراءة الصورة بالذكاء الاصطناعي، يرجى كتابة الاسم يدوياً.');
     }
-    await utils.commerce.admin.categories.list.invalidate();
-    toast.success("✨ اكتمل استخراج الأسماء بالعربية وتحديد القسم! اكتب السعر فقط أمام كل منتج.");
   };
 
   const handleParseBulkText = async () => {
@@ -793,9 +817,10 @@ function SmartBulkProductsStudio({
     e.target.value = "";
     if (!file || !targetUid) return;
     try {
+      rawFilesRef.current[targetUid] = file;
       const compressed = await quickCompressImageFile(file, "product");
       base64ImageMapRef.current[targetUid] = compressed;
-      updateItem(targetUid, { imageUrl: URL.createObjectURL(file) });
+      updateItem(targetUid, { imageUrl: URL.createObjectURL(file), aiStatus: "idle" });
     } catch {
       toast.error("تعذر قراءة الصورة");
     }
