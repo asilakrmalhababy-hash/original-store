@@ -1847,7 +1847,7 @@ var systemRouter = router({
 // server/commerce.ts
 import fs2 from "node:fs";
 import { createHash as createHash4 } from "node:crypto";
-import { and as and2, asc, desc, eq as eq4, gt, inArray, or, sql as sql2 } from "drizzle-orm";
+import { and as and2, asc, desc, eq as eq4, gt, inArray, like, or, sql as sql2 } from "drizzle-orm";
 import { z as z3 } from "zod";
 init_schema();
 init_schema();
@@ -3377,7 +3377,7 @@ async function refreshHomeCatalogCache() {
       void ensureOrderItemsFastSchema(db);
       const [categoryRows, productRows, bannerRows, offerRows, settings] = await Promise.all([
         db.select().from(categories).where(eq4(categories.isActive, true)).orderBy(asc(categories.sortOrder), asc(categories.id)),
-        db.select().from(products).where(and2(eq4(products.isPublished, true), eq4(products.isAvailable, true))).orderBy(asc(products.sortOrder), desc(products.createdAt)).limit(500),
+        db.select().from(products).where(and2(eq4(products.isPublished, true), eq4(products.isAvailable, true))).orderBy(asc(products.sortOrder), desc(products.createdAt)).limit(40),
         db.select().from(banners).where(and2(eq4(banners.isActive, true))).orderBy(asc(banners.sortOrder), desc(banners.createdAt)),
         db.select().from(offers).where(and2(eq4(offers.isActive, true))).orderBy(desc(offers.createdAt)),
         readSettings(db)
@@ -3444,24 +3444,28 @@ var commerceRouter = router({
       search: z3.string().trim().max(120).optional(),
       categoryId: safeId.optional(),
       sort: z3.enum(["featured", "price-asc", "price-desc", "name"]).default("featured"),
-      limit: z3.number().int().min(1).max(500).default(250)
+      limit: z3.number().int().min(1).max(40).default(40),
+      offset: z3.number().int().min(0).default(0)
     }).optional()).query(async ({ input }) => {
-      const g = globalThis;
-      let base = g.__fastHomeData?.products;
-      if (!Array.isArray(base)) {
-        const homeData = await refreshHomeCatalogCache();
-        base = homeData?.products || [];
-      }
-      let list = [...base];
-      if (input?.categoryId) list = list.filter((p) => p.categoryId === input.categoryId);
+      const db = await database();
+      const filters = [
+        eq4(products.isPublished, true),
+        eq4(products.isAvailable, true)
+      ];
+      if (input?.categoryId) filters.push(eq4(products.categoryId, input.categoryId));
       if (input?.search) {
-        const q = input.search.toLowerCase();
-        list = list.filter((p) => String(p.name || "").toLowerCase().includes(q) || String(p.description || "").toLowerCase().includes(q));
+        const term = "%" + input.search + "%";
+        filters.push(or(like(products.name, term), like(products.description, term)));
       }
-      if (input?.sort === "price-asc") list.sort((a, b) => a.price - b.price);
-      else if (input?.sort === "price-desc") list.sort((a, b) => b.price - a.price);
-      else if (input?.sort === "name") list.sort((a, b) => String(a.name).localeCompare(String(b.name), "ar"));
-      return list.slice(0, input?.limit ?? 250);
+      let ordering;
+      if (input?.sort === "price-asc") ordering = [asc(products.price), asc(products.id)];
+      else if (input?.sort === "price-desc") ordering = [desc(products.price), desc(products.id)];
+      else if (input?.sort === "name") ordering = [asc(products.name), asc(products.id)];
+      else ordering = [asc(products.sortOrder), desc(products.createdAt), desc(products.id)];
+      const limit = input?.limit ?? 40;
+      const offset = input?.offset ?? 0;
+      const rows = await db.select().from(products).where(and2(...filters)).orderBy(...ordering).limit(limit).offset(offset);
+      return rows.map((row) => toFastImg("product", row));
     }),
     listCategories: publicProcedure.query(async () => {
       const g = globalThis;

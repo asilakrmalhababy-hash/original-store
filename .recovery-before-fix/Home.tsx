@@ -1,0 +1,2142 @@
+
+const INSTANT_CATALOG_KEY = "original-instant-catalog-v3";
+function getInstantLocalCatalog(): HomeData {
+  try {
+    const raw = localStorage.getItem(INSTANT_CATALOG_KEY);
+    if (raw) {
+      const p = JSON.parse(raw);
+      if (p && Array.isArray(p.products)) return p;
+    }
+  } catch {}
+  return { categories: [], products: [], banners: [], offers: [], settings: {} };
+}
+
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { Link, useLocation, useSearch } from "wouter";
+import {
+  ArrowDownWideNarrow, ArrowLeft, ArrowUpDown, BadgePercent, BellRing, Check, ChevronLeft, ChevronRight, CircleUserRound, Copy,
+  Heart, Home as HomeIcon, Leaf, LoaderCircle, MapPin, Menu, MessageCircle, Minus, Package,
+  Plus, Search, ShoppingBag, ShoppingCart, SlidersHorizontal, Sparkles, Trash2, Truck, UserRound,
+  X, Bot, Clock3, ShieldCheck,
+} from "lucide-react";
+import { toast } from "sonner";
+import { trpc } from "@/lib/trpc";
+import { useStore, type CartLine } from "@/contexts/StoreContext";
+import { clearPendingOrderIdempotencyKey, getPendingOrderIdempotencyKey, useCustomer } from "@/contexts/CustomerContext";
+import PWAInstall from "@/components/PWAInstall";
+import { buildMissingIngredientNote } from "@/lib/assistant-note";
+import { ensureBrowserPushSubscription, getExistingBrowserPushSubscription, getPushPermissionState, requestPushPermission } from "@/lib/pushNotifications";
+
+const formatPrice = (amount: number) => `${Math.max(0, amount).toLocaleString("en-US")} ر.ي`;
+const stateLabels: Record<string, string> = { new: "جديد", preparing: "قيد التجهيز", ready: "جاهز للتوصيل", out_for_delivery: "خرج للتوصيل", delivered: "تم التسليم", cancelled: "ملغي" };
+
+function useDebouncedValue<T>(value: T, delay = 220) {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => { const timer = window.setTimeout(() => setDebounced(value), delay); return () => window.clearTimeout(timer); }, [value, delay]);
+  return debounced;
+}
+
+type PublicProduct = { id: number; name: string; slug: string; description: string | null; imageUrl: string | null; categoryId: number | null; price: number; unit: string; stock: number | null; minQuantity: number; quantityStep: number; isPublished: boolean; isAvailable: boolean; sortOrder: number; createdAt: Date; updatedAt: Date };
+
+type HomeData = { categories: Array<{ id: number; name: string; description: string | null; imageUrl: string | null; color: string; slug: string }>; products: PublicProduct[]; banners: Array<{ id: number; title: string; body: string | null; imageUrl: string | null; actionText: string | null; actionUrl: string | null }>; offers: Array<{ id: number; title: string; description: string | null; code: string; discountType: string; discountValue: number }>; settings: Record<string, string> };
+
+function Header({ data, onSearch }: { data?: HomeData; onSearch: (text: string) => void }) {
+  const { cart } = useStore();
+  const { name } = useCustomer();
+  const [text, setText] = useState("");
+  const cartCount = cart.reduce((sum, row) => sum + row.quantity, 0);
+  const storeName = data?.settings.storeName || "ORIGINAL – أورجنال";
+  const brandSubtitle = storeName === "ORIGINAL – أورجنال" ? "أورجنال" : storeName;
+  const submitSearch = (event: FormEvent) => { event.preventDefault(); onSearch(text.trim()); };
+  return <header className="store-header">
+    <div className="header-main">
+      <Link href="/" className="brand-lockup" aria-label={`${storeName} الرئيسية`}>
+        <span className={`brand-mark ${data?.settings.storeIconUrl ? "has-brand-image" : ""}`}>{data?.settings.storeIconUrl ? <img src={data.settings.storeIconUrl} alt="" /> : <Leaf size={22} strokeWidth={1.8} />}</span>
+        <span className="brand-type"><strong>ORIGINAL</strong><small>{brandSubtitle}</small></span>
+      </Link>
+      <form className="header-search" onSubmit={submitSearch}>
+        <Search size={18} /><input value={text} onChange={event => setText(event.target.value)} placeholder="ابحث عن احتياجاتك..." aria-label="البحث عن المنتجات" />
+        {text && <button type="button" className="search-clear" onClick={() => { setText(""); onSearch(""); }} aria-label="مسح البحث"><X size={14} /></button>}
+      </form>
+      <div className="header-actions">
+        <Link href="/favorites" className="header-action mobile-header-shortcut" aria-label="المفضلة" title="المفضلة"><Heart size={19} /><span>المفضلة</span></Link>
+        <Link href="/orders" className="header-action mobile-header-shortcut" aria-label="طلباتي" title="طلباتي"><Package size={19} /><span>طلباتي</span></Link>
+        <Link href="/cart" className="header-cart"><ShoppingCart size={19} /><span>السلة</span>{cartCount > 0 && <b>{cartCount}</b>}</Link>
+        <Link href="/account" className="account-chip"><CircleUserRound size={19} /><span>{name.trim().split(/\s+/)[0] || "حسابي"}</span></Link>
+      </div>
+    </div>
+    <div className="header-subline">
+      <nav className="desktop-links" aria-label="القائمة الرئيسية"><Link href="/">الرئيسية</Link><Link href="/categories">الأقسام</Link><Link href="/products">المنتجات</Link><Link href="/assistant" className="assistant-link"><Sparkles size={15} /> مساعد أورجنال</Link></nav>
+      <div className="header-promise"><ShieldCheck size={15} /><span></span></div><PWAInstall />
+    </div>
+    {data?.settings.orderPaused === "true" && <div className="service-notice"><Clock3 size={15} />{data.settings.pausedMessage || "استقبال الطلبات متوقف مؤقتًا"}</div>}
+  </header>;
+}
+
+function BottomNav({ active }: { active: string }) {
+  const links = [
+    { href: "/", label: "الرئيسية", icon: HomeIcon },
+    { href: "/categories", label: "الأقسام", icon: SlidersHorizontal },
+    { href: "/assistant", label: "المساعد", icon: Sparkles, standout: true },
+    { href: "/products", label: "المنتجات", icon: ShoppingBag },
+    { href: "/account", label: "حسابي", icon: UserRound },
+  ];
+  return <nav className="bottom-nav" aria-label="التنقل"><div className="bottom-nav-inner">{links.map(item => {
+    const Icon = item.icon;
+    return <Link key={item.href} href={item.href} className={`bottom-nav-link ${active === item.href ? "is-active" : ""} ${item.standout ? "nav-assistant" : ""}`}><span className="bottom-icon"><Icon size={item.standout ? 21 : 19} /></span><small>{item.label}</small></Link>;
+  })}</div></nav>;
+}
+
+function EmptyState({ icon: Icon = Package, title, description, action, href }: { icon?: typeof Package; title: string; description: string; action?: string; href?: string }) {
+  return <div className="empty-state"><span className="empty-icon"><Icon size={25} strokeWidth={1.6} /></span><h3>{title}</h3><p>{description}</p>{action && href && <Link href={href} className="button button-primary">{action}<ArrowLeft size={16} /></Link>}</div>;
+}
+
+type BannerConfig = {
+  placement: "top" | "middle" | "bottom" | "popup";
+  size: "auto" | "small" | "medium" | "large";
+  clickMode: "full" | "hotspot" | "none";
+  hx: number;
+  hy: number;
+  hw: number;
+  hh: number;
+  shade: boolean;
+  showTitle: boolean;
+  showBtn: boolean;
+  popupOnce: boolean;
+};
+
+const defaultBannerCfg: BannerConfig = {
+  placement: "top",
+  size: "auto",
+  clickMode: "full",
+  hx: 8,
+  hy: 44,
+  hw: 34,
+  hh: 24,
+  shade: false,
+  showTitle: false,
+  showBtn: false,
+  popupOnce: true,
+};
+
+function parseBannerMeta(rawActionUrl?: string | null): { targetUrl: string; cfg: BannerConfig } {
+  const raw = String(rawActionUrl || "").trim();
+  const marker = "#bcfg=";
+  const idx = raw.indexOf(marker);
+  if (idx === -1) {
+    return { targetUrl: raw, cfg: { ...defaultBannerCfg, clickMode: raw ? "full" : "none" } };
+  }
+  const targetUrl = raw.slice(0, idx).trim();
+  try {
+    const parsed = JSON.parse(decodeURIComponent(raw.slice(idx + marker.length)));
+    return {
+      targetUrl,
+      cfg: {
+        placement: ["top", "middle", "bottom", "popup"].includes(parsed.placement) ? parsed.placement : "top",
+        size: ["auto", "small", "medium", "large"].includes(parsed.size) ? parsed.size : "auto",
+        clickMode: ["full", "hotspot", "none"].includes(parsed.clickMode) ? parsed.clickMode : (targetUrl ? "full" : "none"),
+        hx: typeof parsed.hx === "number" ? Math.max(0, Math.min(95, parsed.hx)) : 8,
+        hy: typeof parsed.hy === "number" ? Math.max(0, Math.min(95, parsed.hy)) : 44,
+        hw: typeof parsed.hw === "number" ? Math.max(5, Math.min(100, parsed.hw)) : 34,
+        hh: typeof parsed.hh === "number" ? Math.max(5, Math.min(100, parsed.hh)) : 24,
+        shade: Boolean(parsed.shade),
+        showTitle: Boolean(parsed.showTitle),
+        showBtn: Boolean(parsed.showBtn),
+        popupOnce: parsed.popupOnce !== false,
+      },
+    };
+  } catch {
+    return { targetUrl, cfg: { ...defaultBannerCfg, clickMode: targetUrl ? "full" : "none" } };
+  }
+}
+
+function BannerCarousel({ banners }: { banners: HomeData["banners"] }) {
+  const [, navigate] = useLocation();
+  const [index, setIndex] = useState(0);
+  const touchStartX = useRef<number | null>(null);
+  useEffect(() => {
+    if (banners.length < 2) return;
+    const timer = window.setInterval(() => setIndex(value => (value + 1) % banners.length), 5200);
+    return () => window.clearInterval(timer);
+  }, [banners.length]);
+  if (!banners.length) return null;
+  const banner = banners[index % banners.length];
+  if (!banner?.imageUrl) return null;
+  const { targetUrl, cfg } = parseBannerMeta(banner.actionUrl);
+
+  const goTarget = () => {
+    if (!targetUrl) return;
+    if (targetUrl.startsWith("/")) navigate(targetUrl);
+    else window.location.href = targetUrl;
+  };
+
+  const sizeHeights: Record<BannerConfig["size"], string | undefined> = {
+    auto: undefined,
+    small: "clamp(115px, 18vw, 180px)",
+    medium: "clamp(175px, 25vw, 275px)",
+    large: "clamp(235px, 34vw, 380px)",
+  };
+  const isAutoSize = cfg.size === "auto";
+  const isFullClick = Boolean(targetUrl && cfg.clickMode === "full");
+  const isHotspotClick = Boolean(targetUrl && cfg.clickMode === "hotspot");
+
+  return (
+    <section
+      className="banner-frame"
+      aria-label="إعلانات المتجر"
+      onClick={isFullClick ? goTarget : undefined}
+      onTouchStart={e => { touchStartX.current = e.touches[0]?.clientX ?? null; }}
+      onTouchEnd={e => {
+        if (touchStartX.current === null || banners.length < 2) return;
+        const diff = (e.changedTouches[0]?.clientX ?? touchStartX.current) - touchStartX.current;
+        touchStartX.current = null;
+        if (Math.abs(diff) > 40) {
+          setIndex(v => diff > 0 ? (v + 1) % banners.length : (v - 1 + banners.length) % banners.length);
+        }
+      }}
+      style={{
+        position: "relative",
+        height: isAutoSize ? "auto" : sizeHeights[cfg.size],
+        minHeight: isAutoSize ? 0 : sizeHeights[cfg.size],
+        borderRadius: "20px",
+        overflow: "hidden",
+        margin: "6px 0 24px",
+        background: "transparent",
+        cursor: isFullClick ? "pointer" : "default",
+        boxShadow: "0 10px 26px rgba(15, 45, 30, 0.08)",
+      }}
+    >
+      <img
+        src={banner.imageUrl}
+        alt={banner.title || "إعلان المتجر"}
+        loading="eager"
+        decoding="async"
+        fetchPriority="high"
+        style={isAutoSize ? {
+          position: "relative",
+          width: "100%",
+          height: "auto",
+          display: "block",
+          objectFit: "contain",
+          zIndex: 1,
+        } : {
+          position: "absolute",
+          inset: 0,
+          width: "100%",
+          height: "100%",
+          objectFit: "cover",
+          zIndex: 1,
+        }}
+      />
+      {cfg.shade && <div className="banner-shade" style={{ zIndex: 2 }} />}
+      {(cfg.showTitle || (cfg.showBtn && banner.actionText && targetUrl)) && (
+        <div className="banner-copy" style={{ zIndex: 3 }}>
+          {cfg.showTitle && banner.title && <h2>{banner.title}</h2>}
+          {cfg.showTitle && banner.body && <p>{banner.body}</p>}
+          {cfg.showBtn && banner.actionText && targetUrl && (
+            <button type="button" onClick={e => { e.stopPropagation(); goTarget(); }} className="button button-light">
+              {banner.actionText}<ArrowLeft size={16} />
+            </button>
+          )}
+        </div>
+      )}
+      {isHotspotClick && (
+        <button
+          type="button"
+          aria-label={banner.actionText || banner.title || "انتقال للعرض"}
+          onClick={e => { e.stopPropagation(); goTarget(); }}
+          style={{
+            position: "absolute",
+            left: cfg.hx + "%",
+            top: cfg.hy + "%",
+            width: cfg.hw + "%",
+            height: cfg.hh + "%",
+            background: "transparent",
+            border: "none",
+            cursor: "pointer",
+            zIndex: 5,
+            padding: 0,
+          }}
+        />
+      )}
+      {banners.length > 1 && (
+        <div className="banner-dots" style={{ zIndex: 6 }}>
+          {banners.map((item, dot) => (
+            <button key={item.id} type="button" className={dot === index ? "active" : ""} aria-label={"الإعلان " + (dot + 1)} onClick={e => { e.stopPropagation(); setIndex(dot); }} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function PromoPopupModal({ banners }: { banners: HomeData["banners"] }) {
+  const [, navigate] = useLocation();
+  const [openBanner, setOpenBanner] = useState<HomeData["banners"][number] | null>(null);
+
+  useEffect(() => {
+    if (!banners.length) return;
+    const candidate = banners[0];
+    if (!candidate?.imageUrl) return;
+    const { cfg } = parseBannerMeta(candidate.actionUrl);
+    const storageKey = "original-popup-seen-" + candidate.id;
+    if (cfg.popupOnce) {
+      try {
+        if (sessionStorage.getItem(storageKey) === "1") return;
+      } catch {}
+    }
+    setOpenBanner(candidate);
+  }, [banners]);
+
+  if (!openBanner || !openBanner.imageUrl) return null;
+  const { targetUrl, cfg } = parseBannerMeta(openBanner.actionUrl);
+
+  const closePopup = () => {
+    try { sessionStorage.setItem("original-popup-seen-" + openBanner.id, "1"); } catch {}
+    setOpenBanner(null);
+  };
+
+  const goTarget = () => {
+    closePopup();
+    if (!targetUrl) return;
+    if (targetUrl.startsWith("/")) navigate(targetUrl);
+    else window.location.href = targetUrl;
+  };
+
+  const isFullClick = Boolean(targetUrl && cfg.clickMode === "full");
+  const isHotspotClick = Boolean(targetUrl && cfg.clickMode === "hotspot");
+
+  return (
+    <div
+      className="modal-backdrop"
+      role="dialog"
+      aria-modal="true"
+      onClick={closePopup}
+      style={{ zIndex: 120, background: "rgba(8, 22, 15, 0.72)", padding: "18px" }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          position: "relative",
+          width: "min(460px, 94vw)",
+          borderRadius: "22px",
+          overflow: "hidden",
+          background: "transparent",
+          boxShadow: "0 24px 60px rgba(0,0,0,0.45)",
+        }}
+      >
+        <button
+          type="button"
+          onClick={closePopup}
+          aria-label="إغلاق الإعلان"
+          style={{
+            position: "absolute",
+            top: "10px",
+            right: "10px",
+            width: "34px",
+            height: "34px",
+            borderRadius: "50%",
+            border: "none",
+            background: "rgba(15, 38, 26, 0.82)",
+            color: "#ffffff",
+            display: "grid",
+            placeItems: "center",
+            cursor: "pointer",
+            zIndex: 10,
+            boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
+          }}
+        >
+          <X size={18} />
+        </button>
+        <div
+          onClick={isFullClick ? goTarget : undefined}
+          style={{ position: "relative", cursor: isFullClick ? "pointer" : "default", lineHeight: 0 }}
+        >
+          <img
+            src={openBanner.imageUrl}
+            alt={openBanner.title || "عرض خاص"}
+            style={{ width: "100%", height: "auto", maxHeight: "82vh", objectFit: "contain", display: "block", borderRadius: "22px" }}
+          />
+          {isHotspotClick && (
+            <button
+              type="button"
+              aria-label="انتقال للعرض"
+              onClick={e => { e.stopPropagation(); goTarget(); }}
+              style={{
+                position: "absolute",
+                left: cfg.hx + "%",
+                top: cfg.hy + "%",
+                width: cfg.hw + "%",
+                height: cfg.hh + "%",
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
+                zIndex: 5,
+              }}
+            />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+function parseAssistantMessageAndSuggestions(rawText?: string) {
+  const text = rawText || "";
+  const match = text.match(/\[\[SUGGESTIONS:([^\]]+)\]\]/);
+  const cleanText = text.replace(/\s*\[\[SUGGESTIONS:[^\]]+\]\]/g, "").trim();
+  const suggestions = match
+    ? match[1].split("|").map(s => s.trim()).filter(Boolean)
+    : [];
+  return { cleanText, suggestions };
+}
+
+function AiThinkingStatus() {
+  return (
+    <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "4px 10px", color: "#64748b", fontSize: "11.5px", fontWeight: 500 }} aria-live="polite">
+      <span style={{ width: "6px", height: "6px", borderRadius: "999px", background: "#174b36", animation: "pulse 1.2s infinite" }} />
+      <span>جاري التفكير...</span>
+    </div>
+  );
+}
+
+function splitCleanReplyAndChips(rawText: string, fallbackChips?: string[]) {
+  const raw = String(rawText || "");
+  const rawList: string[] = [];
+  const match = raw.match(/\[\[SUGGESTIONS:([\s\S]*?)\]\]/i);
+  if (match) {
+    rawList.push(...match[1].split("|"));
+  } else if (Array.isArray(fallbackChips) && fallbackChips.length > 0) {
+    rawList.push(...fallbackChips);
+  }
+  const seen = new Set<string>();
+  const chips: string[] = [];
+  for (const item of rawList) {
+    const c = String(item || "").replace(/^[\s"'•✨*-]+|[\s"']+$/g, "").trim();
+    if (c && c.length >= 2 && !seen.has(c)) {
+      seen.add(c);
+      chips.push(c);
+    }
+    if (chips.length >= 3) break;
+  }
+  const cleanText = raw.replace(/\[\[SUGGESTIONS:[\s\S]*?\]\]/gi, "").trim();
+  return { cleanText, chips };
+}
+
+const tinyChipStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  width: "auto",
+  minHeight: "22px",
+  padding: "2px 8px",
+  borderRadius: "6px",
+  background: "#f1f5f2",
+  border: "1px solid #d5e2d8",
+  color: "#174b36",
+  fontSize: "10.5px",
+  fontWeight: 600,
+  lineHeight: 1.3,
+  cursor: "pointer"
+};
+
+function AiRecipeModal({ product, onClose }: { product: PublicProduct; onClose: () => void }) {
+  const { add, cart, setQuantity } = useStore();
+  const [, navigate] = useLocation();
+  const [customInput, setCustomInput] = useState("");
+  const [modalHistory, setModalHistory] = useState<Array<{ role: "user" | "assistant"; text: string }>>([]);
+  const recipeMutation = trpc.commerce.assistant.recipe.useMutation();
+
+  const sendProductQuery = (userQuestion = "") => {
+    const trimmed = userQuestion.trim();
+    const requestPayload = trimmed
+      ? "[سياق_منتج:" + product.name + "] " + trimmed
+      : "[تحليل_منتج] «" + product.name + "»";
+    const nextHist = trimmed ? [...modalHistory, { role: "user" as const, text: trimmed }] : modalHistory;
+    if (trimmed) setModalHistory(nextHist);
+
+    recipeMutation.mutate(
+      {
+        request: requestPayload,
+        history: nextHist.slice(-8),
+        cart: cart.map(line => ({ productId: line.id, quantity: line.quantity })),
+      },
+      {
+        onSuccess: res => {
+          const parsed = splitCleanReplyAndChips(res.message, (res as any).suggestedQuestions);
+          setModalHistory(prev => [...prev, { role: "assistant", text: parsed.cleanText }]);
+          if (res.cartAction && Array.isArray(res.cartAction.items) && res.cartAction.items.length > 0) {
+            for (const item of res.cartAction.items) {
+              if (res.cartAction.type === "add") {
+                add({ id: item.productId, name: item.name, price: item.price, unit: item.unit, stock: item.stock, minQuantity: item.minQuantity, quantityStep: item.quantityStep }, item.quantity);
+              } else {
+                const cur = cart.find(c => c.id === item.productId);
+                if (cur) setQuantity(item.productId, Math.max(0, cur.quantity - item.quantity));
+              }
+            }
+            toast.success(res.cartAction.type === "add" ? "تمت الإضافة للسلة 🛒" : "تم تحديث السلة");
+          }
+        }
+      }
+    );
+  };
+
+  useEffect(() => {
+    setModalHistory([]);
+    sendProductQuery("");
+  }, [product.id]);
+
+  const data = recipeMutation.data;
+  const isPending = recipeMutation.isPending;
+  const parsed = data ? splitCleanReplyAndChips(data.message, (data as any).suggestedQuestions) : { cleanText: "", chips: [] };
+
+  const continueInAssistantChat = () => {
+    try {
+      const existingRaw = localStorage.getItem("original-assistant-history-v2");
+      const existing = existingRaw ? JSON.parse(existingRaw) : [];
+      const historyArr = Array.isArray(existing) ? existing : [];
+      const nextHistory = [...historyArr, ...modalHistory].slice(-24);
+      localStorage.setItem("original-assistant-history-v2", JSON.stringify(nextHistory));
+    } catch {}
+    onClose();
+    navigate("/assistant");
+  };
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <section className="checkout-modal" role="dialog" aria-modal="true" style={{ maxWidth: "440px", borderRadius: "18px", padding: "14px" }}>
+        <div className="modal-heading" style={{ marginBottom: "8px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <span style={{ width: "30px", height: "30px", borderRadius: "9px", background: "#174b36", color: "#fff", display: "grid", placeItems: "center" }}>
+              <Sparkles size={15} />
+            </span>
+            <div>
+              <h2 style={{ fontSize: "14px", fontWeight: 700, margin: 0 }}>{product.name}</h2>
+            </div>
+          </div>
+          <button type="button" className="icon-button" onClick={onClose}><X size={17} /></button>
+        </div>
+
+        <div style={{ maxHeight: "64vh", overflowY: "auto", padding: "2px" }}>
+          {isPending ? (
+            <div style={{ padding: "12px 6px" }}><AiThinkingStatus /></div>
+          ) : recipeMutation.error ? (
+            <div style={{ padding: "12px", textAlign: "center", color: "#9c3b37", fontSize: "12px" }}>
+              <p style={{ marginBottom: "6px" }}>الشبكة مشغولة لحظياً</p>
+              <button className="button button-outline" style={{ minHeight: "30px", fontSize: "11px" }} onClick={() => sendProductQuery(customInput)}>إعادة المحاولة</button>
+            </div>
+          ) : parsed.cleanText ? (
+            <div style={{ background: "#f9fbf9", border: "1px solid #e4ece6", borderRadius: "12px", padding: "10px 12px", marginBottom: "10px" }}>
+              <div style={{ whiteSpace: "pre-line", color: "#1e293b", fontSize: "12.5px", lineHeight: "1.65" }}>
+                {parsed.cleanText}
+              </div>
+              {data?.recipe && (
+                <div className="recipe-card" style={{ marginTop: "8px", padding: "9px 11px", borderRadius: "10px", background: "#fff", border: "1px solid #dce8df" }}>
+                  <strong style={{ fontSize: "12.5px", color: "#174b36", display: "block" }}>{data.recipe.name} <small style={{ fontWeight: 500, color: "#64748b" }}>(تكفي {data.recipe.servings})</small></strong>
+                  {data.recipe.steps?.length > 0 && (
+                    <ol style={{ margin: "6px 0", paddingInlineStart: "18px", fontSize: "11.5px", lineHeight: "1.6" }}>
+                      {data.recipe.steps.map((st: string, sIdx: number) => <li key={sIdx}>{st}</li>)}
+                    </ol>
+                  )}
+                  {data.ingredients?.length > 0 && (
+                    <button type="button" onClick={() => { data.ingredients.forEach((ing: any) => add({ id: ing.productId, name: ing.name, price: ing.price, unit: ing.unit, stock: ing.stock, minQuantity: ing.minQuantity, quantityStep: ing.quantityStep }, ing.quantity)); toast.success("أُضيفت مقادير الوصفة للسلة 🛒"); }} style={{ ...tinyChipStyle, background: "#174b36", color: "#fff", marginTop: "4px", padding: "4px 10px" }}>
+                      إضافة مقادير الوصفة للسلة
+                    </button>
+                  )}
+                </div>
+              )}
+              {parsed.chips.length > 0 && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "5px", marginTop: "8px" }}>
+                  {parsed.chips.map((chip, idx) => (
+                    <button key={idx} type="button" disabled={isPending} onClick={() => sendProductQuery(chip)} style={tinyChipStyle}>
+                      {chip}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : null}
+
+          <form
+            onSubmit={e => {
+              e.preventDefault();
+              if (!customInput.trim() || isPending) return;
+              const q = customInput.trim();
+              setCustomInput("");
+              sendProductQuery(q);
+            }}
+            style={{ display: "flex", gap: "6px", marginBottom: "8px" }}
+          >
+            <input
+              value={customInput}
+              onChange={e => setCustomInput(e.target.value)}
+              placeholder="اسأل أي سؤال..."
+              disabled={isPending}
+              style={{ flex: 1, minHeight: "34px", padding: "0 12px", borderRadius: "999px", border: "1px solid #cbd8ce", fontSize: "12px", background: "#fff" }}
+            />
+            <button type="submit" className="button button-primary" disabled={!customInput.trim() || isPending} style={{ minHeight: "34px", padding: "0 14px", borderRadius: "999px", fontSize: "11.5px" }}>
+              إرسال
+            </button>
+          </form>
+
+          <button type="button" className="button button-outline full-button" onClick={continueInAssistantChat} style={{ borderRadius: "999px", minHeight: "32px", fontSize: "11px" }}>
+            متابعة في صفحة المساعد
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function unpackProductVariants(rawDescription?: string | null): { cleanDescription: string; variants: string[] } {
+  const raw = String(rawDescription || "");
+  const m = raw.match(/\[\[variants:(\[[\s\S]*?\])\]\]/);
+  if (!m) return { cleanDescription: raw.trim(), variants: [] };
+  const cleanDescription = raw.replace(m[0], "").trim();
+  try {
+    const parsed = JSON.parse(m[1]);
+    if (Array.isArray(parsed)) {
+      return { cleanDescription, variants: parsed.map(v => String(v || "").trim()).filter(Boolean).slice(0, 25) };
+    }
+  } catch {}
+  return { cleanDescription, variants: [] };
+}
+
+function VariantPickerModal({ product, variants, initialVariant, initialQty, onClose }: { product: PublicProduct; variants: string[]; initialVariant?: string; initialQty?: number; onClose: () => void }) {
+  const { add } = useStore();
+  const [selected, setSelected] = useState<string>(initialVariant && variants.includes(initialVariant) ? initialVariant : (variants[0] || ""));
+  const [qty, setQty] = useState<number>(initialQty || product.minQuantity || 1);
+  const step = product.quantityStep || 1;
+  const minQ = product.minQuantity || 1;
+  const maxQ = product.stock === null ? 9999 : product.stock;
+
+  const confirmAdd = () => {
+    if (!selected) return;
+    add({ ...product, name: product.name + " (" + selected + ")", variant: selected }, qty);
+    toast.success("تمت إضافة «" + product.name + " (" + selected + ")» إلى السلة");
+    onClose();
+  };
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" onClick={onClose} style={{ zIndex: 140 }}>
+      <section className="checkout-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: "420px", padding: "20px" }}>
+        <div className="modal-heading" style={{ marginBottom: "12px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            {product.imageUrl && <img src={product.imageUrl} alt="" style={{ width: "48px", height: "48px", borderRadius: "12px", objectFit: "cover" }} />}
+            <div>
+              <span className="eyebrow">اختر النوع المطلوب</span>
+              <h2 style={{ fontSize: "18px", margin: "2px 0" }}>{product.name}</h2>
+              <small style={{ color: "#174b36", fontWeight: 700 }}>{formatPrice(product.price)} / {product.unit}</small>
+            </div>
+          </div>
+          <button type="button" className="icon-button" onClick={onClose} aria-label="إغلاق"><X size={18} /></button>
+        </div>
+
+        <div style={{ display: "grid", gap: "8px", marginBottom: "16px" }}>
+          <strong style={{ fontSize: "12px", color: "#344c3b" }}>حدد النوع الذي تريده من الخيارات المتاحة:</strong>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(105px, 1fr))", gap: "8px" }}>
+            {variants.map(v => {
+              const isSel = selected === v;
+              return (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setSelected(v)}
+                  style={{
+                    padding: "11px 12px",
+                    borderRadius: "12px",
+                    border: isSel ? "2px solid #174b36" : "1px solid #d5e2d8",
+                    background: isSel ? "#174b36" : "#f7faf8",
+                    color: isSel ? "#ffffff" : "#1b3829",
+                    fontWeight: 700,
+                    fontSize: "13px",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "6px",
+                    boxShadow: isSel ? "0 6px 16px rgba(23, 75, 54, 0.22)" : "none",
+                    transition: "0.15s",
+                  }}
+                >
+                  {isSel && <Check size={15} />}
+                  <span>{v}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px", padding: "10px 12px", borderRadius: "12px", background: "#f4f7f3" }}>
+          <span style={{ fontSize: "12px", fontWeight: 700, color: "#2b4736" }}>الكمية ({product.unit}):</span>
+          <div className="quantity-compact">
+            <button type="button" aria-label="تقليل" onClick={() => setQty(q => Math.max(minQ, q - step))}><Minus size={14} /></button>
+            <b>{qty}</b>
+            <button type="button" aria-label="زيادة" disabled={qty + step > maxQ} onClick={() => setQty(q => Math.min(maxQ, q + step))}><Plus size={14} /></button>
+          </div>
+        </div>
+
+        <button type="button" className="button button-primary full-button" onClick={confirmAdd}>
+          <ShoppingCart size={17} /> إضافة «{selected}» إلى السلة ({formatPrice(product.price * qty)})
+        </button>
+      </section>
+    </div>
+  );
+}
+
+function ProductCard({ product, onOpen, onAiRecipe, priority = false }: { product: PublicProduct; onOpen: () => void; onAiRecipe?: (p: PublicProduct) => void; priority?: boolean }) {
+  const { add, isFavorite, toggleFavorite } = useStore();
+  const favorite = isFavorite(product.id);
+  const disabled = product.stock !== null && product.stock < (product.minQuantity || 1);
+  const { variants } = useMemo(() => unpackProductVariants(product.description), [product.description]);
+  const [pickerVariant, setPickerVariant] = useState<string | null>(null);
+
+  const handleAddClick = (e: React.MouseEvent, preferredVariant?: string) => {
+    e.stopPropagation();
+    if (disabled) return;
+    if (variants.length > 0) {
+      setPickerVariant(preferredVariant || variants[0]);
+      return;
+    }
+    add(product, product.minQuantity || 1);
+    toast.success("أُضيف إلى السلة");
+  };
+
+  return <>
+    <article className="product-card">
+      <div className="product-visual" onClick={onOpen} role="button" tabIndex={0} onKeyDown={event => { if (event.key === "Enter") onOpen(); }}>
+        {product.imageUrl ? <img src={product.imageUrl} alt={product.name} loading={priority ? "eager" : "lazy"} fetchPriority={priority ? "high" : "auto"} decoding="async" /> : <div className="product-no-image"><Leaf size={27} strokeWidth={1.4} /><span>صورة المنتج</span></div>}
+        <button type="button" className={"favorite-toggle " + (favorite ? "is-favorite" : "")} aria-label={favorite ? "إزالة من المفضلة" : "أضف للمفضلة"} aria-pressed={favorite} onClick={event => { event.stopPropagation(); toggleFavorite(product.id); toast.success(favorite ? "أُزيل من المفضلة" : "أُضيف إلى المفضلة على هذا الجهاز"); }}><Heart size={17} fill={favorite ? "currentColor" : "none"} /></button>
+        {onAiRecipe && <button type="button" className="ai-recipe-toggle" aria-label="أفكار وتحضير بالذكاء الاصطناعي" title="أفكار ووصفات تحضير" onClick={event => { event.stopPropagation(); onAiRecipe(product); }}><Sparkles size={16} /></button>}
+        {disabled && <span className="product-sold-out">غير متوفر</span>}
+      </div>
+      {variants.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", padding: "6px 4px 0" }}>
+          {variants.map(v => (
+            <button
+              key={v}
+              type="button"
+              disabled={disabled}
+              onClick={e => handleAddClick(e, v)}
+              style={{
+                fontSize: "10px",
+                fontWeight: 700,
+                padding: "3px 8px",
+                borderRadius: "99px",
+                border: "1px solid #c8dfd0",
+                background: "#eef6f1",
+                color: "#174b36",
+                cursor: disabled ? "not-allowed" : "pointer",
+              }}
+            >
+              {v}
+            </button>
+          ))}
+        </div>
+      )}
+      <button type="button" className="product-title-button" onClick={onOpen}><strong>{product.name}</strong><span>{product.unit}</span></button>
+      <div className="product-card-bottom"><div><b>{formatPrice(product.price)}</b><small> / {product.unit}</small></div><button type="button" className="add-button" disabled={disabled} onClick={e => handleAddClick(e)} aria-label={"إضافة " + product.name + " للسلة"}><Plus size={18} /></button></div>
+    </article>
+    {pickerVariant !== null && variants.length > 0 && (
+      <VariantPickerModal product={product} variants={variants} initialVariant={pickerVariant} onClose={() => setPickerVariant(null)} />
+    )}
+  </>;
+}
+
+function ProductGrid({ items, onOpen, onAiRecipe }: { items: PublicProduct[]; onOpen: (id: number) => void; onAiRecipe?: (p: PublicProduct) => void }) {
+  if (!items.length) return <EmptyState icon={ShoppingBag} title="المتجر ينتظر منتجاته الأولى" description="لا توجد منتجات منشورة بعد. ستظهر الأصناف هنا بعد أن تضيفها من لوحة الإدارة." action="تصفح الأقسام" href="/categories" />;
+  return <div className="product-grid">{items.map((product, idx) => <ProductCard key={product.id} product={product} priority={idx < 8} onOpen={() => onOpen(product.id)} onAiRecipe={onAiRecipe} />)}</div>;
+}
+
+function CategoryStrip({ data, onSelect }: { data: HomeData["categories"]; onSelect: (id: number) => void }) {
+  if (!data.length) return <div className="category-empty"><span className="category-empty-mark"><SlidersHorizontal size={19} /></span><div><strong>الأقسام قيد التجهيز</strong><p>أضف أقسام متجرك لتبدأ ترتيب المنتجات.</p></div><Link href="/categories"><ChevronLeft size={18} /></Link></div>;
+  return <div className="category-strip">{data.map((category, i) => <button key={category.id} className="category-tile" style={{ "--category-color": category.color } as React.CSSProperties} onClick={() => onSelect(category.id)}>
+    <span className="category-art">{category.imageUrl ? <img src={category.imageUrl} alt="" loading="eager" fetchPriority="high" decoding="async" /> : <Leaf size={23} strokeWidth={1.5} />}</span><span className="category-pill">{category.name}</span><span className="category-number">{String(i + 1).padStart(2, "0")}</span>
+  </button>)}</div>;
+}
+
+function HomePage({ data, onOpen, onAiRecipe }: { data: HomeData; onOpen: (id: number) => void; onAiRecipe?: (p: PublicProduct) => void }) {
+  const [, navigate] = useLocation();
+  const [sort, setSort] = useState<"featured" | "price-asc" | "price-desc">("featured");
+  const { data: products, isLoading: productsLoading } = trpc.commerce.catalog.listProducts.useQuery({ sort, limit: 24 }, { enabled: sort !== "featured", retry: 1, staleTime: 2500, refetchInterval: sort !== "featured" ? 3000 : false, refetchOnWindowFocus: true });
+  const featured = sort === "featured" ? (data.products?.length ? data.products : (products ?? [])) : (products ?? data.products);
+  const changeCategory = (id: number) => { navigate("/products?category=" + id); };
+
+  const topBanners = useMemo(() => (data.banners ?? []).filter(b => parseBannerMeta(b.actionUrl).cfg.placement === "top"), [data.banners]);
+  const middleBanners = useMemo(() => (data.banners ?? []).filter(b => parseBannerMeta(b.actionUrl).cfg.placement === "middle"), [data.banners]);
+  const bottomBanners = useMemo(() => (data.banners ?? []).filter(b => parseBannerMeta(b.actionUrl).cfg.placement === "bottom"), [data.banners]);
+  const popupBanners = useMemo(() => (data.banners ?? []).filter(b => parseBannerMeta(b.actionUrl).cfg.placement === "popup"), [data.banners]);
+
+  return <main className="page-shell">
+    <PromoPopupModal banners={popupBanners} />
+    <BannerCarousel banners={topBanners} />
+    {data.offers.length > 0 && <section className="offers-row"><div className="section-heading compact"><div><span className="eyebrow">عروض المتجر</span><h2>فرص تستحق الانتباه</h2></div><BadgePercent size={22} /></div><div className="offer-strip">{data.offers.map(offer => <div className="offer-chip" key={offer.id}><span className="offer-chip-icon"><BadgePercent size={18} /></span><div><strong>{offer.title}</strong><small>{offer.description || (offer.discountType === "percent" ? "خصم " + offer.discountValue + "%" : "خصم " + formatPrice(offer.discountValue))}</small></div><code>{offer.code}</code></div>)}</div></section>}
+    <section className="store-section categories-section"><div className="section-heading"><div><span className="eyebrow">على طريقتك</span><h2>ابدأ من الأقسام</h2></div><Link className="text-link" href="/categories">كل الأقسام <ArrowLeft size={15} /></Link></div><CategoryStrip data={data.categories} onSelect={changeCategory} /></section>
+    {middleBanners.length > 0 && <BannerCarousel banners={middleBanners} />}
+    <section className="store-section products-section"><div className="section-heading"><div><span className="eyebrow">اختيارات أورجنال</span><h2>منتجات المتجر</h2></div><div className="section-tools"><label className="sort-select"><ArrowUpDown size={15} /><select aria-label="ترتيب المنتجات" value={sort} onChange={event => setSort(event.target.value as typeof sort)}><option value="featured">الأبرز</option><option value="price-asc">السعر: الأقل أولًا</option><option value="price-desc">السعر: الأعلى أولًا</option></select></label><Link className="text-link" href="/products">عرض الكل <ArrowLeft size={15} /></Link></div></div>{productsLoading && !featured.length ? <Loading /> : <ProductGrid items={featured} onOpen={onOpen} onAiRecipe={onAiRecipe} />}</section>
+    {bottomBanners.length > 0 && <BannerCarousel banners={bottomBanners} />}
+  </main>;
+}
+
+function ProductListPage({ data, onOpen, onAiRecipe }: { data: HomeData; onOpen: (id: number) => void; onAiRecipe?: (p: PublicProduct) => void }) {
+  const [, setLocation] = useLocation();
+  const searchString = useSearch();
+  const params = new URLSearchParams(searchString);
+  const selectedCategory = params.get("category");
+  const routeSearch = params.get("search") ?? "";
+  const [search, setSearch] = useState(routeSearch);
+  const debouncedSearch = useDebouncedValue(search.trim());
+  const [sort, setSort] = useState<"featured" | "price-asc" | "price-desc" | "name">("featured");
+  useEffect(() => setSearch(routeSearch), [routeSearch]);
+  const categoryId = selectedCategory ? Number(selectedCategory) : undefined;
+  const cachedProducts = !debouncedSearch && sort === "featured"
+    ? data.products.filter(product => categoryId === undefined || product.categoryId === categoryId)
+    : [];
+  const input = { search: debouncedSearch || undefined, categoryId, sort, limit: 60 };
+  const query = trpc.commerce.catalog.listProducts.useQuery(input, { retry: 1, staleTime: 30_000, placeholderData: cachedProducts.length ? cachedProducts : undefined });
+  return <main className="page-shell inner-page"><div className="page-title-row"><div><span className="eyebrow"></span><h1>المنتجات</h1><p></p></div><span className="page-title-icon"><ShoppingBag size={24} /></span></div>
+    <div className="filter-bar"><label className="filter-search"><Search size={17} /><input value={search} onChange={event => setSearch(event.target.value)} placeholder="ابحث باسم المنتج..." /></label><label className="filter-select"><SlidersHorizontal size={16} /><select value={selectedCategory ?? ""} onChange={event => { const value = event.target.value; setLocation(value ? `/products?category=${value}` : "/products"); }}><option value="">كل الأقسام</option>{data.categories.map(category => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label><label className="filter-select"><ArrowDownWideNarrow size={16} /><select value={sort} onChange={event => setSort(event.target.value as typeof sort)}><option value="featured">ترتيب افتراضي</option><option value="price-asc">السعر من الأقل</option><option value="price-desc">السعر من الأعلى</option><option value="name">الاسم</option></select></label></div>
+    {query.isLoading ? <Loading /> : query.error ? <LoadError onRetry={() => void query.refetch()} /> : <ProductGrid items={query.data ?? []} onOpen={onOpen} onAiRecipe={onAiRecipe} />}
+  </main>;
+}
+
+function CategoriesPage({ data }: { data: HomeData }) {
+  const [, navigate] = useLocation();
+  return <main className="page-shell inner-page"><div className="page-title-row"><div><span className="eyebrow"></span><h1>الأقسام</h1><p></p></div><span className="page-title-icon"><SlidersHorizontal size={23} /></span></div>
+    {!data.categories.length ? <EmptyState icon={SlidersHorizontal} title="لا توجد أقسام بعد" description="سيضيف صاحب المتجر الأقسام المناسبة، وستظهر لك هنا تلقائيًا." action="استكشف المتجر" href="/products" /> : <div className="category-page-grid">{data.categories.map((category, i) => <button key={category.id} className="category-large" style={{ "--category-color": category.color } as React.CSSProperties} onClick={() => navigate(`/products?category=${category.id}`)}><span className="category-large-number">{String(i + 1).padStart(2, "0")}</span><span className="category-large-art">{category.imageUrl ? <img src={category.imageUrl} alt="" loading="lazy" decoding="async" /> : <Leaf size={34} />}</span><span className="category-pill">{category.name}</span>{category.description && <small>{category.description}</small>}<ChevronLeft size={19} /></button>)}</div>}
+  </main>;
+}
+
+function ProductDetail({ id, allProducts = [], onSelectProduct, onBack, onAiRecipe }: { id: number; allProducts?: PublicProduct[]; onSelectProduct?: (nextId: number) => void; onBack: () => void; onAiRecipe?: (p: PublicProduct) => void }) {
+  const cachedProduct = useMemo(() => allProducts.find(p => p.id === id) ?? null, [allProducts, id]);
+  const { data: fetchedProduct, isLoading, error } = trpc.commerce.catalog.product.useQuery({ id }, {
+    retry: 1,
+    staleTime: 30000,
+    placeholderData: cachedProduct ? { ...cachedProduct, recommendations: allProducts.filter(p => p.id !== id).slice(0, 4) } : undefined,
+  });
+  const product = fetchedProduct ?? (cachedProduct ? { ...cachedProduct, recommendations: allProducts.filter(p => p.id !== id).slice(0, 4) } : null);
+  const { add } = useStore();
+  const [quantity, setQuantity] = useState(1);
+  const [detailPickerOpen, setDetailPickerOpen] = useState(false);
+  const [selectedDetailVariant, setSelectedDetailVariant] = useState<string>("");
+  const unpackedDetail = useMemo(() => unpackProductVariants(product?.description), [product?.description]);
+  const touchStartX = useRef<number | null>(null);
+
+  useEffect(() => {
+    setQuantity(product?.minQuantity || 1);
+    setSelectedDetailVariant("");
+  }, [id, product?.minQuantity]);
+
+  const currentIndex = useMemo(() => allProducts.findIndex(p => p.id === id), [allProducts, id]);
+  const hasGallery = allProducts.length > 1 && currentIndex >= 0;
+  const nextProduct = hasGallery ? allProducts[(currentIndex + 1) % allProducts.length] : null;
+  const prevProduct = hasGallery ? allProducts[(currentIndex - 1 + allProducts.length) % allProducts.length] : null;
+
+  useEffect(() => {
+    if (nextProduct?.imageUrl) { const img = new Image(); img.src = nextProduct.imageUrl; }
+    if (prevProduct?.imageUrl) { const img = new Image(); img.src = prevProduct.imageUrl; }
+  }, [nextProduct?.imageUrl, prevProduct?.imageUrl]);
+
+  const goNext = () => { if (nextProduct && onSelectProduct) onSelectProduct(nextProduct.id); };
+  const goPrev = () => { if (prevProduct && onSelectProduct) onSelectProduct(prevProduct.id); };
+
+  const handleImageClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!hasGallery) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    if (clickX >= rect.width * 0.5) goNext();
+    else goPrev();
+  };
+
+  const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    touchStartX.current = e.touches[0]?.clientX ?? null;
+  };
+  const handleTouchEnd = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (touchStartX.current === null || !hasGallery) return;
+    const endX = e.changedTouches[0]?.clientX ?? touchStartX.current;
+    const diff = endX - touchStartX.current;
+    touchStartX.current = null;
+    if (Math.abs(diff) > 38) {
+      if (diff > 0) goNext();
+      else goPrev();
+    }
+  };
+
+  if (!product && isLoading) return <main className="page-shell inner-page"><Loading /></main>;
+  if (error || !product) return <main className="page-shell inner-page"><LoadError onRetry={() => window.location.reload()} /></main>;
+  const stockLimit = product.stock === null ? 9999 : product.stock;
+
+  const handleDetailAdd = () => {
+    if (unpackedDetail.variants.length > 0) {
+      if (selectedDetailVariant) {
+        add({ ...product, name: product.name + " (" + selectedDetailVariant + ")", variant: selectedDetailVariant }, quantity);
+        toast.success("تمت إضافة «" + product.name + " (" + selectedDetailVariant + ")» إلى السلة");
+      } else {
+        setDetailPickerOpen(true);
+      }
+      return;
+    }
+    add(product, quantity);
+    toast.success("أُضيف المنتج إلى السلة");
+  };
+
+  return (
+    <main className="page-shell inner-page">
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "14px", gap: "10px" }}>
+        <button type="button" className="back-link" style={{ marginBottom: 0 }} onClick={onBack}><ArrowLeft size={16} /> العودة للمتجر</button>
+        {hasGallery && (
+          <div style={{ display: "inline-flex", alignItems: "center", gap: "8px", background: "#ffffff", border: "1px solid #dfe7e0", borderRadius: "999px", padding: "4px 10px", fontSize: "11px", fontWeight: 700, color: "#174b36" }}>
+            <button type="button" onClick={goNext} style={{ border: 0, background: "transparent", cursor: "pointer", padding: "2px 6px", fontWeight: 800, color: "#174b36" }} title="المنتج التالي">‹ التالي</button>
+            <span style={{ color: "#78847b", fontSize: "10px" }}>{currentIndex + 1} / {allProducts.length}</span>
+            <button type="button" onClick={goPrev} style={{ border: 0, background: "transparent", cursor: "pointer", padding: "2px 6px", fontWeight: 800, color: "#174b36" }} title="المنتج السابق">السابق ›</button>
+          </div>
+        )}
+      </div>
+      <div className="detail-layout">
+        <div
+          className="detail-visual"
+          onClick={handleImageClick}
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+          style={{ position: "relative", cursor: hasGallery ? "pointer" : "default", userSelect: "none" }}
+        >
+          {product.imageUrl ? (
+            <img key={product.id} src={product.imageUrl} alt={product.name} decoding="async" fetchPriority="high" draggable={false} />
+          ) : (
+            <div className="product-no-image detail-placeholder"><Leaf size={45} /><span>لا توجد صورة لهذا المنتج</span></div>
+          )}
+          {hasGallery && (
+            <>
+              <button type="button" aria-label="المنتج التالي" onClick={e => { e.stopPropagation(); goNext(); }} style={{ position: "absolute", right: "10px", top: "50%", transform: "translateY(-50%)", width: "38px", height: "38px", borderRadius: "50%", border: "1px solid rgba(255,255,255,0.85)", background: "rgba(23, 75, 54, 0.82)", color: "#ffffff", display: "grid", placeItems: "center", cursor: "pointer", boxShadow: "0 4px 12px rgba(0,0,0,0.18)", fontSize: "18px", fontWeight: 800 }}>‹</button>
+              <button type="button" aria-label="المنتج السابق" onClick={e => { e.stopPropagation(); goPrev(); }} style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)", width: "38px", height: "38px", borderRadius: "50%", border: "1px solid rgba(255,255,255,0.85)", background: "rgba(23, 75, 54, 0.82)", color: "#ffffff", display: "grid", placeItems: "center", cursor: "pointer", boxShadow: "0 4px 12px rgba(0,0,0,0.18)", fontSize: "18px", fontWeight: 800 }}>›</button>
+            </>
+          )}
+        </div>
+        <div className="detail-copy">
+          <span className="eyebrow">من متجر أورجنال</span>
+          <h1>{product.name}</h1>
+          {unpackedDetail.cleanDescription ? <p className="detail-description">{unpackedDetail.cleanDescription}</p> : null}
+          {unpackedDetail.variants.length > 0 && (
+            <div style={{ margin: "10px 0 14px", padding: "12px", borderRadius: "14px", background: "#f2f7f3", border: "1px solid #d5e5da", display: "grid", gap: "8px" }}>
+              <strong style={{ fontSize: "13px", color: "#174b36" }}>اختر النوع المطلوب:</strong>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(95px, 1fr))", gap: "8px" }}>
+                {unpackedDetail.variants.map(v => {
+                  const isSel = selectedDetailVariant === v;
+                  return (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setSelectedDetailVariant(v)}
+                      style={{
+                        padding: "10px 12px",
+                        borderRadius: "12px",
+                        border: isSel ? "2px solid #174b36" : "1px solid #c5d9cc",
+                        background: isSel ? "#174b36" : "#ffffff",
+                        color: isSel ? "#ffffff" : "#174b36",
+                        fontWeight: 700,
+                        fontSize: "13px",
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: "5px",
+                        boxShadow: isSel ? "0 5px 14px rgba(23, 75, 54, 0.22)" : "none",
+                      }}
+                    >
+                      {isSel && <Check size={15} />}
+                      <span>{v}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          <div className="detail-price">{formatPrice(product.price)} <small>/ {product.unit}</small></div>
+          <div className="detail-meta"><span><Package size={15} /> الوحدة: {product.unit}</span><span>{product.stock === null ? "التوفر يحدده المتجر" : "المتاح: " + product.stock}</span></div>
+          <div className="quantity-control"><button type="button" aria-label="تقليل" onClick={() => setQuantity(value => Math.max(product.minQuantity || 1, value - (product.quantityStep || 1)))}><Minus size={16} /></button><strong>{quantity}</strong><button type="button" aria-label="زيادة" disabled={quantity + (product.quantityStep || 1) > stockLimit} onClick={() => setQuantity(value => Math.min(stockLimit, value + (product.quantityStep || 1)))}><Plus size={16} /></button><small>{product.unit}</small></div>
+          {onAiRecipe && <button type="button" className="button button-outline full-button" style={{ marginBottom: "8px", borderColor: "#286a48", color: "#174b36" }} onClick={() => onAiRecipe(product as PublicProduct)}><Sparkles size={16} /> أفكار وطرق تحضير بالذكاء الاصطناعي</button>}
+          <button type="button" className="button button-primary full-button" disabled={stockLimit < (product.minQuantity || 1)} onClick={handleDetailAdd}><ShoppingCart size={17} /> {unpackedDetail.variants.length > 0 ? (selectedDetailVariant ? "أضف «" + selectedDetailVariant + "» إلى السلة" : "اختر النوع وأضف إلى السلة") : "أضف إلى السلة"}</button>
+          {detailPickerOpen && unpackedDetail.variants.length > 0 && <VariantPickerModal product={product as PublicProduct} variants={unpackedDetail.variants} initialQty={quantity} onClose={() => setDetailPickerOpen(false)} />}
+        </div>
+      </div>
+      {!!product.recommendations?.length && <section className="store-section"><div className="section-heading"><div><span className="eyebrow">قد يناسبك أيضًا</span><h2>منتجات مقترحة</h2></div></div><ProductGrid items={product.recommendations as PublicProduct[]} onOpen={nextId => onSelectProduct ? onSelectProduct(nextId) : window.location.assign("/product/" + nextId)} onAiRecipe={onAiRecipe} /></section>}
+    </main>
+  );
+}
+
+function CartPage({ minOrder = 0 }: { minOrder?: number }) {
+  const { cart, setQuantity, remove, clear } = useStore();
+  const [checkout, setCheckout] = useState(false);
+  const subtotal = cart.reduce((sum, line) => sum + line.price * line.quantity, 0);
+  const belowMin = minOrder > 0 && subtotal < minOrder;
+  return (
+    <main className="page-shell inner-page">
+      <div className="page-title-row">
+        <div>
+          <span className="eyebrow"></span>
+          <h1>سلة التسوق</h1>
+          <p></p>
+        </div>
+        <span className="page-title-icon"><ShoppingCart size={24} /></span>
+      </div>
+      {!cart.length ? (
+        <EmptyState
+          icon={ShoppingCart}
+          title="السلة فارغة الآن"
+          description="عندما تضيف منتجات من المتجر، ستجدها هنا."
+          action="ابدأ التسوق"
+          href="/products"
+        />
+      ) : (
+        <div className="cart-layout">
+          <div className="cart-list">
+            {cart.map(line => (
+              <CartRow
+                key={line.id}
+                line={line}
+                onQuantity={quantity => setQuantity(line.id, quantity)}
+                onRemove={() => remove(line.id)}
+              />
+            ))}
+            <button className="text-link clear-cart" onClick={clear}>
+              <Trash2 size={15} /> إفراغ السلة
+            </button>
+          </div>
+          <aside className="summary-card">
+            <span className="eyebrow">ملخص الطلب</span>
+            <div className="summary-line">
+              <span>المجموع الفرعي</span>
+              <strong>{formatPrice(subtotal)}</strong>
+            </div>
+            {minOrder > 0 && (
+              <div className="summary-line">
+                <span>الحد الأدنى للطلب</span>
+                <strong>{formatPrice(minOrder)}</strong>
+              </div>
+            )}
+            <div className="summary-line">
+              <span>التوصيل</span>
+              <span className="subtle-note">يحسب بعد تحديد المنطقة</span>
+            </div>
+            <div className="summary-total">
+              <span>الإجمالي الحالي</span>
+              <strong>{formatPrice(subtotal)}</strong>
+            </div>
+            {belowMin ? (
+              <p
+                className="summary-note"
+                style={{
+                  color: "#b42318",
+                  background: "#fef3f2",
+                  border: "1px solid #fecdca",
+                  padding: "8px 10px",
+                  borderRadius: "10px",
+                  fontWeight: 700,
+                }}
+              >
+                ⚠️ الحد الأدنى للطلب هو {formatPrice(minOrder)} — أضف منتجات بقيمة {formatPrice(minOrder - subtotal)} لإتمام الطلب.
+              </p>
+            ) : (
+              <p className="summary-note">
+                
+              </p>
+            )}
+            <button
+              className="button button-primary full-button"
+              onClick={() => {
+                if (belowMin) {
+                  toast.error(`الحد الأدنى للطلب من المتجر هو ${formatPrice(minOrder)} (متبقي ${formatPrice(minOrder - subtotal)})`);
+                  return;
+                }
+                setCheckout(true);
+              }}
+            >
+              المتابعة لإتمام الطلب<ArrowLeft size={17} />
+            </button>
+            {checkout && <Checkout onClose={() => setCheckout(false)} onSuccess={clear} cart={cart} />}
+          </aside>
+        </div>
+      )}
+    </main>
+  );
+}
+
+function CartRow({ line, onQuantity, onRemove }: { line: CartLine; onQuantity: (n: number) => void; onRemove: () => void }) {
+  return <article className="cart-row"><div className="cart-thumb">{line.imageUrl ? <img src={line.imageUrl} alt="" loading="lazy" decoding="async" /> : <Leaf size={22} />}</div><div className="cart-row-info"><strong>{line.name}</strong><small>{formatPrice(line.price)} / {line.unit}</small><div className="cart-row-tools"><div className="quantity-compact"><button aria-label="تقليل" onClick={() => onQuantity(line.quantity - (line.quantityStep || 1))}><Minus size={14} /></button><b>{line.quantity}</b><button aria-label="زيادة" disabled={line.stock !== null && line.stock !== undefined && line.quantity + (line.quantityStep || 1) > line.stock} onClick={() => onQuantity(line.quantity + (line.quantityStep || 1))}><Plus size={14} /></button></div><button className="remove-line" onClick={onRemove}><Trash2 size={14} /> إزالة</button></div></div><strong className="cart-line-total">{formatPrice(line.price * line.quantity)}</strong></article>;
+}
+
+function Checkout({ onClose, onSuccess, cart }: { onClose: () => void; onSuccess: () => void; cart: CartLine[] }) {
+  const utils = trpc.useUtils();
+  const [, navigate] = useLocation();
+  const customer = useCustomer();
+  const defaultAddress = customer.addresses.find(address => address.isDefault) ?? customer.addresses[0];
+  const [selectedAddressId, setSelectedAddressId] = useState(defaultAddress?.id ?? "new");
+  const [form, setForm] = useState(() => ({
+    recipientName: defaultAddress?.recipientName ?? customer.name,
+    phone: defaultAddress?.phone ?? customer.phone,
+    city: defaultAddress?.city ?? "",
+    district: defaultAddress?.district ?? "",
+    addressDetails: defaultAddress?.details ?? "",
+    customerNote: "",
+    offerCode: "",
+  }));
+  const [saveDeliveryAddress, setSaveDeliveryAddress] = useState(false);
+  const [makeDefaultAddress, setMakeDefaultAddress] = useState(customer.addresses.length === 0);
+  const [addressLabel, setAddressLabel] = useState("المنزل");
+  const items = cart.map(item => ({ productId: item.id, quantity: item.quantity, ...(item.variant ? { variant: item.variant } : {}) }));
+  const signature = JSON.stringify({ form, items });
+  const keyRef = useRef<{ signature: string; key: string }>({ signature: "", key: "" });
+  if (keyRef.current.signature !== signature) keyRef.current = { signature, key: getPendingOrderIdempotencyKey(signature) };
+  const [quoteSignature, setQuoteSignature] = useState("");
+  const quoteMutation = trpc.commerce.orders.quote.useMutation({ onError: error => toast.error(error.message || "تعذر حساب ملخص الطلب.") });
+  const quote = quoteSignature === signature ? quoteMutation.data : undefined;
+  const mutation = trpc.commerce.orders.place.useMutation({
+    onSuccess: result => {
+
+      const idempotencyKey = keyRef.current.key;
+      customer.rememberOrder({ orderNumber: result.orderNumber, idempotencyKey, createdAt: new Date().toISOString() });
+      clearPendingOrderIdempotencyKey(idempotencyKey);
+      if (result.duplicate) {
+        toast.info(`الطلب مسجل مسبقًا برقم ${result.orderNumber}. احتفظنا بالسلة كما هي؛ راجع «طلباتي» قبل إرسال طلب جديد.`);
+        onClose();
+        return;
+      }
+      customer.saveProfile(form.recipientName, form.phone);
+      if (saveDeliveryAddress) {
+        const matchingAddress = customer.addresses.find(address =>
+          address.recipientName === form.recipientName.trim() && address.phone === form.phone.trim()
+          && address.city === form.city.trim() && address.district === form.district.trim()
+          && address.details === form.addressDetails.trim(),
+        );
+        if (matchingAddress) {
+          if (makeDefaultAddress) customer.setDefaultAddress(matchingAddress.id);
+        } else {
+          customer.saveAddress({
+            label: addressLabel, recipientName: form.recipientName, phone: form.phone,
+            city: form.city, district: form.district, details: form.addressDetails,
+            isDefault: makeDefaultAddress || customer.addresses.length === 0,
+          });
+        }
+      }
+      onSuccess();
+      void utils.commerce.orders.trackMany.invalidate();
+      toast.success("تم استلام طلبك رقم " + result.orderNumber + "! فعّل الإشعارات لمتابعة حالة طلبك لحظة بلحظة.");
+      onClose();
+      navigate("/orders?order=" + encodeURIComponent(result.orderNumber) + "&justOrdered=1");
+    },
+    onError: error => { setQuoteSignature(""); quoteMutation.reset(); toast.error(error.message || "تعذر إرسال الطلب. لم تُفرغ السلة؛ راجع البيانات وحاول مجددًا."); },
+  });
+  const selectAddress = (id: string) => {
+    setSelectedAddressId(id);
+    if (id === "new") return;
+    const address = customer.addresses.find(item => item.id === id);
+    if (address) setForm(current => ({
+      ...current, recipientName: address.recipientName, phone: address.phone,
+      city: address.city, district: address.district, addressDetails: address.details,
+    }));
+    setSaveDeliveryAddress(false);
+  };
+  const updateField = (field: keyof typeof form, value: string) => {
+    setForm(current => ({ ...current, [field]: value }));
+    if (["recipientName", "phone", "city", "district", "addressDetails"].includes(field)) setSelectedAddressId("new");
+  };
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    if (mutation.isPending || quoteMutation.isPending) return;
+    if (!quote) {
+      quoteMutation.reset();
+      setQuoteSignature(signature);
+      quoteMutation.mutate({ items, city: form.city, offerCode: form.offerCode || undefined });
+      return;
+    }
+    mutation.mutate({ ...form, idempotencyKey: keyRef.current.key, expectedTotal: quote.total, expectedQuoteHash: quote.quoteHash, offerCode: form.offerCode || undefined, items });
+  };
+  return <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}><section className="checkout-modal" role="dialog" aria-modal="true"><div className="modal-heading"><div><span className="eyebrow"></span><h2>بيانات التوصيل</h2><small></small></div><button type="button" className="icon-button" onClick={onClose}><X size={19} /></button></div><form onSubmit={submit} className="form-stack">
+    {customer.addresses.length > 0 && <label>استخدم عنوانًا محفوظًا في هذا المتصفح<select value={selectedAddressId} onChange={event => selectAddress(event.target.value)}><option value="new">إدخال عنوان جديد</option>{customer.addresses.map(address => <option key={address.id} value={address.id}>{address.label} · {address.city}، {address.district}</option>)}</select></label>}
+    <div className="form-grid"><label>اسم المستلم<input required minLength={2} maxLength={160} autoComplete="name" value={form.recipientName} onChange={event => updateField("recipientName", event.target.value)} /></label><label>رقم الهاتف<input required type="tel" minLength={7} maxLength={32} autoComplete="tel" value={form.phone} onChange={event => updateField("phone", event.target.value)} /></label><label>المدينة/المنطقة<input required maxLength={100} autoComplete="address-level1" value={form.city} onChange={event => updateField("city", event.target.value)} /></label><label>الحي<input required maxLength={120} autoComplete="address-level2" value={form.district} onChange={event => updateField("district", event.target.value)} /></label></div>
+    <label>تفاصيل العنوان (اختياري)<textarea rows={2} maxLength={1000} autoComplete="street-address" value={form.addressDetails} onChange={event => updateField("addressDetails", event.target.value)} /></label>
+    <label className="toggle-field"><input type="checkbox" checked={saveDeliveryAddress} onChange={event => setSaveDeliveryAddress(event.target.checked)} /> احفظ هذا العنوان في هذا المتصفح للطلبات القادمة</label>
+    {saveDeliveryAddress && <div className="form-grid"><label>اسم العنوان<input maxLength={80} value={addressLabel} onChange={event => setAddressLabel(event.target.value)} placeholder="المنزل، العمل..." /></label><label className="toggle-field"><input type="checkbox" checked={makeDefaultAddress} onChange={event => setMakeDefaultAddress(event.target.checked)} /> اجعله العنوان الافتراضي</label></div>}
+    <label>ملاحظة للمتجر (اختياري)<textarea rows={2} maxLength={1000} value={form.customerNote} onChange={event => updateField("customerNote", event.target.value)} /></label><label>رمز خصم (اختياري)<input maxLength={40} value={form.offerCode} onChange={event => updateField("offerCode", event.target.value.toUpperCase())} /></label>
+    {quote && <section className="checkout-quote" aria-live="polite"><h3>راجع تفاصيل طلبك</h3><div className="checkout-quote-lines">{quote.lines.map(line => <div key={line.productId}><span>{line.name} × {line.quantity} {line.unit}</span><strong>{formatPrice(line.lineTotal)}</strong></div>)}</div><div className="summary-line"><span>المجموع الفرعي</span><strong>{formatPrice(quote.subtotal)}</strong></div><div className="summary-line"><span>التوصيل</span><strong>{formatPrice(quote.deliveryFee)}</strong></div>{quote.discount > 0 && <div className="summary-line discount-line"><span>الخصم{quote.offerTitle ? ` · ${quote.offerTitle}` : ""}</span><strong>−{formatPrice(quote.discount)}</strong></div>}<div className="summary-total"><span>الإجمالي · {quote.currency}</span><strong>{formatPrice(quote.total)}</strong></div></section>}
+    <div className="cod-note"><Truck size={17} /><span>الدفع نقدًا عند الاستلام</span></div><div className="modal-footer"><button type="button" className="button button-quiet" onClick={onClose}>رجوع للسلة</button><button className="button button-primary" disabled={mutation.isPending || quoteMutation.isPending}>{mutation.isPending || quoteMutation.isPending ? <LoaderCircle className="spin" size={17} /> : quote ? <Check size={17} /> : <ArrowLeft size={17} />}{mutation.isPending ? "جارٍ إرسال الطلب..." : quoteMutation.isPending ? "جارٍ حساب الإجمالي..." : quote ? "تأكيد الطلب" : "عرض ملخص الطلب"}</button></div>
+  </form></section></div>;
+}
+
+function FavoritesPage() {
+  const { favoriteIds } = useStore();
+  const [, navigate] = useLocation();
+  const query = trpc.commerce.catalog.productsForReorder.useQuery({ ids: favoriteIds }, { enabled: favoriteIds.length > 0, retry: 1, staleTime: 30_000 });
+  const products = query.data ?? [];
+  return <main className="page-shell inner-page"><div className="page-title-row"><div><span className="eyebrow"></span><h1>المفضلة</h1><p></p></div><span className="page-title-icon"><Heart size={23} /></span></div>{query.isLoading ? <Loading /> : query.error ? <LoadError onRetry={() => void query.refetch()} /> : !favoriteIds.length ? <EmptyState icon={Heart} title="لم تحفظ منتجات بعد" description="اضغط علامة القلب على أي منتج لإضافته هنا." action="تصفح المنتجات" href="/products" /> : !products.length ? <EmptyState icon={Heart} title="لا توجد منتجات متاحة من مفضلتك الآن" description="قد تكون المنتجات التي حفظتها أُخفيت أو نفدت." action="تصفح المنتجات" href="/products" /> : <ProductGrid items={products as PublicProduct[]} onOpen={id => navigate(`/product/${id}`)} />}</main>;
+}
+
+const CUSTOMER_PUSH_KEY = "original-customer-push-enabled-v1";
+const CUSTOMER_STATUS_MAP_KEY = "original-customer-order-statuses-v1";
+function playCustomerOrderSound() {
+  try {
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    [523.25, 783.99].forEach((freq, idx) => {
+      const osc = ctx.createOscillator(), gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(freq, ctx.currentTime + idx * 0.15);
+      gain.gain.setValueAtTime(0.22, ctx.currentTime + idx * 0.15);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + idx * 0.15 + 0.32);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(ctx.currentTime + idx * 0.15);
+      osc.stop(ctx.currentTime + idx * 0.15 + 0.34);
+    });
+  } catch {}
+}
+async function showCustomerPhoneNotification(title: string, body: string, tag: string) {
+  try {
+    if ("serviceWorker" in navigator && Notification.permission === "granted") {
+      const reg = await Promise.race([
+        navigator.serviceWorker.ready,
+        new Promise<null>(r => setTimeout(() => r(null), 2000)),
+      ]);
+      if (reg) {
+        await reg.showNotification(title, {
+          body,
+          icon: "/app-icon-192-v2.png",
+          badge: "/app-icon-192-v2.png",
+          tag,
+          dir: "rtl",
+          lang: "ar",
+          vibrate: [220, 100, 220],
+          requireInteraction: true,
+          renotify: true,
+          data: { url: "/orders" },
+        } as any);
+        return;
+      }
+    }
+    if ("Notification" in window && Notification.permission === "granted") {
+      new Notification(title, { body, icon: "/app-icon-192-v2.png", tag, dir: "rtl", lang: "ar" });
+    }
+  } catch {}
+}
+function OrdersPage() {
+  const customer = useCustomer();
+  const { add } = useStore();
+  const searchStr = useSearch();
+  const searchParams = new URLSearchParams(searchStr);
+  const focusedOrderNumber = searchParams.get("order");
+  const justOrdered = searchParams.get("justOrdered") === "1";
+  const refs = useMemo(() => customer.orders.slice(0, 50).map(({ orderNumber, idempotencyKey }) => ({ orderNumber, idempotencyKey })), [customer.orders]);
+  const query = trpc.commerce.orders.trackMany.useQuery({ refs }, { enabled: refs.length > 0, retry: 1, staleTime: 5_000, refetchInterval: refs.length ? 8_000 : false });
+  const publicKey = trpc.commerce.notifications.publicKey.useQuery(undefined, { enabled: false, retry: 1 });
+  const subscribe = trpc.commerce.orders.subscribeToStatus.useMutation();
+  const [permission, setPermission] = useState(getPushPermissionState);
+  const [pushEnabled, setPushEnabled] = useState(false);
+  const [pushPending, setPushPending] = useState(false);
+  const [reorder, setReorder] = useState<Array<{ productId: number; quantity: number }> | null>(null);
+  const reorderQuery = trpc.commerce.catalog.productsForReorder.useQuery({ ids: reorder?.map(item => item.productId) ?? [1] }, { enabled: Boolean(reorder), retry: 1 });
+
+  useEffect(() => {
+    if (!refs.length || getPushPermissionState() !== "granted") return;
+    let active = true;
+    void (async () => {
+      try {
+        let subscription = await getExistingBrowserPushSubscription();
+        if (!subscription) {
+          const key = publicKey.data ?? (await publicKey.refetch()).data;
+          if (key) subscription = await ensureBrowserPushSubscription(key);
+        }
+        if (!subscription || !active) return;
+        const result = await subscribe.mutateAsync({ refs, subscription });
+        if (active) setPushEnabled(result.subscribed > 0);
+      } catch {}
+    })();
+    return () => { active = false; };
+  }, [refs.length]);
+
+  const enableNotifications = async () => {
+    if (!refs.length || pushPending) return;
+    setPushPending(true);
+    try {
+      const requestedPermission = await requestPushPermission();
+      setPermission(requestedPermission);
+      if (requestedPermission === "unsupported") throw new Error("متصفحك لا يدعم إشعارات Push لهذا التطبيق.");
+      if (requestedPermission !== "granted") throw new Error("يرجى السماح بالإشعارات من نافذة المتصفح لتتبع طلبك.");
+      const key = publicKey.data ?? (await publicKey.refetch()).data;
+      if (!key) throw new Error("تعذر الاتصال بخدمة الإشعارات. أعد المحاولة بعد قليل.");
+      const subscription = await ensureBrowserPushSubscription(key);
+      const result = await subscribe.mutateAsync({ refs, subscription });
+      if (!result.subscribed) throw new Error("لم نعثر على طلب محفوظ صالح لهذا المتصفح.");
+      setPushEnabled(true);
+      toast.success("تم تفعيل إشعارات تتبع الطلب بنجاح! سيصلك إشعار واحد أنيق عند كل تحديث.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "تعذر تفعيل الإشعارات الآن.");
+    } finally {
+      setPushPending(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!reorder || !reorderQuery.data) return;
+    let added = 0; let skipped = 0;
+    for (const line of reorder) {
+      const product = reorderQuery.data.find(candidate => candidate.id === line.productId);
+      if (!product) { skipped += 1; continue; }
+      const minimum = product.minQuantity || 1; const step = product.quantityStep || 1;
+      let quantity = minimum + Math.max(0, Math.floor((Math.max(minimum, line.quantity) - minimum) / step)) * step;
+      if (product.stock !== null) {
+        const bounded = Math.min(quantity, product.stock);
+        quantity = minimum + Math.max(0, Math.floor((bounded - minimum) / step)) * step;
+        if (quantity > product.stock) { skipped += 1; continue; }
+      }
+      add(product, quantity); added += 1;
+    }
+    if (added) toast.success("أُضيف " + added + " منتج إلى السلة.");
+    else toast.error("لا توجد منتجات متاحة من هذا الطلب الآن.");
+    setReorder(null);
+  }, [reorder, reorderQuery.data, add]);
+
+  const orders = query.data ?? [];
+  const stepOrder = ["new", "preparing", "ready", "out_for_delivery", "delivered"];
+  const stepTitles: Record<string, string> = {
+    new: "تم الاستلام",
+    preparing: "قيد التجهيز",
+    ready: "جاهز",
+    out_for_delivery: "خرج للتوصيل",
+    delivered: "تم التسليم",
+  };
+
+  return (
+    <main className="page-shell inner-page">
+      <div className="page-title-row">
+        <div><span className="eyebrow">متابعة حية ومباشرة</span><h1>طلباتي</h1><p>تابع حالة طلبك خطوة بخطوة واستقبل تنبيهات التجهيز والتوصيل على جوالك.</p></div>
+        <span className="page-title-icon"><Package size={23} /></span>
+      </div>
+
+      {refs.length > 0 && (
+        <section
+          style={{
+            marginBottom: "18px",
+            padding: "16px 18px",
+            borderRadius: "18px",
+            background: pushEnabled ? "linear-gradient(135deg, #edf7f0, #f7fbf8)" : "linear-gradient(135deg, #113a28, #1d5c41)",
+            color: pushEnabled ? "#174b36" : "#ffffff",
+            border: pushEnabled ? "1.5px solid #b8dec6" : "1.5px solid #f1d897",
+            boxShadow: pushEnabled ? "0 6px 18px rgba(23, 75, 54, 0.06)" : "0 14px 30px rgba(17, 58, 40, 0.25)",
+            display: "flex",
+            flexWrap: "wrap",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "12px",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "12px", flex: "1 1 230px" }}>
+            <span style={{ width: "44px", height: "44px", borderRadius: "14px", background: pushEnabled ? "#174b36" : "#f1d897", color: pushEnabled ? "#f1d897" : "#113a28", display: "grid", placeItems: "center", flexShrink: 0 }}>
+              {pushEnabled ? <Check size={22} /> : <BellRing size={22} />}
+            </span>
+            <div>
+              <strong style={{ display: "block", fontSize: "14px", marginBottom: "3px", color: pushEnabled ? "#174b36" : "#f9e8b8" }}>
+                {pushEnabled ? "إشعارات تتبع الطلب مفعّلة على جوالك" : (justOrdered ? "تم تأكيد طلبك! فعّل الإشعارات الآن لمتابعته" : "فعّل إشعارات تتبع حالة طلبك")}
+              </strong>
+              <small style={{ fontSize: "11px", opacity: 0.92, lineHeight: 1.5, display: "block" }}>
+                {permission === "denied"
+                  ? "الإشعارات محظورة من إعدادات المتصفح؛ يرجى السماح بها من قفل الموقع أعلى المتصفح."
+                  : pushEnabled
+                  ? "سيصلك إشعار واحد أنيق ومباشر بشعار أورجنال فور تجهيز طلبك أو خروجه للتوصيل حتى لو أغلقت التطبيق."
+                  : "اضغط زر التفعيل ليصلك إشعار فوري على شاشة جوالك عندما يصبح طلبك قيد التجهيز أو يخرج للتوصيل."}
+              </small>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => void enableNotifications()}
+            disabled={pushPending || permission === "denied" || permission === "unsupported"}
+            style={{
+              minHeight: "42px",
+              padding: "0 18px",
+              borderRadius: "12px",
+              border: pushEnabled ? "1px solid #174b36" : "none",
+              background: pushEnabled ? "#ffffff" : "#f1d897",
+              color: "#113a28",
+              fontWeight: 800,
+              fontSize: "12px",
+              cursor: "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "7px",
+              boxShadow: pushEnabled ? "none" : "0 6px 16px rgba(0,0,0,0.2)",
+            }}
+          >
+            <BellRing size={16} />
+            {pushPending ? "جارٍ التفعيل..." : pushEnabled ? "تحديث الإشعارات" : "تفعيل الإشعارات الآن"}
+          </button>
+        </section>
+      )}
+
+      {query.isLoading ? <Loading /> : query.error ? <LoadError onRetry={() => void query.refetch()} /> : !orders.length ? (
+        <EmptyState icon={Package} title={refs.length ? "لم نعثر على طلبات محفوظة على هذا الجهاز" : "لا توجد طلبات سابقة"} description="بعد إتمام طلب من هذا المتصفح، ستظهر حالته هنا مباشرة." action="تسوق الآن" href="/products" />
+      ) : (
+        <div className="orders-list">
+          {orders.map((order, idx) => {
+            const isFocused = focusedOrderNumber ? order.orderNumber === focusedOrderNumber : idx === 0;
+            const currentStepIdx = stepOrder.indexOf(order.status);
+            const latestNoteEvent = [...(order.events || [])].reverse().find(ev => ev.note && ev.note.trim() && ev.note !== "تم استلام الطلب");
+            return (
+              <article
+                className="order-card"
+                key={order.orderNumber}
+                style={isFocused ? { border: "2px solid #174b36", boxShadow: "0 12px 28px rgba(23, 75, 54, 0.1)" } : undefined}
+              >
+                <div className="order-head">
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                    <span className="order-number">{order.orderNumber}</span>
+                    {idx === 0 && <span style={{ fontSize: "10px", fontWeight: 700, padding: "2px 8px", borderRadius: "99px", background: "#edf6f0", color: "#174b36" }}>أحدث طلب</span>}
+                    <small>{new Date(order.createdAt).toLocaleString("ar-YE")}</small>
+                  </div>
+                  <span className={"status-pill status-" + order.status}>{stateLabels[order.status] || order.status}</span>
+                </div>
+
+                {order.status !== "cancelled" && (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "4px", margin: "12px 0", padding: "10px", borderRadius: "12px", background: "#f5f8f5" }}>
+                    {stepOrder.map((st, sIdx) => {
+                      const done = currentStepIdx >= sIdx;
+                      const active = currentStepIdx === sIdx;
+                      return (
+                        <div key={st} style={{ textAlign: "center", display: "grid", gap: "4px" }}>
+                          <div style={{ height: "5px", borderRadius: "99px", background: done ? "#174b36" : "#dce5de", transition: "0.2s" }} />
+                          <span style={{ fontSize: "9px", fontWeight: active ? 800 : 600, color: done ? "#174b36" : "#8c9990" }}>{stepTitles[st]}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {latestNoteEvent?.note && (
+                  <div style={{ margin: "8px 0 12px", padding: "10px 12px", borderRadius: "12px", background: "#fff9e8", border: "1px solid #f0dc9c", color: "#574208", fontSize: "12px", fontWeight: 700, display: "flex", alignItems: "center", gap: "8px" }}>
+                    <BellRing size={15} />
+                    <span>رسالة المتجر: {latestNoteEvent.note}</span>
+                  </div>
+                )}
+
+                <div className="order-items-summary">
+                  {order.items.map(item => <span key={item.id}>{item.productName} × {item.quantity}</span>)}
+                </div>
+                <div className="order-foot">
+                  <strong>{formatPrice(order.total)}</strong>
+                  <button type="button" className="small-button" disabled={reorderQuery.isFetching} onClick={() => { const items = order.items.filter(item => item.productId !== null).map(item => ({ productId: item.productId!, quantity: item.quantity })); if (!items.length) { toast.error("لم تعد منتجات هذا الطلب متاحة في المتجر."); return; } setReorder(items); }}>إضافة للسلة مجددًا <ArrowLeft size={14} /></button>
+                </div>
+                {order.events.length > 0 && (
+                  <details className="order-history" open={isFocused}>
+                    <summary>سجل حالة الطلب ({order.events.length})</summary>
+                    <ol>{order.events.map(event => <li key={event.id}><span className={"status-pill status-" + event.status}>{stateLabels[event.status] || event.status}</span><time>{new Date(event.createdAt).toLocaleString("ar-YE")}</time>{event.note && <small>{event.note}</small>}</li>)}</ol>
+                  </details>
+                )}
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </main>
+  );
+}
+
+function useGuestPushSubscriptionSync() {
+  const customer = useCustomer();
+  const refs = useMemo(() => customer.orders.slice(0, 50).map(({ orderNumber, idempotencyKey }) => ({ orderNumber, idempotencyKey })), [customer.orders]);
+  const subscribe = trpc.commerce.orders.subscribeToStatus.useMutation();
+  const publicKey = trpc.commerce.notifications.publicKey.useQuery(undefined, { enabled: false, retry: 1 });
+  useEffect(() => {
+    if (!refs.length || getPushPermissionState() !== "granted") return;
+    let active = true;
+    void (async () => {
+      try {
+        let subscription = await getExistingBrowserPushSubscription();
+        if (!subscription) {
+          const key = publicKey.data ?? (await publicKey.refetch()).data;
+          if (key) subscription = await ensureBrowserPushSubscription(key);
+        }
+        if (!subscription || !active) return;
+        await subscribe.mutateAsync({ refs, subscription });
+      } catch {}
+    })();
+    return () => { active = false; };
+  }, [refs.length]);
+}
+
+
+function AccountPage() {
+  const customer = useCustomer();
+  const [name, setName] = useState(customer.name);
+  const [phone, setPhone] = useState(customer.phone);
+  const [address, setAddress] = useState({ label: "المنزل", recipientName: customer.name, phone: customer.phone, city: "", district: "", details: "", isDefault: customer.addresses.length === 0 });
+  const [editingAddressId, setEditingAddressId] = useState<string | null>(null);
+  useEffect(() => { setName(customer.name); setPhone(customer.phone); }, [customer.name, customer.phone]);
+  const saveProfile = (event: FormEvent) => {
+    event.preventDefault();
+    customer.saveProfile(name, phone);
+    toast.success("حُفظت بياناتك في هذا المتصفح.");
+  };
+  const resetAddressForm = () => {
+    setEditingAddressId(null);
+    setAddress({ label: "المنزل", recipientName: name, phone, city: "", district: "", details: "", isDefault: customer.addresses.length === 0 });
+  };
+  const submitAddress = (event: FormEvent) => {
+    event.preventDefault();
+    customer.saveAddress({ ...address, id: editingAddressId ?? undefined });
+    toast.success(editingAddressId ? "تم تحديث العنوان المحفوظ على هذا الجهاز." : "تم حفظ العنوان على هذا الجهاز.");
+    resetAddressForm();
+  };
+  return <main className="page-shell inner-page"><div className="page-title-row"><div><span className="eyebrow"></span><h1>حسابي</h1><p></p></div><span className="page-title-icon"><UserRound size={23} /></span></div><div className="account-grid"><section className="panel-card"><div className="panel-title"><CircleUserRound size={19} /><h2>بيانات التواصل</h2></div><form className="form-stack" onSubmit={saveProfile}><label>الاسم<input required minLength={2} maxLength={160} autoComplete="name" value={name} onChange={event => setName(event.target.value)} /></label><label>رقم الهاتف<input required type="tel" minLength={7} maxLength={32} autoComplete="tel" value={phone} onChange={event => setPhone(event.target.value)} placeholder="أضف رقمًا يمكن للمتجر الاتصال به" /></label><button className="button button-primary" disabled={name.trim().length < 2 || phone.trim().length < 7}>حفظ البيانات على هذا الجهاز</button><label>لغة الواجهة<select value="ar" disabled><option value="ar">العربية</option></select></label><small className="subtle-note"></small></form></section><section className="panel-card"><div className="panel-title"><MapPin size={19} /><h2>عناويني المحفوظة</h2></div>{customer.addresses.map(item => <div className="saved-address" key={item.id}><div><strong>{item.label}{item.isDefault && <span className="default-tag">افتراضي</span>}</strong><p>{item.recipientName} · {item.phone}<br />{item.city}، {item.district}<br />{item.details}</p></div><div className="address-actions"><button type="button" className="small-button" onClick={() => { setEditingAddressId(item.id); setAddress({ label: item.label, recipientName: item.recipientName, phone: item.phone, city: item.city, district: item.district, details: item.details, isDefault: item.isDefault }); }}>تعديل</button>{!item.isDefault && <button type="button" className="small-button" onClick={() => customer.setDefaultAddress(item.id)}>افتراضي</button>}<button type="button" className="icon-button" aria-label="حذف العنوان" onClick={() => { customer.removeAddress(item.id); toast.success("حُذف العنوان من هذا الجهاز."); if (editingAddressId === item.id) resetAddressForm(); }}><Trash2 size={16} /></button></div></div>)}{!customer.addresses.length && <p className="subtle-note">لا توجد عناوين محفوظة بعد. أضف عنوانًا مرة واحدة لإعادة استخدامه عند الطلب القادم.</p>}<details className="address-add" open={editingAddressId !== null}><summary>{editingAddressId ? "تعديل العنوان" : "إضافة عنوان جديد"} <Plus size={15} /></summary><form className="form-stack" onSubmit={submitAddress}><div className="form-grid"><label>اسم العنوان<input required maxLength={80} value={address.label} onChange={event => setAddress({ ...address, label: event.target.value })} placeholder="المنزل، العمل..." /></label><label>اسم المستلم<input required minLength={2} maxLength={160} autoComplete="name" value={address.recipientName} onChange={event => setAddress({ ...address, recipientName: event.target.value })} /></label><label>الهاتف<input required type="tel" minLength={7} maxLength={32} autoComplete="tel" value={address.phone} onChange={event => setAddress({ ...address, phone: event.target.value })} /></label><label>المدينة/المنطقة<input required maxLength={100} autoComplete="address-level1" value={address.city} onChange={event => setAddress({ ...address, city: event.target.value })} /></label><label>الحي<input required maxLength={120} autoComplete="address-level2" value={address.district} onChange={event => setAddress({ ...address, district: event.target.value })} /></label><label className="form-wide">تفاصيل العنوان<textarea rows={2} maxLength={1000} autoComplete="street-address" value={address.details} onChange={event => setAddress({ ...address, details: event.target.value })} /></label><label className="toggle-field form-wide"><input type="checkbox" checked={address.isDefault} onChange={event => setAddress({ ...address, isDefault: event.target.checked })} /> اجعل هذا العنوان الافتراضي</label></div><div className="address-form-actions"><button className="button button-primary">{editingAddressId ? "حفظ تعديل العنوان" : "حفظ العنوان"}</button>{editingAddressId && <button type="button" className="button button-quiet" onClick={resetAddressForm}>إلغاء</button>}</div></form></details></section></div><p className="local-data-note"></p></main>;
+}
+
+type AssistantProductLine = { productId: number; name: string; price: number; unit: string; quantity: number; stock: number | null; minQuantity: number; quantityStep: number };
+type AssistantCartAction = { id: string; type: "add" | "remove"; items: AssistantProductLine[]; status: "pending" | "confirmed" | "cancelled" };
+type AssistantMessage = {
+  role: "user" | "assistant";
+  text: string;
+  contextText?: string;
+  recipe?: { name: string; servings: number; steps: string[] } | null;
+  ingredients?: AssistantProductLine[];
+  missingIngredients?: string[];
+  recipeActionId?: string;
+  recipeAdded?: boolean;
+  cartAction?: AssistantCartAction;
+  suggestedQuestions?: string[];
+  ownerMsgId?: string;
+};
+
+const ASSISTANT_HISTORY_KEY = "original-assistant-history-v2";
+const CHAT_SESSION_KEY = "original-chat-session-id-v1";
+
+function getOrCreateChatSessionId(): string {
+  try {
+    let sid = localStorage.getItem(CHAT_SESSION_KEY);
+    if (!sid) {
+      sid = "chat-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+      localStorage.setItem(CHAT_SESSION_KEY, sid);
+    }
+    return sid;
+  } catch {
+    return "chat-guest";
+  }
+}
+
+const assistantGreeting: AssistantMessage = {
+  role: "assistant",
+  text: "يا هلا بك في أورجنال! محتار إيش تاكل أو تشتري اليوم؟ قولي نفسك في شي خفيف واقتصادي ولا عصير بارد، وأنا أرتب لك أحلى خيار!",
+  suggestedQuestions: ["عصير بارد اقتصادي", "وجبة خفيفة وسريعة", "عرض السلة"],
+};
+
+function readAssistantHistory(): AssistantMessage[] {
+  try {
+    const saved: unknown = JSON.parse(localStorage.getItem(ASSISTANT_HISTORY_KEY) ?? "null");
+    if (!Array.isArray(saved)) return [assistantGreeting];
+    const history = saved.flatMap(item => {
+      if (!item || typeof item !== "object") return [];
+      const row = item as Record<string, unknown>;
+      if ((row.role !== "user" && row.role !== "assistant") || typeof row.text !== "string") return [];
+      return [{
+        role: row.role,
+        text: row.text.slice(0, 1800),
+        ...(typeof row.contextText === "string" ? { contextText: row.contextText.slice(0, 1800) } : {}),
+        ...(typeof row.ownerMsgId === "string" ? { ownerMsgId: row.ownerMsgId } : {}),
+        ...(Array.isArray(row.suggestedQuestions) ? { suggestedQuestions: row.suggestedQuestions.filter((x): x is string => typeof x === "string") } : {}),
+      } as AssistantMessage];
+    }).slice(-32);
+    return history.length ? history : [assistantGreeting];
+  } catch { return [assistantGreeting]; }
+}
+
+function assistantHistoryText(message: AssistantMessage) {
+  return [message.text, message.contextText].filter(Boolean).join("\n").slice(0, 1800);
+}
+
+function AssistantPage() {
+  const { add, cart, setQuantity, favoriteIds } = useStore();
+  const homeCatalog = trpc.commerce.catalog.home.useQuery();
+  const [, navigate] = useLocation();
+  const [sessionId, setSessionId] = useState<string>(getOrCreateChatSessionId);
+  const [input, setInput] = useState("");
+  const [messages, setMessages] = useState<AssistantMessage[]>(readAssistantHistory);
+  const messagesRef = useRef<HTMLDivElement>(null);
+  const appliedActionsRef = useRef(new Set<string>());
+  const retryRef = useRef<{ request: string; history: Array<{ role: "user" | "assistant"; text: string }> } | null>(null);
+  const mutation = trpc.commerce.assistant.recipe.useMutation();
+
+  const pollQuery = trpc.commerce.assistant.pollMessages.useQuery(
+    { sessionId },
+    { refetchInterval: 2000, staleTime: 0, refetchOnMount: "always", refetchOnWindowFocus: true, retry: false }
+  );
+
+  useEffect(() => {
+    const ownerMsgs = pollQuery.data?.ownerMessages;
+    if (!ownerMsgs || !ownerMsgs.length) return;
+    setMessages(current => {
+      const existingIds = new Set(current.map(m => m.ownerMsgId).filter(Boolean));
+      const unseen = ownerMsgs.filter(m => !existingIds.has(m.id));
+      if (!unseen.length) return current;
+      toast.success("💬 وصلتك رسالة جديدة من إدارة المتجر!");
+      return [
+        ...current,
+        ...unseen.map(m => ({
+          role: "assistant" as const,
+          text: "👨‍💼 إدارة المتجر:\n" + m.text,
+          ownerMsgId: m.id,
+        })),
+      ].slice(-32);
+    });
+  }, [pollQuery.data, pollQuery.dataUpdatedAt]);
+
+  const displayedMessages: AssistantMessage[] = useMemo(() => {
+    const existingIds = new Set(messages.map(m => m.ownerMsgId).filter(Boolean));
+    const extra: AssistantMessage[] = (pollQuery.data?.ownerMessages ?? [])
+      .filter(m => !existingIds.has(m.id))
+      .map(m => ({
+        role: "assistant" as const,
+        text: "👨‍💼 إدارة المتجر:\n" + m.text,
+        ownerMsgId: m.id,
+      }));
+    return [...messages, ...extra];
+  }, [messages, pollQuery.data]);
+
+  useEffect(() => {
+    const saved = displayedMessages.slice(-32).map(message => ({
+      role: message.role,
+      text: message.text,
+      ...(message.contextText ? { contextText: message.contextText } : {}),
+      ...(message.ownerMsgId ? { ownerMsgId: message.ownerMsgId } : {}),
+      ...(message.suggestedQuestions?.length ? { suggestedQuestions: message.suggestedQuestions } : {}),
+    }));
+    try { localStorage.setItem(ASSISTANT_HISTORY_KEY, JSON.stringify(saved)); } catch {}
+  }, [displayedMessages]);
+
+  useEffect(() => {
+    const node = messagesRef.current;
+    if (node) node.scrollTo({ top: node.scrollHeight, behavior: "smooth" });
+  }, [displayedMessages.length, mutation.isPending]);
+
+  const startNewConversation = () => {
+    if (mutation.isPending) return;
+    retryRef.current = null;
+    appliedActionsRef.current.clear();
+    setInput("");
+    const newSid = "chat-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+    try {
+      localStorage.setItem(CHAT_SESSION_KEY, newSid);
+      localStorage.removeItem(ASSISTANT_HISTORY_KEY);
+    } catch {}
+    setSessionId(newSid);
+    setMessages([assistantGreeting]);
+  };
+
+  const updateActionStatus = (actionId: string, status: "confirmed" | "cancelled") => {
+    setMessages(current => current.map(message => {
+      if (message.cartAction?.id === actionId) {
+        return { ...message, cartAction: { ...message.cartAction, status }, contextText: (message.contextText ?? message.text) + "\nحالة طلب السلة: " + (status === "confirmed" ? "أكد العميل التغيير" : "رفض العميل التغيير") + "." };
+      }
+      if (message.recipeActionId === actionId) {
+        return { ...message, recipeAdded: status === "confirmed", contextText: (message.contextText ?? message.text) + "\nحالة إضافة مقادير الوصفة: " + (status === "confirmed" ? "أكد العميل الإضافة" : "رفض العميل الإضافة") + "." };
+      }
+      return message;
+    }));
+  };
+
+  const applyConfirmedChange = (actionId: string, type: "add" | "remove", items: AssistantProductLine[]) => {
+    if (appliedActionsRef.current.has(actionId)) return;
+    appliedActionsRef.current.add(actionId);
+    let changed = 0;
+    let skipped = 0;
+    for (const item of items) {
+      const current = cart.find(line => line.id === item.productId);
+      if (type === "add") {
+        const total = (current?.quantity ?? 0) + item.quantity;
+        if (item.stock !== null && total > item.stock) { skipped += 1; continue; }
+        add({ id: item.productId, name: item.name, price: item.price, unit: item.unit, stock: item.stock, minQuantity: item.minQuantity, quantityStep: item.quantityStep }, item.quantity);
+        changed += 1;
+      } else {
+        if (!current) { skipped += 1; continue; }
+        setQuantity(item.productId, Math.max(0, current.quantity - item.quantity));
+        changed += 1;
+      }
+    }
+    updateActionStatus(actionId, "confirmed");
+    if (changed) toast.success(type === "add" ? "تمت إضافة " + changed + " صنف إلى السلة." : "تم حذف " + changed + " صنف من السلة.");
+    if (skipped) toast.error("تغيّرت السلة أو الكمية المتاحة؛ راجع السلة قبل إتمام الطلب.");
+  };
+
+  const cancelCartChange = (actionId: string) => {
+    if (appliedActionsRef.current.has(actionId)) return;
+    appliedActionsRef.current.add(actionId);
+    updateActionStatus(actionId, "cancelled");
+    toast("لم يتم تغيير السلة.");
+  };
+
+  const sendText = (rawText: string, prevAssistantText = "") => {
+    const trimmed = rawText.trim();
+    if (mutation.isPending || !trimmed) return;
+
+    if (/^(?:عرض السلة|السلة|شوف السلة|تأكيد الطلب|إتمام الطلب|اتمام الطلب)$/i.test(trimmed)) {
+      navigate("/cart");
+      return;
+    }
+
+    const catalogProducts: PublicProduct[] = (homeCatalog.data?.products ?? []) as PublicProduct[];
+    const norm = (s: string) => s.replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي").toLowerCase().trim();
+    const cleanBtn = norm(trimmed.replace(/^(?:أضف|اضف|إضافة|اضافة|جرب|اعطني|أعطني)\s+/i, ""));
+
+    if (trimmed === "إضافة الاثنين" || trimmed === "اضافة الاثنين" || trimmed === "أضف الاثنين") {
+      const mentioned = catalogProducts.filter(p => prevAssistantText.includes(p.name) || norm(prevAssistantText).includes(norm(p.name)));
+      if (mentioned.length > 0) {
+        for (const prod of mentioned) {
+          add({ id: prod.id, name: prod.name, price: prod.price, unit: prod.unit, stock: prod.stock, minQuantity: prod.minQuantity, quantityStep: prod.quantityStep }, prod.minQuantity || 1);
+        }
+        const names = mentioned.map(p => p.name).join(" + ");
+        toast.success("تمت إضافة (" + names + ") إلى السلة مباشرة!");
+        setMessages(current => [
+          ...current,
+          { role: "user" as const, text: trimmed },
+          {
+            role: "assistant" as const,
+            text: "أبشر يا غالي! أضفت لك (" + names + ") إلى سلة المشتريات بنجاح 🛒.\nتحب تضيف شي ثاني معاهم ولا ننتقل لإتمام الطلب؟",
+            suggestedQuestions: ["عرض السلة", "عصير بارد اقتصادي"],
+          },
+        ].slice(-32));
+        return;
+      }
+    }
+
+    const matchedProd = catalogProducts.find(p => {
+      const np = norm(p.name);
+      return cleanBtn.length >= 3 && (np === cleanBtn || np.includes(cleanBtn) || cleanBtn.includes(np));
+    });
+
+    if (matchedProd && trimmed.length <= 35) {
+      const qty = matchedProd.minQuantity || 1;
+      add({ id: matchedProd.id, name: matchedProd.name, price: matchedProd.price, unit: matchedProd.unit, stock: matchedProd.stock, minQuantity: matchedProd.minQuantity, quantityStep: matchedProd.quantityStep }, qty);
+      toast.success("تمت إضافة " + matchedProd.name + " إلى السلة!");
+      setMessages(current => [
+        ...current,
+        { role: "user" as const, text: trimmed },
+        {
+          role: "assistant" as const,
+          text: "أبشر يا غالي! أضفت لك (" + qty + " × " + matchedProd.name + " — " + formatPrice(matchedProd.price) + ") إلى سلتك مباشرة 🛒.\nتحب تضيف صنف ثاني ولا نعتمد الطلب؟",
+          suggestedQuestions: ["عرض السلة", "إضافة صنف آخر"],
+        },
+      ].slice(-32));
+      return;
+    }
+
+    const updatedCart = cart.map(line => ({ productId: line.id, quantity: line.quantity }));
+    const history = displayedMessages.slice(-8).map(message => ({ role: message.role, text: assistantHistoryText(message) }));
+    setMessages(current => [...current, { role: "user" as const, text: trimmed }].slice(-32));
+    retryRef.current = { request: trimmed, history };
+    setInput("");
+
+    let cName = "";
+    let cPhone = "";
+    try {
+      const d = JSON.parse(localStorage.getItem("original-customer-browser-v1") || "{}");
+      cName = d.name || d.addresses?.[0]?.recipientName || "";
+      cPhone = d.phone || d.addresses?.[0]?.phone || "";
+    } catch {}
+
+    mutation.mutate({
+      request: trimmed,
+      history,
+      cart: updatedCart,
+      favoriteProductIds: favoriteIds,
+      sessionId,
+      customerName: cName,
+      customerPhone: cPhone,
+    }, {
+      onSuccess: (result: any) => {
+        retryRef.current = null;
+        void pollQuery.refetch();
+        if (result.cartAction && result.cartAction.type === "add" && Array.isArray(result.cartAction.items)) {
+          for (const item of result.cartAction.items) {
+            add({ id: item.productId, name: item.name, price: item.price, unit: item.unit, stock: item.stock, minQuantity: item.minQuantity, quantityStep: item.quantityStep }, item.quantity);
+          }
+          toast.success("تمت الإضافة إلى السلة تلقائياً!");
+        }
+        setMessages(current => [...current, {
+          role: "assistant" as const,
+          text: result.message,
+          recipe: result.recipe,
+          ingredients: result.ingredients,
+          missingIngredients: result.missingIngredients,
+          suggestedQuestions: Array.isArray(result.suggestedQuestions) ? result.suggestedQuestions : [],
+        }].slice(-32));
+      },
+      onError: () => {
+        toast.error("يرجى المحاولة مرة أخرى.");
+        setInput(trimmed);
+      },
+    });
+  };
+
+  const send = (event: FormEvent) => {
+    event.preventDefault();
+    sendText(input);
+  };
+
+  const copyMissingRequest = async (message: AssistantMessage) => {
+    const missing = message.missingIngredients ?? [];
+    if (!missing.length) return;
+    const note = "طلب توفير: " + missing.join("، ");
+    try {
+      await navigator.clipboard.writeText(note);
+      toast.success("نُسخ طلب التوفير بنجاح.");
+    } catch {}
+  };
+
+  return (
+    <main className="page-shell inner-page assistant-page">
+      <section className="chat-panel">
+        <div className="chat-head">
+          <span className="chat-avatar"><Sparkles size={17} /></span>
+          <div><strong>مساعد أورجنال الذكي</strong><small>متصل الآن لخدمتك ومرتبط بإدارة المتجر</small></div>
+          <span className="online-dot" />
+          <button type="button" className="assistant-new-chat" disabled={mutation.isPending} onClick={startNewConversation}>محادثة جديدة</button>
+        </div>
+        <div className="chat-messages" ref={messagesRef}>
+          {displayedMessages.map((message, index) => (
+            <div key={index + "-" + message.role + "-" + (message.ownerMsgId || "")} className={"chat-message " + (message.role === "user" ? "from-user" : "from-assistant") + (message.ownerMsgId ? " from-owner" : "")}>
+              <p style={{ whiteSpace: "pre-line" }}>{message.text}</p>
+              {message.role === "assistant" && message.text.includes("770731619") && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginTop: "8px" }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard?.writeText("770731619");
+                      toast.success("تم نسخ رقم المالك 770731619 بنجاح!");
+                    }}
+                    style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "6px 12px", borderRadius: "10px", border: "1px solid #0f5c3a", background: "#f2f9f5", color: "#0f5c3a", fontSize: "0.78rem", fontWeight: 700, cursor: "pointer" }}
+                  >
+                    <Copy size={13} /> نسخ الرقم: 770731619
+                  </button>
+                  <a
+                    href="tel:770731619"
+                    style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "6px 12px", borderRadius: "10px", border: "1px solid #d5e6dc", background: "#ffffff", color: "#0f5c3a", fontSize: "0.78rem", fontWeight: 700, textDecoration: "none" }}
+                  >
+                    📞 اتصال مباشر
+                  </a>
+                </div>
+              )}
+              {message.role === "assistant" && message.suggestedQuestions && message.suggestedQuestions.length > 0 && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "8px" }}>
+                  {message.suggestedQuestions.map((q, qIdx) => (
+                    <button
+                      key={qIdx}
+                      type="button"
+                      disabled={mutation.isPending}
+                      onClick={() => sendText(q, message.text)}
+                      style={{ padding: "5px 11px", borderRadius: "999px", border: "1px solid #cfe2d6", background: "#f3f9f5", color: "#0f5c3a", fontSize: "0.75rem", fontWeight: 700, cursor: "pointer" }}
+                    >
+                      {q}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+          {mutation.isPending && (
+            <div className="chat-message from-assistant" style={{ opacity: 0.75 }}>
+              <p>يكتب لك الآن...</p>
+            </div>
+          )}
+        </div>
+        <form className="chat-input" onSubmit={send}>
+          <input maxLength={1200} value={input} onChange={event => setInput(event.target.value)} placeholder="اكتب رسالتك هنا..." aria-label="رسالة للمساعد" disabled={mutation.isPending} />
+          <button disabled={mutation.isPending || !input.trim()} aria-label="إرسال"><ArrowLeft size={18} /></button>
+        </form>
+      </section>
+    </main>
+  );
+}
+
+function Loading() { return <div className="loading-state"><LoaderCircle size={22} className="spin" /><span>لحظة، نحدّث المعلومات...</span></div>; }
+function LoadError({ onRetry }: { onRetry: () => void }) { return <div className="error-state"><span className="error-symbol">!</span><strong>تعذر تحميل البيانات</strong><p>تحقق من اتصالك ثم حاول مجددًا. لم نفترض وجود بيانات غير مؤكدة.</p><button className="button button-outline" onClick={onRetry}>إعادة المحاولة</button></div>; }
+
+function shouldShowFooterDescription(description: string | null | undefined) {
+  const text = description?.trim().replace(/\s+/g, " ");
+  if (!text) return false;
+  return text !== "كل ماتحتاجه باب بيتك بضغطه زر" && text !== "كل ما تحتاجه باب بيتك بضغطه زر";
+}
+
+type StoreRewardCfg = {
+  rewardMode: "custom_gift" | "free_delivery" | "discount_percent" | "discount_fixed";
+  giftName: string;
+  fixedDiscount: number;
+  endsAt: string;
+  audience: "all" | "new_customers" | "returning_customers" | "vip_customers" | "specific_phones";
+  allowedPhones: string;
+  placement: "everywhere" | "home_and_cart" | "cart_only";
+};
+
+function unpackStoreRewardCfg(rawMsg?: string | null, fallbackType?: string): { cleanMessage: string; cfg: StoreRewardCfg } {
+  const defaultCfg: StoreRewardCfg = {
+    rewardMode: fallbackType === "discount_percent" ? "discount_percent" : "free_delivery",
+    giftName: "",
+    fixedDiscount: 0,
+    endsAt: "",
+    audience: "all",
+    allowedPhones: "",
+    placement: "everywhere",
+  };
+  const raw = String(rawMsg || "");
+  const match = raw.match(/\[\[rcfg:(\{[\s\S]*?\})\]\]/);
+  if (!match) return { cleanMessage: raw.trim(), cfg: defaultCfg };
+  try {
+    const parsed = JSON.parse(match[1]);
+    const cleanMessage = (raw.slice(0, match.index) + raw.slice((match.index || 0) + match[0].length)).trim();
+    return {
+      cleanMessage,
+      cfg: {
+        rewardMode: ["custom_gift", "free_delivery", "discount_percent", "discount_fixed"].includes(parsed.rewardMode) ? parsed.rewardMode : defaultCfg.rewardMode,
+        giftName: typeof parsed.giftName === "string" ? parsed.giftName.trim() : "",
+        fixedDiscount: Number.isFinite(Number(parsed.fixedDiscount)) ? Math.max(0, Math.floor(Number(parsed.fixedDiscount))) : 0,
+        endsAt: typeof parsed.endsAt === "string" ? parsed.endsAt.trim() : "",
+        audience: ["all", "new_customers", "returning_customers", "vip_customers", "specific_phones"].includes(parsed.audience) ? parsed.audience : "all",
+        allowedPhones: typeof parsed.allowedPhones === "string" ? parsed.allowedPhones.trim() : "",
+        placement: ["everywhere", "home_and_cart", "cart_only"].includes(parsed.placement) ? parsed.placement : "everywhere",
+      },
+    };
+  } catch {
+    return { cleanMessage: raw.trim(), cfg: defaultCfg };
+  }
+}
+
+function formatCountdownLeft(ms: number): string {
+  if (ms <= 0) return "";
+  const totalSec = Math.floor(ms / 1000);
+  const days = Math.floor(totalSec / 86400);
+  const hrs = Math.floor((totalSec % 86400) / 3600);
+  const mins = Math.floor((totalSec % 3600) / 60);
+  const secs = totalSec % 60;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  if (days > 0) return days + " يوم و " + pad(hrs) + ":" + pad(mins) + ":" + pad(secs);
+  return pad(hrs) + ":" + pad(mins) + ":" + pad(secs);
+}
+
+function GamifiedRewardBar({ settings, location }: { settings: Record<string, string | undefined>; location: string }) {
+  const { cart } = useStore();
+  const customer = useCustomer();
+  const [, navigate] = useLocation();
+  const enabled = settings?.rewardEnabled === "true";
+  const threshold = Number(settings?.rewardsThreshold || 0);
+  const { cleanMessage, cfg } = useMemo(() => unpackStoreRewardCfg(settings?.rewardsMessage, settings?.rewardType), [settings?.rewardsMessage, settings?.rewardType]);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!enabled || !cfg.endsAt) return;
+    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [enabled, cfg.endsAt]);
+
+  if (!enabled || !Number.isFinite(threshold) || threshold <= 0) return null;
+
+  const endMs = cfg.endsAt ? new Date(cfg.endsAt).getTime() : 0;
+  if (endMs && Number.isFinite(endMs) && nowMs > endMs) return null;
+  const countdownText = endMs && Number.isFinite(endMs) ? formatCountdownLeft(endMs - nowMs) : "";
+
+  const orderCount = customer.orders?.length || 0;
+  if (cfg.audience === "new_customers" && orderCount > 0) return null;
+  if (cfg.audience === "returning_customers" && orderCount < 1) return null;
+  if (cfg.audience === "vip_customers" && orderCount < 3) return null;
+  if (cfg.audience === "specific_phones") {
+    const allowed = cfg.allowedPhones.split(/[\s,،;]+/).map(s => s.replace(/\D/g, "")).filter(Boolean);
+    const myPhones = [customer.phone, ...(customer.addresses || []).map(a => a.phone)].map(s => String(s || "").replace(/\D/g, "")).filter(Boolean);
+    const matched = allowed.some(ap => myPhones.some(mp => mp.endsWith(ap) || ap.endsWith(mp)));
+    if (!matched) return null;
+  }
+
+  const isHome = location === "/";
+  const isCart = location === "/cart";
+  const isCatalog = location.startsWith("/products") || location.startsWith("/categories") || location.startsWith("/product/");
+  const showMainCard =
+    cfg.placement === "everywhere" ? (isHome || isCart || isCatalog) :
+    cfg.placement === "home_and_cart" ? (isHome || isCart) :
+    isCart;
+
+  const subtotal = cart.reduce((sum, line) => sum + line.price * line.quantity, 0);
+  const remaining = Math.max(0, threshold - subtotal);
+  const pct = Math.min(100, Math.max(0, Math.round((subtotal / threshold) * 100)));
+  const unlocked = subtotal >= threshold;
+
+  const giftLabel = cfg.giftName || (
+    cfg.rewardMode === "free_delivery" ? "توصيل مجاني بالكامل 🛵" :
+    cfg.rewardMode === "discount_percent" ? ("خصم فوري " + (settings?.rewardValue || "10") + "% 🏷️") :
+    cfg.rewardMode === "discount_fixed" ? ("خصم نقدي " + formatPrice(cfg.fixedDiscount || Number(settings?.rewardValue || 0)) + " 💸") :
+    "هدية مجانية من أورجنال 🎁"
+  );
+
+  const headline = unlocked
+    ? ("🎉 مبروك! فتحت الهدية: «" + giftLabel + "» — تُضاف تلقائياً مع طلبك!")
+    : subtotal === 0
+    ? ("🎁 عرض حماسي! تسوّق بقيمة " + formatPrice(threshold) + " واحصل فوراً على «" + giftLabel + "»")
+    : pct >= 60
+    ? ("⚡ اقتربت جداً! باقي لك " + formatPrice(remaining) + " فقط لتربح «" + giftLabel + "»!")
+    : ("🔥 أضف منتجات بقيمة " + formatPrice(remaining) + " لفتح الهدية: «" + giftLabel + "»");
+
+  const showFloatingMini = cfg.placement === "everywhere" && !isCart && subtotal > 0 && !location.startsWith("/assistant") && !location.startsWith("/orders") && !location.startsWith("/account");
+
+  return (
+    <>
+      {showMainCard && (
+        <div className="page-shell" style={{ paddingTop: "10px", paddingBottom: "4px" }}>
+          <section
+            style={{
+              position: "relative",
+              overflow: "hidden",
+              borderRadius: "20px",
+              padding: "14px 16px",
+              background: unlocked
+                ? "linear-gradient(135deg, #10462f 0%, #1d6b47 55%, #b5851f 100%)"
+                : "linear-gradient(135deg, #0e3322 0%, #185138 60%, #113c29 100%)",
+              color: "#ffffff",
+              border: unlocked ? "2px solid #f7dc8b" : "1.5px solid rgba(241, 216, 151, 0.45)",
+              boxShadow: unlocked ? "0 14px 32px rgba(24, 81, 56, 0.28)" : "0 10px 24px rgba(14, 51, 34, 0.18)",
+              transition: "all 0.35s ease",
+            }}
+          >
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: "8px", marginBottom: "8px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", flex: "1 1 220px" }}>
+                <span
+                  style={{
+                    width: "36px",
+                    height: "36px",
+                    borderRadius: "12px",
+                    background: unlocked ? "#f7dc8b" : "rgba(241, 216, 151, 0.18)",
+                    color: unlocked ? "#103b28" : "#f7dc8b",
+                    display: "grid",
+                    placeItems: "center",
+                    fontSize: "19px",
+                    flexShrink: 0,
+                    boxShadow: unlocked ? "0 4px 14px rgba(247, 220, 139, 0.45)" : "none",
+                  }}
+                >
+                  {unlocked ? "🏆" : "🎁"}
+                </span>
+                <div style={{ lineHeight: 1.4 }}>
+                  <strong style={{ display: "block", fontSize: "13px", color: "#fff9e6" }}>{headline}</strong>
+                  {cleanMessage && <small style={{ display: "block", fontSize: "11px", color: "#d7ecdf", opacity: 0.95 }}>{cleanMessage}</small>}
+                </div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                {countdownText && (
+                  <span style={{ fontSize: "10.5px", fontWeight: 800, padding: "3px 9px", borderRadius: "99px", background: "rgba(0,0,0,0.28)", color: "#ffe596", border: "1px solid rgba(255,229,150,0.35)" }} dir="ltr">
+                    ⏳ {countdownText}
+                  </span>
+                )}
+                <span style={{ fontSize: "11px", fontWeight: 800, padding: "3px 10px", borderRadius: "99px", background: unlocked ? "#f7dc8b" : "rgba(255,255,255,0.14)", color: unlocked ? "#0f3826" : "#f7dc8b" }}>
+                  {unlocked ? "مكتمل 100% ✨" : (pct + "%")}
+                </span>
+              </div>
+            </div>
+
+            <div style={{ height: "11px", borderRadius: "99px", background: "rgba(255,255,255,0.16)", padding: "2px", overflow: "hidden" }}>
+              <div
+                style={{
+                  width: Math.max(subtotal > 0 ? 6 : 0, pct) + "%",
+                  height: "100%",
+                  borderRadius: "99px",
+                  background: unlocked
+                    ? "linear-gradient(90deg, #ffe58f 0%, #4ade80 50%, #f7dc8b 100%)"
+                    : "linear-gradient(90deg, #f3c65f 0%, #ffe699 65%, #6ee7b7 100%)",
+                  transition: "width 0.45s cubic-bezier(0.22, 1, 0.36, 1)",
+                }}
+              />
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "7px", fontSize: "11px", color: "#d8eee1" }}>
+              <span>سلتك الآن: <b style={{ color: "#ffffff" }}>{formatPrice(subtotal)}</b></span>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <span>الهدف: <b style={{ color: "#f7dc8b" }}>{formatPrice(threshold)}</b></span>
+                {!isCart && subtotal > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => navigate("/cart")}
+                    style={{ padding: "3px 10px", borderRadius: "99px", border: "none", background: "#f7dc8b", color: "#0e3322", fontSize: "10.5px", fontWeight: 800, cursor: "pointer" }}
+                  >
+                    {unlocked ? "استلم هديتك في السلة 🎁" : "عرض السلة 🛒"}
+                  </button>
+                )}
+              </div>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {showFloatingMini && (
+        <div
+          onClick={() => navigate("/cart")}
+          style={{
+            position: "fixed",
+            left: "12px",
+            right: "12px",
+            bottom: "74px",
+            zIndex: 45,
+            maxWidth: "560px",
+            margin: "0 auto",
+            padding: "9px 13px",
+            borderRadius: "16px",
+            background: unlocked ? "linear-gradient(135deg, #114a32, #1e6e4a)" : "rgba(15, 54, 37, 0.96)",
+            color: "#ffffff",
+            border: unlocked ? "1.5px solid #f7dc8b" : "1px solid rgba(247, 220, 139, 0.4)",
+            boxShadow: "0 10px 26px rgba(0, 0, 0, 0.25)",
+            cursor: "pointer",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", fontSize: "11.5px", fontWeight: 800, marginBottom: "5px" }}>
+            <span style={{ color: "#fff8e1" }}>
+              {unlocked ? ("🎉 مبروك! ربحت «" + giftLabel + "» — اضغط لإتمام الطلب") : ("🔥 باقي " + formatPrice(remaining) + " لتربح «" + giftLabel + "»")}
+            </span>
+            <span style={{ color: "#f7dc8b", fontSize: "11px", flexShrink: 0 }}>{pct}%</span>
+          </div>
+          <div style={{ height: "6px", borderRadius: "99px", background: "rgba(255,255,255,0.18)", overflow: "hidden" }}>
+            <div style={{ width: Math.max(6, pct) + "%", height: "100%", borderRadius: "99px", background: "linear-gradient(90deg, #f3c65f, #4ade80)", transition: "width 0.4s ease" }} />
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+export default function Home() {
+  const storeCtx = useStore();
+  const trpcUtils = trpc.useUtils();
+  const lastCatalogSigRef = useRef("");
+  const [activeAiProduct, setActiveAiProduct] = useState<PublicProduct | null>(null);
+  useGuestPushSubscriptionSync();
+  const [location, navigate] = useLocation();
+  const [instantStoreData, setInstantStoreData] = useState<HomeData>(getInstantLocalCatalog);
+  const home = trpc.commerce.catalog.home.useQuery(undefined, {
+    retry: 1,
+    staleTime: 2000, refetchInterval: 2500,
+    refetchOnWindowFocus: true,
+  });
+  useEffect(() => {
+    if (home.data && Array.isArray(home.data.products)) {
+      setInstantStoreData(home.data as HomeData);
+      try { localStorage.setItem(INSTANT_CATALOG_KEY, JSON.stringify(home.data)); } catch {}
+    }
+  }, [home.data]);
+  const data = ((home.data && home.data.products ? home.data : instantStoreData) ?? { categories: [], products: [], banners: [], offers: [], settings: {} }) as HomeData;
+  const openProduct = (id: number) => navigate(`/product/${id}`);
+  const currentNav = location.startsWith("/categories") ? "/categories" : location.startsWith("/products") ? "/products" : location.startsWith("/assistant") ? "/assistant" : location.startsWith("/account") ? "/account" : "/";
+  const productPath = location.startsWith("/product/");
+  const productId = productPath ? Number(location.split("/")[2]) : 0;
+  const content = useMemo(() => {
+    if (productPath && Number.isInteger(productId)) return <ProductDetail key={productId} id={productId} allProducts={data.products} onSelectProduct={openProduct} onBack={() => navigate("/")} onAiRecipe={setActiveAiProduct} />;
+    if (location === "/products" || location.startsWith("/products?")) return <ProductListPage data={data} onOpen={openProduct} />;
+    if (location === "/categories") return <CategoriesPage data={data} />;
+    if (location === "/cart") return <CartPage minOrder={Number(data.settings?.minOrderAmount || 0)} />;
+    if (location === "/favorites") return <FavoritesPage />;
+    if (location === "/orders") return <OrdersPage />;
+    if (location === "/account") return <AccountPage />;
+    if (location === "/assistant") return <AssistantPage />;
+    return <HomePage data={data} onOpen={openProduct} onAiRecipe={setActiveAiProduct} />;
+  }, [location, productId, productPath, data]);
+  return <div className="store-app" dir="rtl"><Header data={data} onSearch={text => navigate(`/products${text ? `?search=${encodeURIComponent(text)}` : ""}`)} /><GamifiedRewardBar settings={data.settings} location={location} />{home.isError && <div className="connection-strip"><span>الاتصال بالخدمة غير متاح مؤقتًا</span><button onClick={() => void home.refetch()}>إعادة المحاولة</button></div>}{home.isError && !home.data ? <main className="page-shell inner-page"><LoadError onRetry={() => void home.refetch()} /></main> : content}<footer className="store-footer"><div className="footer-brand"><span className={`brand-mark ${data.settings.storeIconUrl ? "has-brand-image" : ""}`}>{data.settings.storeIconUrl ? <img src={data.settings.storeIconUrl} alt="" /> : <Leaf size={18} />}</span><span><b>ORIGINAL</b><small>{data.settings.storeName === "ORIGINAL – أورجنال" || !data.settings.storeName ? "أورجنال" : data.settings.storeName}</small></span></div>{shouldShowFooterDescription(data.settings.storeDescription) && <span>{data.settings.storeDescription}</span>}<small>© {new Date().getFullYear()} {data.settings.storeName || "ORIGINAL"}</small></footer>{activeAiProduct && <AiRecipeModal product={activeAiProduct} onClose={() => setActiveAiProduct(null)} />}
+    <BottomNav active={currentNav} /></div>;
+}

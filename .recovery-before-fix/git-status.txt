@@ -1,0 +1,24 @@
+M  client/public/sw.js
+M  client/src/pages/Admin.tsx
+M  client/src/pages/Home.tsx
+M  dist/index.js
+D  dist/public/assets/Admin-aFBH3_Wg.js
+A  dist/public/assets/Admin-xkYhL77p.js
+R  dist/public/assets/index-Dk_ECV3A.js -> dist/public/assets/index-CipQd582.js
+M  dist/public/index.html
+M  dist/public/sw.js
+ M server/commerce.ts
+?? .backups/
+?? .recovery-before-fix/
+?? client/src/const.ts.backup-login-20261025-150328
+?? client/src/index.css.backup-20261025-103505
+?? client/src/pages/Home.tsx.backup-20261025-103505
+?? client/src/pages/Home.tsx.backup-all-products
+?? client/src/pages/Home.tsx.backup-fix-load-more
+?? client/src/pages/Home.tsx.backup-gallery
+?? client/src/pages/Home.tsx.backup-load-more
+?? client/src/pages/Home.tsx.backup-show-all-products
+?? fix-chat-isolation.cjs
+?? server/_core/oauth.ts.backup-login-20261025-150328
+?? server/commerce.ts.backup-1792913006846
+?? "tatus --short"
