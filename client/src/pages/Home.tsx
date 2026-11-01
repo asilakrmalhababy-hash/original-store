@@ -59,10 +59,10 @@ function Header({ data, onSearch }: { data?: HomeData; onSearch: (text: string) 
         {text && <button type="button" className="search-clear" onClick={() => { setText(""); onSearch(""); }} aria-label="مسح البحث"><X size={14} /></button>}
       </form>
       <div className="header-actions">
-        <Link href="/favorites" className="header-action mobile-header-shortcut" aria-label="المفضلة" title="المفضلة"><Heart size={19} /><span>المفضلة</span></Link>
-        <Link href="/orders" className="header-action mobile-header-shortcut" aria-label="طلباتي" title="طلباتي"><Package size={19} /><span>طلباتي</span></Link>
-        <Link href="/cart" className="header-cart"><ShoppingCart size={19} /><span>السلة</span>{cartCount > 0 && <b>{cartCount}</b>}</Link>
-        <Link href="/account" className="account-chip"><CircleUserRound size={19} /><span>{name.trim().split(/\s+/)[0] || "حسابي"}</span></Link>
+        <Link href="/favorites" className="header-action mobile-header-shortcut" aria-label="المفضلة" title="المفضلة"><Heart size={21} /><span>المفضلة</span></Link>
+        <Link href="/orders" className="header-action mobile-header-shortcut" aria-label="طلباتي" title="طلباتي"><Package size={21} /><span>طلباتي</span></Link>
+        <Link href="/cart" className="header-cart"><ShoppingCart size={21} /><span>السلة</span>{cartCount > 0 && <b>{cartCount}</b>}</Link>
+        <Link href="/account" className="account-chip"><CircleUserRound size={21} /><span>{name.trim().split(/\s+/)[0] || "حسابي"}</span></Link>
       </div>
     </div>
     <div className="header-subline">
@@ -2733,23 +2733,24 @@ function useGuestPushSubscriptionSync() {
 
 function AccountPage() {
   const customer = useCustomer();
+  const { favoriteIds } = useStore();
   const homeCatalog = trpc.commerce.catalog.home.useQuery(undefined, { staleTime: 60_000 });
   const deliveryTree = useMemo(() => readPublicDeliveryTree((homeCatalog.data?.settings as any)?.deliveryTreeConfig), [homeCatalog.data?.settings]);
   const cleanedCustomerPhone = cleanYemeniPhone(customer.phone);
   const hasSavedProfile = Boolean(customer.name.trim().length >= 2 && isValidYemeniPhone(cleanedCustomerPhone));
-  const [isEditingProfile, setIsEditingProfile] = useState(!hasSavedProfile);
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [name, setName] = useState(customer.name);
   const [phone, setPhone] = useState(cleanedCustomerPhone);
 
   const [showAddressForm, setShowAddressForm] = useState(false);
   const [editingAddressId, setEditingAddressId] = useState<string | null>(null);
   const [address, setAddress] = useState({
-    label: "المنزل",
+    label: 'المنزل',
     recipientName: customer.name,
     phone: cleanedCustomerPhone,
-    city: "صنعاء",
-    district: "",
-    details: "",
+    city: 'صنعاء',
+    district: '',
+    details: '',
     isDefault: customer.addresses.length === 0,
   });
 
@@ -2757,9 +2758,6 @@ function AccountPage() {
     const cp = cleanYemeniPhone(customer.phone);
     setName(customer.name);
     setPhone(cp);
-    if (customer.name.trim().length >= 2 && isValidYemeniPhone(cp)) {
-      setIsEditingProfile(false);
-    }
   }, [customer.name, customer.phone]);
 
   const profilePhoneValid = isValidYemeniPhone(phone);
@@ -2768,29 +2766,29 @@ function AccountPage() {
   const saveProfile = (event: FormEvent) => {
     event.preventDefault();
     if (name.trim().length < 2) {
-      toast.error("يرجى كتابة الاسم الكامل.");
+      toast.error('يرجى كتابة الاسم الكامل.');
       return;
     }
     if (!profilePhoneValid) {
-      toast.error("يرجى إدخال رقم جوال يمني صحيح مكون من 9 أرقام ويبدأ بـ 77 أو 73 أو 78 أو 71 أو 70.");
+      toast.error('يرجى إدخال رقم جوال يمني صحيح مكون من 9 أرقام ويبدأ بـ 77 أو 73 أو 78 أو 71 أو 70.');
       return;
     }
     const cleanP = cleanYemeniPhone(phone);
     customer.saveProfile(name.trim(), cleanP);
     setIsEditingProfile(false);
-    toast.success("تم حفظ معلومات حسابك بنجاح ✓");
+    toast.success('تم حفظ وتحديث بيانات حسابك بنجاح ✓');
   };
 
   const resetAddressForm = () => {
     setEditingAddressId(null);
     setShowAddressForm(false);
     setAddress({
-      label: "المنزل",
+      label: 'المنزل',
       recipientName: customer.name || name,
       phone: cleanYemeniPhone(customer.phone || phone),
-      city: "صنعاء",
-      district: "",
-      details: "",
+      city: 'صنعاء',
+      district: '',
+      details: '',
       isDefault: customer.addresses.length === 0,
     });
   };
@@ -2798,15 +2796,11 @@ function AccountPage() {
   const submitAddress = (event: FormEvent) => {
     event.preventDefault();
     if (!addressPhoneValid) {
-      toast.error("يرجى إدخال رقم جوال يمني صحيح مكون من 9 أرقام ويبدأ بـ 77 أو 73 أو 78 أو 71 أو 70.");
+      toast.error('يرجى إدخال رقم جوال يمني صحيح مكون من 9 أرقام ويبدأ بـ 77 أو 73 أو 78 أو 71 أو 70.');
       return;
     }
     if (!address.city.trim() || !address.district.trim()) {
-      toast.error("يرجى اختيار منطقة التوصيل (المدينة والمنطقة والشارع).");
-      return;
-    }
-    if (!address.city.trim() || !address.district.trim()) {
-      toast.error("يرجى اختيار منطقة التوصيل (المدينة والمنطقة والشارع).");
+      toast.error('يرجى اختيار منطقة التوصيل (المدينة والمنطقة والشارع).');
       return;
     }
     customer.saveAddress({
@@ -2814,295 +2808,300 @@ function AccountPage() {
       phone: cleanYemeniPhone(address.phone),
       id: editingAddressId ?? undefined,
     });
-    toast.success(editingAddressId ? "تم تحديث العنوان المحفوظ بنجاح ✓" : "تم حفظ العنوان الجديد بنجاح ✓");
+    toast.success(editingAddressId ? 'تم تحديث العنوان المحفوظ بنجاح ✓' : 'تم حفظ العنوان الجديد بنجاح ✓');
     resetAddressForm();
   };
 
+  const displayLetter = (customer.name || name || 'أ').trim().slice(0, 1);
+  const carrierName = getYemenCarrierName(cleanedCustomerPhone);
+
   return (
-    <main className="page-shell inner-page">
-      <div className="page-title-row">
-        <div><span className="eyebrow">مساحتك الخاصة على هذا الجهاز</span><h1>حسابي</h1><p>معلومات حسابك وعناوين التوصيل المحفوظة لإتمام طلباتك بنقرة واحدة.</p></div>
-        <span className="page-title-icon"><UserRound size={23} /></span>
+    <main className='page-shell inner-page original-account-page'>
+      <div className='page-title-row' style={{ marginBottom: '6px' }}>
+        <div>
+          <span className='eyebrow'>ملفك الشخصي وعناوينك</span>
+          <h1>حسابي</h1>
+          <p>إدارة بيانات الاستلام وعناوين التوصيل المحفوظة لإتمام طلباتك بسرعة وسهولة.</p>
+        </div>
+        <span className='page-title-icon'><UserRound size={24} /></span>
       </div>
 
-      <div className="account-grid" style={{ gap: "16px", alignItems: "start" }}>
-        <section
-          className="panel-card"
-          style={{
-            padding: 0,
-            overflow: "hidden",
-            borderRadius: "20px",
-            border: "1.5px solid #cfe2d5",
-            boxShadow: "0 8px 24px rgba(17, 58, 40, 0.06)",
-            background: "#ffffff",
-          }}
-        >
-          <div
-            style={{
-              padding: "16px 18px",
-              background: "linear-gradient(135deg, #174b36 0%, #0f3324 100%)",
-              color: "#ffffff",
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              gap: "10px",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-              <span style={{ width: "42px", height: "42px", borderRadius: "13px", background: "rgba(241, 216, 151, 0.18)", border: "1.5px solid #f1d897", color: "#f1d897", display: "grid", placeItems: "center", fontWeight: 900, fontSize: "17px" }}>
-                {(customer.name || name || "أ").trim().slice(0, 1)}
-              </span>
-              <div>
-                <span style={{ fontSize: "10.5px", color: "#f1d897", fontWeight: 800, display: "block" }}>البيانات الشخصية</span>
-                <h2 style={{ margin: 0, fontSize: "17px", color: "#ffffff" }}>معلومات الحساب</h2>
+      <section className='original-account-card'>
+        <div className='original-account-card-head'>
+          <div className='original-account-identity'>
+            <span className='original-account-avatar'>{displayLetter}</span>
+            <div style={{ display: 'grid', gap: '3px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <h2 style={{ margin: 0, fontSize: '18px', color: '#143a28', fontWeight: 900 }}>
+                  {customer.name ? customer.name : 'عميل أورجنال'}
+                </h2>
+                <span style={{ fontSize: '10.5px', fontWeight: 800, padding: '3px 9px', borderRadius: '99px', background: hasSavedProfile ? '#e8f5ee' : '#fef3c7', color: hasSavedProfile ? '#174b36' : '#92400e' }}>
+                  {hasSavedProfile ? 'بيانات مكتملة ✓' : 'بانتظار استكمال البيانات'}
+                </span>
               </div>
+              <small style={{ color: '#6b7d72', fontSize: '12px' }}>
+                {cleanedCustomerPhone ? ('رقم الجوال: ' + cleanedCustomerPhone) : 'أضف اسمك ورقم جوالك لتعبئة الطلبات تلقائياً'}
+              </small>
             </div>
-            {!isEditingProfile && (
-              <button
-                type="button"
-                onClick={() => setIsEditingProfile(true)}
-                style={{
-                  padding: "7px 14px",
-                  borderRadius: "10px",
-                  border: "1px solid #f1d897",
-                  background: "rgba(255,255,255,0.12)",
-                  color: "#f1d897",
-                  fontWeight: 800,
-                  fontSize: "12px",
-                  cursor: "pointer",
-                }}
-              >
-                ✏️ تعديل البيانات
-              </button>
-            )}
           </div>
 
-          <div style={{ padding: "18px" }}>
-            {!isEditingProfile ? (
-              <div style={{ display: "grid", gap: "14px" }}>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "10px" }}>
-                  <div style={{ padding: "12px 14px", borderRadius: "14px", background: "#f5faf7", border: "1px solid #dce9e0" }}>
-                    <small style={{ color: "#5a7062", fontSize: "11px", display: "block", marginBottom: "3px" }}>👤 اسم العميل</small>
-                    <strong style={{ fontSize: "15px", color: "#123826" }}>{customer.name}</strong>
-                  </div>
-                  <div style={{ padding: "12px 14px", borderRadius: "14px", background: "#f5faf7", border: "1px solid #dce9e0" }}>
-                    <small style={{ color: "#5a7062", fontSize: "11px", display: "block", marginBottom: "3px" }}>📞 رقم الجوال المعتمد</small>
-                    <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-                      <strong style={{ fontSize: "15px", color: "#174b36", letterSpacing: "0.6px" }} dir="ltr">{cleanedCustomerPhone}</strong>
-                      {getYemenCarrierName(cleanedCustomerPhone) && (
-                        <span style={{ fontSize: "10px", fontWeight: 800, padding: "2px 8px", borderRadius: "99px", background: "#e3f3ea", color: "#174b36" }}>
-                          {getYemenCarrierName(cleanedCustomerPhone)}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
+          {!isEditingProfile && (
+            <button
+              type='button'
+              className='original-account-edit-btn'
+              onClick={() => setIsEditingProfile(true)}
+            >
+              <span>تعديل البيانات</span>
+            </button>
+          )}
+        </div>
 
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", paddingTop: "6px", borderTop: "1px solid #edf2ee", justifyContent: "space-between", alignItems: "center" }}>
-                  <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                    <Link href="/orders" className="small-button" style={{ background: "#f2f7f4", fontWeight: 800 }}>📦 طلباتي ({customer.orders.length})</Link>
-                    <span className="small-button" style={{ background: "#f2f7f4", cursor: "default" }}>📍 العناوين المحفوظة ({customer.addresses.length})</span>
-                  </div>
-                  <small style={{ color: "#687b6f", fontSize: "11px" }}>✓ محفوظ وجاهز للطلب السريع</small>
-                </div>
+        {!isEditingProfile ? (
+          <div style={{ display: 'grid', gap: '14px' }}>
+            <div className='original-account-info-grid'>
+              <div className='original-account-info-box'>
+                <small>الاسم الكامل للمستلم</small>
+                <strong>{customer.name || 'غير مضاف بعد — اضغط تعديل البيانات'}</strong>
               </div>
-            ) : (
-              <form className="form-stack" onSubmit={saveProfile} style={{ gap: "12px" }}>
-                <label>الاسم الكامل *
-                  <input required minLength={2} maxLength={160} autoComplete="name" value={name} onChange={event => setName(event.target.value)} placeholder="أدخل اسمك الكامل..." />
-                </label>
-                <label>
-                  <span style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span>رقم الجوال اليمني (9 أرقام) *</span>
-                    <small style={{ fontSize: "10.5px", fontWeight: 800, color: profilePhoneValid ? "#174b36" : "#b43c2f" }}>
-                      {profilePhoneValid ? ("✓ رقم صحيح (" + getYemenCarrierName(phone) + ")") : ("يبدأ بـ 77 أو 73 أو 78 أو 71 أو 70 (" + phone.length + "/9)")}
-                    </small>
-                  </span>
-                  <input
-                    required
-                    type="tel"
-                    inputMode="numeric"
-                    maxLength={9}
-                    dir="ltr"
-                    value={phone}
-                    onChange={event => setPhone(cleanYemeniPhone(event.target.value))}
-                    placeholder="مثال: 770731619"
-                    style={{ textAlign: "left", fontWeight: 800, fontSize: "15px", letterSpacing: "0.8px", borderColor: phone && !profilePhoneValid ? "#d9534f" : undefined }}
-                  />
-                </label>
-                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                  <button type="submit" className="button button-primary" disabled={name.trim().length < 2 || !profilePhoneValid} style={{ flex: 1 }}>
-                    <Check size={16} /> حفظ معلومات الحساب
-                  </button>
-                  {hasSavedProfile && (
-                    <button type="button" className="button button-quiet" onClick={() => { setName(customer.name); setPhone(cleanedCustomerPhone); setIsEditingProfile(false); }}>
-                      إلغاء
-                    </button>
+              <div className='original-account-info-box'>
+                <small>رقم الجوال المعتمد للتوصيل</small>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <strong dir='ltr' style={{ letterSpacing: '0.6px' }}>
+                    {cleanedCustomerPhone || 'غير مضاف بعد'}
+                  </strong>
+                  {carrierName && (
+                    <span style={{ fontSize: '10.5px', fontWeight: 800, padding: '2px 9px', borderRadius: '99px', background: '#174b36', color: '#ffffff' }}>
+                      {carrierName}
+                    </span>
                   )}
                 </div>
-              </form>
-            )}
-          </div>
-        </section>
-
-        <section
-          className="panel-card"
-          style={{
-            padding: "18px",
-            borderRadius: "20px",
-            border: "1.5px solid #cfe2d5",
-            boxShadow: "0 8px 24px rgba(17, 58, 40, 0.06)",
-            background: "#ffffff",
-          }}
-        >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px", paddingBottom: "12px", borderBottom: "1px solid #e6efe9", marginBottom: "14px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <span style={{ width: "36px", height: "36px", borderRadius: "11px", background: "#eaf5ee", color: "#174b36", display: "grid", placeItems: "center" }}>
-                <MapPin size={18} />
-              </span>
-              <div>
-                <h2 style={{ margin: 0, fontSize: "16.5px", color: "#123826" }}>عناويني المحفوظة ({customer.addresses.length})</h2>
-                <small style={{ color: "#5e7265", fontSize: "11px" }}>انقر على أي عنوان عند تأكيد الطلب لاختياره فوراً</small>
               </div>
             </div>
-            {!showAddressForm && (
+
+            <div className='original-account-shortcuts'>
+              <Link href='/orders' className='original-account-shortcut'>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                  <Package size={18} />
+                  <span>طلباتي السابقة والحالية</span>
+                </span>
+                <span style={{ padding: '2px 9px', borderRadius: '99px', background: '#eef5f0', fontSize: '12px' }}>{customer.orders.length}</span>
+              </Link>
+              <Link href='/favorites' className='original-account-shortcut'>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                  <Heart size={18} />
+                  <span>منتجاتي المفضلة</span>
+                </span>
+                <span style={{ padding: '2px 9px', borderRadius: '99px', background: '#eef5f0', fontSize: '12px' }}>{favoriteIds.length}</span>
+              </Link>
+            </div>
+          </div>
+        ) : (
+          <form className='form-stack' onSubmit={saveProfile} style={{ gap: '14px', background: '#f8fbf9', padding: '16px', borderRadius: '16px', border: '1px solid #dce8df' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <strong style={{ fontSize: '14px', color: '#174b36' }}>تحديث البيانات الشخصية</strong>
+              <small style={{ fontSize: '11px', color: '#64766b' }}>تُحفظ تلقائياً للطلبات القادمة</small>
+            </div>
+            <div className='form-grid' style={{ gap: '12px' }}>
+              <label style={{ fontWeight: 800, fontSize: '12.5px', color: '#1a3a29' }}>
+                <span>الاسم الكامل *</span>
+                <input
+                  required
+                  minLength={2}
+                  maxLength={160}
+                  autoComplete='name'
+                  value={name}
+                  onChange={event => setName(event.target.value)}
+                  placeholder='اكتب اسمك الكامل هنا...'
+                  style={{ background: '#ffffff', fontWeight: 700 }}
+                />
+              </label>
+              <label style={{ fontWeight: 800, fontSize: '12.5px', color: '#1a3a29' }}>
+                <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>رقم الجوال اليمني (9 أرقام) *</span>
+                  <small style={{ fontSize: '10.5px', fontWeight: 800, color: profilePhoneValid ? '#174b36' : '#b43c2f' }}>
+                    {profilePhoneValid ? ('✓ ' + getYemenCarrierName(phone)) : ('77 / 73 / 78 / 71 / 70 (' + phone.length + '/9)')}
+                  </small>
+                </span>
+                <input
+                  required
+                  type='tel'
+                  inputMode='numeric'
+                  maxLength={9}
+                  dir='ltr'
+                  value={phone}
+                  onChange={event => setPhone(cleanYemeniPhone(event.target.value))}
+                  placeholder='77XXXXXXX'
+                  style={{ background: '#ffffff', textAlign: 'left', fontWeight: 800, fontSize: '15px', letterSpacing: '0.7px', borderColor: phone && !profilePhoneValid ? '#d9534f' : undefined }}
+                />
+              </label>
+            </div>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
               <button
-                type="button"
-                className="small-button selected"
-                onClick={() => {
-                  setEditingAddressId(null);
-                  setAddress({ label: "المنزل", recipientName: customer.name || name, phone: cleanedCustomerPhone || phone, city: "صنعاء", district: "", details: "", isDefault: customer.addresses.length === 0 });
-                  setShowAddressForm(true);
+                type='button'
+                className='button button-quiet'
+                onClick={() => { setName(customer.name); setPhone(cleanedCustomerPhone); setIsEditingProfile(false); }}
+              >
+                إلغاء
+              </button>
+              <button
+                type='submit'
+                className='button button-primary'
+                disabled={name.trim().length < 2 || !profilePhoneValid}
+                style={{ minWidth: '170px' }}
+              >
+                <Check size={16} /> حفظ البيانات
+              </button>
+            </div>
+          </form>
+        )}
+      </section>
+
+      <section className='original-account-card'>
+        <div className='original-account-card-head'>
+          <div className='original-account-identity'>
+            <span style={{ width: '44px', height: '44px', borderRadius: '14px', background: '#edf6f0', color: '#174b36', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+              <MapPin size={21} />
+            </span>
+            <div>
+              <h2 style={{ margin: 0, fontSize: '17px', color: '#143a28', fontWeight: 900 }}>عناوين التوصيل المحفوظة ({customer.addresses.length})</h2>
+              <small style={{ color: '#6b7d72', fontSize: '12px' }}>اختر أي عنوان محفوظ بنقرة واحدة عند تأكيد الطلب</small>
+            </div>
+          </div>
+          {!showAddressForm && (
+            <button
+              type='button'
+              className='original-account-edit-btn'
+              onClick={() => {
+                setEditingAddressId(null);
+                setAddress({ label: 'المنزل', recipientName: customer.name || name, phone: cleanedCustomerPhone || phone, city: 'صنعاء', district: '', details: '', isDefault: customer.addresses.length === 0 });
+                setShowAddressForm(true);
+              }}
+            >
+              <Plus size={15} />
+              <span>إضافة عنوان جديد</span>
+            </button>
+          )}
+        </div>
+
+        {!customer.addresses.length && !showAddressForm ? (
+          <div style={{ textAlign: 'center', padding: '24px 16px', borderRadius: '16px', background: '#f8fbf9', border: '1px dashed #cbdcd0', display: 'grid', gap: '10px', justifyItems: 'center' }}>
+            <MapPin size={28} color='#5d7567' />
+            <div style={{ fontSize: '13px', color: '#4c6255', fontWeight: 700 }}>لا توجد عناوين محفوظة حتى الآن</div>
+            <small style={{ fontSize: '11.5px', color: '#728579', maxWidth: '340px' }}>يتم حفظ عنوانك تلقائياً عند إتمام أول طلب، أو يمكنك إضافة عنوانك الآن.</small>
+            <button type='button' className='original-account-edit-btn' onClick={() => setShowAddressForm(true)}>+ إضافة أول عنوان توصيل</button>
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gap: '10px' }}>
+            {customer.addresses.map(item => (
+              <div
+                key={item.id}
+                style={{
+                  padding: '14px 16px',
+                  borderRadius: '16px',
+                  background: item.isDefault ? '#f4f9f6' : '#ffffff',
+                  border: item.isDefault ? '1.5px solid #174b36' : '1px solid #dde8e0',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'flex-start',
+                  flexWrap: 'wrap',
+                  gap: '12px',
                 }}
               >
-                <Plus size={14} /> إضافة عنوان جديد
-              </button>
-            )}
-          </div>
-
-          {!customer.addresses.length && !showAddressForm ? (
-            <div style={{ textAlign: "center", padding: "18px 12px", borderRadius: "14px", background: "#f7faf8", border: "1px dashed #c8d9ce" }}>
-              <p style={{ margin: "0 0 10px", fontSize: "12.5px", color: "#52685b" }}>لا توجد عناوين محفوظة بعد. سيُحفظ عنوانك تلقائياً عند أول طلب أو يمكنك إضافته الآن.</p>
-              <button type="button" className="small-button selected" onClick={() => setShowAddressForm(true)}><Plus size={14} /> إضافة أول عنوان توصيل</button>
-            </div>
-          ) : (
-            <div style={{ display: "grid", gap: "10px" }}>
-              {customer.addresses.map(item => (
-                <div
-                  key={item.id}
-                  style={{
-                    padding: "12px 14px",
-                    borderRadius: "14px",
-                    background: item.isDefault ? "#f3faf5" : "#ffffff",
-                    border: item.isDefault ? "1.5px solid #174b36" : "1px solid #dce6df",
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "flex-start",
-                    flexWrap: "wrap",
-                    gap: "10px",
-                  }}
-                >
-                  <div style={{ display: "grid", gap: "4px" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-                      <strong style={{ fontSize: "14px", color: "#123826" }}>📍 {item.label}</strong>
-                      {item.isDefault && <span className="default-tag">العنوان الافتراضي ✓</span>}
-                    </div>
-                    <div style={{ fontSize: "12.5px", color: "#2c4738", fontWeight: 700 }}>
-                      {item.recipientName} · <span dir="ltr" style={{ color: "#174b36" }}>{cleanYemeniPhone(item.phone)}</span>
-                    </div>
-                    <div style={{ fontSize: "12px", color: "#516659" }}>
-                      {item.city} — {item.district}{item.details ? (" · " + item.details) : ""}
-                    </div>
-                  </div>
-                  <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
-                    {!item.isDefault && (
-                      <button type="button" className="small-button" onClick={() => { customer.setDefaultAddress(item.id); toast.success("تم تعيينه كعنوان افتراضي ✓"); }}>
-                        تعيين كافتراضي
-                      </button>
+                <div style={{ display: 'grid', gap: '5px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <strong style={{ fontSize: '14.5px', color: '#143a28', fontWeight: 900 }}>{item.label}</strong>
+                    {item.isDefault && (
+                      <span style={{ fontSize: '10px', fontWeight: 800, padding: '2px 8px', borderRadius: '99px', background: '#174b36', color: '#ffffff' }}>
+                        العنوان الافتراضي ✓
+                      </span>
                     )}
-                    <button
-                      type="button"
-                      className="small-button"
-                      onClick={() => {
-                        setEditingAddressId(item.id);
-                        setAddress({
-                          label: item.label,
-                          recipientName: item.recipientName,
-                          phone: cleanYemeniPhone(item.phone),
-                          city: item.city,
-                          district: item.district,
-                          details: item.details,
-                          isDefault: item.isDefault,
-                        });
-                        setShowAddressForm(true);
-                      }}
-                    >
-                      تعديل
-                    </button>
-                    <button
-                      type="button"
-                      className="icon-button"
-                      aria-label="حذف العنوان"
-                      onClick={() => {
-                        customer.removeAddress(item.id);
-                        toast.success("حُذف العنوان من هذا الجهاز.");
-                        if (editingAddressId === item.id) resetAddressForm();
-                      }}
-                    >
-                      <Trash2 size={16} />
-                    </button>
+                  </div>
+                  <div style={{ fontSize: '12.5px', color: '#2b4737', fontWeight: 700 }}>
+                    {item.recipientName} · <span dir='ltr' style={{ color: '#174b36', fontWeight: 800 }}>{cleanYemeniPhone(item.phone)}</span>
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#5b6f62' }}>
+                    {item.city} – {item.district.replace('—', '–')}{item.details ? (' · ' + item.details) : ''}
                   </div>
                 </div>
+                <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                  {!item.isDefault && (
+                    <button type='button' className='small-button' onClick={() => { customer.setDefaultAddress(item.id); toast.success('تم تعيينه كعنوان افتراضي ✓'); }}>
+                      تعيين كافتراضي
+                    </button>
+                  )}
+                  <button
+                    type='button'
+                    className='small-button'
+                    onClick={() => {
+                      setEditingAddressId(item.id);
+                      setAddress({
+                        label: item.label,
+                        recipientName: item.recipientName,
+                        phone: cleanYemeniPhone(item.phone),
+                        city: item.city,
+                        district: item.district,
+                        details: item.details,
+                        isDefault: item.isDefault,
+                      });
+                      setShowAddressForm(true);
+                    }}
+                  >
+                    تعديل
+                  </button>
+                  <button
+                    type='button'
+                    className='icon-button'
+                    aria-label='حذف العنوان'
+                    onClick={() => {
+                      customer.removeAddress(item.id);
+                      toast.success('تم حذف العنوان المحفوظ.');
+                      if (editingAddressId === item.id) resetAddressForm();
+                    }}
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {showAddressForm && (
+          <form className='form-stack' onSubmit={submitAddress} style={{ marginTop: '8px', padding: '16px', borderRadius: '16px', background: '#f8fbf9', border: '1px solid #dce8df', gap: '12px' }}>
+            <strong style={{ fontSize: '14px', color: '#174b36' }}>{editingAddressId ? 'تعديل العنوان المحفوظ' : 'إضافة عنوان توصيل جديد'}</strong>
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+              {['المنزل', 'العمل', 'منزل العائلة', 'استراحة'].map(preset => (
+                <button key={preset} type='button' className={'small-button' + (address.label === preset ? ' selected' : '')} style={{ minHeight: '30px', padding: '4px 12px', fontSize: '12px' }} onClick={() => setAddress({ ...address, label: preset })}>{preset}</button>
               ))}
             </div>
-          )}
-
-          {showAddressForm && (
-            <form className="form-stack" onSubmit={submitAddress} style={{ marginTop: "14px", paddingTop: "14px", borderTop: "1.5px dashed #cfe0d4", gap: "10px" }}>
-              <strong style={{ fontSize: "13.5px", color: "#174b36" }}>{editingAddressId ? "✏️ تعديل العنوان المحفوظ" : "➕ إضافة عنوان توصيل جديد"}</strong>
-              <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-                {["المنزل", "العمل", "منزل العائلة", "استراحة"].map(preset => (
-                  <button key={preset} type="button" className={"small-button" + (address.label === preset ? " selected" : "")} style={{ minHeight: "28px", padding: "2px 10px", fontSize: "11.5px" }} onClick={() => setAddress({ ...address, label: preset })}>{preset}</button>
-                ))}
-              </div>
-              <div className="form-grid">
-                <label>تسمية العنوان *<input required maxLength={80} value={address.label} onChange={event => setAddress({ ...address, label: event.target.value })} placeholder="المنزل، العمل..." /></label>
-                <label>اسم المستلم *<input required minLength={2} maxLength={160} autoComplete="name" value={address.recipientName} onChange={event => setAddress({ ...address, recipientName: event.target.value })} /></label>
-                <label className="form-wide">
-                  <span style={{ display: "flex", justifyContent: "space-between" }}>
-                    <span>رقم الجوال اليمني (9 أرقام) *</span>
-                    <small style={{ fontSize: "10px", fontWeight: 800, color: addressPhoneValid ? "#174b36" : "#b43c2f" }}>{address.phone.length}/9</small>
-                  </span>
-                  <input required type="tel" inputMode="numeric" maxLength={9} dir="ltr" value={address.phone} onChange={event => setAddress({ ...address, phone: cleanYemeniPhone(event.target.value) })} placeholder="77XXXXXXX" style={{ textAlign: "left", fontWeight: 800 }} />
-                </label>
-                {deliveryTree ? (
-                  <div className="form-wide">
-                    <ThreeStepLocationPicker
-                      tree={deliveryTree}
-                      city={address.city}
-                      district={address.district}
-                      phone={address.phone}
-                      subtotal={0}
-                      onChangeLocation={(nextCity, nextDist) => setAddress(curr => ({ ...curr, city: nextCity, district: nextDist }))}
-                    />
-                  </div>
-                ) : (
-                  <>
-                    <label>المدينة / المنطقة *<input required maxLength={100} value={address.city} onChange={event => setAddress({ ...address, city: event.target.value })} placeholder="صنعاء" /></label>
-                    <label className="form-wide">الحي / الشارع *<input required maxLength={120} value={address.district} onChange={event => setAddress({ ...address, district: event.target.value })} placeholder="مثلاً: الرقاص، حدة، الأصبحي..." /></label>
-                  </>
-                )}
-                <label className="form-wide">أقرب معلم للعنوان<textarea required rows={2} maxLength={1000} value={address.details} onChange={event => setAddress({ ...address, details: event.target.value })} placeholder="مثال: بجوار بنك الكريمي، أمام جامع..." /></label>
-                <label className="toggle-field form-wide"><input type="checkbox" checked={address.isDefault} onChange={event => setAddress({ ...address, isDefault: event.target.checked })} /> اجعل هذا العنوان هو الافتراضي عند الطلب</label>
-              </div>
-              <div className="address-form-actions" style={{ display: "flex", gap: "8px" }}>
-                <button type="submit" className="button button-primary" disabled={!addressPhoneValid}><Check size={16} /> {editingAddressId ? "حفظ تعديل العنوان" : "حفظ العنوان"}</button>
-                <button type="button" className="button button-quiet" onClick={resetAddressForm}>إلغاء</button>
-              </div>
-            </form>
-          )}
-        </section>
-      </div>
+            <div className='form-grid' style={{ gap: '10px' }}>
+              <label>تسمية العنوان *<input required maxLength={80} value={address.label} onChange={event => setAddress({ ...address, label: event.target.value })} placeholder='المنزل، العمل...' style={{ background: '#ffffff' }} /></label>
+              <label>اسم المستلم *<input required minLength={2} maxLength={160} autoComplete='name' value={address.recipientName} onChange={event => setAddress({ ...address, recipientName: event.target.value })} style={{ background: '#ffffff' }} /></label>
+              <label>
+                <span style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>رقم الجوال اليمني (9 أرقام) *</span>
+                  <small style={{ fontSize: '10.5px', fontWeight: 800, color: addressPhoneValid ? '#174b36' : '#b43c2f' }}>{address.phone.length}/9</small>
+                </span>
+                <input required type='tel' inputMode='numeric' maxLength={9} dir='ltr' value={address.phone} onChange={event => setAddress({ ...address, phone: cleanYemeniPhone(event.target.value) })} placeholder='77XXXXXXX' style={{ background: '#ffffff', textAlign: 'left', fontWeight: 800 }} />
+              </label>
+            </div>
+            <ThreeStepLocationPicker
+              tree={deliveryTree}
+              city={address.city}
+              district={address.district}
+              phone={address.phone}
+              subtotal={0}
+              onChangeLocation={(nextCity, nextDist) => setAddress(curr => ({ ...curr, city: nextCity, district: nextDist }))}
+            />
+            <label>أقرب معلم للعنوان *<input required maxLength={300} value={address.details} onChange={event => setAddress({ ...address, details: event.target.value })} placeholder='مثال: بجوار جامع...، أمام صيدلية...' style={{ background: '#ffffff' }} /></label>
+            <label className='checkbox-row'><input type='checkbox' checked={address.isDefault} onChange={event => setAddress({ ...address, isDefault: event.target.checked })} /><span>تعيين كعنوان افتراضي للطلبات القادمة</span></label>
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+              <button type='button' className='button button-quiet' onClick={resetAddressForm}>إلغاء</button>
+              <button type='submit' className='button button-primary' disabled={!addressPhoneValid || !address.city || !address.district}><Check size={16} /> {editingAddressId ? 'تحديث العنوان' : 'حفظ العنوان'}</button>
+            </div>
+          </form>
+        )}
+      </section>
     </main>
   );
 }

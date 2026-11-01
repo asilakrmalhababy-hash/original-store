@@ -1363,10 +1363,7 @@ img, svg, picture, video {
     border-radius: 12px !important;
   }
 
-  .product-visual > img {
-    padding: 3px !important;
-    object-fit: contain !important;
-  }
+  
 
   .product-title-button {
     min-height: 43px !important;
@@ -1993,3 +1990,238 @@ img, svg, picture, video {
   .original-order-list-card { padding:12px; gap:10px; }
   .original-order-list-icon { width:40px; height:40px; }
 }
+
+/* --- MASTER_VISUAL_FIX_START --- */
+/* 1. تكبير وتنسيق أيقونات الهيدر (المفضلة، طلباتي، السلة، حسابي) */
+.header-actions {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+}
+.header-action, .mobile-header-shortcut, .account-chip, .header-cart {
+  min-height: 42px !important;
+  height: 42px !important;
+  border-radius: 13px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 7px !important;
+  box-sizing: border-box !important;
+}
+.header-action svg, .mobile-header-shortcut svg, .account-chip svg, .header-cart svg {
+  width: 21px !important;
+  height: 21px !important;
+  min-width: 21px !important;
+  min-height: 21px !important;
+  flex-shrink: 0 !important;
+  stroke-width: 2.1px !important;
+}
+@media (max-width: 900px) {
+  .header-action.mobile-header-shortcut, .mobile-header-shortcut {
+    width: 42px !important;
+    height: 42px !important;
+    min-width: 42px !important;
+    min-height: 42px !important;
+    padding: 0 !important;
+    padding-inline: 0 !important;
+    border-radius: 13px !important;
+    background: #ffffff !important;
+    border: 1.5px solid #dce8df !important;
+    color: #174b36 !important;
+    box-shadow: 0 3px 10px rgba(20, 55, 35, 0.05) !important;
+  }
+  .header-action.mobile-header-shortcut span, .mobile-header-shortcut span {
+    display: none !important;
+  }
+}
+@media (max-width: 680px) {
+  .header-actions {
+    gap: 7px !important;
+  }
+  .header-action.mobile-header-shortcut, .mobile-header-shortcut, .account-chip, .header-cart {
+    width: 41px !important;
+    height: 41px !important;
+    min-width: 41px !important;
+    min-height: 41px !important;
+    padding: 0 !important;
+    padding-inline: 0 !important;
+    border-radius: 12px !important;
+  }
+  .header-cart {
+    width: auto !important;
+    min-width: 41px !important;
+    padding-inline: 10px !important;
+  }
+}
+
+/* 2. توحيد أحجام الصور وقص الزوايا الناعمة (border-radius + object-fit: cover) في كل الموقع */
+.product-card {
+  padding: 6px !important;
+  border-radius: 18px !important;
+  overflow: hidden !important;
+  background: #ffffff !important;
+}
+.product-visual {
+  position: relative !important;
+  width: 100% !important;
+  aspect-ratio: 1 / 1.05 !important;
+  border-radius: 14px !important;
+  overflow: hidden !important;
+  padding: 0 !important;
+  background: #f4f7f4 !important;
+}
+.product-visual > img {
+  width: 100% !important;
+  height: 100% !important;
+  max-width: none !important;
+  max-height: none !important;
+  object-fit: cover !important;
+  object-position: center !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border-radius: 14px !important;
+  display: block !important;
+}
+.detail-visual {
+  position: relative !important;
+  width: 100% !important;
+  aspect-ratio: 1 / 1 !important;
+  max-height: 380px !important;
+  border-radius: 20px !important;
+  overflow: hidden !important;
+  padding: 0 !important;
+  background: #f4f7f4 !important;
+}
+.detail-visual > img {
+  width: 100% !important;
+  height: 100% !important;
+  max-width: none !important;
+  max-height: none !important;
+  object-fit: cover !important;
+  object-position: center !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border-radius: 20px !important;
+  display: block !important;
+}
+.cart-thumb, .entity-image {
+  overflow: hidden !important;
+  padding: 0 !important;
+}
+.cart-thumb > img, .entity-image > img, .category-art img, .category-large-art img {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  padding: 0 !important;
+  border-radius: inherit !important;
+  display: block !important;
+}
+
+/* 3. تصميم صفحة حسابي الفاخر والمتناسق مع صفحة طلباتي */
+.original-account-page {
+  display: grid;
+  gap: 18px;
+}
+.original-account-card {
+  background: #ffffff;
+  border: 1px solid #dce8df;
+  border-radius: 22px;
+  padding: 20px;
+  box-shadow: 0 8px 26px rgba(20, 55, 35, 0.05);
+  display: grid;
+  gap: 16px;
+}
+.original-account-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #edf3ee;
+}
+.original-account-identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.original-account-avatar {
+  width: 50px;
+  height: 50px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #174b36 0%, #24694c 100%);
+  color: #f1d897;
+  display: grid;
+  place-items: center;
+  font-size: 20px;
+  font-weight: 900;
+  box-shadow: 0 6px 16px rgba(23, 75, 54, 0.18);
+  flex-shrink: 0;
+}
+.original-account-edit-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 15px;
+  border-radius: 12px;
+  border: 1.5px solid #174b36;
+  background: #f2f8f4;
+  color: #174b36;
+  font-size: 12.5px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+.original-account-edit-btn:hover {
+  background: #174b36;
+  color: #ffffff;
+}
+.original-account-info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 12px;
+}
+.original-account-info-box {
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: #f6faf7;
+  border: 1px solid #e1ece4;
+  display: grid;
+  gap: 5px;
+}
+.original-account-info-box small {
+  color: #6b7d72;
+  font-size: 11px;
+  font-weight: 700;
+}
+.original-account-info-box strong {
+  color: #143a28;
+  font-size: 15.5px;
+  font-weight: 900;
+}
+.original-account-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+  gap: 10px;
+  padding-top: 4px;
+}
+.original-account-shortcut {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: #ffffff;
+  border: 1px solid #dde8e0;
+  color: #174b36;
+  text-decoration: none;
+  font-weight: 800;
+  font-size: 12.5px;
+  transition: all 0.18s ease;
+}
+.original-account-shortcut:hover {
+  border-color: #174b36;
+  background: #f4f9f6;
+}
+/* --- MASTER_VISUAL_FIX_END --- */
