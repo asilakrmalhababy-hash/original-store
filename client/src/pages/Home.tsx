@@ -2294,35 +2294,66 @@ function FavoritesPage({ allProducts = [], onOpen, onAiRecipe }: { allProducts?:
 function OrdersPage() {
   const customer = useCustomer();
   const { add } = useStore();
+  const [, navigate] = useLocation();
   const searchStr = useSearch();
   const searchParams = new URLSearchParams(searchStr);
   const focusedOrderNumber = searchParams.get("order");
   const justOrdered = searchParams.get("justOrdered") === "1";
-  const refs = useMemo(() => customer.orders.slice(0, 50).map(({ orderNumber, idempotencyKey }) => ({ orderNumber, idempotencyKey })), [customer.orders]);
+
+  const refs = useMemo(
+    () => customer.orders.slice(0, 50).map(({ orderNumber, idempotencyKey }) => ({ orderNumber, idempotencyKey })),
+    [customer.orders]
+  );
+
   const cachedOrdersData = useMemo(() => {
     try {
       const raw = localStorage.getItem("original-orders-track-cache-v1");
       const parsed = raw ? JSON.parse(raw) : null;
       return Array.isArray(parsed) && parsed.length > 0 ? parsed : undefined;
-    } catch { return undefined; }
+    } catch {
+      return undefined;
+    }
   }, [refs.length]);
-  const query = trpc.commerce.orders.trackMany.useQuery({ refs }, { enabled: refs.length > 0, retry: 1, staleTime: 4_000, refetchInterval: refs.length ? 8_000 : false, placeholderData: cachedOrdersData });
+
+  const query = trpc.commerce.orders.trackMany.useQuery(
+    { refs },
+    {
+      enabled: refs.length > 0,
+      retry: 1,
+      staleTime: 4000,
+      refetchInterval: refs.length ? 8000 : false,
+      placeholderData: cachedOrdersData,
+    }
+  );
+
   useEffect(() => {
     if (query.data && Array.isArray(query.data) && query.data.length > 0) {
-      try { localStorage.setItem("original-orders-track-cache-v1", JSON.stringify(query.data)); } catch {}
+      try {
+        localStorage.setItem("original-orders-track-cache-v1", JSON.stringify(query.data));
+      } catch {}
     }
   }, [query.data]);
-  const publicKey = trpc.commerce.notifications.publicKey.useQuery(undefined, { enabled: false, retry: 1 });
+
+  const publicKey = trpc.commerce.notifications.publicKey.useQuery(undefined, {
+    enabled: false,
+    retry: 1,
+  });
   const subscribe = trpc.commerce.orders.subscribeToStatus.useMutation();
+
   const [permission, setPermission] = useState(getPushPermissionState);
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pushPending, setPushPending] = useState(false);
   const [reorder, setReorder] = useState<Array<{ productId: number; quantity: number }> | null>(null);
-  const reorderQuery = trpc.commerce.catalog.productsForReorder.useQuery({ ids: reorder?.map(item => item.productId) ?? [1] }, { enabled: Boolean(reorder), retry: 1 });
+
+  const reorderQuery = trpc.commerce.catalog.productsForReorder.useQuery(
+    { ids: reorder?.map(item => item.productId) ?? [1] },
+    { enabled: Boolean(reorder), retry: 1 }
+  );
 
   useEffect(() => {
     if (!refs.length || getPushPermissionState() !== "granted") return;
     let active = true;
+
     void (async () => {
       try {
         let subscription = await getExistingBrowserPushSubscription();
@@ -2335,22 +2366,35 @@ function OrdersPage() {
         if (active) setPushEnabled(result.subscribed > 0);
       } catch {}
     })();
+
     return () => { active = false; };
   }, [refs.length]);
 
   const enableNotifications = async () => {
     if (!refs.length || pushPending) return;
     setPushPending(true);
+
     try {
       const requestedPermission = await requestPushPermission();
       setPermission(requestedPermission);
-      if (requestedPermission === "unsupported") throw new Error("متصفحك لا يدعم إشعارات Push لهذا التطبيق.");
-      if (requestedPermission !== "granted") throw new Error("يرجى السماح بالإشعارات من نافذة المتصفح لتتبع طلبك.");
+
+      if (requestedPermission === "unsupported") {
+        throw new Error("متصفحك لا يدعم إشعارات Push لهذا التطبيق.");
+      }
+      if (requestedPermission !== "granted") {
+        throw new Error("يرجى السماح بالإشعارات من نافذة المتصفح لتتبع طلبك.");
+      }
+
       const key = publicKey.data ?? (await publicKey.refetch()).data;
       if (!key) throw new Error("تعذر الاتصال بخدمة الإشعارات. أعد المحاولة بعد قليل.");
+
       const subscription = await ensureBrowserPushSubscription(key);
       const result = await subscribe.mutateAsync({ refs, subscription });
-      if (!result.subscribed) throw new Error("لم نعثر على طلب محفوظ صالح لهذا المتصفح.");
+
+      if (!result.subscribed) {
+        throw new Error("لم نعثر على طلب محفوظ صالح لهذا المتصفح.");
+      }
+
       setPushEnabled(true);
       toast.success("تم تفعيل إشعارات تتبع الطلب بنجاح!");
     } catch (error) {
@@ -2362,21 +2406,31 @@ function OrdersPage() {
 
   useEffect(() => {
     if (!reorder || !reorderQuery.data) return;
+
     let added = 0;
+
     for (const line of reorder) {
       const product = reorderQuery.data.find(candidate => candidate.id === line.productId);
       if (!product) continue;
-      const minimum = product.minQuantity || 1; const step = product.quantityStep || 1;
-      let quantity = minimum + Math.max(0, Math.floor((Math.max(minimum, line.quantity) - minimum) / step)) * step;
+
+      const minimum = product.minQuantity || 1;
+      const step = product.quantityStep || 1;
+      let quantity = minimum +
+        Math.max(0, Math.floor((Math.max(minimum, line.quantity) - minimum) / step)) * step;
+
       if (product.stock !== null) {
         const bounded = Math.min(quantity, product.stock);
         quantity = minimum + Math.max(0, Math.floor((bounded - minimum) / step)) * step;
         if (quantity > product.stock) continue;
       }
-      add(product, quantity); added += 1;
+
+      add(product, quantity);
+      added += 1;
     }
+
     if (added) toast.success("أُضيف " + added + " منتج إلى السلة.");
     else toast.error("لا توجد منتجات متاحة من هذا الطلب الآن.");
+
     setReorder(null);
   }, [reorder, reorderQuery.data, add]);
 
@@ -2385,6 +2439,10 @@ function OrdersPage() {
     raw.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     return raw;
   }, [query.data]);
+
+  const selectedOrder = focusedOrderNumber
+    ? orders.find(order => order.orderNumber === focusedOrderNumber)
+    : undefined;
 
   const stepOrder = ["new", "preparing", "ready", "out_for_delivery", "delivered"];
   const stepTitles: Record<string, string> = {
@@ -2395,176 +2453,261 @@ function OrdersPage() {
     delivered: "تم التسليم",
   };
 
-  return (
-    <main className="page-shell inner-page">
-      <div className="page-title-row">
-        <div><span className="eyebrow">متابعة حية ومباشرة</span><h1>طلباتي ({orders.length})</h1><p>مرتبة من الأحدث للأقدم — تابع حالة طلبك وفاتورتك خطوة بخطوة.</p></div>
-        <span className="page-title-icon"><Package size={23} /></span>
-      </div>
+  const openOrder = (orderNumber: string) => {
+    navigate("/orders?order=" + encodeURIComponent(orderNumber));
+    window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
+  };
 
-      {refs.length > 0 && (
-        <section
-          style={{
-            marginBottom: "16px",
-            padding: "14px 16px",
-            borderRadius: "16px",
-            background: pushEnabled ? "linear-gradient(135deg, #edf7f0, #f7fbf8)" : "linear-gradient(135deg, #113a28, #1d5c41)",
-            color: pushEnabled ? "#174b36" : "#ffffff",
-            border: pushEnabled ? "1.5px solid #b8dec6" : "1.5px solid #f1d897",
-            display: "flex",
-            flexWrap: "wrap",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: "12px",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: "10px", flex: "1 1 220px" }}>
-            <span style={{ width: "40px", height: "40px", borderRadius: "12px", background: pushEnabled ? "#174b36" : "#f1d897", color: pushEnabled ? "#f1d897" : "#113a28", display: "grid", placeItems: "center", flexShrink: 0 }}>
-              {pushEnabled ? <Check size={20} /> : <BellRing size={20} />}
-            </span>
+  const backToOrders = () => {
+    navigate("/orders");
+    window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
+  };
+
+  const notificationPanel = refs.length > 0 ? (
+    <section className="original-orders-notifications">
+      <div className="original-orders-notification-icon">
+        {pushEnabled ? <Check size={20} /> : <BellRing size={20} />}
+      </div>
+      <div className="original-orders-notification-copy">
+        <strong>
+          {pushEnabled
+            ? "إشعارات طلباتك مفعّلة"
+            : justOrdered
+              ? "تم تأكيد طلبك! فعّل الإشعارات لمتابعته"
+              : "تابع طلباتك أولاً بأول"}
+        </strong>
+        <small>
+          {pushEnabled
+            ? "سيصلك تنبيه عند تحديث حالة طلبك."
+            : "فعّل التنبيهات ليصلك كل تحديث جديد."}
+        </small>
+      </div>
+      <button
+        type="button"
+        className="original-orders-notification-button"
+        onClick={() => void enableNotifications()}
+        disabled={pushPending || permission === "denied" || permission === "unsupported"}
+      >
+        {pushPending ? "جارٍ التفعيل..." : pushEnabled ? "تحديث" : "تفعيل التنبيهات"}
+      </button>
+    </section>
+  ) : null;
+
+  if (query.isLoading && !orders.length) {
+    return <main className="page-shell inner-page"><Loading /></main>;
+  }
+
+  if (query.error && !orders.length) {
+    return <main className="page-shell inner-page"><LoadError onRetry={() => void query.refetch()} /></main>;
+  }
+
+  if (focusedOrderNumber && !selectedOrder) {
+    return (
+      <main className="page-shell inner-page original-orders-page">
+        <button type="button" className="original-orders-back" onClick={backToOrders}>
+          <ChevronLeft size={18} /> العودة إلى طلباتي
+        </button>
+        <EmptyState
+          icon={Package}
+          title="لم نعثر على هذا الطلب"
+          description="قد يكون الطلب غير متاح مؤقتاً. ارجع إلى قائمة طلباتك وحاول مرة أخرى."
+          action="عرض طلباتي"
+          href="/orders"
+        />
+      </main>
+    );
+  }
+
+  if (selectedOrder) {
+    const order = selectedOrder;
+    const events = order.events || [];
+    const items = order.items || [];
+    const currentStepIdx = stepOrder.indexOf(order.status);
+    const regularNotes = events.filter(
+      ev => ev.note && ev.note.trim() &&
+        ev.note !== "تم استلام الطلب" &&
+        !String(ev.note).startsWith("❌")
+    );
+    const latestStoreNote = regularNotes.length
+      ? regularNotes[regularNotes.length - 1]
+      : undefined;
+    const cancelledNotes = events
+      .filter(ev => String(ev.note || "").startsWith("❌"))
+      .map(ev => String(ev.note || "").replace(/\s*\|\s*الإجمالي الجديد:.*$/, ""));
+    const ordAny = order as any;
+
+    return (
+      <main className="page-shell inner-page original-orders-page">
+        <button type="button" className="original-orders-back" onClick={backToOrders}>
+          <ChevronLeft size={18} /> العودة إلى طلباتي
+        </button>
+
+        <header className="original-orders-detail-heading">
+          <span className="original-orders-eyebrow">تفاصيل طلبك</span>
+          <h1>طلبك بين يديك</h1>
+          <p>كل تفاصيل الفاتورة وحالة التوصيل في مكان واحد.</p>
+        </header>
+
+        <article className="original-order-detail-card">
+          <div className="original-order-detail-top">
             <div>
-              <strong style={{ display: "block", fontSize: "13.5px", color: pushEnabled ? "#174b36" : "#f9e8b8" }}>
-                {pushEnabled ? "إشعارات تتبع الطلب مفعّلة على جوالك" : (justOrdered ? "تم تأكيد طلبك! فعّل الإشعارات لمتابعته" : "فعّل إشعارات تتبع حالة طلبك")}
-              </strong>
-              <small style={{ fontSize: "11px", opacity: 0.92 }}>
-                {pushEnabled ? "يصلك تنبيه فوري عند تجهيز طلبك أو خروجه للتوصيل." : "اضغط زر التفعيل ليصلك إشعار فوري عند تحديث حالة طلبك."}
-              </small>
+              <small>رقم الطلب</small>
+              <strong dir="ltr">{order.orderNumber}</strong>
+              <span>{new Date(order.createdAt).toLocaleString("ar-YE")}</span>
+              {ordAny.city && (
+                <span>{ordAny.city}{ordAny.district ? " - " + ordAny.district : ""}</span>
+              )}
             </div>
+            <span className={"status-pill status-" + order.status}>
+              {stateLabels[order.status] || order.status}
+            </span>
           </div>
+
+          {order.status !== "cancelled" && (
+            <section className="original-order-progress">
+              <h3>حالة تجهيز وتوصيل الطلب</h3>
+              <div className="original-order-progress-steps">
+                {stepOrder.map((step, index) => (
+                  <div key={step} className={currentStepIdx >= index ? "is-done" : ""}>
+                    <span className="original-order-progress-dot">
+                      {currentStepIdx > index ? <Check size={13} /> : index + 1}
+                    </span>
+                    <small>{stepTitles[step]}</small>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {cancelledNotes.length > 0 && (
+            <section className="original-order-alert">
+              <strong>تحديث على فاتورة الطلب</strong>
+              {cancelledNotes.map((note, index) => <p key={index}>{note}</p>)}
+            </section>
+          )}
+
+          {latestStoreNote?.note && (
+            <section className="original-order-store-note">
+              <BellRing size={17} />
+              <span>رسالة المتجر: {latestStoreNote.note}</span>
+            </section>
+          )}
+
+          <section className="original-order-items">
+            <h3>الأصناف المطلوبة <span>{items.length}</span></h3>
+            {items.map(item => (
+              <div className="original-order-item" key={item.id}>
+                <span>{item.productName}</span>
+                <span>× {item.quantity}</span>
+                <strong>{item.lineTotal > 0 ? formatPrice(item.lineTotal) : "—"}</strong>
+              </div>
+            ))}
+          </section>
+
+          <div className="original-order-total">
+            <span>الإجمالي النهائي</span>
+            <strong>{formatPrice(order.total)}</strong>
+          </div>
+
           <button
             type="button"
-            onClick={() => void enableNotifications()}
-            disabled={pushPending || permission === "denied" || permission === "unsupported"}
-            className="small-button"
-            style={{ background: pushEnabled ? "#ffffff" : "#f1d897", color: "#113a28", fontWeight: 800, border: pushEnabled ? "1px solid #174b36" : "none" }}
+            className="original-order-reorder"
+            disabled={reorderQuery.isFetching}
+            onClick={() => {
+              const validItems = items
+                .filter(item => item.productId !== null)
+                .map(item => ({ productId: item.productId!, quantity: item.quantity }));
+
+              if (!validItems.length) {
+                toast.error("لم تعد منتجات هذا الطلب متاحة في المتجر.");
+                return;
+              }
+              setReorder(validItems);
+            }}
           >
-            <BellRing size={15} /> {pushPending ? "جارٍ التفعيل..." : pushEnabled ? "تحديث الإشعارات" : "تفعيل الإشعارات"}
+            <ShoppingCart size={17} />
+            {reorderQuery.isFetching ? "جارٍ تجهيز السلة..." : "إضافة الطلب إلى السلة مجدداً"}
           </button>
-        </section>
-      )}
 
-      {(query.isLoading && !orders.length) ? <Loading /> : (query.error && !orders.length) ? <LoadError onRetry={() => void query.refetch()} /> : !orders.length ? (
-        <EmptyState icon={Package} title={refs.length ? "لم نعثر على طلبات محفوظة على هذا الجهاز" : "لا توجد طلبات سابقة"} description="بعد إتمام طلب من هذا المتصفح، ستظهر حالته هنا مباشرة." action="تسوق الآن" href="/products" />
-      ) : (
-        <div style={{ display: "grid", gap: "14px" }}>
-          {orders.map((order, idx) => {
-            const isLatest = idx === 0;
-            const isFocused = focusedOrderNumber ? order.orderNumber === focusedOrderNumber : isLatest;
-            const currentStepIdx = stepOrder.indexOf(order.status);
-            const cancelledNotes = (order.events || []).filter(ev => String(ev.note || "").startsWith("❌")).map(ev => String(ev.note || "").replace(/\s*\|\s*الإجمالي الجديد:.*$/, ""));
-            const regularNotes = (order.events || []).filter(ev => ev.note && ev.note.trim() && ev.note !== "تم استلام الطلب" && !String(ev.note).startsWith("❌"));
-            const latestStoreNote = regularNotes.at(-1);
-            const ordAny = order as any;
+          {events.length > 0 && (
+            <details className="original-order-history">
+              <summary>سجل تحديثات الطلب ({events.length})</summary>
+              <ol>
+                {events.map(event => (
+                  <li key={event.id}>
+                    <span className={"status-pill status-" + event.status}>
+                      {stateLabels[event.status] || event.status}
+                    </span>
+                    <time>{new Date(event.createdAt).toLocaleString("ar-YE")}</time>
+                    {event.note && <small>{event.note}</small>}
+                  </li>
+                ))}
+              </ol>
+            </details>
+          )}
+        </article>
+      </main>
+    );
+  }
 
-            return (
-              <article
-                key={order.orderNumber}
-                style={{
-                  padding: "16px",
-                  borderRadius: "18px",
-                  background: "#ffffff",
-                  border: isFocused ? "2px solid #174b36" : "1px solid #dbe6df",
-                  boxShadow: isFocused ? "0 10px 24px rgba(23, 75, 54, 0.09)" : "0 4px 12px rgba(15, 42, 28, 0.04)",
-                  display: "grid",
-                  gap: "12px",
-                }}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "8px", paddingBottom: "10px", borderBottom: "1px solid #ebf1ed" }}>
-                  <div style={{ display: "grid", gap: "3px" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-                      <strong style={{ fontSize: "14.5px", color: "#123826", letterSpacing: "0.4px" }} dir="ltr">{order.orderNumber}</strong>
-                      {isLatest && (
-                        <span style={{ fontSize: "10.5px", fontWeight: 800, padding: "2px 9px", borderRadius: "99px", background: "#174b36", color: "#f1d897" }}>
-                          ✨ أحدث طلب
-                        </span>
-                      )}
-                    </div>
-                    <small style={{ color: "#607367", fontSize: "11.5px" }}>
-                      🕒 {new Date(order.createdAt).toLocaleString("ar-YE")}
-                      {ordAny.city ? (" · 📍 " + ordAny.city + (ordAny.district ? (" - " + ordAny.district) : "")) : ""}
-                    </small>
-                  </div>
-                  <span className={"status-pill status-" + order.status}>{stateLabels[order.status] || order.status}</span>
-                </div>
-
-                {order.status !== "cancelled" && (
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "5px", padding: "10px", borderRadius: "12px", background: "#f4f9f6", border: "1px solid #e1ece5" }}>
-                    {stepOrder.map((st, sIdx) => {
-                      const done = currentStepIdx >= sIdx;
-                      const active = currentStepIdx === sIdx;
-                      return (
-                        <div key={st} style={{ textAlign: "center", display: "grid", gap: "4px" }}>
-                          <div style={{ height: "5px", borderRadius: "99px", background: done ? "#174b36" : "#d7e2da" }} />
-                          <span style={{ fontSize: "9.5px", fontWeight: active ? 900 : 600, color: done ? "#174b36" : "#86968c" }}>{stepTitles[st]}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {cancelledNotes.length > 0 && (
-                  <div style={{ padding: "10px 12px", borderRadius: "12px", background: "#fff6f4", border: "1px solid #f0c6be", display: "grid", gap: "4px" }}>
-                    <strong style={{ fontSize: "12px", color: "#8f3225" }}>🔔 تحديث على فاتورة الطلب:</strong>
-                    {cancelledNotes.map((cn, cIdx) => (
-                      <div key={cIdx} style={{ fontSize: "11.5px", color: "#5e251d", lineHeight: 1.55 }}>{cn}</div>
-                    ))}
-                  </div>
-                )}
-
-                {latestStoreNote?.note && (
-                  <div style={{ padding: "10px 12px", borderRadius: "12px", background: "#fff9e8", border: "1px solid #edd691", color: "#574208", fontSize: "12px", fontWeight: 700, display: "flex", alignItems: "center", gap: "8px" }}>
-                    <BellRing size={15} />
-                    <span>رسالة المتجر: {latestStoreNote.note}</span>
-                  </div>
-                )}
-
-                <div style={{ padding: "10px 12px", borderRadius: "12px", background: "#f8fbf9", border: "1px solid #e2ece5", display: "grid", gap: "6px" }}>
-                  <small style={{ fontSize: "11px", fontWeight: 800, color: "#4d6658" }}>🛒 الأصناف في هذا الطلب ({order.items.length}):</small>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-                    {order.items.map(item => (
-                      <span key={item.id} style={{ padding: "5px 10px", borderRadius: "9px", background: "#ffffff", border: "1px solid #d5e3da", fontSize: "12px", fontWeight: 700, color: "#153826" }}>
-                        {item.productName} <strong style={{ color: "#174b36" }}>× {item.quantity}</strong>
-                        {item.lineTotal > 0 ? <small style={{ color: "#576e60", marginRight: "5px" }}>({formatPrice(item.lineTotal)})</small> : null}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px", paddingTop: "4px" }}>
-                  <div>
-                    <small style={{ display: "block", fontSize: "11px", color: "#5c7063" }}>الإجمالي النهائي للفاتورة</small>
-                    <strong style={{ fontSize: "18px", color: "#174b36" }}>{formatPrice(order.total)}</strong>
-                  </div>
-                  <button
-                    type="button"
-                    className="small-button selected"
-                    disabled={reorderQuery.isFetching}
-                    onClick={() => {
-                      const validItems = order.items.filter(item => item.productId !== null).map(item => ({ productId: item.productId!, quantity: item.quantity }));
-                      if (!validItems.length) { toast.error("لم تعد منتجات هذا الطلب متاحة في المتجر."); return; }
-                      setReorder(validItems);
-                    }}
-                    style={{ padding: "8px 14px", borderRadius: "11px", fontWeight: 800 }}
-                  >
-                    إضافة للسلة مجدداً <ArrowLeft size={14} />
-                  </button>
-                </div>
-
-                {order.events.length > 0 && (
-                  <details className="order-history">
-                    <summary style={{ fontSize: "11.5px", color: "#53695c", cursor: "pointer" }}>عرض سجل تحركات الطلب ({order.events.length})</summary>
-                    <ol>{order.events.map(event => <li key={event.id}><span className={"status-pill status-" + event.status}>{stateLabels[event.status] || event.status}</span><time>{new Date(event.createdAt).toLocaleString("ar-YE")}</time>{event.note && <small>{event.note}</small>}</li>)}</ol>
-                  </details>
-                )}
-              </article>
-            );
-          })}
+  return (
+    <main className="page-shell inner-page original-orders-page">
+      <header className="original-orders-heading">
+        <div>
+          <span className="original-orders-eyebrow">مساحة طلباتك</span>
+          <h1>طلباتي</h1>
+          <p>تابع طلباتك السابقة والحالية بكل سهولة.</p>
         </div>
+        <div className="original-orders-count">
+          <Package size={20} />
+          <strong>{orders.length}</strong>
+          <small>طلب</small>
+        </div>
+      </header>
+
+      {notificationPanel}
+
+      {!orders.length ? (
+        <EmptyState
+          icon={Package}
+          title={refs.length ? "لم نعثر على طلبات محفوظة" : "لا توجد طلبات حتى الآن"}
+          description="عندما تنهي أول طلب لك، ستجده هنا ويمكنك متابعة تفاصيله."
+          action="تسوق الآن"
+          href="/products"
+        />
+      ) : (
+        <section className="original-orders-list">
+          {orders.map((order, index) => (
+            <button
+              type="button"
+              key={order.orderNumber}
+              className="original-order-list-card"
+              onClick={() => openOrder(order.orderNumber)}
+            >
+              <span className="original-order-list-icon"><Package size={21} /></span>
+              <span className="original-order-list-main">
+                <span className="original-order-list-number">
+                  <strong dir="ltr">{order.orderNumber}</strong>
+                  {index === 0 && <small>أحدث طلب</small>}
+                </span>
+                <span className="original-order-list-date">
+                  {new Date(order.createdAt).toLocaleDateString("ar-YE")}
+                </span>
+                <span className="original-order-list-bottom">
+                  <span className={"status-pill status-" + order.status}>
+                    {stateLabels[order.status] || order.status}
+                  </span>
+                  <strong>{formatPrice(order.total)}</strong>
+                </span>
+              </span>
+              <ChevronLeft size={20} className="original-order-list-arrow" />
+            </button>
+          ))}
+        </section>
       )}
     </main>
   );
 }
-
 function useGuestPushSubscriptionSync() {
   const customer = useCustomer();
   const refs = useMemo(() => customer.orders.slice(0, 50).map(({ orderNumber, idempotencyKey }) => ({ orderNumber, idempotencyKey })), [customer.orders]);
