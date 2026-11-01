@@ -145,6 +145,11 @@ export const orders = mysqlTable("orders", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 }, table => [index("orders_user_date_idx").on(table.userId, table.createdAt), index("orders_status_date_idx").on(table.status, table.createdAt)]);
 
+export const orderNumberSequences = mysqlTable("order_number_sequences", {
+  id: int("id").autoincrement().primaryKey(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
 export const orderItems = mysqlTable("order_items", {
   id: int("id").autoincrement().primaryKey(),
   orderId: int("orderId").notNull().references(() => orders.id, { onDelete: "cascade" }),

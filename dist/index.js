@@ -21,6 +21,7 @@ __export(schema_exports, {
   offers: () => offers,
   orderEvents: () => orderEvents,
   orderItems: () => orderItems,
+  orderNumberSequences: () => orderNumberSequences,
   orders: () => orders,
   ownerPushSubscriptions: () => ownerPushSubscriptions,
   productRecommendations: () => productRecommendations,
@@ -39,7 +40,7 @@ import {
   uniqueIndex,
   varchar
 } from "drizzle-orm/mysql-core";
-var users, categories, products, productRecommendations, banners, offers, storeSettings, addresses, favorites, orders, orderItems, orderEvents, ownerPushSubscriptions, customerPushSubscriptions, adminStaff, adminAuditLogs;
+var users, categories, products, productRecommendations, banners, offers, storeSettings, addresses, favorites, orders, orderNumberSequences, orderItems, orderEvents, ownerPushSubscriptions, customerPushSubscriptions, adminStaff, adminAuditLogs;
 var init_schema = __esm({
   "drizzle/schema.ts"() {
     "use strict";
@@ -168,6 +169,10 @@ var init_schema = __esm({
       createdAt: timestamp("createdAt").defaultNow().notNull(),
       updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
     }, (table) => [index("orders_user_date_idx").on(table.userId, table.createdAt), index("orders_status_date_idx").on(table.status, table.createdAt)]);
+    orderNumberSequences = mysqlTable("order_number_sequences", {
+      id: int("id").autoincrement().primaryKey(),
+      createdAt: timestamp("createdAt").defaultNow().notNull()
+    });
     orderItems = mysqlTable("order_items", {
       id: int("id").autoincrement().primaryKey(),
       orderId: int("orderId").notNull().references(() => orders.id, { onDelete: "cascade" }),
@@ -1893,7 +1898,26 @@ function smartExtract(rawText, catalog, userQuery) {
     } catch {
     }
   }
+  const norm = (s) => String(s || "").replace(/[أإآ]/g, "\u0627").replace(/ة/g, "\u0647").replace(/ى/g, "\u064A").replace(/ال/g, "").toLowerCase().trim();
+  const normUser = norm(userQuery);
+  const isProductModalQuery = /(?:طرق لتحضير|طرق تحضير|أفكار وطرق|افكار وطرق|طرق تقديم|التعديل المطلوب|«[^»]+»)/i.test(userQuery);
+  let targetProduct;
+  const guillemetMatch = userQuery.match(/«([^»]+)»/);
+  if (guillemetMatch && guillemetMatch[1]) {
+    const gNorm = norm(guillemetMatch[1]);
+    targetProduct = catalog.find((p) => norm(p.name) === gNorm || norm(p.name).includes(gNorm) || gNorm.includes(norm(p.name)));
+  }
+  if (!targetProduct) {
+    for (const p of catalog) {
+      const np = norm(p.name);
+      if (np.length >= 2 && normUser.includes(np)) {
+        targetProduct = p;
+        break;
+      }
+    }
+  }
   const cartItemsMap = /* @__PURE__ */ new Map();
+  const ingredientsList = [];
   let cartAction = "none";
   const suggestedQuestions = [];
   const missingIngredients = [];
@@ -1905,16 +1929,22 @@ function smartExtract(rawText, catalog, userQuery) {
         const pid = Number(m[1]);
         const qty = Math.max(1, Number(m[2] || 1));
         if (catalog.some((p) => p.id === pid)) {
-          cartAction = "add";
-          cartItemsMap.set(pid, (cartItemsMap.get(pid) ?? 0) + qty);
+          if (isProductModalQuery) {
+            ingredientsList.push({ productId: pid, quantity: qty });
+          } else {
+            cartAction = "add";
+            cartItemsMap.set(pid, (cartItemsMap.get(pid) ?? 0) + qty);
+          }
         }
       }
     }
     return "";
   });
   clean = clean.replace(/\[\s*(?:طلب_توفير|طلب توفير|توفير|نواقص)\s*:\s*([^\]]+)\]/gi, (_, itemStr) => {
-    const item = String(itemStr || "").trim();
-    if (item) missingIngredients.push("\u0637\u0644\u0628 \u062A\u0648\u0641\u064A\u0631: " + item.slice(0, 80));
+    if (!isProductModalQuery && !targetProduct) {
+      const item = String(itemStr || "").trim();
+      if (item) missingIngredients.push("\u0637\u0644\u0628 \u062A\u0648\u0641\u064A\u0631: " + item.slice(0, 80));
+    }
     return "";
   });
   clean = clean.replace(/\[\s*(?:أزرار|ازرار|خيارات|مقترحات)\s*:\s*([^\]]+)\]/gi, (_, btns) => {
@@ -1923,9 +1953,7 @@ function smartExtract(rawText, catalog, userQuery) {
   });
   clean = clean.replace(/\*\*/g, "").trim();
   if (!clean) return null;
-  const norm = (s) => s.replace(/[أإآ]/g, "\u0627").replace(/ة/g, "\u0647").replace(/ى/g, "\u064A").toLowerCase().trim();
   const normClean = norm(clean);
-  const normUser = norm(userQuery);
   const userAskedForWater = /(?:ماء|مياه|مويه|عصير|مشروب|شرب)/i.test(normUser);
   if (!userAskedForWater && cartItemsMap.size >= 3) {
     for (const [pid] of [...cartItemsMap.entries()]) {
@@ -1935,28 +1963,43 @@ function smartExtract(rawText, catalog, userQuery) {
       }
     }
   }
+  if (isProductModalQuery && targetProduct) {
+    if (!ingredientsList.some((i) => i.productId === targetProduct.id)) {
+      ingredientsList.unshift({ productId: targetProduct.id, quantity: 1 });
+    }
+  }
   const userWantsToAdd = /(?:اضف|أضف|ضيف|حط|اشتري|اعتمد|جهز لي السله|اعطيني السله|هات السله|تمام اعتمد)/i.test(normUser);
-  if (cartItemsMap.size === 0 && userWantsToAdd) {
-    for (const p of catalog) {
-      if (isTobaccoOrNonFood(p.name, p.category) && !/(?:سجائر|سجاير|دخان|شملان|كمران)/.test(normUser)) continue;
-      const np = norm(p.name);
-      if (np.length >= 3 && (normClean.includes(np) || normUser.includes(np))) {
-        cartItemsMap.set(p.id, 1);
-        if (cartItemsMap.size >= 5) break;
+  if (!isProductModalQuery && cartItemsMap.size === 0 && userWantsToAdd) {
+    if (targetProduct) {
+      cartItemsMap.set(targetProduct.id, 1);
+    } else {
+      for (const p of catalog) {
+        if (isTobaccoOrNonFood(p.name, p.category) && !/(?:سجائر|سجاير|دخان|شملان|كمران)/.test(normUser)) continue;
+        const np = norm(p.name);
+        if (np.length >= 3 && (normClean.includes(np) || normUser.includes(np))) {
+          cartItemsMap.set(p.id, 1);
+          if (cartItemsMap.size >= 5) break;
+        }
       }
     }
     if (cartItemsMap.size > 0) cartAction = "add";
   }
   const lines = clean.split("\n").map((l) => l.trim()).filter(Boolean);
-  const conciseLines = lines.filter((l) => !(/^[*•\-]\s+.+:\s*\d+/.test(l) && lines.length > 4)).slice(0, 4);
-  clean = (conciseLines.length > 0 ? conciseLines.join("\n") : lines.slice(0, 3).join("\n")).slice(0, 350);
-  clean = clean.replace(/(?:تمام[،,]?\s*)?(?:ضفت|أضفت|اضفت|تمت إضافة|تم اضافه)\s+([^.\n]+?)\s*(?:بالسلة|للسلة|إلى السلة|في السلة)(?:\s*بنجاح)?[\.!]?/g, "\u062C\u0647\u0632\u062A \u0644\u0643 ($1) \u0641\u064A \u0627\u0644\u0628\u0637\u0627\u0642\u0629 \u0628\u0627\u0644\u0623\u0633\u0641\u0644 \u{1F447} \u0627\u0636\u063A\u0637 \xAB\u2705 \u0627\u0639\u062A\u0645\u062F \u0627\u0644\u0625\u0636\u0627\u0641\u0629\xBB:").trim();
-  const mentionsUnavailable = /(?:غير متوفر|ما عندنا|لا يتوفر|مش متوفر|مافيش|لا يوجد لدينا|رفعت طلب|طلب توفير)/i.test(clean);
-  if (mentionsUnavailable && missingIngredients.length === 0 && userQuery.trim().length > 1) {
-    missingIngredients.push("\u0637\u0644\u0628 \u062A\u0648\u0641\u064A\u0631: " + userQuery.trim().slice(0, 80));
+  if (isProductModalQuery) {
+    clean = lines.slice(0, 12).join("\n").slice(0, 900);
+  } else {
+    const conciseLines = lines.filter((l) => !(/^[*•\-]\s+.+:\s*\d+/.test(l) && lines.length > 5)).slice(0, 6);
+    clean = (conciseLines.length > 0 ? conciseLines.join("\n") : lines.slice(0, 4).join("\n")).slice(0, 500);
   }
-  if (missingIngredients.length > 0 && !clean.includes("770731619")) {
-    clean += "\n\u{1F4F2} \u062A\u0645 \u0631\u0641\u0639 \u0637\u0644\u0628 \u062A\u0648\u0641\u064A\u0631 \u0644\u0644\u0625\u062F\u0627\u0631\u0629\u060C \u0648\u0644\u0644\u062A\u0648\u0627\u0635\u0644 \u0627\u0644\u0645\u0628\u0627\u0634\u0631 \u0645\u0639 \u0627\u0644\u0645\u0627\u0644\u0643: 770731619";
+  clean = clean.replace(/(?:تمام[،,]?\s*)?(?:ضفت|أضفت|اضفت|تمت إضافة|تم اضافه)\s+([^.\n]+?)\s*(?:بالسلة|للسلة|إلى السلة|في السلة)(?:\s*بنجاح)?[\.!]?/g, "\u062C\u0647\u0632\u062A \u0644\u0643 ($1) \u0641\u064A \u0627\u0644\u0628\u0637\u0627\u0642\u0629 \u0628\u0627\u0644\u0623\u0633\u0641\u0644 \u{1F447} \u0627\u0636\u063A\u0637 \xAB\u2705 \u0627\u0639\u062A\u0645\u062F \u0627\u0644\u0625\u0636\u0627\u0641\u0629\xBB:").trim();
+  if (!isProductModalQuery && !targetProduct) {
+    const mentionsUnavailable = /(?:غير متوفر حاليا|ما عندنا هذا المنتج|لا يتوفر لدينا حاليا|رفعت طلب توفير)/i.test(clean);
+    if (mentionsUnavailable && missingIngredients.length === 0 && userQuery.trim().length > 1) {
+      missingIngredients.push("\u0637\u0644\u0628 \u062A\u0648\u0641\u064A\u0631: " + userQuery.trim().slice(0, 80));
+    }
+    if (missingIngredients.length > 0 && !clean.includes("770731619")) {
+      clean += "\n\u{1F4F2} \u062A\u0645 \u0631\u0641\u0639 \u0637\u0644\u0628 \u062A\u0648\u0641\u064A\u0631 \u0644\u0644\u0625\u062F\u0627\u0631\u0629\u060C \u0648\u0644\u0644\u062A\u0648\u0627\u0635\u0644 \u0627\u0644\u0645\u0628\u0627\u0634\u0631 \u0645\u0639 \u0627\u0644\u0645\u0627\u0644\u0643: 770731619";
+    }
   }
   const filteredSuggestions = suggestedQuestions.filter((q) => !/^(?:نعم|لا|نعم أضف|نعم اضف|نعم أضفها|لا شكراً|لا شكرا)$/i.test(q.trim()));
   if (filteredSuggestions.length === 0) {
@@ -1967,7 +2010,7 @@ function smartExtract(rawText, catalog, userQuery) {
     message: clean,
     recipeName: "",
     servings: 0,
-    ingredients: [],
+    ingredients: ingredientsList,
     steps: [],
     missingIngredients,
     cartAction: cartItems.length > 0 ? cartAction : "none",
@@ -1978,16 +2021,36 @@ function smartExtract(rawText, catalog, userQuery) {
 async function invokeLLM(params) {
   const rawUser = params.messages.filter((m) => m.role === "user").map((m) => extractText(m.content)).join("\n");
   let catalog = [];
-  const catMatch = rawUser.match(/\[(\{\"id\":[\s\S]*?\})\]/);
+  const catMatch = rawUser.match(/\[(\{"id":[\s\S]*?\})\]/);
   if (catMatch) {
     try {
       catalog = JSON.parse("[" + catMatch[1] + "]");
     } catch {
     }
   }
+  let currentMsg = rawUser;
+  const reqIdx = rawUser.lastIndexOf("\u0631\u0633\u0627\u0644\u0629 \u0627\u0644\u0639\u0645\u064A\u0644 \u0627\u0644\u062D\u0627\u0644\u064A\u0629:");
+  if (reqIdx >= 0) {
+    currentMsg = rawUser.slice(reqIdx + "\u0631\u0633\u0627\u0644\u0629 \u0627\u0644\u0639\u0645\u064A\u0644 \u0627\u0644\u062D\u0627\u0644\u064A\u0629:".length).trim();
+  }
+  let recentHistory = "";
+  const histMatch = rawUser.match(/سجل المحادثة السابق[^:]*:\n([\s\S]*?)\n\nرسالة العميل الحالية:/);
+  if (histMatch) {
+    recentHistory = histMatch[1].split("\n").filter((line) => !line.includes("\u0625\u062F\u0627\u0631\u0629 \u0627\u0644\u0645\u062A\u062C\u0631")).slice(-4).join("\n").slice(-320);
+  }
+  const norm = (s) => String(s || "").replace(/[أإآ]/g, "\u0627").replace(/ة/g, "\u0647").replace(/ى/g, "\u064A").replace(/ال/g, "").toLowerCase().trim();
+  const normQuery = norm(currentMsg + " " + recentHistory);
+  const queryWords = normQuery.split(/\s+/).filter((w) => w.length >= 2);
   const userAskedForTobacco = /(?:سجائر|سجاير|دخان|شملان|كمران|معسل|تبغ|ولاعة|كبريت)/i.test(rawUser);
-  const filteredCatalog = userAskedForTobacco ? catalog : catalog.filter((p) => !isTobaccoOrNonFood(p.name, p.category));
-  const compactCatalog = filteredCatalog.slice(0, 45).map((p) => "#" + p.id + ":" + p.name + "(" + p.price + (p.unit ? "/" + p.unit : "") + ")[" + (p.category || "\u0639\u0627\u0645") + "]").join("|");
+  const baseFilteredCatalog = userAskedForTobacco ? catalog : catalog.filter((p) => !isTobaccoOrNonFood(p.name, p.category));
+  const rankedCatalog = [...baseFilteredCatalog].sort((a, b) => {
+    const na = norm(a.name);
+    const nb = norm(b.name);
+    const scoreA = (normQuery.includes(na) ? 120 : 0) + queryWords.reduce((s, w) => s + (na.includes(w) ? 20 : 0), 0);
+    const scoreB = (normQuery.includes(nb) ? 120 : 0) + queryWords.reduce((s, w) => s + (nb.includes(w) ? 20 : 0), 0);
+    return scoreB - scoreA;
+  });
+  const compactCatalog = rankedCatalog.slice(0, 95).map((p) => "#" + p.id + ":" + p.name + "(" + p.price + (p.unit ? "/" + p.unit : "") + ")[" + (p.category || "\u0639\u0627\u0645") + "]").join("|");
   let cartSummary = "\u0641\u0627\u0631\u063A\u0629";
   const cartMatch = rawUser.match(/السلة الحالية[^:]*:\s*(\[[^\n]*\])/);
   if (cartMatch) {
@@ -1999,34 +2062,34 @@ async function invokeLLM(params) {
     } catch {
     }
   }
-  let recentHistory = "";
-  const histMatch = rawUser.match(/سجل المحادثة السابق[^:]*:\n([\s\S]*?)\n\nرسالة العميل الحالية:/);
-  if (histMatch) {
-    recentHistory = histMatch[1].split("\n").filter((line) => !line.includes("\u0625\u062F\u0627\u0631\u0629 \u0627\u0644\u0645\u062A\u062C\u0631")).slice(-4).join("\n").slice(-320);
-  }
-  let currentMsg = rawUser;
-  const reqIdx = rawUser.lastIndexOf("\u0631\u0633\u0627\u0644\u0629 \u0627\u0644\u0639\u0645\u064A\u0644 \u0627\u0644\u062D\u0627\u0644\u064A\u0629:");
-  if (reqIdx >= 0) {
-    currentMsg = rawUser.slice(reqIdx + "\u0631\u0633\u0627\u0644\u0629 \u0627\u0644\u0639\u0645\u064A\u0644 \u0627\u0644\u062D\u0627\u0644\u064A\u0629:".length).trim();
-  }
   const ownerCustomNote = rawUser.includes("\u062A\u0648\u062C\u064A\u0647\u0627\u062A \u0645\u0627\u0644\u0643 \u0627\u0644\u0645\u062A\u062C\u0631 \u0627\u0644\u062E\u0627\u0635\u0629:") ? rawUser.slice(rawUser.indexOf("\u062A\u0648\u062C\u064A\u0647\u0627\u062A \u0645\u0627\u0644\u0643 \u0627\u0644\u0645\u062A\u062C\u0631 \u0627\u0644\u062E\u0627\u0635\u0629:")).trim() : "";
-  const systemPrompt = [
+  const isProductModalQuery = /(?:طرق لتحضير|طرق تحضير|أفكار وطرق|افكار وطرق|طرق تقديم|التعديل المطلوب|«[^»]+»)/i.test(currentMsg);
+  const guillemetMatch = currentMsg.match(/«([^»]+)»/);
+  const modalProductName = guillemetMatch ? guillemetMatch[1].trim() : "";
+  const matchedModalProduct = modalProductName ? catalog.find((p) => norm(p.name) === norm(modalProductName) || norm(p.name).includes(norm(modalProductName)) || norm(modalProductName).includes(norm(p.name))) : void 0;
+  const isReadyDrinkOrSnack = /(?:عصير|شراب|مشروب|موسي|استروك|طاقة|طاقه|زنجبيل|ون سي|راني|دلتا|روابي|سيزر|سن توب|بيبسي|كوكاكولا|سفن|ميرندا|فانتا|سبرايت|مياه|ماء|بسكويت|شيبس|شوكولاتة|شوكولاته|كيك)/i.test(modalProductName);
+  const systemPrompt = isProductModalQuery ? [
+    "\u0623\u0646\u062A \xAB\u0627\u0644\u0634\u064A\u0641 \u0648\u0645\u0633\u0627\u0639\u062F \u0627\u0644\u062A\u0633\u0648\u0642 \u0627\u0644\u0630\u0643\u064A\xBB \u0641\u064A \u0645\u062A\u062C\u0631 \u0623\u0648\u0631\u062C\u0646\u0627\u0644 \u0641\u064A \u0627\u0644\u064A\u0645\u0646.",
+    "\u062A\u0646\u0628\u064A\u0647 \u0635\u0627\u0631\u0645 \u062C\u062F\u0627\u064B: \u0627\u0644\u0645\u0646\u062A\u062C \xAB" + (modalProductName || "\u0627\u0644\u0645\u062E\u062A\u0627\u0631") + "\xBB \u0645\u062A\u0648\u0641\u0631 \u0648\u0645\u0648\u062C\u0648\u062F \u062D\u0627\u0644\u064A\u0627\u064B \u0623\u0645\u0627\u0645 \u0627\u0644\u0632\u0628\u0648\u0646 \u0641\u064A \u0627\u0644\u0645\u062A\u062C\u0631! \u064A\u064F\u0645\u0646\u0639 \u0645\u0646\u0639\u0627\u064B \u0628\u0627\u062A\u0627\u064B \u0627\u0644\u0642\u0648\u0644 \u0625\u0646\u0647 \u063A\u064A\u0631 \u0645\u062A\u0648\u0641\u0631 \u0623\u0648 \u0627\u0644\u0627\u0639\u062A\u0630\u0627\u0631 \u0639\u0646 \u0639\u062F\u0645 \u062A\u0648\u0641\u0631\u0647!",
+    isReadyDrinkOrSnack ? "\u0647\u0630\u0627 \u0627\u0644\u0645\u0646\u062A\u062C \u0645\u0634\u0631\u0648\u0628/\u0633\u0646\u0627\u0643 \u062C\u0627\u0647\u0632 \u0644\u0644\u062A\u0646\u0627\u0648\u0644 (\xAB" + modalProductName + "\xBB). \u0642\u062F\u0651\u0645 \u0644\u0644\u0632\u0628\u0648\u0646 3 \u0623\u0641\u0643\u0627\u0631 \u0631\u0627\u0626\u0639\u0629 \u0648\u0645\u062E\u062A\u0635\u0631\u0629 \u0644\u0644\u0627\u0633\u062A\u0645\u062A\u0627\u0639 \u0628\u0647: 1\uFE0F\u20E3 \u0623\u0641\u0636\u0644 \u0637\u0631\u064A\u0642\u0629 \u0644\u062A\u0642\u062F\u064A\u0645\u0647 \u0628\u0627\u0631\u062F\u0627\u064B \u0648\u0645\u0646\u0639\u0634\u0627\u064B\u060C 2\uFE0F\u20E3 \u062E\u0644\u0637\u0629 \u0645\u0628\u062A\u0643\u0631\u0629 \u0623\u0648 \u062A\u0642\u062F\u064A\u0645 \u0645\u0645\u064A\u0632 \u0628\u0647\u060C 3\uFE0F\u20E3 \u0623\u0641\u0636\u0644 \u0648\u0642\u062A \u0644\u062A\u0646\u0627\u0648\u0644\u0647 \u0648\u0645\u0627 \u064A\u0646\u0627\u0633\u0628\u0647 \u0645\u0646 \u0633\u0646\u0627\u0643 \u062E\u0641\u064A\u0641." : "\u0647\u0630\u0627 \u0627\u0644\u0645\u0646\u062A\u062C (\xAB" + modalProductName + "\xBB) \u0645\u0646 \u0645\u0646\u062A\u062C\u0627\u062A \u0627\u0644\u0645\u062A\u062C\u0631. \u0642\u062F\u0651\u0645 \u0644\u0644\u0632\u0628\u0648\u0646 3 \u0637\u0631\u0642/\u0648\u0635\u0641\u0627\u062A \u0634\u0647\u064A\u0629 \u0648\u0639\u0645\u0644\u064A\u0629 \u0644\u062A\u062D\u0636\u064A\u0631\u0647 \u0623\u0648 \u0627\u0633\u062A\u062E\u062F\u0627\u0645\u0647: 1\uFE0F\u20E3 \u0637\u0631\u064A\u0642\u0629 \u0633\u0631\u064A\u0639\u0629 \u0648\u0627\u0642\u062A\u0635\u0627\u062F\u064A\u0629\u060C 2\uFE0F\u20E3 \u0637\u0631\u064A\u0642\u0629 \u064A\u0645\u0646\u064A\u0629/\u0645\u0646\u0632\u0644\u064A\u0629 \u0623\u0635\u064A\u0644\u0629\u060C 3\uFE0F\u20E3 \u0637\u0631\u064A\u0642\u0629 \u0635\u062D\u064A\u0629 \u0648\u062E\u0641\u064A\u0641\u0629. \u0648\u0625\u0630\u0627 \u0637\u0644\u0628 \u0627\u0644\u0632\u0628\u0648\u0646 \u062A\u0639\u062F\u064A\u0644\u0627\u064B \u0645\u062D\u062F\u062F\u0627\u064B \u0641\u064A \u0631\u0633\u0627\u0644\u062A\u0647 \u0641\u0644\u0628\u0650\u0651 \u0627\u0644\u062A\u0639\u062F\u064A\u0644 \u0628\u062F\u0642\u0629!",
+    "\u062A\u062D\u062F\u062B \u0641\u0642\u0637 \u0639\u0646 \xAB" + (modalProductName || "\u0647\u0630\u0627 \u0627\u0644\u0645\u0646\u062A\u062C") + "\xBB \u0648\u0644\u0627 \u062A\u0630\u0643\u0631 \u0623\u0628\u062F\u0627\u064B \u0637\u0628\u062E\u0627\u062A \u0639\u0634\u0648\u0627\u0626\u064A\u0629 \u0644\u0627 \u0639\u0644\u0627\u0642\u0629 \u0644\u0647\u0627 \u0628\u0647 (\u0645\u062B\u0644 \u0642\u0644\u0627\u0628\u0629 \u0641\u0648\u0644 \u0623\u0648 \u063A\u064A\u0631\u0647\u0627 \u0625\u0644\u0627 \u0625\u0630\u0627 \u0643\u0627\u0646 \u0627\u0644\u0645\u0646\u062A\u062C \u0646\u0641\u0633\u0647 \u0641\u0648\u0644!).",
+    matchedModalProduct ? "\u0641\u064A \u0646\u0647\u0627\u064A\u0629 \u0631\u062F\u0643 \u0636\u0639 \u0643\u0648\u062F \u0627\u0644\u0625\u0636\u0627\u0641\u0629 \u0644\u0644\u0645\u0646\u062A\u062C \u0627\u0644\u0623\u0633\u0627\u0633\u064A \u0647\u0643\u0630\u0627: [\u0623\u0636\u0641: " + matchedModalProduct.id + ": 1]" : "",
+    "\u0627\u062C\u0639\u0644 \u0631\u062F\u0643 \u0645\u0631\u062A\u0628\u0627\u064B \u0648\u0648\u0627\u0636\u062D\u0627\u064B \u0641\u064A 4 \u0625\u0644\u0649 7 \u0623\u0633\u0637\u0631 \u062C\u0630\u0627\u0628\u0629 \u0628\u062F\u0648\u0646 \u0639\u0644\u0627\u0645\u0627\u062A \u0646\u062C\u0645\u0629 **."
+  ].filter(Boolean).join("\n") : [
     "\u0623\u0646\u062A \xAB\u0628\u0627\u0626\u0639 \u0648\u0634\u064A\u0641 \u0623\u0648\u0631\u062C\u0646\u0627\u0644 \u0627\u0644\u0630\u0643\u064A\xBB \u2014 \u0625\u0646\u0633\u0627\u0646 \u0644\u0628\u0642 \u0648\u0634\u0627\u0637\u0631\u060C \u062A\u0627\u062C\u0631 \u064A\u0645\u0646\u064A \u0623\u0635\u064A\u0644 \u064A\u0646\u0627\u0642\u0634 \u0627\u0644\u0632\u0628\u0648\u0646 \u0628\u0630\u0643\u0627\u0621 \u0648\u064A\u0631\u0634\u062F\u0647 \u0644\u0645\u0627 \u064A\u0646\u0641\u0639\u0647.",
-    "\u0623\u0647\u0645 \u0645\u0647\u0627\u0631\u0627\u062A\u0643 \u0627\u0644\u0630\u0643\u064A\u0629:",
-    "1. \u0627\u0644\u062D\u0648\u0627\u0631 \u0648\u0627\u0644\u0645\u0646\u0627\u0642\u0634\u0629 \u0627\u0644\u0627\u0633\u062A\u0634\u0627\u0631\u064A\u0629: \u0644\u0627 \u062A\u0631\u0645\u0650 \u0628\u0637\u0627\u0642\u0627\u062A \u0633\u0644\u0629 \u0623\u0648 \u0642\u0648\u0627\u0626\u0645 \u0623\u0633\u0639\u0627\u0631 \u062C\u0627\u0647\u0632\u0629 \u0641\u064A \u0643\u0644 \u0631\u0633\u0627\u0644\u0629! \u0646\u0627\u0642\u0634 \u0627\u0644\u0632\u0628\u0648\u0646 \u0628\u0644\u0637\u0641 \u0648\u0627\u0641\u0647\u0645 \u0627\u062D\u062A\u064A\u0627\u062C\u0647 \u0627\u0644\u062D\u0642\u064A\u0642\u064A \u0623\u0648\u0644\u0627\u064B:",
-    "   - \u0625\u0630\u0627 \u0633\u0623\u0644 \u0639\u0646 (\u0633\u0644\u0629 \u0623\u0633\u0628\u0648\u0639\u064A\u0629): \u0627\u0633\u0623\u0644\u0647 \u0628\u0630\u0643\u0627\u0621 \u0643\u0645 \u0634\u062E\u0635 \u0641\u064A \u0627\u0644\u0628\u064A\u062A \u0648\u0645\u0627 \u0625\u0630\u0627 \u0643\u0627\u0646 \u064A\u0641\u0636\u0644 \u0627\u0644\u062A\u0631\u0643\u064A\u0632 \u0639\u0644\u0649 \u062E\u0636\u0627\u0631 \u0627\u0644\u0637\u0628\u064A\u062E \u0627\u0644\u064A\u0648\u0645\u064A \u0623\u0648 \u0625\u0636\u0627\u0641\u0629 \u0645\u0639\u0644\u0628\u0627\u062A \u0648\u0628\u0642\u0648\u0644\u064A\u0627\u062A\u060C \u0648\u0636\u0639 \u0623\u0632\u0631\u0627\u0631\u0627\u064B \u0644\u0639\u062F\u062F \u0627\u0644\u0623\u0641\u0631\u0627\u062F [\u0623\u0632\u0631\u0627\u0631: \u{1F468}\u200D\u{1F469}\u200D\u{1F467} \u0646\u062D\u0646 3-4 \u0623\u0634\u062E\u0627\u0635 | \u{1F468}\u200D\u{1F469}\u200D\u{1F467}\u200D\u{1F466} \u0646\u062D\u0646 5-7 \u0623\u0634\u062E\u0627\u0635 | \u{1F345} \u0631\u0643\u0632 \u0639\u0644\u0649 \u0627\u0644\u062E\u0636\u0627\u0631 | \u{1F96B} \u062A\u0634\u0643\u064A\u0644\u0629 \u062E\u0636\u0627\u0631 \u0648\u0645\u0639\u0644\u0628\u0627\u062A].",
-    "   - \u0628\u0639\u062F \u0645\u0639\u0631\u0641\u0629 \u0639\u062F\u062F \u0627\u0644\u0623\u0641\u0631\u0627\u062F \u0623\u0648 \u0639\u0646\u062F \u0627\u0639\u062A\u0645\u0627\u062F \u0627\u0644\u0633\u0644\u0629: \u0627\u062D\u0633\u0628 \u0643\u0645\u064A\u0627\u062A \u0623\u0633\u0628\u0648\u0639\u064A\u0629 \u062D\u0642\u064A\u0642\u064A\u0629 \u062A\u0643\u0641\u064A \u0623\u0633\u0628\u0648\u0639\u0627\u064B \u0641\u0639\u0644\u0627\u064B (\u0645\u062B\u0644\u0627\u064B \u0644\u0640 4 \u0623\u0634\u062E\u0627\u0635: 3 \u0643\u063A \u0628\u0637\u0627\u0637\u060C 2 \u0643\u063A \u0637\u0645\u0627\u0637\u0645\u060C 1.5 \u0643\u063A \u0628\u0635\u0644\u060C \u0631\u0628\u0639 \u0643\u063A \u062B\u0648\u0645\u060C \u0639\u0644\u0628\u062A\u064A\u0646 \u0641\u0648\u0644)\u060C \u0648\u0639\u0646\u062F\u0647\u0627 \u0641\u0642\u0637 \u0636\u0639 \u0643\u0648\u062F [\u0623\u0636\u0641: \u0631\u0642\u0645_\u0627\u0644\u0628\u0637\u0627\u0637: 3 | \u0631\u0642\u0645_\u0627\u0644\u0637\u0645\u0627\u0637\u0645: 2 | ...] \u0644\u062A\u0638\u0647\u0631 \u0628\u0637\u0627\u0642\u0629 \u0627\u0644\u0625\u0636\u0627\u0641\u0629 \u0628\u0627\u0644\u0643\u0645\u064A\u0627\u062A \u0627\u0644\u0645\u0648\u0632\u0648\u0646\u0629!",
-    "   - \u0625\u0630\u0627 \u0637\u0644\u0628 (\u0637\u0628\u062E\u0629 \u0623\u0648 \u0648\u0635\u0641\u0629): \u0646\u0627\u0642\u0634\u0647 \u0623\u0648\u0644\u0627\u064B (\u0646\u0641\u0633\u0643 \u0641\u064A \u062E\u0636\u0627\u0631 \u0645\u0634\u0643\u0644 \u0628\u0627\u0644\u0641\u0631\u0646\u060C \u0648\u0644\u0627 \u0642\u0644\u0627\u0628\u0629 \u0641\u0648\u0644 \u0648\u062A\u0648\u0646\u0629\u060C \u0648\u0644\u0627 \u0633\u0644\u0637\u0629 \u0648\u0633\u062D\u0627\u0648\u0642\u061F)\u060C \u0648\u0639\u0646\u062F\u0645\u0627 \u064A\u062E\u062A\u0627\u0631 \u0627\u0643\u062A\u0628 \u0627\u0644\u0648\u0635\u0641\u0629 \u0641\u064A \u0633\u0637\u0631\u064A\u0646 \u0634\u0647\u064A\u0629 \u0648\u0636\u0639 \u0643\u0648\u062F \u0627\u0644\u0645\u0642\u0627\u062F\u064A\u0631 \u0644\u062A\u062C\u0647\u064A\u0632\u0647\u0627 \u0644\u0647.",
-    "2. \u0645\u062A\u0649 \u062A\u0636\u0639 \u0643\u0648\u062F [\u0623\u0636\u0641: ...]\u061F \u0636\u0639\u0647 \u0641\u0642\u0637 \u0639\u0646\u062F \u0627\u0644\u0648\u0635\u0648\u0644 \u0644\u062A\u0634\u0643\u064A\u0644\u0629 \u0646\u0647\u0627\u0626\u064A\u0629 \u0648\u0627\u0636\u062D\u0629 \u0623\u0648 \u0639\u0646\u062F\u0645\u0627 \u064A\u0642\u0648\u0644 \u0627\u0644\u0632\u0628\u0648\u0646 (\u062A\u0645\u0627\u0645 \u0627\u0639\u062A\u0645\u062F\u0647\u0627 / \u0623\u0636\u0641 / \u0648\u0631\u064A\u0646\u064A \u0627\u0644\u0633\u0644\u0629). \u0623\u062B\u0646\u0627\u0621 \u0627\u0644\u0646\u0642\u0627\u0634 \u0627\u0644\u0623\u0648\u0644\u064A \u062A\u062D\u062F\u062B \u0645\u0639\u0647 \u0643\u0625\u0646\u0633\u0627\u0646 \u0628\u062F\u0648\u0646 \u0643\u0648\u062F [\u0623\u0636\u0641] \u0644\u062A\u062C\u0646\u0628 \u0625\u0638\u0647\u0627\u0631 \u0628\u0637\u0627\u0642\u0627\u062A \u063A\u064A\u0631 \u0645\u0637\u0644\u0648\u0628\u0629.",
-    "3. \u0648\u0627\u0642\u0639\u064A\u0629 \u062A\u0627\u0645\u0629: \u0644\u0627 \u0645\u064A\u0627\u0647 \u0645\u0639\u062F\u0646\u064A\u0629 \u0641\u064A \u0627\u0644\u0637\u0628\u062E\u0627\u062A\u060C \u0648\u0644\u0627 \u0633\u062C\u0627\u0626\u0631 \u0623\u0648 \u062F\u062E\u0627\u0646 \u0641\u064A \u0627\u0644\u0648\u062C\u0628\u0627\u062A \u0623\u0648 \u0627\u0644\u0627\u0642\u062A\u0631\u0627\u062D\u0627\u062A \u0627\u0644\u0639\u0627\u0645\u0629.",
-    "4. \u0627\u0644\u0631\u062F \u0645\u062E\u062A\u0635\u0631 (\u0633\u0637\u0631\u064A\u0646 \u0625\u0644\u0649 4 \u0623\u0633\u0637\u0631 \u0645\u0641\u064A\u062F\u0629 \u0648\u0630\u0643\u064A\u0629 \u0644\u062A\u0648\u0641\u064A\u0631 \u0627\u0644\u062A\u0648\u0643\u0646\u0632 \u0648\u0627\u0644\u0648\u0642\u062A).",
+    "\u0642\u0648\u0627\u0639\u062F \u0645\u0647\u0645\u0629 \u062C\u062F\u0627\u064B:",
+    "1. \u0627\u0628\u062D\u062B \u062C\u064A\u062F\u0627\u064B \u0641\u064A \u0642\u0627\u0626\u0645\u0629 (\u0627\u0644\u0645\u062A\u0648\u0641\u0631 \u0628\u0627\u0644\u0645\u062A\u062C\u0631) \u0623\u062F\u0646\u0627\u0647 \u0642\u0628\u0644 \u0623\u0646 \u062A\u0642\u0648\u0644 \u0623\u0646 \u0623\u064A \u0645\u0646\u062A\u062C \u063A\u064A\u0631 \u0645\u062A\u0648\u0641\u0631! \u062C\u0645\u064A\u0639 \u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A \u0627\u0644\u0645\u0648\u062C\u0648\u062F\u0629 \u0641\u064A \u0627\u0644\u0642\u0627\u0626\u0645\u0629 \u0645\u062A\u0648\u0641\u0631\u0629 \u062D\u0627\u0644\u064A\u0627\u064B \u0641\u064A \u0627\u0644\u0645\u062A\u062C\u0631 \u0628\u0623\u0633\u0639\u0627\u0631\u0647\u0627 \u0627\u0644\u0645\u0648\u0636\u062D\u0629.",
+    "2. \u0625\u0630\u0627 \u0633\u0623\u0644 \u0627\u0644\u0632\u0628\u0648\u0646 \u0639\u0646 \u0645\u0646\u062A\u062C \u0645\u062A\u0648\u0641\u0631 \u0623\u0648 \u0636\u063A\u0637 \u0639\u0644\u0649 \u0627\u0642\u062A\u0631\u0627\u062D \u0645\u0646\u062A\u062C\u060C \u0627\u0639\u0631\u0636 \u0644\u0647 \u0627\u0644\u0645\u0646\u062A\u062C \u0628\u0633\u0639\u0631\u0647 \u0627\u0644\u062D\u0642\u064A\u0642\u064A \u0648\u0644\u0627 \u062A\u0642\u0644 \u0623\u0628\u062F\u0627\u064B \u0625\u0646\u0647 \u063A\u064A\u0631 \u0645\u062A\u0648\u0641\u0631\u060C \u0648\u0636\u0639 \u0644\u0647 \u0623\u0632\u0631\u0627\u0631\u0627\u064B \u0645\u0646\u0627\u0633\u0628\u0629 [\u0623\u0632\u0631\u0627\u0631: \u0623\u0636\u0641 \u0644\u0644\u0633\u0644\u0629 | \u0623\u0641\u0643\u0627\u0631 \u0644\u062A\u062D\u0636\u064A\u0631\u0647 | \u0645\u0646\u062A\u062C\u0627\u062A \u0645\u0634\u0627\u0628\u0647\u0629].",
+    "3. \u0625\u0630\u0627 \u0637\u0644\u0628 \u0627\u0644\u0632\u0628\u0648\u0646 \u0625\u0636\u0627\u0641\u0629 \u0645\u0646\u062A\u062C \u0644\u0644\u0633\u0644\u0629 \u0623\u0648 \u0627\u0639\u062A\u0645\u062F \u062A\u0634\u0643\u064A\u0644\u0629\u060C \u0636\u0639 \u0643\u0648\u062F [\u0623\u0636\u0641: \u0631\u0642\u0645_\u0627\u0644\u0645\u0646\u062A\u062C: \u0627\u0644\u0643\u0645\u064A\u0629] \u0644\u062A\u0638\u0647\u0631 \u0644\u0647 \u0628\u0637\u0627\u0642\u0629 \u0627\u0644\u0625\u0636\u0627\u0641\u0629 \u0627\u0644\u0641\u0648\u0631\u064A\u0629.",
+    "4. \u0644\u0627 \u062A\u062E\u0644\u0637 \u0628\u064A\u0646 \u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A \u0648\u0644\u0627 \u062A\u0642\u062A\u0631\u062D \u0637\u0628\u062E\u0627\u062A \u0639\u0634\u0648\u0627\u0626\u064A\u0629 \u063A\u064A\u0631 \u0645\u0631\u062A\u0628\u0637\u0629 \u0628\u0643\u0644\u0627\u0645 \u0627\u0644\u0632\u0628\u0648\u0646. \u0627\u062C\u0639\u0644 \u0631\u062F\u0643 \u0648\u062F\u0648\u062F\u0627\u064B \u0648\u0645\u062E\u062A\u0635\u0631\u0627\u064B (\u0633\u0637\u0631\u064A\u0646 \u0625\u0644\u0649 4 \u0623\u0633\u0637\u0631) \u0628\u062F\u0648\u0646 \u0639\u0644\u0627\u0645\u0627\u062A **.",
     ownerCustomNote ? "\u062A\u0648\u062C\u064A\u0647\u0627\u062A \u0625\u0636\u0627\u0641\u064A\u0629 \u0645\u0646 \u0645\u0627\u0644\u0643 \u0627\u0644\u0645\u062A\u062C\u0631:\n" + ownerCustomNote : ""
   ].filter(Boolean).join("\n");
   const compactUser = [
     "/no_think",
-    "\u0627\u0644\u0645\u062A\u0648\u0641\u0631 \u0628\u0627\u0644\u0645\u062A\u062C\u0631 \u0645\u0631\u062A\u0628 \u0645\u0646 \u0627\u0644\u0623\u0631\u062E\u0635 \u0644\u0644\u0623\u063A\u0644\u0649: " + (compactCatalog || "\u0644\u0627 \u064A\u0648\u062C\u062F"),
-    "\u0627\u0644\u0633\u0644\u0629: " + cartSummary,
-    recentHistory ? "\u0627\u0644\u0633\u064A\u0627\u0642:\n" + recentHistory : "",
+    matchedModalProduct ? "\u0627\u0644\u0645\u0646\u062A\u062C \u0627\u0644\u0645\u062E\u062A\u0627\u0631 \u062D\u0627\u0644\u064A\u0627\u064B \u0641\u064A \u0627\u0644\u0645\u062A\u062C\u0631 (\u0645\u062A\u0648\u0641\u0631 100%): #" + matchedModalProduct.id + " " + matchedModalProduct.name + " \u0628\u0633\u0639\u0631 " + matchedModalProduct.price + " \u0631.\u064A / " + (matchedModalProduct.unit || "\u062D\u0628\u0629") : "",
+    "\u0627\u0644\u0645\u062A\u0648\u0641\u0631 \u0628\u0627\u0644\u0645\u062A\u062C\u0631: " + (compactCatalog || "\u0644\u0627 \u064A\u0648\u062C\u062F"),
+    !isProductModalQuery ? "\u0627\u0644\u0633\u0644\u0629: " + cartSummary : "",
+    !isProductModalQuery && recentHistory ? "\u0627\u0644\u0633\u064A\u0627\u0642:\n" + recentHistory : "",
     "\u0627\u0644\u0632\u0628\u0648\u0646: " + currentMsg
   ].filter(Boolean).join("\n");
   const keys = getAllActiveKeys();
@@ -2047,8 +2110,8 @@ async function invokeLLM(params) {
           },
           body: JSON.stringify({
             model,
-            temperature: 0.35,
-            max_tokens: 280,
+            temperature: 0.3,
+            max_tokens: isProductModalQuery ? 420 : 300,
             messages: [
               { role: "system", content: systemPrompt },
               { role: "user", content: compactUser }
@@ -2994,19 +3057,28 @@ function enforceOrderCreateRateLimit(ip) {
   b.count += 1;
 }
 async function readSettings(db) {
+  const g = globalThis;
+  if (!g.__savedSettingsMemory) g.__savedSettingsMemory = {};
   try {
     const rows = await db.select().from(storeSettings);
-    const settings = { deliveryEnabled: "true", deliveryFee: "0" };
+    const settings = { deliveryEnabled: "true", deliveryFee: "0", storeIconUrl: "/app-icon-512-orig.png", ...g.__savedSettingsMemory };
     for (const row of rows) {
-      if (!PUBLIC_STORE_SETTING_KEYS.has(row.key)) continue;
+      if (!PUBLIC_STORE_SETTING_KEYS.has(row.key) && row.key !== "deliveryTreeConfig") continue;
+      if (row.key === "storeIconUrl" && !String(row.value || "").trim()) continue;
       settings[row.key] = row.value;
+    }
+    for (const [k, v] of Object.entries(g.__savedSettingsMemory)) {
+      if (typeof v === "string" && (k !== "storeIconUrl" || v.trim())) settings[k] = v;
+    }
+    if (!settings.storeIconUrl || !settings.storeIconUrl.trim()) {
+      settings.storeIconUrl = "/app-icon-512-orig.png";
     }
     const oldStoreNameNorm = new RegExp("\u0623\u0648\u0631\u064A\u062C\u0646\u0627\u0644|\u0627\u0648\u0631\u064A\u062C\u0646\u0627\u0644", "g");
     if (settings.storeName) settings.storeName = settings.storeName.replace(oldStoreNameNorm, "\u0623\u0648\u0631\u062C\u0646\u0627\u0644");
     return settings;
   } catch (err) {
     console.warn("[Settings] Using fallback defaults:", err instanceof Error ? err.message : err);
-    return { deliveryEnabled: "true", deliveryFee: "0" };
+    return { deliveryEnabled: "true", deliveryFee: "0", storeIconUrl: "/app-icon-512-orig.png", ...g.__savedSettingsMemory || {} };
   }
 }
 var DEFAULT_SERVER_DELIVERY_TREE = {
@@ -3329,7 +3401,13 @@ function toFastImg(kind, row) {
     const ver = row.updatedAt ? new Date(row.updatedAt).getTime() : globalThis.__catalogVer || 1;
     if (raw.startsWith("data:image/")) {
       const m = raw.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,([\s\S]+)$/);
-      if (m) cacheMap.set(cacheKey, { contentType: m[1], buf: Buffer.from(m[2], "base64") });
+      if (m) {
+        if (cacheMap.size > 300) {
+          const firstK = cacheMap.keys().next().value;
+          if (firstK) cacheMap.delete(firstK);
+        }
+        cacheMap.set(cacheKey, { contentType: m[1], buf: Buffer.from(m[2], "base64") });
+      }
       return { ...row, imageUrl: "/api/fast-img/" + kind + "/" + row.id + "?v=" + ver };
     }
     if (raw.startsWith(HTTP_PRE)) {
@@ -3360,6 +3438,10 @@ async function ensureOrderItemsFastSchema(dbInstance) {
     __orderItemsSchemaFixed = true;
     try {
       await db.execute(sql2.raw("ALTER TABLE order_items MODIFY COLUMN productImage LONGTEXT NULL"));
+      try {
+        await db.execute(sql2.raw("ALTER TABLE store_settings MODIFY COLUMN value LONGTEXT NOT NULL"));
+      } catch {
+      }
     } catch {
     }
     try {
@@ -3484,7 +3566,7 @@ var commerceRouter = router({
       const linked = await db.select({ product: products }).from(productRecommendations).innerJoin(products, eq4(productRecommendations.recommendedProductId, products.id)).where(and2(eq4(productRecommendations.productId, product.id), eq4(products.isPublished, true), eq4(products.isAvailable, true)));
       return { ...toFastImg("product", product), recommendations: linked.map((row) => toFastImg("product", row.product)) };
     })),
-    productsForReorder: publicProcedure.input(z3.object({ ids: z3.array(safeId).min(1).max(500) })).query(async ({ input }) => {
+    productsForReorder: publicProcedure.input(z3.object({ ids: z3.array(safeId).min(1).max(5e3) })).query(async ({ input }) => {
       const db = await database();
       const rows = await db.select().from(products).where(and2(inArray(products.id, [...new Set(input.ids)]), eq4(products.isPublished, true), eq4(products.isAvailable, true)));
       return rows.map((r) => toFastImg("product", r));
@@ -3771,7 +3853,14 @@ var commerceRouter = router({
         const currentLines = orderLines.map((line) => ({ productId: line.product.id, name: line.product.name, quantity: line.quantity, unit: line.effectiveUnit, price: line.effectivePrice, lineTotal: line.effectiveLineTotal }));
         const currentQuoteHash = quoteFingerprint(currentLines, totals, currency, appliedOffer?.id ?? null);
         if (totals.total !== input.expectedTotal || currentQuoteHash !== input.expectedQuoteHash) throw new TRPCError3({ code: "PRECONDITION_FAILED", message: "\u062A\u063A\u064A\u0651\u0631 \u0627\u0644\u0633\u0639\u0631 \u0623\u0648 \u0627\u0644\u062A\u0648\u0641\u0631 \u0623\u0648 \u0631\u0633\u0648\u0645 \u0627\u0644\u062A\u0648\u0635\u064A\u0644 \u0628\u0639\u062F \u0627\u0644\u0645\u0639\u0627\u064A\u0646\u0629. \u0627\u0639\u0631\u0636 \u0627\u0644\u0645\u0644\u062E\u0635 \u0627\u0644\u0645\u062D\u062F\u0651\u062B \u0642\u0628\u0644 \u062A\u0623\u0643\u064A\u062F \u0627\u0644\u0637\u0644\u0628." });
-        const orderNumber = "OR-" + Date.now().toString(36).toUpperCase() + "-" + nanoid(5).toUpperCase();
+        const orderNumber = process.env.ORDER_NUMBER_MODE === "production" ? await (async () => {
+          const sequence = await tx.insert(orderNumberSequences).values({});
+          const number = Number(sequence[0].insertId);
+          if (!Number.isSafeInteger(number) || number < 1) {
+            throw new Error("\u062A\u0639\u0630\u0631 \u0625\u0646\u0634\u0627\u0621 \u0627\u0644\u0631\u0642\u0645 \u0627\u0644\u062A\u0633\u0644\u0633\u0644\u064A \u0644\u0644\u0637\u0644\u0628");
+          }
+          return "OR-" + String(number).padStart(6, "0");
+        })() : "TEST-" + Date.now().toString(36).toUpperCase() + "-" + nanoid(5).toUpperCase();
         const inserted = await tx.insert(orders).values({
           orderNumber,
           idempotencyKey: storedIdempotencyKey,
@@ -3859,7 +3948,7 @@ var commerceRouter = router({
       request: z3.string().trim().min(1).max(1200),
       history: z3.array(z3.object({ role: z3.enum(["user", "assistant"]), text: z3.string().max(1800) })).max(20).optional(),
       cart: z3.array(z3.object({ productId: safeId, quantity: z3.number().int().min(1).max(1e4) })).max(100).optional(),
-      favoriteProductIds: z3.array(safeId).max(500).optional(),
+      favoriteProductIds: z3.array(safeId).max(5e3).optional(),
       sessionId: z3.string().max(80).optional(),
       customerName: z3.string().max(160).optional(),
       customerPhone: z3.string().max(40).optional()
@@ -3907,7 +3996,7 @@ var commerceRouter = router({
         };
       }
       const [catalogRows, catRows] = db ? await Promise.all([
-        db.select({ id: products.id, name: products.name, description: products.description, categoryId: products.categoryId, price: products.price, unit: products.unit, stock: products.stock, minQuantity: products.minQuantity, quantityStep: products.quantityStep }).from(products).where(and2(eq4(products.isPublished, true), eq4(products.isAvailable, true))).limit(150).catch(() => []),
+        db.select({ id: products.id, name: products.name, description: products.description, categoryId: products.categoryId, price: products.price, unit: products.unit, stock: products.stock, minQuantity: products.minQuantity, quantityStep: products.quantityStep }).from(products).where(and2(eq4(products.isPublished, true), eq4(products.isAvailable, true))).limit(500).catch(() => []),
         db.select({ id: categories.id, name: categories.name }).from(categories).catch(() => [])
       ]) : [[], []];
       const catNameById = new Map(catRows.map((c) => [c.id, c.name]));
@@ -3923,7 +4012,19 @@ var commerceRouter = router({
         (turn) => (turn.role === "user" ? "\u0627\u0644\u0639\u0645\u064A\u0644" : "\u0627\u0644\u0645\u0633\u0627\u0639\u062F") + ": " + turn.text.trim().slice(0, 400)
       ).join("\n");
       const userPrompt = [
-        "\u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A \u0627\u0644\u0645\u062A\u0627\u062D\u0629 (\u0645\u0635\u062F\u0631 \u0627\u0644\u062D\u0642\u064A\u0642\u0629 \u0627\u0644\u0648\u062D\u064A\u062F): " + JSON.stringify(catalog.slice(0, 80).map((p) => ({ id: p.id, name: p.name, category: catNameById.get(p.categoryId) || "\u0639\u0627\u0645", price: p.price, unit: p.unit }))),
+        "\u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A \u0627\u0644\u0645\u062A\u0627\u062D\u0629 (\u0645\u0635\u062F\u0631 \u0627\u0644\u062D\u0642\u064A\u0642\u0629 \u0627\u0644\u0648\u062D\u064A\u062F): " + JSON.stringify((() => {
+          const normQ = (s) => String(s || "").replace(/[أإآ]/g, "\u0627").replace(/ة/g, "\u0647").replace(/ى/g, "\u064A").replace(/ال/g, "").toLowerCase().trim();
+          const qTxt = normQ(input.request + " " + (input.history || []).map((h) => h.text).join(" "));
+          const qWords = qTxt.split(/\s+/).filter((w) => w.length >= 2);
+          const scored = [...catalog].sort((a, b) => {
+            const na = normQ(a.name);
+            const nb = normQ(b.name);
+            const sa = (qTxt.includes(na) ? 100 : 0) + qWords.reduce((acc, w) => acc + (na.includes(w) ? 15 : 0), 0);
+            const sb = (qTxt.includes(nb) ? 100 : 0) + qWords.reduce((acc, w) => acc + (nb.includes(w) ? 15 : 0), 0);
+            return sb - sa;
+          });
+          return scored.slice(0, 120).map((p) => ({ id: p.id, name: p.name, category: catNameById.get(p.categoryId) || "\u0639\u0627\u0645", price: p.price, unit: p.unit }));
+        })()),
         "\u0645\u0641\u0636\u0644\u0627\u062A \u0627\u0644\u0639\u0645\u064A\u0644: " + JSON.stringify(customerFavorites),
         "\u0627\u0644\u0633\u0644\u0629 \u0627\u0644\u062D\u0627\u0644\u064A\u0629: " + JSON.stringify(currentCart),
         history ? "\u0633\u062C\u0644 \u0627\u0644\u0645\u062D\u0627\u062F\u062B\u0629 \u0627\u0644\u0633\u0627\u0628\u0642:\n" + history : "\u0644\u0627 \u064A\u0648\u062C\u062F \u0633\u064A\u0627\u0642 \u0633\u0627\u0628\u0642.",
@@ -4392,7 +4493,7 @@ var commerceRouter = router({
       list: requireAnyPermission(["products.view", "products.add", "products.edit", "products.delete", "products.manage", "inventory.manage"]).query(async ({ ctx }) => {
         const db = await database();
         const allowedCats = !ctx.user.isOwner && Array.isArray(ctx.user.allowedCategoryIds) && ctx.user.allowedCategoryIds.length > 0 ? ctx.user.allowedCategoryIds : null;
-        const rows = allowedCats ? await db.select().from(products).where(inArray(products.categoryId, allowedCats)).orderBy(desc(products.updatedAt)).limit(500) : await db.select().from(products).orderBy(desc(products.updatedAt)).limit(500);
+        const rows = allowedCats ? await db.select().from(products).where(inArray(products.categoryId, allowedCats)).orderBy(desc(products.updatedAt)).limit(1e4) : await db.select().from(products).orderBy(desc(products.updatedAt)).limit(1e4);
         return rows.map((r) => toFastImg("product", r));
       }),
       create: requireAnyPermission(["products.manage", "products.add"]).use(async ({ next }) => {
@@ -4755,15 +4856,55 @@ var commerceRouter = router({
     settings: router({
       get: requireAnyPermission(["settings.manage", "overview.view"]).query(async () => readSettings(await database())),
       save: requirePermission("settings.manage").input(settingSchema).mutation(async ({ input }) => {
-        clearCatalogCache();
         const db = await database();
-        await db.transaction(async (tx) => {
-          for (const [key, value] of Object.entries(input)) {
-            const stored = value === null ? "" : typeof value === "string" ? value : JSON.stringify(value);
-            await tx.insert(storeSettings).values({ key, value: stored }).onDuplicateKeyUpdate({ set: { value: stored } });
+        const g = globalThis;
+        if (!g.__savedSettingsMemory) g.__savedSettingsMemory = {};
+        try {
+          await db.execute(sql2.raw("ALTER TABLE store_settings MODIFY COLUMN value LONGTEXT NOT NULL"));
+        } catch {
+        }
+        const entriesToSave = [];
+        for (const [key, value] of Object.entries(input)) {
+          if (value === void 0) continue;
+          const stored = value === null ? "" : typeof value === "string" ? value : JSON.stringify(value);
+          entriesToSave.push([key, stored]);
+        }
+        if (input.deliveryTreeConfig === void 0 && (input.deliveryFee !== void 0 || input.deliveryZones !== void 0)) {
+          try {
+            const currentSettings = await readSettings(db);
+            const rawTree = currentSettings.deliveryTreeConfig;
+            const treeObj = rawTree ? JSON.parse(rawTree) : JSON.parse(JSON.stringify(DEFAULT_SERVER_DELIVERY_TREE));
+            if (treeObj && Array.isArray(treeObj.cities)) {
+              const baseFeeNum = input.deliveryFee !== void 0 && input.deliveryFee !== null ? Number(input.deliveryFee) : null;
+              const zonesArr = Array.isArray(input.deliveryZones) ? input.deliveryZones : [];
+              treeObj.cities = treeObj.cities.map((c) => {
+                const matchedZone = zonesArr.find((z4) => String(z4.name || "").trim() === String(c.name || "").trim());
+                const nextCityFee = matchedZone ? Number(matchedZone.fee) : baseFeeNum !== null && Number.isFinite(baseFeeNum) ? baseFeeNum : c.defaultFee;
+                return {
+                  ...c,
+                  defaultFee: nextCityFee,
+                  areas: Array.isArray(c.areas) ? c.areas.map((a) => ({
+                    ...a,
+                    defaultFee: nextCityFee,
+                    streets: Array.isArray(a.streets) ? a.streets.map((s) => ({ ...s, fee: nextCityFee })) : []
+                  })) : []
+                };
+              });
+              entriesToSave.push(["deliveryTreeConfig", JSON.stringify(treeObj)]);
+            }
+          } catch {
           }
-        });
-        clearCatalogCache();
+        }
+        for (const [key, stored] of entriesToSave) {
+          g.__savedSettingsMemory[key] = stored;
+          await db.insert(storeSettings).values({ key, value: stored }).onDuplicateKeyUpdate({ set: { value: stored } });
+        }
+        if (g.__fastHomeData && g.__fastHomeData.settings) {
+          for (const [key, stored] of entriesToSave) {
+            g.__fastHomeData.settings[key] = stored;
+          }
+        }
+        await clearCatalogCache();
         return { success: true };
       })
     }),
@@ -5319,14 +5460,14 @@ async function startServer() {
     const imagePath = brand.icon && !brand.icon.startsWith("data:") ? new URL(brand.icon, HTTPS_PREFIX + "app.invalid").pathname : "";
     const type = imagePath.endsWith(".png") ? "image/png" : imagePath.endsWith(".jpg") || imagePath.endsWith(".jpeg") ? "image/jpeg" : imagePath.endsWith(".webp") ? "image/webp" : "image/png";
     const icons = [
-      { src: "/app-icon-192-v4.png", sizes: "192x192", type: "image/png", purpose: "any" },
-      { src: "/app-icon-512-v4.png", sizes: "512x512", type: "image/png", purpose: "any" }
+      { src: "/app-icon-512-orig.png", sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: "/app-icon-512-orig.png", sizes: "512x512", type: "image/png", purpose: "any" }
     ];
     res.set("Cache-Control", "public, max-age=300").type("application/manifest+json").send(JSON.stringify({ id: "/", name: brand.name, short_name: "\u0623\u0648\u0631\u062C\u0646\u0627\u0644", description: "\u0645\u062A\u062C\u0631 ORIGINAL \u2013 \u0623\u0648\u0631\u062C\u0646\u0627\u0644", lang: "ar", dir: "rtl", start_url: "/", scope: "/", display: "standalone", background_color: "#f8f8f2", theme_color: "#174b36", icons }));
   });
   app.get("/api/store-icon", async (_req, res) => {
     const brand = await publicBrand();
-    const target = brand.icon && !brand.icon.startsWith("data:") ? brand.icon : "/app-icon-180-v4.png";
+    const target = brand.icon && !brand.icon.startsWith("data:") ? brand.icon : "/app-icon-512-orig.png";
     res.set("Cache-Control", "public, max-age=300").redirect(302, target);
   });
   app.get("/api/platform/config.js", async (_req, res) => {
