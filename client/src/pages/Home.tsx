@@ -59,10 +59,10 @@ function Header({ data, onSearch }: { data?: HomeData; onSearch: (text: string) 
         {text && <button type="button" className="search-clear" onClick={() => { setText(""); onSearch(""); }} aria-label="مسح البحث"><X size={14} /></button>}
       </form>
       <div className="header-actions">
-        <Link href="/favorites" className="header-action mobile-header-shortcut" aria-label="المفضلة" title="المفضلة"><Heart size={21} /><span>المفضلة</span></Link>
-        <Link href="/orders" className="header-action mobile-header-shortcut" aria-label="طلباتي" title="طلباتي"><Package size={21} /><span>طلباتي</span></Link>
-        <Link href="/cart" className="header-cart"><ShoppingCart size={21} /><span>السلة</span>{cartCount > 0 && <b>{cartCount}</b>}</Link>
-        <Link href="/account" className="account-chip"><CircleUserRound size={21} /><span>{name.trim().split(/\s+/)[0] || "حسابي"}</span></Link>
+        <Link href="/favorites" className="header-action mobile-header-shortcut" aria-label="المفضلة" title="المفضلة"><Heart size={17} /><span>المفضلة</span></Link>
+        <Link href="/orders" className="header-action mobile-header-shortcut" aria-label="طلباتي" title="طلباتي"><Package size={17} /><span>طلباتي</span></Link>
+        <Link href="/cart" className="header-cart"><ShoppingCart size={17} /><span>السلة</span>{cartCount > 0 && <b>{cartCount}</b>}</Link>
+        <Link href="/account" className="account-chip"><CircleUserRound size={17} /><span>{name.trim().split(/\s+/)[0] || "حسابي"}</span></Link>
       </div>
     </div>
     <div className="header-subline">
@@ -1249,7 +1249,7 @@ function CategoriesPage({ data }: { data: HomeData }) {
 
 function ProductDetail({ id, allProducts = [], onSelectProduct, onBack, onAiRecipe }: { id: number; allProducts?: PublicProduct[]; onSelectProduct?: (nextId: number) => void; onBack: () => void; onAiRecipe?: (p: PublicProduct) => void }) {
   const cachedProduct = useMemo(() => allProducts.find(p => p.id === id) ?? null, [allProducts, id]);
-  const { data: fetchedProduct, isLoading, error } = trpc.commerce.catalog.product.useQuery({ id }, {
+  const { data: fetchedProduct, isLoading } = trpc.commerce.catalog.product.useQuery({ id }, {
     retry: 1,
     staleTime: 30000,
     placeholderData: cachedProduct ? { ...cachedProduct, recommendations: allProducts.filter(p => p.id !== id).slice(0, 4) } : undefined,
@@ -1258,14 +1258,13 @@ function ProductDetail({ id, allProducts = [], onSelectProduct, onBack, onAiReci
   const { add } = useStore();
   const [quantity, setQuantity] = useState(1);
   const [detailPickerOpen, setDetailPickerOpen] = useState(false);
-  const [selectedDetailVariant, setSelectedDetailVariant] = useState<string>("");
+  const [selectedDetailVariant, setSelectedDetailVariant] = useState<string>('');
   const unpackedDetail = useMemo(() => unpackProductVariants(product?.description), [product?.description]);
   const touchStartX = useRef<number | null>(null);
 
   useEffect(() => {
     setQuantity(product?.minQuantity || 1);
-    setSelectedDetailVariant("");
-    try { window.scrollTo({ top: 0, left: 0, behavior: "instant" as ScrollBehavior }); document.documentElement.scrollTop = 0; document.body.scrollTop = 0; } catch {}
+    setSelectedDetailVariant('');
   }, [id, product?.minQuantity]);
 
   const currentIndex = useMemo(() => allProducts.findIndex(p => p.id === id), [allProducts, id]);
@@ -1281,14 +1280,6 @@ function ProductDetail({ id, allProducts = [], onSelectProduct, onBack, onAiReci
   const goNext = () => { if (nextProduct && onSelectProduct) onSelectProduct(nextProduct.id); };
   const goPrev = () => { if (prevProduct && onSelectProduct) onSelectProduct(prevProduct.id); };
 
-  const handleImageClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!hasGallery) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
-    if (clickX >= rect.width * 0.5) goNext();
-    else goPrev();
-  };
-
   const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
     touchStartX.current = e.touches[0]?.clientX ?? null;
   };
@@ -1297,93 +1288,120 @@ function ProductDetail({ id, allProducts = [], onSelectProduct, onBack, onAiReci
     const endX = e.changedTouches[0]?.clientX ?? touchStartX.current;
     const diff = endX - touchStartX.current;
     touchStartX.current = null;
-    if (Math.abs(diff) > 38) {
+    if (Math.abs(diff) > 35) {
       if (diff > 0) goNext();
       else goPrev();
     }
   };
 
-  if (!product && isLoading) return <main className="page-shell inner-page"><Loading /></main>;
-  if (!product) return <main className="page-shell inner-page"><LoadError onRetry={() => window.location.reload()} /></main>;
+  if (!product && isLoading) return <main className='page-shell inner-page'><Loading /></main>;
+  if (!product) return <main className='page-shell inner-page'><LoadError onRetry={() => window.location.reload()} /></main>;
   const stockLimit = product.stock === null ? 9999 : product.stock;
 
   const handleDetailAdd = () => {
     if (unpackedDetail.weightEnabled || unpackedDetail.variants.length > 0) {
       if (!unpackedDetail.weightEnabled && selectedDetailVariant) {
-        add({ ...product, name: product.name + " (" + selectedDetailVariant + ")", variant: selectedDetailVariant }, quantity);
-        toast.success("تمت إضافة «" + product.name + " (" + selectedDetailVariant + ")» إلى السلة");
+        add({ ...product, name: product.name + ' (' + selectedDetailVariant + ')', variant: selectedDetailVariant }, quantity);
+        toast.success('تمت إضافة «' + product.name + ' (' + selectedDetailVariant + ')» إلى السلة');
       } else {
         setDetailPickerOpen(true);
       }
       return;
     }
     add(product, quantity);
-    toast.success("أُضيف المنتج إلى السلة");
+    toast.success('أُضيف «' + product.name + '» إلى السلة ✓');
   };
 
   return (
-    <main className="page-shell inner-page" style={{ paddingTop: "10px" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px", gap: "10px" }}>
-        <button type="button" className="back-link" style={{ marginBottom: 0, padding: "6px 12px", borderRadius: "10px", background: "#ffffff", border: "1px solid #dce5de", color: "#174b36", fontWeight: 700 }} onClick={onBack}><ArrowLeft size={15} /> العودة للمتجر</button>
+    <main className='page-shell inner-page' style={{ paddingTop: '6px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', gap: '8px' }}>
+        <button type='button' className='back-link' style={{ marginBottom: 0, padding: '5px 11px', borderRadius: '10px', background: '#ffffff', border: '1px solid #dce5de', color: '#174b36', fontWeight: 800, fontSize: '12px' }} onClick={onBack}><ArrowLeft size={14} /> العودة للمتجر</button>
         {hasGallery && (
-          <div style={{ display: "inline-flex", alignItems: "center", gap: "8px", background: "#ffffff", border: "1px solid #dfe7e0", borderRadius: "999px", padding: "4px 10px", fontSize: "11px", fontWeight: 700, color: "#174b36" }}>
-            <button type="button" onClick={goNext} style={{ border: 0, background: "transparent", cursor: "pointer", padding: "2px 6px", fontWeight: 800, color: "#174b36" }} title="المنتج التالي">‹ التالي</button>
-            <span style={{ color: "#78847b", fontSize: "10px" }}>{currentIndex + 1} / {allProducts.length}</span>
-            <button type="button" onClick={goPrev} style={{ border: 0, background: "transparent", cursor: "pointer", padding: "2px 6px", fontWeight: 800, color: "#174b36" }} title="المنتج السابق">السابق ›</button>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#ffffff', border: '1px solid #dfe7e0', borderRadius: '999px', padding: '4px 10px', fontSize: '11px', fontWeight: 800, color: '#174b36' }}>
+            <button type='button' onClick={goNext} style={{ border: 0, background: 'transparent', cursor: 'pointer', padding: '2px 5px', fontWeight: 900, color: '#174b36' }}>‹ التالي</button>
+            <span style={{ color: '#78847b', fontSize: '10.5px' }} dir='ltr'>{currentIndex + 1} / {allProducts.length}</span>
+            <button type='button' onClick={goPrev} style={{ border: 0, background: 'transparent', cursor: 'pointer', padding: '2px 5px', fontWeight: 900, color: '#174b36' }}>السابق ›</button>
           </div>
         )}
       </div>
-      <div className="detail-layout" style={{ background: "#ffffff", border: "1px solid #dce6df", borderRadius: "22px", padding: "14px", boxShadow: "0 10px 28px rgba(18, 53, 36, 0.06)", marginBottom: "18px" }}>
+
+      <div className='detail-layout' style={{ background: '#ffffff', border: '1px solid #dce6df', borderRadius: '20px', padding: '12px', boxShadow: '0 4px 16px rgba(18, 53, 36, 0.05)', marginBottom: '14px', display: 'grid', gap: '10px' }}>
         <div
-          className="detail-visual"
+          className='detail-visual'
           onTouchStart={handleTouchStart}
           onTouchEnd={handleTouchEnd}
-          style={{ position: "relative", userSelect: "none", maxHeight: "320px" }}
+          style={{ position: 'relative', userSelect: 'none', maxHeight: '215px', borderRadius: '16px', overflow: 'hidden' }}
         >
           {product.imageUrl ? (
-            <img key={product.id} src={product.imageUrl} alt={product.name} decoding="async" fetchPriority="high" draggable={false} />
+            <img key={product.id} src={product.imageUrl} alt={product.name} decoding='async' fetchPriority='high' draggable={false} />
           ) : (
-            <div className="product-no-image detail-placeholder"><Leaf size={45} /><span>لا توجد صورة لهذا المنتج</span></div>
+            <div className='product-no-image detail-placeholder'><Leaf size={40} /><span>لا توجد صورة لهذا المنتج</span></div>
           )}
           {hasGallery && (
             <>
-              <button type="button" aria-label="المنتج التالي" onClick={e => { e.stopPropagation(); goNext(); }} style={{ position: "absolute", right: "10px", top: "50%", transform: "translateY(-50%)", width: "38px", height: "38px", borderRadius: "50%", border: "1px solid rgba(255,255,255,0.85)", background: "rgba(23, 75, 54, 0.82)", color: "#ffffff", display: "grid", placeItems: "center", cursor: "pointer", boxShadow: "0 4px 12px rgba(0,0,0,0.18)", fontSize: "18px", fontWeight: 800 }}>‹</button>
-              <button type="button" aria-label="المنتج السابق" onClick={e => { e.stopPropagation(); goPrev(); }} style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)", width: "38px", height: "38px", borderRadius: "50%", border: "1px solid rgba(255,255,255,0.85)", background: "rgba(23, 75, 54, 0.82)", color: "#ffffff", display: "grid", placeItems: "center", cursor: "pointer", boxShadow: "0 4px 12px rgba(0,0,0,0.18)", fontSize: "18px", fontWeight: 800 }}>›</button>
+              <button type='button' aria-label='المنتج التالي' onClick={e => { e.stopPropagation(); goNext(); }} style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', width: '36px', height: '36px', borderRadius: '50%', border: '1.5px solid rgba(255,255,255,0.9)', background: 'rgba(23, 75, 54, 0.85)', color: '#ffffff', display: 'grid', placeItems: 'center', cursor: 'pointer', fontSize: '18px', fontWeight: 900 }}>‹</button>
+              <button type='button' aria-label='المنتج السابق' onClick={e => { e.stopPropagation(); goPrev(); }} style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)', width: '36px', height: '36px', borderRadius: '50%', border: '1.5px solid rgba(255,255,255,0.9)', background: 'rgba(23, 75, 54, 0.85)', color: '#ffffff', display: 'grid', placeItems: 'center', cursor: 'pointer', fontSize: '18px', fontWeight: 900 }}>›</button>
             </>
           )}
         </div>
-        <div className="detail-copy">
-          <span className="eyebrow">من متجر أورجنال</span>
-          <h1>{product.name}</h1>
-          {unpackedDetail.cleanDescription ? <p className="detail-description">{unpackedDetail.cleanDescription}</p> : null}
+
+        <div className='detail-copy' style={{ display: 'grid', gap: '10px', padding: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
+            <div style={{ display: 'grid', gap: '2px' }}>
+              <h1 style={{ margin: 0, fontSize: '19px', fontWeight: 900, color: '#143a28', lineHeight: 1.25 }}>{product.name}</h1>
+              <small style={{ color: '#6b7d72', fontSize: '11.5px', fontWeight: 700 }}>الوحدة: {product.unit} · {product.stock === null ? 'متوفر في المتجر' : ('المتاح: ' + product.stock)}</small>
+            </div>
+            <div style={{ background: '#f2f8f4', border: '1px solid #d4e6da', padding: '6px 12px', borderRadius: '12px', textAlign: 'left', flexShrink: 0 }}>
+              <strong style={{ fontSize: '17px', fontWeight: 900, color: '#174b36' }}>{formatPrice(product.price)}</strong>
+              <small style={{ fontSize: '11px', color: '#5b7063', marginRight: '4px' }}>/ {product.unit}</small>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%' }}>
+            <div className='quantity-control' style={{ margin: 0, height: '44px', padding: '0 6px', borderRadius: '13px', flexShrink: 0, background: '#f6faf7', border: '1px solid #d8e6dd' }}>
+              <button type='button' aria-label='تقليل' style={{ width: '32px', height: '32px' }} onClick={() => setQuantity(value => Math.max(product.minQuantity || 1, value - (product.quantityStep || 1)))}><Minus size={15} /></button>
+              <strong style={{ minWidth: '24px', textAlign: 'center', fontSize: '14.5px' }}>{quantity}</strong>
+              <button type='button' aria-label='زيادة' style={{ width: '32px', height: '32px' }} disabled={quantity + (product.quantityStep || 1) > stockLimit} onClick={() => setQuantity(value => Math.min(stockLimit, value + (product.quantityStep || 1)))}><Plus size={15} /></button>
+            </div>
+            <button
+              type='button'
+              className='button button-primary'
+              disabled={stockLimit < (product.minQuantity || 1)}
+              onClick={handleDetailAdd}
+              style={{ flex: 1, height: '44px', borderRadius: '13px', fontSize: '14px', fontWeight: 900, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '7px' }}
+            >
+              <ShoppingCart size={17} />
+              <span>{unpackedDetail.variants.length > 0 ? (selectedDetailVariant ? ('أضف «' + selectedDetailVariant + '» للسلة') : 'اختر النوع وأضف للسلة') : 'أضف إلى السلة'}</span>
+            </button>
+          </div>
+
           {unpackedDetail.variants.length > 0 && (
-            <div style={{ margin: "10px 0 14px", padding: "12px", borderRadius: "14px", background: "#f2f7f3", border: "1px solid #d5e5da", display: "grid", gap: "8px" }}>
-              <strong style={{ fontSize: "13px", color: "#174b36" }}>اختر النوع المطلوب:</strong>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(95px, 1fr))", gap: "8px" }}>
+            <div style={{ padding: '10px', borderRadius: '13px', background: '#f5f9f6', border: '1px solid #d5e5da', display: 'grid', gap: '7px' }}>
+              <strong style={{ fontSize: '12px', color: '#174b36' }}>اختر النوع المطلوب:</strong>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(88px, 1fr))', gap: '6px' }}>
                 {unpackedDetail.variants.map(v => {
                   const isSel = selectedDetailVariant === v;
                   return (
                     <button
                       key={v}
-                      type="button"
+                      type='button'
                       onClick={() => setSelectedDetailVariant(v)}
                       style={{
-                        padding: "10px 12px",
-                        borderRadius: "12px",
-                        border: isSel ? "2px solid #174b36" : "1px solid #c5d9cc",
-                        background: isSel ? "#174b36" : "#ffffff",
-                        color: isSel ? "#ffffff" : "#174b36",
-                        fontWeight: 700,
-                        fontSize: "13px",
-                        cursor: "pointer",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        gap: "5px",
-                        boxShadow: isSel ? "0 5px 14px rgba(23, 75, 54, 0.22)" : "none",
+                        padding: '8px 10px',
+                        borderRadius: '10px',
+                        border: isSel ? '2px solid #174b36' : '1px solid #c5d9cc',
+                        background: isSel ? '#174b36' : '#ffffff',
+                        color: isSel ? '#ffffff' : '#174b36',
+                        fontWeight: 800,
+                        fontSize: '12px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '4px',
                       }}
                     >
-                      {isSel && <Check size={15} />}
+                      {isSel && <Check size={14} />}
                       <span>{v}</span>
                     </button>
                   );
@@ -1391,15 +1409,27 @@ function ProductDetail({ id, allProducts = [], onSelectProduct, onBack, onAiReci
               </div>
             </div>
           )}
-          <div className="detail-price">{formatPrice(product.price)} <small>/ {product.unit}</small></div>
-          <div className="detail-meta"><span><Package size={15} /> الوحدة: {product.unit}</span><span>{product.stock === null ? "التوفر يحدده المتجر" : "المتاح: " + product.stock}</span></div>
-          <div className="quantity-control"><button type="button" aria-label="تقليل" onClick={() => setQuantity(value => Math.max(product.minQuantity || 1, value - (product.quantityStep || 1)))}><Minus size={16} /></button><strong>{quantity}</strong><button type="button" aria-label="زيادة" disabled={quantity + (product.quantityStep || 1) > stockLimit} onClick={() => setQuantity(value => Math.min(stockLimit, value + (product.quantityStep || 1)))}><Plus size={16} /></button><small>{product.unit}</small></div>
-          {onAiRecipe && <button type="button" className="button button-outline full-button" style={{ marginBottom: "8px", borderColor: "#286a48", color: "#174b36" }} onClick={() => onAiRecipe(product as PublicProduct)}><Sparkles size={16} /> أفكار وطرق تحضير بالذكاء الاصطناعي</button>}
-          <button type="button" className="button button-primary full-button" disabled={stockLimit < (product.minQuantity || 1)} onClick={handleDetailAdd}><ShoppingCart size={17} /> {unpackedDetail.weightEnabled ? "⚖️ حدد المبلغ والوزن وأضف للسلة" : unpackedDetail.variants.length > 0 ? (selectedDetailVariant ? "أضف «" + selectedDetailVariant + "» إلى السلة" : "اختر النوع وأضف إلى السلة") : "أضف إلى السلة"}</button>
-          {detailPickerOpen && (unpackedDetail.variants.length > 0 || unpackedDetail.weightEnabled) && <VariantPickerModal product={product as PublicProduct} variants={unpackedDetail.variants} weightEnabled={unpackedDetail.weightEnabled} minWeightAmount={unpackedDetail.minWeightAmount} initialVariant={selectedDetailVariant} initialQty={quantity} onClose={() => setDetailPickerOpen(false)} />}
+
+          {unpackedDetail.cleanDescription ? <p className='detail-description' style={{ margin: 0, fontSize: '12.5px', color: '#5c6f63', lineHeight: 1.5 }}>{unpackedDetail.cleanDescription}</p> : null}
+
+          {onAiRecipe && (
+            <button type='button' className='button button-outline full-button' style={{ minHeight: '38px', padding: '7px 12px', borderRadius: '12px', borderColor: '#286a48', color: '#174b36', fontSize: '12px' }} onClick={() => onAiRecipe(product as PublicProduct)}>
+              <Sparkles size={15} /> أفكار وطرق تحضير بالذكاء الاصطناعي
+            </button>
+          )}
+
+          {detailPickerOpen && (unpackedDetail.variants.length > 0 || unpackedDetail.weightEnabled) && (
+            <VariantPickerModal product={product as PublicProduct} variants={unpackedDetail.variants} weightEnabled={unpackedDetail.weightEnabled} minWeightAmount={unpackedDetail.minWeightAmount} initialVariant={selectedDetailVariant} initialQty={quantity} onClose={() => setDetailPickerOpen(false)} />
+          )}
         </div>
       </div>
-      {!!product.recommendations?.length && <section className="store-section"><div className="section-heading"><div><span className="eyebrow">قد يناسبك أيضًا</span><h2>منتجات مقترحة</h2></div></div><ProductGrid items={product.recommendations as PublicProduct[]} onOpen={nextId => onSelectProduct ? onSelectProduct(nextId) : window.location.assign("/product/" + nextId)} onAiRecipe={onAiRecipe} /></section>}
+
+      {!!product.recommendations?.length && (
+        <section className='store-section'>
+          <div className='section-heading'><div><span className='eyebrow'>قد يناسبك أيضًا</span><h2>منتجات مقترحة</h2></div></div>
+          <ProductGrid items={product.recommendations as PublicProduct[]} onOpen={nextId => onSelectProduct ? onSelectProduct(nextId) : window.location.assign('/product/' + nextId)} onAiRecipe={onAiRecipe} />
+        </section>
+      )}
     </main>
   );
 }
@@ -2294,66 +2324,42 @@ function FavoritesPage({ allProducts = [], onOpen, onAiRecipe }: { allProducts?:
 function OrdersPage() {
   const customer = useCustomer();
   const { add } = useStore();
-  const [, navigate] = useLocation();
   const searchStr = useSearch();
   const searchParams = new URLSearchParams(searchStr);
-  const focusedOrderNumber = searchParams.get("order");
-  const justOrdered = searchParams.get("justOrdered") === "1";
-
-  const refs = useMemo(
-    () => customer.orders.slice(0, 50).map(({ orderNumber, idempotencyKey }) => ({ orderNumber, idempotencyKey })),
-    [customer.orders]
-  );
-
-  const cachedOrdersData = useMemo(() => {
-    try {
-      const raw = localStorage.getItem("original-orders-track-cache-v1");
-      const parsed = raw ? JSON.parse(raw) : null;
-      return Array.isArray(parsed) && parsed.length > 0 ? parsed : undefined;
-    } catch {
-      return undefined;
-    }
-  }, [refs.length]);
-
-  const query = trpc.commerce.orders.trackMany.useQuery(
-    { refs },
-    {
-      enabled: refs.length > 0,
-      retry: 1,
-      staleTime: 4000,
-      refetchInterval: refs.length ? 8000 : false,
-      placeholderData: cachedOrdersData,
-    }
-  );
+  const focusedOrderNumber = searchParams.get('order');
+  const justOrdered = searchParams.get('justOrdered') === '1';
+  const [selectedOrderNumber, setSelectedOrderNumber] = useState<string | null>(focusedOrderNumber);
 
   useEffect(() => {
+    if (focusedOrderNumber) setSelectedOrderNumber(focusedOrderNumber);
+  }, [focusedOrderNumber]);
+
+  const refs = useMemo(() => customer.orders.slice(0, 50).map(({ orderNumber, idempotencyKey }) => ({ orderNumber, idempotencyKey })), [customer.orders]);
+  const cachedOrdersData = useMemo(() => {
+    try {
+      const raw = localStorage.getItem('original-orders-track-cache-v1');
+      const parsed = raw ? JSON.parse(raw) : null;
+      return Array.isArray(parsed) && parsed.length > 0 ? parsed : undefined;
+    } catch { return undefined; }
+  }, [refs.length]);
+  const query = trpc.commerce.orders.trackMany.useQuery({ refs }, { enabled: refs.length > 0, retry: 1, staleTime: 4000, refetchInterval: refs.length ? 8000 : false, placeholderData: cachedOrdersData });
+  useEffect(() => {
     if (query.data && Array.isArray(query.data) && query.data.length > 0) {
-      try {
-        localStorage.setItem("original-orders-track-cache-v1", JSON.stringify(query.data));
-      } catch {}
+      try { localStorage.setItem('original-orders-track-cache-v1', JSON.stringify(query.data)); } catch {}
     }
   }, [query.data]);
 
-  const publicKey = trpc.commerce.notifications.publicKey.useQuery(undefined, {
-    enabled: false,
-    retry: 1,
-  });
+  const publicKey = trpc.commerce.notifications.publicKey.useQuery(undefined, { enabled: false, retry: 1 });
   const subscribe = trpc.commerce.orders.subscribeToStatus.useMutation();
-
   const [permission, setPermission] = useState(getPushPermissionState);
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pushPending, setPushPending] = useState(false);
   const [reorder, setReorder] = useState<Array<{ productId: number; quantity: number }> | null>(null);
-
-  const reorderQuery = trpc.commerce.catalog.productsForReorder.useQuery(
-    { ids: reorder?.map(item => item.productId) ?? [1] },
-    { enabled: Boolean(reorder), retry: 1 }
-  );
+  const reorderQuery = trpc.commerce.catalog.productsForReorder.useQuery({ ids: reorder?.map(item => item.productId) ?? [1] }, { enabled: Boolean(reorder), retry: 1 });
 
   useEffect(() => {
-    if (!refs.length || getPushPermissionState() !== "granted") return;
+    if (!refs.length || getPushPermissionState() !== 'granted') return;
     let active = true;
-
     void (async () => {
       try {
         let subscription = await getExistingBrowserPushSubscription();
@@ -2366,39 +2372,26 @@ function OrdersPage() {
         if (active) setPushEnabled(result.subscribed > 0);
       } catch {}
     })();
-
     return () => { active = false; };
   }, [refs.length]);
 
   const enableNotifications = async () => {
     if (!refs.length || pushPending) return;
     setPushPending(true);
-
     try {
       const requestedPermission = await requestPushPermission();
       setPermission(requestedPermission);
-
-      if (requestedPermission === "unsupported") {
-        throw new Error("متصفحك لا يدعم إشعارات Push لهذا التطبيق.");
-      }
-      if (requestedPermission !== "granted") {
-        throw new Error("يرجى السماح بالإشعارات من نافذة المتصفح لتتبع طلبك.");
-      }
-
+      if (requestedPermission === 'unsupported') throw new Error('متصفحك لا يدعم إشعارات Push لهذا التطبيق.');
+      if (requestedPermission !== 'granted') throw new Error('يرجى السماح بالإشعارات من نافذة المتصفح لتتبع طلبك.');
       const key = publicKey.data ?? (await publicKey.refetch()).data;
-      if (!key) throw new Error("تعذر الاتصال بخدمة الإشعارات. أعد المحاولة بعد قليل.");
-
+      if (!key) throw new Error('تعذر الاتصال بخدمة الإشعارات. أعد المحاولة بعد قليل.');
       const subscription = await ensureBrowserPushSubscription(key);
       const result = await subscribe.mutateAsync({ refs, subscription });
-
-      if (!result.subscribed) {
-        throw new Error("لم نعثر على طلب محفوظ صالح لهذا المتصفح.");
-      }
-
+      if (!result.subscribed) throw new Error('لم نعثر على طلب محفوظ صالح لهذا المتصفح.');
       setPushEnabled(true);
-      toast.success("تم تفعيل إشعارات تتبع الطلب بنجاح!");
+      toast.success('تم تفعيل إشعارات تتبع الطلب بنجاح!');
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "تعذر تفعيل الإشعارات الآن.");
+      toast.error(error instanceof Error ? error.message : 'تعذر تفعيل الإشعارات الآن.');
     } finally {
       setPushPending(false);
     }
@@ -2406,31 +2399,21 @@ function OrdersPage() {
 
   useEffect(() => {
     if (!reorder || !reorderQuery.data) return;
-
     let added = 0;
-
     for (const line of reorder) {
       const product = reorderQuery.data.find(candidate => candidate.id === line.productId);
       if (!product) continue;
-
-      const minimum = product.minQuantity || 1;
-      const step = product.quantityStep || 1;
-      let quantity = minimum +
-        Math.max(0, Math.floor((Math.max(minimum, line.quantity) - minimum) / step)) * step;
-
+      const minimum = product.minQuantity || 1; const step = product.quantityStep || 1;
+      let quantity = minimum + Math.max(0, Math.floor((Math.max(minimum, line.quantity) - minimum) / step)) * step;
       if (product.stock !== null) {
         const bounded = Math.min(quantity, product.stock);
         quantity = minimum + Math.max(0, Math.floor((bounded - minimum) / step)) * step;
         if (quantity > product.stock) continue;
       }
-
-      add(product, quantity);
-      added += 1;
+      add(product, quantity); added += 1;
     }
-
-    if (added) toast.success("أُضيف " + added + " منتج إلى السلة.");
-    else toast.error("لا توجد منتجات متاحة من هذا الطلب الآن.");
-
+    if (added) toast.success('أُضيف ' + added + ' منتج إلى السلة.');
+    else toast.error('لا توجد منتجات متاحة من هذا الطلب الآن.');
     setReorder(null);
   }, [reorder, reorderQuery.data, add]);
 
@@ -2440,209 +2423,161 @@ function OrdersPage() {
     return raw;
   }, [query.data]);
 
-  const selectedOrder = focusedOrderNumber
-    ? orders.find(order => order.orderNumber === focusedOrderNumber)
-    : undefined;
-
-  const stepOrder = ["new", "preparing", "ready", "out_for_delivery", "delivered"];
+  const orderStatusLabels: Record<string, string> = { new: 'جديد', preparing: 'قيد التجهيز', ready: 'جاهز للتوصيل', out_for_delivery: 'خرج للتوصيل', delivered: 'تم التسليم', cancelled: 'ملغي' };
+  const stepOrder = ['new', 'preparing', 'ready', 'out_for_delivery', 'delivered'];
   const stepTitles: Record<string, string> = {
-    new: "تم الاستلام",
-    preparing: "قيد التجهيز",
-    ready: "جاهز",
-    out_for_delivery: "خرج للتوصيل",
-    delivered: "تم التسليم",
+    new: 'تم الاستلام',
+    preparing: 'قيد التجهيز',
+    ready: 'جاهز',
+    out_for_delivery: 'خرج للتوصيل',
+    delivered: 'تم التسليم',
   };
 
-  const openOrder = (orderNumber: string) => {
-    navigate("/orders?order=" + encodeURIComponent(orderNumber));
-    window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
-  };
-
-  const backToOrders = () => {
-    navigate("/orders");
-    window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
-  };
-
-  const notificationPanel = refs.length > 0 ? (
-    <section className="original-orders-notifications">
-      <div className="original-orders-notification-icon">
-        {pushEnabled ? <Check size={20} /> : <BellRing size={20} />}
-      </div>
-      <div className="original-orders-notification-copy">
-        <strong>
-          {pushEnabled
-            ? "إشعارات طلباتك مفعّلة"
-            : justOrdered
-              ? "تم تأكيد طلبك! فعّل الإشعارات لمتابعته"
-              : "تابع طلباتك أولاً بأول"}
-        </strong>
-        <small>
-          {pushEnabled
-            ? "سيصلك تنبيه عند تحديث حالة طلبك."
-            : "فعّل التنبيهات ليصلك كل تحديث جديد."}
-        </small>
-      </div>
-      <button
-        type="button"
-        className="original-orders-notification-button"
-        onClick={() => void enableNotifications()}
-        disabled={pushPending || permission === "denied" || permission === "unsupported"}
-      >
-        {pushPending ? "جارٍ التفعيل..." : pushEnabled ? "تحديث" : "تفعيل التنبيهات"}
-      </button>
-    </section>
-  ) : null;
-
-  if (query.isLoading && !orders.length) {
-    return <main className="page-shell inner-page"><Loading /></main>;
-  }
-
-  if (query.error && !orders.length) {
-    return <main className="page-shell inner-page"><LoadError onRetry={() => void query.refetch()} /></main>;
-  }
-
-  if (focusedOrderNumber && !selectedOrder) {
-    return (
-      <main className="page-shell inner-page original-orders-page">
-        <button type="button" className="original-orders-back" onClick={backToOrders}>
-          <ChevronLeft size={18} /> العودة إلى طلباتي
-        </button>
-        <EmptyState
-          icon={Package}
-          title="لم نعثر على هذا الطلب"
-          description="قد يكون الطلب غير متاح مؤقتاً. ارجع إلى قائمة طلباتك وحاول مرة أخرى."
-          action="عرض طلباتي"
-          href="/orders"
-        />
-      </main>
-    );
-  }
+  const selectedOrder = useMemo(() => {
+    if (!selectedOrderNumber) return null;
+    return orders.find(o => o.orderNumber === selectedOrderNumber) ?? null;
+  }, [orders, selectedOrderNumber]);
 
   if (selectedOrder) {
-    const order = selectedOrder;
-    const events = order.events || [];
-    const items = order.items || [];
-    const currentStepIdx = stepOrder.indexOf(order.status);
-    const regularNotes = events.filter(
-      ev => ev.note && ev.note.trim() &&
-        ev.note !== "تم استلام الطلب" &&
-        !String(ev.note).startsWith("❌")
-    );
-    const latestStoreNote = regularNotes.length
-      ? regularNotes[regularNotes.length - 1]
-      : undefined;
-    const cancelledNotes = events
-      .filter(ev => String(ev.note || "").startsWith("❌"))
-      .map(ev => String(ev.note || "").replace(/\s*\|\s*الإجمالي الجديد:.*$/, ""));
-    const ordAny = order as any;
+    const currentStepIdx = stepOrder.indexOf(selectedOrder.status);
+    const ordAny = selectedOrder as any;
+    const cancelledNotes = (selectedOrder.events || []).filter(ev => String(ev.note || '').startsWith('❌')).map(ev => String(ev.note || '').replace(/\s*\|\s*الإجمالي الجديد:.*$/, ''));
+    const regularNotes = (selectedOrder.events || []).filter(ev => ev.note && ev.note.trim() && ev.note !== 'تم استلام الطلب' && !String(ev.note).startsWith('❌'));
+    const latestStoreNote = regularNotes.at(-1);
 
     return (
-      <main className="page-shell inner-page original-orders-page">
-        <button type="button" className="original-orders-back" onClick={backToOrders}>
-          <ChevronLeft size={18} /> العودة إلى طلباتي
-        </button>
+      <main className='page-shell inner-page'>
+        <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: '10px' }}>
+          <button type='button' className='back-link' style={{ marginBottom: 0, padding: '7px 14px', borderRadius: '12px', background: '#ffffff', border: '1px solid #dce6df', color: '#174b36', fontWeight: 800, fontSize: '12.5px' }} onClick={() => setSelectedOrderNumber(null)}>
+            <ArrowLeft size={15} /> العودة إلى طلباتي
+          </button>
+        </div>
+        <div style={{ marginBottom: '12px' }}>
+          <span className='eyebrow'>تفاصيل طلبك</span>
+          <h1 style={{ margin: '2px 0 4px', fontSize: '22px', fontWeight: 900, color: '#143a28' }}>طلبك بين يديك</h1>
+          <p style={{ margin: 0, fontSize: '12.5px', color: '#6b7d72' }}>كل تفاصيل الفاتورة وحالة التوصيل في مكان واحد.</p>
+        </div>
 
-        <header className="original-orders-detail-heading">
-          <span className="original-orders-eyebrow">تفاصيل طلبك</span>
-          <h1>طلبك بين يديك</h1>
-          <p>كل تفاصيل الفاتورة وحالة التوصيل في مكان واحد.</p>
-        </header>
-
-        <article className="original-order-detail-card">
-          <div className="original-order-detail-top">
-            <div>
-              <small>رقم الطلب</small>
-              <strong dir="ltr">{order.orderNumber}</strong>
-              <span>{new Date(order.createdAt).toLocaleString("ar-YE")}</span>
-              {ordAny.city && (
-                <span>{ordAny.city}{ordAny.district ? " - " + ordAny.district : ""}</span>
-              )}
+        <article style={{ background: '#ffffff', border: '1px solid #dce6df', borderRadius: '20px', padding: '16px', display: 'grid', gap: '14px', boxShadow: '0 4px 16px rgba(20, 55, 35, 0.04)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px', flexWrap: 'wrap', paddingBottom: '12px', borderBottom: '1px solid #edf3ee' }}>
+            <div style={{ display: 'grid', gap: '4px' }}>
+              <small style={{ color: '#6b7d72', fontSize: '11px', fontWeight: 700 }}>رقم الطلب</small>
+              <strong style={{ fontSize: '16px', color: '#143a28', fontWeight: 900, letterSpacing: '0.5px' }} dir='ltr'>{selectedOrder.orderNumber}</strong>
+              <small style={{ color: '#6b7d72', fontSize: '11.5px' }}>{new Date(selectedOrder.createdAt).toLocaleString('ar-YE')}</small>
+              <small style={{ color: '#4d6356', fontSize: '12px', fontWeight: 700 }}>{selectedOrder.city} - {selectedOrder.district}</small>
             </div>
-            <span className={"status-pill status-" + order.status}>
-              {stateLabels[order.status] || order.status}
+            <span className={'status-pill status-' + selectedOrder.status} style={{ fontSize: '12px', fontWeight: 800, padding: '6px 12px' }}>
+              {orderStatusLabels[selectedOrder.status] || selectedOrder.status}
             </span>
           </div>
 
-          {order.status !== "cancelled" && (
-            <section className="original-order-progress">
-              <h3>حالة تجهيز وتوصيل الطلب</h3>
-              <div className="original-order-progress-steps">
-                {stepOrder.map((step, index) => (
-                  <div key={step} className={currentStepIdx >= index ? "is-done" : ""}>
-                    <span className="original-order-progress-dot">
-                      {currentStepIdx > index ? <Check size={13} /> : index + 1}
-                    </span>
-                    <small>{stepTitles[step]}</small>
-                  </div>
-                ))}
+          {selectedOrder.status !== 'cancelled' ? (
+            <div style={{ background: '#f5faf7', border: '1px solid #deede3', borderRadius: '16px', padding: '14px 12px', display: 'grid', gap: '12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <strong style={{ fontSize: '13px', color: '#174b36', fontWeight: 900 }}>حالة تجهيز وتوصيل الطلب</strong>
+                <small style={{ fontSize: '11px', color: '#5c7467', fontWeight: 700 }}>الخطوة {Math.max(1, currentStepIdx + 1)} من 5</small>
               </div>
-            </section>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: '6px', width: '100%' }}>
+                {stepOrder.map((st, sIdx) => {
+                  const done = currentStepIdx >= sIdx;
+                  const active = currentStepIdx === sIdx;
+                  return (
+                    <div key={st} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '6px', minWidth: 0 }}>
+                      <span style={{
+                        width: '30px',
+                        height: '30px',
+                        borderRadius: '50%',
+                        background: done ? '#174b36' : '#ffffff',
+                        color: done ? '#f1d897' : '#8a998f',
+                        border: active ? '2.5px solid #d4a64a' : (done ? '2px solid #174b36' : '1.5px solid #cdd9d1'),
+                        display: 'grid',
+                        placeItems: 'center',
+                        fontSize: '12px',
+                        fontWeight: 900,
+                        flexShrink: 0,
+                      }}>
+                        {done ? '✓' : (sIdx + 1)}
+                      </span>
+                      <span style={{ fontSize: '10.5px', fontWeight: active ? 900 : 700, color: done ? '#143a28' : '#7b8b80', lineHeight: 1.25 }}>
+                        {stepTitles[st]}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            <div style={{ padding: '12px', borderRadius: '14px', background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', fontSize: '12.5px', fontWeight: 800 }}>
+              تم إلغاء هذا الطلب.
+            </div>
+          )}
+
+          {latestStoreNote && (
+            <div style={{ padding: '11px 13px', borderRadius: '13px', background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', fontSize: '12px' }}>
+              <strong style={{ display: 'block', marginBottom: '3px' }}>🔔 رسالة من إدارة المتجر:</strong>
+              <span>{latestStoreNote.note}</span>
+            </div>
           )}
 
           {cancelledNotes.length > 0 && (
-            <section className="original-order-alert">
-              <strong>تحديث على فاتورة الطلب</strong>
-              {cancelledNotes.map((note, index) => <p key={index}>{note}</p>)}
-            </section>
+            <div style={{ padding: '11px 13px', borderRadius: '13px', background: '#fff5f5', border: '1px solid #feb2b2', color: '#9b2c2c', fontSize: '12px', display: 'grid', gap: '4px' }}>
+              <strong>تعديلات الفاتورة:</strong>
+              {cancelledNotes.map((n, i) => <div key={i}>{n}</div>)}
+            </div>
           )}
 
-          {latestStoreNote?.note && (
-            <section className="original-order-store-note">
-              <BellRing size={17} />
-              <span>رسالة المتجر: {latestStoreNote.note}</span>
-            </section>
-          )}
+          <div style={{ border: '1px solid #e1ece4', borderRadius: '16px', padding: '13px 14px', background: '#ffffff', display: 'grid', gap: '10px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '8px', borderBottom: '1px solid #eef3f0' }}>
+              <strong style={{ fontSize: '13px', color: '#143a28', fontWeight: 900 }}>الأصناف المطلوبة</strong>
+              <span style={{ fontSize: '11px', fontWeight: 800, padding: '2px 9px', borderRadius: '99px', background: '#eef5f0', color: '#174b36' }}>
+                {selectedOrder.items.length} صنف
+              </span>
+            </div>
+            <div style={{ display: 'grid', gap: '8px' }}>
+              {selectedOrder.items.map((item, idx) => (
+                <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', padding: '8px 10px', borderRadius: '11px', background: '#f8fbf9', fontSize: '12.5px' }}>
+                  <strong style={{ color: '#143a28', fontWeight: 800 }}>{item.productName}</strong>
+                  <span style={{ color: '#174b36', fontWeight: 900, whiteSpace: 'nowrap' }}>
+                    {item.quantity} × {formatPrice(item.unitPrice || Math.round((item.lineTotal || 0) / Math.max(1, item.quantity)))}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
 
-          <section className="original-order-items">
-            <h3>الأصناف المطلوبة <span>{items.length}</span></h3>
-            {items.map(item => (
-              <div className="original-order-item" key={item.id}>
-                <span>{item.productName}</span>
-                <span>× {item.quantity}</span>
-                <strong>{item.lineTotal > 0 ? formatPrice(item.lineTotal) : "—"}</strong>
+          <div style={{ background: '#f4f8f5', border: '1px solid #dce8df', borderRadius: '16px', padding: '13px 15px', display: 'grid', gap: '6px' }}>
+            {typeof ordAny.subtotal === 'number' && ordAny.subtotal > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#5c6f63' }}>
+                <span>قيمة المنتجات</span>
+                <strong>{formatPrice(ordAny.subtotal)}</strong>
               </div>
-            ))}
-          </section>
-
-          <div className="original-order-total">
-            <span>الإجمالي النهائي</span>
-            <strong>{formatPrice(order.total)}</strong>
+            )}
+            {typeof ordAny.deliveryFee === 'number' && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#5c6f63' }}>
+                <span>رسوم التوصيل</span>
+                <strong>{ordAny.deliveryFee === 0 ? 'مجاني' : formatPrice(ordAny.deliveryFee)}</strong>
+              </div>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '6px', borderTop: '1px solid #e1ece4' }}>
+              <span style={{ fontSize: '13.5px', fontWeight: 800, color: '#495d51' }}>الإجمالي النهائي</span>
+              <strong style={{ fontSize: '19px', fontWeight: 900, color: '#174b36' }}>{formatPrice(selectedOrder.total)}</strong>
+            </div>
           </div>
 
           <button
-            type="button"
-            className="original-order-reorder"
+            type='button'
+            className='button button-primary full-button'
             disabled={reorderQuery.isFetching}
-            onClick={() => {
-              const validItems = items
-                .filter(item => item.productId !== null)
-                .map(item => ({ productId: item.productId!, quantity: item.quantity }));
-
-              if (!validItems.length) {
-                toast.error("لم تعد منتجات هذا الطلب متاحة في المتجر.");
-                return;
-              }
-              setReorder(validItems);
-            }}
+            onClick={() => setReorder(selectedOrder.items.filter((item): item is typeof item & { productId: number } => typeof item.productId === 'number').map(item => ({ productId: item.productId, quantity: item.quantity })))}
+            style={{ height: '46px', borderRadius: '14px', fontSize: '14px', fontWeight: 900 }}
           >
-            <ShoppingCart size={17} />
-            {reorderQuery.isFetching ? "جارٍ تجهيز السلة..." : "إضافة الطلب إلى السلة مجدداً"}
+            <ShoppingCart size={17} /> إضافة الطلب إلى السلة مجدداً
           </button>
 
-          {events.length > 0 && (
-            <details className="original-order-history">
-              <summary>سجل تحديثات الطلب ({events.length})</summary>
-              <ol>
-                {events.map(event => (
-                  <li key={event.id}>
-                    <span className={"status-pill status-" + event.status}>
-                      {stateLabels[event.status] || event.status}
-                    </span>
-                    <time>{new Date(event.createdAt).toLocaleString("ar-YE")}</time>
-                    {event.note && <small>{event.note}</small>}
-                  </li>
-                ))}
-              </ol>
+          {!!selectedOrder.events?.length && (
+            <details className='order-history' style={{ marginTop: '4px' }}>
+              <summary><span>سجل تحديثات الطلب ({selectedOrder.events.length})</span><ChevronLeft size={14} /></summary>
+              <ol>{selectedOrder.events.map((event, index) => <li key={index}><strong>{orderStatusLabels[event.status] || event.status}</strong><span>{event.note || 'تم تحديث حالة الطلب'}</span><small>{new Date(event.createdAt).toLocaleString('ar-YE')}</small></li>)}</ol>
             </details>
           )}
         </article>
@@ -2651,59 +2586,78 @@ function OrdersPage() {
   }
 
   return (
-    <main className="page-shell inner-page original-orders-page">
-      <header className="original-orders-heading">
-        <div>
-          <span className="original-orders-eyebrow">مساحة طلباتك</span>
-          <h1>طلباتي</h1>
-          <p>تابع طلباتك السابقة والحالية بكل سهولة.</p>
-        </div>
-        <div className="original-orders-count">
-          <Package size={20} />
-          <strong>{orders.length}</strong>
-          <small>طلب</small>
-        </div>
-      </header>
+    <main className='page-shell inner-page'>
+      <div className='page-title-row'>
+        <div><span className='eyebrow'>متابعة حية ومباشرة</span><h1>طلباتي ({orders.length})</h1><p>اضغط على أي طلب لعرض الفاتورة الكاملة وحالة التجهيز والتوصيل.</p></div>
+        <span className='page-title-icon'><Package size={22} /></span>
+      </div>
 
-      {notificationPanel}
-
-      {!orders.length ? (
-        <EmptyState
-          icon={Package}
-          title={refs.length ? "لم نعثر على طلبات محفوظة" : "لا توجد طلبات حتى الآن"}
-          description="عندما تنهي أول طلب لك، ستجده هنا ويمكنك متابعة تفاصيله."
-          action="تسوق الآن"
-          href="/products"
-        />
-      ) : (
-        <section className="original-orders-list">
-          {orders.map((order, index) => (
-            <button
-              type="button"
-              key={order.orderNumber}
-              className="original-order-list-card"
-              onClick={() => openOrder(order.orderNumber)}
-            >
-              <span className="original-order-list-icon"><Package size={21} /></span>
-              <span className="original-order-list-main">
-                <span className="original-order-list-number">
-                  <strong dir="ltr">{order.orderNumber}</strong>
-                  {index === 0 && <small>أحدث طلب</small>}
-                </span>
-                <span className="original-order-list-date">
-                  {new Date(order.createdAt).toLocaleDateString("ar-YE")}
-                </span>
-                <span className="original-order-list-bottom">
-                  <span className={"status-pill status-" + order.status}>
-                    {stateLabels[order.status] || order.status}
-                  </span>
-                  <strong>{formatPrice(order.total)}</strong>
-                </span>
-              </span>
-              <ChevronLeft size={20} className="original-order-list-arrow" />
-            </button>
-          ))}
+      {refs.length > 0 && (
+        <section style={{ marginBottom: '14px', padding: '12px 14px', borderRadius: '16px', background: pushEnabled ? '#edf7f0' : '#174b36', color: pushEnabled ? '#174b36' : '#ffffff', border: pushEnabled ? '1px solid #b8dec6' : '1px solid #174b36', display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: '1 1 200px' }}>
+            <span style={{ width: '36px', height: '36px', borderRadius: '10px', background: pushEnabled ? '#174b36' : '#f1d897', color: pushEnabled ? '#f1d897' : '#113a28', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+              {pushEnabled ? <Check size={18} /> : <BellRing size={18} />}
+            </span>
+            <div>
+              <strong style={{ display: 'block', fontSize: '13px', color: pushEnabled ? '#174b36' : '#f9e8b8' }}>
+                {pushEnabled ? 'إشعارات تتبع الطلب مفعّلة ✓' : (justOrdered ? 'تم تأكيد طلبك! فعّل الإشعارات لمتابعته' : 'فعّل إشعارات تتبع حالة طلبك')}
+              </strong>
+              <small style={{ fontSize: '11px', opacity: 0.9 }}>يصلك تنبيه فوري عند تجهيز طلبك أو خروجه للتوصيل.</small>
+            </div>
+          </div>
+          <button type='button' onClick={() => void enableNotifications()} disabled={pushPending || permission === 'denied' || permission === 'unsupported'} className='small-button' style={{ background: pushEnabled ? '#ffffff' : '#f1d897', color: '#113a28', fontWeight: 800, border: 'none' }}>
+            <BellRing size={14} /> {pushPending ? 'جارٍ التفعيل...' : pushEnabled ? 'تحديث' : 'تفعيل الإشعارات'}
+          </button>
         </section>
+      )}
+
+      {(query.isLoading && !orders.length) ? <Loading /> : (query.error && !orders.length) ? <LoadError onRetry={() => void query.refetch()} /> : !orders.length ? (
+        <EmptyState icon={Package} title={refs.length ? 'لم نعثر على طلبات محفوظة على هذا الجهاز' : 'لا توجد طلبات سابقة'} description='بعد إتمام طلب من هذا المتصفح، ستظهر حالته هنا مباشرة.' action='تسوق الآن' href='/products' />
+      ) : (
+        <div style={{ display: 'grid', gap: '12px' }}>
+          {orders.map((order, idx) => {
+            const isLatest = idx === 0;
+            return (
+              <article
+                key={order.orderNumber}
+                onClick={() => setSelectedOrderNumber(order.orderNumber)}
+                style={{
+                  padding: '15px 16px',
+                  borderRadius: '18px',
+                  background: '#ffffff',
+                  border: isLatest ? '2px solid #174b36' : '1px solid #dbe6df',
+                  boxShadow: '0 4px 12px rgba(15, 42, 28, 0.04)',
+                  display: 'grid',
+                  gap: '10px',
+                  cursor: 'pointer',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'grid', gap: '3px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '7px', flexWrap: 'wrap' }}>
+                      <strong style={{ fontSize: '14.5px', color: '#123826', fontWeight: 900 }} dir='ltr'>{order.orderNumber}</strong>
+                      {isLatest && <span style={{ fontSize: '10px', fontWeight: 800, padding: '2px 8px', borderRadius: '99px', background: '#174b36', color: '#f1d897' }}>أحدث طلب</span>}
+                    </div>
+                    <small style={{ color: '#6c7d72', fontSize: '11px' }}>{new Date(order.createdAt).toLocaleString('ar-YE')} · {order.city} - {order.district}</small>
+                  </div>
+                  <span className={'status-pill status-' + order.status} style={{ fontSize: '11.5px', fontWeight: 800 }}>
+                    {orderStatusLabels[order.status] || order.status}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '10px', borderTop: '1px solid #edf2ee' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '12px', color: '#5c6f63', fontWeight: 700 }}>{order.items.length} أصناف</span>
+                    <strong style={{ fontSize: '16px', color: '#174b36', fontWeight: 900 }}>{formatPrice(order.total)}</strong>
+                  </div>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '12px', fontWeight: 800, color: '#174b36', background: '#f0f7f3', padding: '6px 12px', borderRadius: '10px' }}>
+                    <span>تفاصيل الطلب</span>
+                    <ChevronLeft size={14} />
+                  </span>
+                </div>
+              </article>
+            );
+          })}
+        </div>
       )}
     </main>
   );
@@ -2734,7 +2688,7 @@ function useGuestPushSubscriptionSync() {
 function AccountPage() {
   const customer = useCustomer();
   const { favoriteIds } = useStore();
-  const homeCatalog = trpc.commerce.catalog.home.useQuery(undefined, { staleTime: 60_000 });
+  const homeCatalog = trpc.commerce.catalog.home.useQuery(undefined, { staleTime: 60000 });
   const deliveryTree = useMemo(() => readPublicDeliveryTree((homeCatalog.data?.settings as any)?.deliveryTreeConfig), [homeCatalog.data?.settings]);
   const cleanedCustomerPhone = cleanYemeniPhone(customer.phone);
   const hasSavedProfile = Boolean(customer.name.trim().length >= 2 && isValidYemeniPhone(cleanedCustomerPhone));
@@ -2817,13 +2771,13 @@ function AccountPage() {
 
   return (
     <main className='page-shell inner-page original-account-page'>
-      <div className='page-title-row' style={{ marginBottom: '6px' }}>
+      <div className='page-title-row' style={{ marginBottom: '4px' }}>
         <div>
           <span className='eyebrow'>ملفك الشخصي وعناوينك</span>
           <h1>حسابي</h1>
           <p>إدارة بيانات الاستلام وعناوين التوصيل المحفوظة لإتمام طلباتك بسرعة وسهولة.</p>
         </div>
-        <span className='page-title-icon'><UserRound size={24} /></span>
+        <span className='page-title-icon'><UserRound size={22} /></span>
       </div>
 
       <section className='original-account-card'>
@@ -2832,32 +2786,28 @@ function AccountPage() {
             <span className='original-account-avatar'>{displayLetter}</span>
             <div style={{ display: 'grid', gap: '3px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                <h2 style={{ margin: 0, fontSize: '18px', color: '#143a28', fontWeight: 900 }}>
+                <h2 style={{ margin: 0, fontSize: '17px', color: '#143a28', fontWeight: 900 }}>
                   {customer.name ? customer.name : 'عميل أورجنال'}
                 </h2>
-                <span style={{ fontSize: '10.5px', fontWeight: 800, padding: '3px 9px', borderRadius: '99px', background: hasSavedProfile ? '#e8f5ee' : '#fef3c7', color: hasSavedProfile ? '#174b36' : '#92400e' }}>
+                <span style={{ fontSize: '10px', fontWeight: 800, padding: '2px 8px', borderRadius: '99px', background: hasSavedProfile ? '#e8f5ee' : '#fef3c7', color: hasSavedProfile ? '#174b36' : '#92400e' }}>
                   {hasSavedProfile ? 'بيانات مكتملة ✓' : 'بانتظار استكمال البيانات'}
                 </span>
               </div>
-              <small style={{ color: '#6b7d72', fontSize: '12px' }}>
+              <small style={{ color: '#6b7d72', fontSize: '11.5px' }}>
                 {cleanedCustomerPhone ? ('رقم الجوال: ' + cleanedCustomerPhone) : 'أضف اسمك ورقم جوالك لتعبئة الطلبات تلقائياً'}
               </small>
             </div>
           </div>
 
           {!isEditingProfile && (
-            <button
-              type='button'
-              className='original-account-edit-btn'
-              onClick={() => setIsEditingProfile(true)}
-            >
+            <button type='button' className='original-account-edit-btn' onClick={() => setIsEditingProfile(true)}>
               <span>تعديل البيانات</span>
             </button>
           )}
         </div>
 
         {!isEditingProfile ? (
-          <div style={{ display: 'grid', gap: '14px' }}>
+          <div style={{ display: 'grid', gap: '12px' }}>
             <div className='original-account-info-grid'>
               <div className='original-account-info-box'>
                 <small>الاسم الكامل للمستلم</small>
@@ -2866,11 +2816,9 @@ function AccountPage() {
               <div className='original-account-info-box'>
                 <small>رقم الجوال المعتمد للتوصيل</small>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                  <strong dir='ltr' style={{ letterSpacing: '0.6px' }}>
-                    {cleanedCustomerPhone || 'غير مضاف بعد'}
-                  </strong>
+                  <strong dir='ltr' style={{ letterSpacing: '0.6px' }}>{cleanedCustomerPhone || 'غير مضاف بعد'}</strong>
                   {carrierName && (
-                    <span style={{ fontSize: '10.5px', fontWeight: 800, padding: '2px 9px', borderRadius: '99px', background: '#174b36', color: '#ffffff' }}>
+                    <span style={{ fontSize: '10px', fontWeight: 800, padding: '2px 8px', borderRadius: '99px', background: '#174b36', color: '#ffffff' }}>
                       {carrierName}
                     </span>
                   )}
@@ -2880,77 +2828,39 @@ function AccountPage() {
 
             <div className='original-account-shortcuts'>
               <Link href='/orders' className='original-account-shortcut'>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-                  <Package size={18} />
-                  <span>طلباتي السابقة والحالية</span>
-                </span>
-                <span style={{ padding: '2px 9px', borderRadius: '99px', background: '#eef5f0', fontSize: '12px' }}>{customer.orders.length}</span>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '7px' }}><Package size={16} /><span>طلباتي السابقة والحالية</span></span>
+                <span style={{ padding: '2px 8px', borderRadius: '99px', background: '#eef5f0', fontSize: '11.5px' }}>{customer.orders.length}</span>
               </Link>
               <Link href='/favorites' className='original-account-shortcut'>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-                  <Heart size={18} />
-                  <span>منتجاتي المفضلة</span>
-                </span>
-                <span style={{ padding: '2px 9px', borderRadius: '99px', background: '#eef5f0', fontSize: '12px' }}>{favoriteIds.length}</span>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '7px' }}><Heart size={16} /><span>منتجاتي المفضلة</span></span>
+                <span style={{ padding: '2px 8px', borderRadius: '99px', background: '#eef5f0', fontSize: '11.5px' }}>{favoriteIds.length}</span>
               </Link>
             </div>
           </div>
         ) : (
-          <form className='form-stack' onSubmit={saveProfile} style={{ gap: '14px', background: '#f8fbf9', padding: '16px', borderRadius: '16px', border: '1px solid #dce8df' }}>
+          <form className='form-stack' onSubmit={saveProfile} style={{ gap: '12px', background: '#f8fbf9', padding: '14px', borderRadius: '14px', border: '1px solid #dce8df' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <strong style={{ fontSize: '14px', color: '#174b36' }}>تحديث البيانات الشخصية</strong>
+              <strong style={{ fontSize: '13.5px', color: '#174b36' }}>تحديث البيانات الشخصية</strong>
               <small style={{ fontSize: '11px', color: '#64766b' }}>تُحفظ تلقائياً للطلبات القادمة</small>
             </div>
-            <div className='form-grid' style={{ gap: '12px' }}>
-              <label style={{ fontWeight: 800, fontSize: '12.5px', color: '#1a3a29' }}>
+            <div className='form-grid' style={{ gap: '10px' }}>
+              <label style={{ fontWeight: 800, fontSize: '12px', color: '#1a3a29' }}>
                 <span>الاسم الكامل *</span>
-                <input
-                  required
-                  minLength={2}
-                  maxLength={160}
-                  autoComplete='name'
-                  value={name}
-                  onChange={event => setName(event.target.value)}
-                  placeholder='اكتب اسمك الكامل هنا...'
-                  style={{ background: '#ffffff', fontWeight: 700 }}
-                />
+                <input required minLength={2} maxLength={160} autoComplete='name' value={name} onChange={event => setName(event.target.value)} placeholder='اكتب اسمك الكامل هنا...' style={{ background: '#ffffff', fontWeight: 700 }} />
               </label>
-              <label style={{ fontWeight: 800, fontSize: '12.5px', color: '#1a3a29' }}>
+              <label style={{ fontWeight: 800, fontSize: '12px', color: '#1a3a29' }}>
                 <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span>رقم الجوال اليمني (9 أرقام) *</span>
-                  <small style={{ fontSize: '10.5px', fontWeight: 800, color: profilePhoneValid ? '#174b36' : '#b43c2f' }}>
+                  <small style={{ fontSize: '10px', fontWeight: 800, color: profilePhoneValid ? '#174b36' : '#b43c2f' }}>
                     {profilePhoneValid ? ('✓ ' + getYemenCarrierName(phone)) : ('77 / 73 / 78 / 71 / 70 (' + phone.length + '/9)')}
                   </small>
                 </span>
-                <input
-                  required
-                  type='tel'
-                  inputMode='numeric'
-                  maxLength={9}
-                  dir='ltr'
-                  value={phone}
-                  onChange={event => setPhone(cleanYemeniPhone(event.target.value))}
-                  placeholder='77XXXXXXX'
-                  style={{ background: '#ffffff', textAlign: 'left', fontWeight: 800, fontSize: '15px', letterSpacing: '0.7px', borderColor: phone && !profilePhoneValid ? '#d9534f' : undefined }}
-                />
+                <input required type='tel' inputMode='numeric' maxLength={9} dir='ltr' value={phone} onChange={event => setPhone(cleanYemeniPhone(event.target.value))} placeholder='77XXXXXXX' style={{ background: '#ffffff', textAlign: 'left', fontWeight: 800, fontSize: '14.5px', letterSpacing: '0.6px', borderColor: phone && !profilePhoneValid ? '#d9534f' : undefined }} />
               </label>
             </div>
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-              <button
-                type='button'
-                className='button button-quiet'
-                onClick={() => { setName(customer.name); setPhone(cleanedCustomerPhone); setIsEditingProfile(false); }}
-              >
-                إلغاء
-              </button>
-              <button
-                type='submit'
-                className='button button-primary'
-                disabled={name.trim().length < 2 || !profilePhoneValid}
-                style={{ minWidth: '170px' }}
-              >
-                <Check size={16} /> حفظ البيانات
-              </button>
+              <button type='button' className='button button-quiet' onClick={() => { setName(customer.name); setPhone(cleanedCustomerPhone); setIsEditingProfile(false); }}>إلغاء</button>
+              <button type='submit' className='button button-primary' disabled={name.trim().length < 2 || !profilePhoneValid} style={{ minWidth: '150px' }}><Check size={15} /> حفظ البيانات</button>
             </div>
           </form>
         )}
@@ -2959,107 +2869,41 @@ function AccountPage() {
       <section className='original-account-card'>
         <div className='original-account-card-head'>
           <div className='original-account-identity'>
-            <span style={{ width: '44px', height: '44px', borderRadius: '14px', background: '#edf6f0', color: '#174b36', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-              <MapPin size={21} />
-            </span>
+            <span style={{ width: '40px', height: '40px', borderRadius: '12px', background: '#edf6f0', color: '#174b36', display: 'grid', placeItems: 'center', flexShrink: 0 }}><MapPin size={19} /></span>
             <div>
-              <h2 style={{ margin: 0, fontSize: '17px', color: '#143a28', fontWeight: 900 }}>عناوين التوصيل المحفوظة ({customer.addresses.length})</h2>
-              <small style={{ color: '#6b7d72', fontSize: '12px' }}>اختر أي عنوان محفوظ بنقرة واحدة عند تأكيد الطلب</small>
+              <h2 style={{ margin: 0, fontSize: '16px', color: '#143a28', fontWeight: 900 }}>عناوين التوصيل المحفوظة ({customer.addresses.length})</h2>
+              <small style={{ color: '#6b7d72', fontSize: '11.5px' }}>اختر أي عنوان محفوظ بنقرة واحدة عند تأكيد الطلب</small>
             </div>
           </div>
           {!showAddressForm && (
-            <button
-              type='button'
-              className='original-account-edit-btn'
-              onClick={() => {
-                setEditingAddressId(null);
-                setAddress({ label: 'المنزل', recipientName: customer.name || name, phone: cleanedCustomerPhone || phone, city: 'صنعاء', district: '', details: '', isDefault: customer.addresses.length === 0 });
-                setShowAddressForm(true);
-              }}
-            >
-              <Plus size={15} />
-              <span>إضافة عنوان جديد</span>
+            <button type='button' className='original-account-edit-btn' onClick={() => { setEditingAddressId(null); setAddress({ label: 'المنزل', recipientName: customer.name || name, phone: cleanedCustomerPhone || phone, city: 'صنعاء', district: '', details: '', isDefault: customer.addresses.length === 0 }); setShowAddressForm(true); }}>
+              <Plus size={14} /><span>إضافة عنوان</span>
             </button>
           )}
         </div>
 
         {!customer.addresses.length && !showAddressForm ? (
-          <div style={{ textAlign: 'center', padding: '24px 16px', borderRadius: '16px', background: '#f8fbf9', border: '1px dashed #cbdcd0', display: 'grid', gap: '10px', justifyItems: 'center' }}>
-            <MapPin size={28} color='#5d7567' />
-            <div style={{ fontSize: '13px', color: '#4c6255', fontWeight: 700 }}>لا توجد عناوين محفوظة حتى الآن</div>
-            <small style={{ fontSize: '11.5px', color: '#728579', maxWidth: '340px' }}>يتم حفظ عنوانك تلقائياً عند إتمام أول طلب، أو يمكنك إضافة عنوانك الآن.</small>
+          <div style={{ textAlign: 'center', padding: '20px 14px', borderRadius: '14px', background: '#f8fbf9', border: '1px dashed #cbdcd0', display: 'grid', gap: '8px', justifyItems: 'center' }}>
+            <MapPin size={24} color='#5d7567' />
+            <div style={{ fontSize: '12.5px', color: '#4c6255', fontWeight: 700 }}>لا توجد عناوين محفوظة حتى الآن</div>
             <button type='button' className='original-account-edit-btn' onClick={() => setShowAddressForm(true)}>+ إضافة أول عنوان توصيل</button>
           </div>
         ) : (
           <div style={{ display: 'grid', gap: '10px' }}>
             {customer.addresses.map(item => (
-              <div
-                key={item.id}
-                style={{
-                  padding: '14px 16px',
-                  borderRadius: '16px',
-                  background: item.isDefault ? '#f4f9f6' : '#ffffff',
-                  border: item.isDefault ? '1.5px solid #174b36' : '1px solid #dde8e0',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'flex-start',
-                  flexWrap: 'wrap',
-                  gap: '12px',
-                }}
-              >
-                <div style={{ display: 'grid', gap: '5px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                    <strong style={{ fontSize: '14.5px', color: '#143a28', fontWeight: 900 }}>{item.label}</strong>
-                    {item.isDefault && (
-                      <span style={{ fontSize: '10px', fontWeight: 800, padding: '2px 8px', borderRadius: '99px', background: '#174b36', color: '#ffffff' }}>
-                        العنوان الافتراضي ✓
-                      </span>
-                    )}
+              <div key={item.id} style={{ padding: '12px 14px', borderRadius: '14px', background: item.isDefault ? '#f4f9f6' : '#ffffff', border: item.isDefault ? '1.5px solid #174b36' : '1px solid #dde8e0', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
+                <div style={{ display: 'grid', gap: '4px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '7px', flexWrap: 'wrap' }}>
+                    <strong style={{ fontSize: '14px', color: '#143a28', fontWeight: 900 }}>{item.label}</strong>
+                    {item.isDefault && <span style={{ fontSize: '9.5px', fontWeight: 800, padding: '2px 7px', borderRadius: '99px', background: '#174b36', color: '#ffffff' }}>الافتراضي ✓</span>}
                   </div>
-                  <div style={{ fontSize: '12.5px', color: '#2b4737', fontWeight: 700 }}>
-                    {item.recipientName} · <span dir='ltr' style={{ color: '#174b36', fontWeight: 800 }}>{cleanYemeniPhone(item.phone)}</span>
-                  </div>
-                  <div style={{ fontSize: '12px', color: '#5b6f62' }}>
-                    {item.city} – {item.district.replace('—', '–')}{item.details ? (' · ' + item.details) : ''}
-                  </div>
+                  <div style={{ fontSize: '12px', color: '#2b4737', fontWeight: 700 }}>{item.recipientName} · <span dir='ltr' style={{ color: '#174b36', fontWeight: 800 }}>{cleanYemeniPhone(item.phone)}</span></div>
+                  <div style={{ fontSize: '11.5px', color: '#5b6f62' }}>{item.city} – {item.district.replace('—', '–')}{item.details ? (' · ' + item.details) : ''}</div>
                 </div>
                 <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
-                  {!item.isDefault && (
-                    <button type='button' className='small-button' onClick={() => { customer.setDefaultAddress(item.id); toast.success('تم تعيينه كعنوان افتراضي ✓'); }}>
-                      تعيين كافتراضي
-                    </button>
-                  )}
-                  <button
-                    type='button'
-                    className='small-button'
-                    onClick={() => {
-                      setEditingAddressId(item.id);
-                      setAddress({
-                        label: item.label,
-                        recipientName: item.recipientName,
-                        phone: cleanYemeniPhone(item.phone),
-                        city: item.city,
-                        district: item.district,
-                        details: item.details,
-                        isDefault: item.isDefault,
-                      });
-                      setShowAddressForm(true);
-                    }}
-                  >
-                    تعديل
-                  </button>
-                  <button
-                    type='button'
-                    className='icon-button'
-                    aria-label='حذف العنوان'
-                    onClick={() => {
-                      customer.removeAddress(item.id);
-                      toast.success('تم حذف العنوان المحفوظ.');
-                      if (editingAddressId === item.id) resetAddressForm();
-                    }}
-                  >
-                    <Trash2 size={16} />
-                  </button>
+                  {!item.isDefault && <button type='button' className='small-button' onClick={() => { customer.setDefaultAddress(item.id); toast.success('تم تعيينه كعنوان افتراضي ✓'); }}>تعيين كافتراضي</button>}
+                  <button type='button' className='small-button' onClick={() => { setEditingAddressId(item.id); setAddress({ label: item.label, recipientName: item.recipientName, phone: cleanYemeniPhone(item.phone), city: item.city, district: item.district, details: item.details, isDefault: item.isDefault }); setShowAddressForm(true); }}>تعديل</button>
+                  <button type='button' className='icon-button' aria-label='حذف العنوان' onClick={() => { customer.removeAddress(item.id); toast.success('تم حذف العنوان المحفوظ.'); if (editingAddressId === item.id) resetAddressForm(); }}><Trash2 size={15} /></button>
                 </div>
               </div>
             ))}
@@ -3067,37 +2911,27 @@ function AccountPage() {
         )}
 
         {showAddressForm && (
-          <form className='form-stack' onSubmit={submitAddress} style={{ marginTop: '8px', padding: '16px', borderRadius: '16px', background: '#f8fbf9', border: '1px solid #dce8df', gap: '12px' }}>
-            <strong style={{ fontSize: '14px', color: '#174b36' }}>{editingAddressId ? 'تعديل العنوان المحفوظ' : 'إضافة عنوان توصيل جديد'}</strong>
+          <form className='form-stack' onSubmit={submitAddress} style={{ marginTop: '6px', padding: '14px', borderRadius: '14px', background: '#f8fbf9', border: '1px solid #dce8df', gap: '10px' }}>
+            <strong style={{ fontSize: '13.5px', color: '#174b36' }}>{editingAddressId ? 'تعديل العنوان المحفوظ' : 'إضافة عنوان توصيل جديد'}</strong>
             <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
               {['المنزل', 'العمل', 'منزل العائلة', 'استراحة'].map(preset => (
-                <button key={preset} type='button' className={'small-button' + (address.label === preset ? ' selected' : '')} style={{ minHeight: '30px', padding: '4px 12px', fontSize: '12px' }} onClick={() => setAddress({ ...address, label: preset })}>{preset}</button>
+                <button key={preset} type='button' className={'small-button' + (address.label === preset ? ' selected' : '')} style={{ minHeight: '28px', padding: '3px 10px', fontSize: '11.5px' }} onClick={() => setAddress({ ...address, label: preset })}>{preset}</button>
               ))}
             </div>
             <div className='form-grid' style={{ gap: '10px' }}>
               <label>تسمية العنوان *<input required maxLength={80} value={address.label} onChange={event => setAddress({ ...address, label: event.target.value })} placeholder='المنزل، العمل...' style={{ background: '#ffffff' }} /></label>
               <label>اسم المستلم *<input required minLength={2} maxLength={160} autoComplete='name' value={address.recipientName} onChange={event => setAddress({ ...address, recipientName: event.target.value })} style={{ background: '#ffffff' }} /></label>
               <label>
-                <span style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>رقم الجوال اليمني (9 أرقام) *</span>
-                  <small style={{ fontSize: '10.5px', fontWeight: 800, color: addressPhoneValid ? '#174b36' : '#b43c2f' }}>{address.phone.length}/9</small>
-                </span>
+                <span style={{ display: 'flex', justifyContent: 'space-between' }}><span>رقم الجوال اليمني (9 أرقام) *</span><small style={{ fontSize: '10px', fontWeight: 800, color: addressPhoneValid ? '#174b36' : '#b43c2f' }}>{address.phone.length}/9</small></span>
                 <input required type='tel' inputMode='numeric' maxLength={9} dir='ltr' value={address.phone} onChange={event => setAddress({ ...address, phone: cleanYemeniPhone(event.target.value) })} placeholder='77XXXXXXX' style={{ background: '#ffffff', textAlign: 'left', fontWeight: 800 }} />
               </label>
             </div>
-            <ThreeStepLocationPicker
-              tree={deliveryTree}
-              city={address.city}
-              district={address.district}
-              phone={address.phone}
-              subtotal={0}
-              onChangeLocation={(nextCity, nextDist) => setAddress(curr => ({ ...curr, city: nextCity, district: nextDist }))}
-            />
+            <ThreeStepLocationPicker tree={deliveryTree} city={address.city} district={address.district} phone={address.phone} subtotal={0} onChangeLocation={(nextCity, nextDist) => setAddress(curr => ({ ...curr, city: nextCity, district: nextDist }))} />
             <label>أقرب معلم للعنوان *<input required maxLength={300} value={address.details} onChange={event => setAddress({ ...address, details: event.target.value })} placeholder='مثال: بجوار جامع...، أمام صيدلية...' style={{ background: '#ffffff' }} /></label>
             <label className='checkbox-row'><input type='checkbox' checked={address.isDefault} onChange={event => setAddress({ ...address, isDefault: event.target.checked })} /><span>تعيين كعنوان افتراضي للطلبات القادمة</span></label>
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
               <button type='button' className='button button-quiet' onClick={resetAddressForm}>إلغاء</button>
-              <button type='submit' className='button button-primary' disabled={!addressPhoneValid || !address.city || !address.district}><Check size={16} /> {editingAddressId ? 'تحديث العنوان' : 'حفظ العنوان'}</button>
+              <button type='submit' className='button button-primary' disabled={!addressPhoneValid || !address.city || !address.district}><Check size={15} /> {editingAddressId ? 'تحديث العنوان' : 'حفظ العنوان'}</button>
             </div>
           </form>
         )}
@@ -4035,6 +3869,6 @@ export default function Home() {
     if (location === "/assistant") return <AssistantPage />;
     return <HomePage data={data} onOpen={openProduct} onAiRecipe={setActiveAiProduct} />;
   }, [location, productId, productPath, data]);
-  return <div className="store-app" dir="rtl"><Header data={data} onSearch={text => navigate(`/products${text ? `?search=${encodeURIComponent(text)}` : ""}`)} /><GamifiedRewardBar settings={data.settings} location={location} />{home.isError && !data.products?.length && !data.categories?.length && <div className="connection-strip"><span>الاتصال بالخدمة غير متاح مؤقتًا</span><button onClick={() => void home.refetch()}>إعادة المحاولة</button></div>}{home.isError && !data.products?.length && !data.categories?.length ? <main className="page-shell inner-page"><LoadError onRetry={() => void home.refetch()} /></main> : content}<footer className="store-footer"><div className="footer-brand"><span className={`brand-mark ${data.settings.storeIconUrl ? "has-brand-image" : ""}`}>{data.settings.storeIconUrl ? <img src={data.settings.storeIconUrl} alt="" /> : <Leaf size={18} />}</span><span><b>ORIGINAL</b><small>{data.settings.storeName === "ORIGINAL – أورجنال" || !data.settings.storeName ? "أورجنال" : data.settings.storeName}</small></span></div>{shouldShowFooterDescription(data.settings.storeDescription) && <span>{data.settings.storeDescription}</span>}<small>© {new Date().getFullYear()} {data.settings.storeName || "ORIGINAL"}</small></footer>{activeAiProduct && <AiRecipeModal product={activeAiProduct} onClose={() => setActiveAiProduct(null)} />}
+  return <div className="store-app" dir="rtl"><Header data={data} onSearch={text => navigate(`/products${text ? `?search=${encodeURIComponent(text)}` : ""}`)} />{!location.startsWith("/assistant") && <GamifiedRewardBar settings={data.settings} location={location} />}{home.isError && !data.products?.length && !data.categories?.length && <div className="connection-strip"><span>الاتصال بالخدمة غير متاح مؤقتًا</span><button onClick={() => void home.refetch()}>إعادة المحاولة</button></div>}{home.isError && !data.products?.length && !data.categories?.length ? <main className="page-shell inner-page"><LoadError onRetry={() => void home.refetch()} /></main> : content}{!location.startsWith("/assistant") && <footer className="store-footer"><div className="footer-brand"><span className={`brand-mark ${data.settings.storeIconUrl ? "has-brand-image" : ""}`}>{data.settings.storeIconUrl ? <img src={data.settings.storeIconUrl} alt="" /> : <Leaf size={18} />}</span><span><b>ORIGINAL</b><small>{data.settings.storeName === "ORIGINAL – أورجنال" || !data.settings.storeName ? "أورجنال" : data.settings.storeName}</small></span></div>{shouldShowFooterDescription(data.settings.storeDescription) && <span>{data.settings.storeDescription}</span>}<small>© {new Date().getFullYear()} {data.settings.storeName || "ORIGINAL"}</small></footer>}{activeAiProduct && <AiRecipeModal product={activeAiProduct} onClose={() => setActiveAiProduct(null)} />}
     <BottomNav active={currentNav} /></div>;
 }
