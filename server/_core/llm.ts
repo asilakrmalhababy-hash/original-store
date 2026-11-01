@@ -60,27 +60,48 @@ function isTobaccoOrNonFood(name: string, category = ""): boolean {
 
 function smartExtract(rawText: string, catalog: Array<{ id: number; name: string; category?: string; price: number; unit?: string }>, userQuery: string): string | null {
   let clean = rawText
-    .replace(/<think>[\s\S]*?<\/think>/gi, "")
-    .replace(/<think>[\s\S]*/gi, "")
-    .replace(/\x60\x60\x60(?:json)?/gi, "")
-    .replace(/\x60\x60\x60/g, "")
-    .replace(/(?:👨‍💼\s*)?إدارة المتجر\s*:?/g, "")
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/<think>[\s\S]*/gi, '')
+    .replace(/\x60\x60\x60(?:json)?/gi, '')
+    .replace(/\x60\x60\x60/g, '')
+    .replace(/(?:👨‍💼\s*)?إدارة المتجر\s*:?/g, '')
     .trim();
 
   if (!clean) return null;
 
-  if (clean.startsWith("{") && clean.includes('"message"')) {
+  if (clean.startsWith('{') && clean.includes('"message"')) {
     try {
       const parsed = JSON.parse(clean);
-      if (parsed && typeof parsed.message === "string" && parsed.message.trim()) {
-        parsed.message = parsed.message.replace(/(?:👨‍💼\s*)?إدارة المتجر\s*:?/g, "").trim();
+      if (parsed && typeof parsed.message === 'string' && parsed.message.trim()) {
+        parsed.message = parsed.message.replace(/(?:👨‍💼\s*)?إدارة المتجر\s*:?/g, '').trim();
         return JSON.stringify(parsed);
       }
     } catch {}
   }
 
+  const norm = (s: string) => String(s || '').replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي').replace(/ال/g, '').toLowerCase().trim();
+  const normUser = norm(userQuery);
+  const isProductModalQuery = /(?:طرق لتحضير|طرق تحضير|أفكار وطرق|افكار وطرق|طرق تقديم|التعديل المطلوب|«[^»]+»)/i.test(userQuery);
+
+  let targetProduct: { id: number; name: string; category?: string; price: number; unit?: string } | undefined;
+  const guillemetMatch = userQuery.match(/«([^»]+)»/);
+  if (guillemetMatch && guillemetMatch[1]) {
+    const gNorm = norm(guillemetMatch[1]);
+    targetProduct = catalog.find(p => norm(p.name) === gNorm || norm(p.name).includes(gNorm) || gNorm.includes(norm(p.name)));
+  }
+  if (!targetProduct) {
+    for (const p of catalog) {
+      const np = norm(p.name);
+      if (np.length >= 2 && normUser.includes(np)) {
+        targetProduct = p;
+        break;
+      }
+    }
+  }
+
   const cartItemsMap = new Map<number, number>();
-  let cartAction: "none" | "add" | "remove" = "none";
+  const ingredientsList: Array<{ productId: number; quantity: number }> = [];
+  let cartAction: 'none' | 'add' | 'remove' = 'none';
   const suggestedQuestions: string[] = [];
   const missingIngredients: string[] = [];
 
@@ -92,31 +113,35 @@ function smartExtract(rawText: string, catalog: Array<{ id: number; name: string
         const pid = Number(m[1]);
         const qty = Math.max(1, Number(m[2] || 1));
         if (catalog.some(p => p.id === pid)) {
-          cartAction = "add";
-          cartItemsMap.set(pid, (cartItemsMap.get(pid) ?? 0) + qty);
+          if (isProductModalQuery) {
+            ingredientsList.push({ productId: pid, quantity: qty });
+          } else {
+            cartAction = 'add';
+            cartItemsMap.set(pid, (cartItemsMap.get(pid) ?? 0) + qty);
+          }
         }
       }
     }
-    return "";
+    return '';
   });
 
   clean = clean.replace(/\[\s*(?:طلب_توفير|طلب توفير|توفير|نواقص)\s*:\s*([^\]]+)\]/gi, (_, itemStr) => {
-    const item = String(itemStr || "").trim();
-    if (item) missingIngredients.push("طلب توفير: " + item.slice(0, 80));
-    return "";
+    if (!isProductModalQuery && !targetProduct) {
+      const item = String(itemStr || '').trim();
+      if (item) missingIngredients.push('طلب توفير: ' + item.slice(0, 80));
+    }
+    return '';
   });
 
   clean = clean.replace(/\[\s*(?:أزرار|ازرار|خيارات|مقترحات)\s*:\s*([^\]]+)\]/gi, (_, btns) => {
     String(btns).split(/[|،,]/).map(s => s.trim()).filter(Boolean).slice(0, 4).forEach(b => suggestedQuestions.push(b));
-    return "";
+    return '';
   });
 
-  clean = clean.replace(/\*\*/g, "").trim();
+  clean = clean.replace(/\*\*/g, '').trim();
   if (!clean) return null;
 
-  const norm = (s: string) => s.replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي").toLowerCase().trim();
   const normClean = norm(clean);
-  const normUser = norm(userQuery);
   const userAskedForWater = /(?:ماء|مياه|مويه|عصير|مشروب|شرب)/i.test(normUser);
 
   if (!userAskedForWater && cartItemsMap.size >= 3) {
@@ -128,158 +153,202 @@ function smartExtract(rawText: string, catalog: Array<{ id: number; name: string
     }
   }
 
+  if (isProductModalQuery && targetProduct) {
+    if (!ingredientsList.some(i => i.productId === targetProduct!.id)) {
+      ingredientsList.unshift({ productId: targetProduct.id, quantity: 1 });
+    }
+  }
+
   const userWantsToAdd = /(?:اضف|أضف|ضيف|حط|اشتري|اعتمد|جهز لي السله|اعطيني السله|هات السله|تمام اعتمد)/i.test(normUser);
-  if (cartItemsMap.size === 0 && userWantsToAdd) {
-    for (const p of catalog) {
-      if (isTobaccoOrNonFood(p.name, p.category) && !/(?:سجائر|سجاير|دخان|شملان|كمران)/.test(normUser)) continue;
-      const np = norm(p.name);
-      if (np.length >= 3 && (normClean.includes(np) || normUser.includes(np))) {
-        cartItemsMap.set(p.id, 1);
-        if (cartItemsMap.size >= 5) break;
+  if (!isProductModalQuery && cartItemsMap.size === 0 && userWantsToAdd) {
+    if (targetProduct) {
+      cartItemsMap.set(targetProduct.id, 1);
+    } else {
+      for (const p of catalog) {
+        if (isTobaccoOrNonFood(p.name, p.category) && !/(?:سجائر|سجاير|دخان|شملان|كمران)/.test(normUser)) continue;
+        const np = norm(p.name);
+        if (np.length >= 3 && (normClean.includes(np) || normUser.includes(np))) {
+          cartItemsMap.set(p.id, 1);
+          if (cartItemsMap.size >= 5) break;
+        }
       }
     }
-    if (cartItemsMap.size > 0) cartAction = "add";
+    if (cartItemsMap.size > 0) cartAction = 'add';
   }
 
-  const lines = clean.split("\n").map(l => l.trim()).filter(Boolean);
-  const conciseLines = lines.filter(l => !( /^[*•\-]\s+.+:\s*\d+/.test(l) && lines.length > 4 )).slice(0, 4);
-  clean = (conciseLines.length > 0 ? conciseLines.join("\n") : lines.slice(0, 3).join("\n")).slice(0, 350);
+  const lines = clean.split('\n').map(l => l.trim()).filter(Boolean);
+  if (isProductModalQuery) {
+    clean = lines.slice(0, 12).join('\n').slice(0, 900);
+  } else {
+    const conciseLines = lines.filter(l => !( /^[*•\-]\s+.+:\s*\d+/.test(l) && lines.length > 5 )).slice(0, 6);
+    clean = (conciseLines.length > 0 ? conciseLines.join('\n') : lines.slice(0, 4).join('\n')).slice(0, 500);
+  }
 
   clean = clean
-    .replace(/(?:تمام[،,]?\s*)?(?:ضفت|أضفت|اضفت|تمت إضافة|تم اضافه)\s+([^.\n]+?)\s*(?:بالسلة|للسلة|إلى السلة|في السلة)(?:\s*بنجاح)?[\.!]?/g, "جهزت لك ($1) في البطاقة بالأسفل 👇 اضغط «✅ اعتمد الإضافة»:")
+    .replace(/(?:تمام[،,]?\s*)?(?:ضفت|أضفت|اضفت|تمت إضافة|تم اضافه)\s+([^.\n]+?)\s*(?:بالسلة|للسلة|إلى السلة|في السلة)(?:\s*بنجاح)?[\.!]?/g, 'جهزت لك ($1) في البطاقة بالأسفل 👇 اضغط «✅ اعتمد الإضافة»:')
     .trim();
 
-  const mentionsUnavailable = /(?:غير متوفر|ما عندنا|لا يتوفر|مش متوفر|مافيش|لا يوجد لدينا|رفعت طلب|طلب توفير)/i.test(clean);
-  if (mentionsUnavailable && missingIngredients.length === 0 && userQuery.trim().length > 1) {
-    missingIngredients.push("طلب توفير: " + userQuery.trim().slice(0, 80));
-  }
-
-  if (missingIngredients.length > 0 && !clean.includes("770731619")) {
-    clean += "\n📲 تم رفع طلب توفير للإدارة، وللتواصل المباشر مع المالك: 770731619";
+  if (!isProductModalQuery && !targetProduct) {
+    const mentionsUnavailable = /(?:غير متوفر حاليا|ما عندنا هذا المنتج|لا يتوفر لدينا حاليا|رفعت طلب توفير)/i.test(clean);
+    if (mentionsUnavailable && missingIngredients.length === 0 && userQuery.trim().length > 1) {
+      missingIngredients.push('طلب توفير: ' + userQuery.trim().slice(0, 80));
+    }
+    if (missingIngredients.length > 0 && !clean.includes('770731619')) {
+      clean += '\n📲 تم رفع طلب توفير للإدارة، وللتواصل المباشر مع المالك: 770731619';
+    }
   }
 
   const filteredSuggestions = suggestedQuestions.filter(q => !/^(?:نعم|لا|نعم أضف|نعم اضف|نعم أضفها|لا شكراً|لا شكرا)$/i.test(q.trim()));
   if (filteredSuggestions.length === 0) {
-    filteredSuggestions.push("🌅 مقاضي الصباح", "🍅 سلة المطبخ", "📦 سلة أسبوعية للبيت", "🍳 وصفة طبخة");
+    filteredSuggestions.push('🌅 مقاضي الصباح', '🍅 سلة المطبخ', '📦 سلة أسبوعية للبيت', '🍳 وصفة طبخة');
   }
 
   const cartItems = [...cartItemsMap.entries()].slice(0, 7).map(([productId, quantity]) => ({ productId, quantity }));
 
   return JSON.stringify({
     message: clean,
-    recipeName: "",
+    recipeName: '',
     servings: 0,
-    ingredients: [],
+    ingredients: ingredientsList,
     steps: [],
     missingIngredients,
-    cartAction: cartItems.length > 0 ? cartAction : "none",
+    cartAction: cartItems.length > 0 ? cartAction : 'none',
     cartItems,
     suggestedQuestions: filteredSuggestions.slice(0, 4),
   });
 }
 
 export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
-  const rawUser = params.messages.filter(m => m.role === "user").map(m => extractText(m.content)).join("\n");
+  const rawUser = params.messages.filter(m => m.role === 'user').map(m => extractText(m.content)).join('\n');
 
   let catalog: Array<{ id: number; name: string; category?: string; price: number; unit?: string }> = [];
-  const catMatch = rawUser.match(/\[(\{\"id\":[\s\S]*?\})\]/);
+  const catMatch = rawUser.match(/\[(\{"id":[\s\S]*?\})\]/);
   if (catMatch) {
-    try { catalog = JSON.parse("[" + catMatch[1] + "]"); } catch {}
+    try { catalog = JSON.parse('[' + catMatch[1] + ']'); } catch {}
   }
 
+  let currentMsg = rawUser;
+  const reqIdx = rawUser.lastIndexOf('رسالة العميل الحالية:');
+  if (reqIdx >= 0) {
+    currentMsg = rawUser.slice(reqIdx + 'رسالة العميل الحالية:'.length).trim();
+  }
+
+  let recentHistory = '';
+  const histMatch = rawUser.match(/سجل المحادثة السابق[^:]*:\n([\s\S]*?)\n\nرسالة العميل الحالية:/);
+  if (histMatch) {
+    recentHistory = histMatch[1]
+      .split('\n')
+      .filter(line => !line.includes('إدارة المتجر'))
+      .slice(-4)
+      .join('\n')
+      .slice(-320);
+  }
+
+  const norm = (s: string) => String(s || '').replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي').replace(/ال/g, '').toLowerCase().trim();
+  const normQuery = norm(currentMsg + ' ' + recentHistory);
+  const queryWords = normQuery.split(/\s+/).filter(w => w.length >= 2);
+
   const userAskedForTobacco = /(?:سجائر|سجاير|دخان|شملان|كمران|معسل|تبغ|ولاعة|كبريت)/i.test(rawUser);
-  const filteredCatalog = userAskedForTobacco
+  const baseFilteredCatalog = userAskedForTobacco
     ? catalog
     : catalog.filter(p => !isTobaccoOrNonFood(p.name, p.category));
 
-  const compactCatalog = filteredCatalog
-    .slice(0, 45)
-    .map(p => "#" + p.id + ":" + p.name + "(" + p.price + (p.unit ? "/" + p.unit : "") + ")[" + (p.category || "عام") + "]")
-    .join("|");
+  const rankedCatalog = [...baseFilteredCatalog].sort((a, b) => {
+    const na = norm(a.name);
+    const nb = norm(b.name);
+    const scoreA = (normQuery.includes(na) ? 120 : 0) + queryWords.reduce((s, w) => s + (na.includes(w) ? 20 : 0), 0);
+    const scoreB = (normQuery.includes(nb) ? 120 : 0) + queryWords.reduce((s, w) => s + (nb.includes(w) ? 20 : 0), 0);
+    return scoreB - scoreA;
+  });
 
-  let cartSummary = "فارغة";
+  const compactCatalog = rankedCatalog
+    .slice(0, 95)
+    .map(p => '#' + p.id + ':' + p.name + '(' + p.price + (p.unit ? '/' + p.unit : '') + ')[' + (p.category || 'عام') + ']')
+    .join('|');
+
+  let cartSummary = 'فارغة';
   const cartMatch = rawUser.match(/السلة الحالية[^:]*:\s*(\[[^\n]*\])/);
   if (cartMatch) {
     try {
       const c = JSON.parse(cartMatch[1]);
       if (Array.isArray(c) && c.length > 0) {
-        cartSummary = c.map((i: any) => i.name + "×" + i.quantity).join("،");
+        cartSummary = c.map((i: any) => i.name + '×' + i.quantity).join('،');
       }
     } catch {}
   }
 
-  let recentHistory = "";
-  const histMatch = rawUser.match(/سجل المحادثة السابق[^:]*:\n([\s\S]*?)\n\nرسالة العميل الحالية:/);
-  if (histMatch) {
-    recentHistory = histMatch[1]
-      .split("\n")
-      .filter(line => !line.includes("إدارة المتجر"))
-      .slice(-4)
-      .join("\n")
-      .slice(-320);
-  }
+  const ownerCustomNote = rawUser.includes('توجيهات مالك المتجر الخاصة:')
+    ? rawUser.slice(rawUser.indexOf('توجيهات مالك المتجر الخاصة:')).trim()
+    : '';
 
-  let currentMsg = rawUser;
-  const reqIdx = rawUser.lastIndexOf("رسالة العميل الحالية:");
-  if (reqIdx >= 0) {
-    currentMsg = rawUser.slice(reqIdx + "رسالة العميل الحالية:".length).trim();
-  }
+  const isProductModalQuery = /(?:طرق لتحضير|طرق تحضير|أفكار وطرق|افكار وطرق|طرق تقديم|التعديل المطلوب|«[^»]+»)/i.test(currentMsg);
+  const guillemetMatch = currentMsg.match(/«([^»]+)»/);
+  const modalProductName = guillemetMatch ? guillemetMatch[1].trim() : '';
+  const matchedModalProduct = modalProductName
+    ? catalog.find(p => norm(p.name) === norm(modalProductName) || norm(p.name).includes(norm(modalProductName)) || norm(modalProductName).includes(norm(p.name)))
+    : undefined;
+  const isReadyDrinkOrSnack = /(?:عصير|شراب|مشروب|موسي|استروك|طاقة|طاقه|زنجبيل|ون سي|راني|دلتا|روابي|سيزر|سن توب|بيبسي|كوكاكولا|سفن|ميرندا|فانتا|سبرايت|مياه|ماء|بسكويت|شيبس|شوكولاتة|شوكولاته|كيك)/i.test(modalProductName);
 
-  const ownerCustomNote = rawUser.includes("توجيهات مالك المتجر الخاصة:")
-    ? rawUser.slice(rawUser.indexOf("توجيهات مالك المتجر الخاصة:")).trim()
-    : "";
-
-  const systemPrompt = [
-    "أنت «بائع وشيف أورجنال الذكي» — إنسان لبق وشاطر، تاجر يمني أصيل يناقش الزبون بذكاء ويرشده لما ينفعه.",
-    "أهم مهاراتك الذكية:",
-    "1. الحوار والمناقشة الاستشارية: لا ترمِ بطاقات سلة أو قوائم أسعار جاهزة في كل رسالة! ناقش الزبون بلطف وافهم احتياجه الحقيقي أولاً:",
-    "   - إذا سأل عن (سلة أسبوعية): اسأله بذكاء كم شخص في البيت وما إذا كان يفضل التركيز على خضار الطبيخ اليومي أو إضافة معلبات وبقوليات، وضع أزراراً لعدد الأفراد [أزرار: 👨‍👩‍👧 نحن 3-4 أشخاص | 👨‍👩‍👧‍👦 نحن 5-7 أشخاص | 🍅 ركز على الخضار | 🥫 تشكيلة خضار ومعلبات].",
-    "   - بعد معرفة عدد الأفراد أو عند اعتماد السلة: احسب كميات أسبوعية حقيقية تكفي أسبوعاً فعلاً (مثلاً لـ 4 أشخاص: 3 كغ بطاط، 2 كغ طماطم، 1.5 كغ بصل، ربع كغ ثوم، علبتين فول)، وعندها فقط ضع كود [أضف: رقم_البطاط: 3 | رقم_الطماطم: 2 | ...] لتظهر بطاقة الإضافة بالكميات الموزونة!",
-    "   - إذا طلب (طبخة أو وصفة): ناقشه أولاً (نفسك في خضار مشكل بالفرن، ولا قلابة فول وتونة، ولا سلطة وسحاوق؟)، وعندما يختار اكتب الوصفة في سطرين شهية وضع كود المقادير لتجهيزها له.",
-    "2. متى تضع كود [أضف: ...]؟ ضعه فقط عند الوصول لتشكيلة نهائية واضحة أو عندما يقول الزبون (تمام اعتمدها / أضف / وريني السلة). أثناء النقاش الأولي تحدث معه كإنسان بدون كود [أضف] لتجنب إظهار بطاقات غير مطلوبة.",
-    "3. واقعية تامة: لا مياه معدنية في الطبخات، ولا سجائر أو دخان في الوجبات أو الاقتراحات العامة.",
-    "4. الرد مختصر (سطرين إلى 4 أسطر مفيدة وذكية لتوفير التوكنز والوقت).",
-    ownerCustomNote ? ("توجيهات إضافية من مالك المتجر:\n" + ownerCustomNote) : ""
-  ].filter(Boolean).join("\n");
+  const systemPrompt = isProductModalQuery
+    ? [
+        'أنت «الشيف ومساعد التسوق الذكي» في متجر أورجنال في اليمن.',
+        'تنبيه صارم جداً: المنتج «' + (modalProductName || 'المختار') + '» متوفر وموجود حالياً أمام الزبون في المتجر! يُمنع منعاً باتاً القول إنه غير متوفر أو الاعتذار عن عدم توفره!',
+        isReadyDrinkOrSnack
+          ? 'هذا المنتج مشروب/سناك جاهز للتناول («' + modalProductName + '»). قدّم للزبون 3 أفكار رائعة ومختصرة للاستمتاع به: 1️⃣ أفضل طريقة لتقديمه بارداً ومنعشاً، 2️⃣ خلطة مبتكرة أو تقديم مميز به، 3️⃣ أفضل وقت لتناوله وما يناسبه من سناك خفيف.'
+          : 'هذا المنتج («' + modalProductName + '») من منتجات المتجر. قدّم للزبون 3 طرق/وصفات شهية وعملية لتحضيره أو استخدامه: 1️⃣ طريقة سريعة واقتصادية، 2️⃣ طريقة يمنية/منزلية أصيلة، 3️⃣ طريقة صحية وخفيفة. وإذا طلب الزبون تعديلاً محدداً في رسالته فلبِّ التعديل بدقة!',
+        'تحدث فقط عن «' + (modalProductName || 'هذا المنتج') + '» ولا تذكر أبداً طبخات عشوائية لا علاقة لها به (مثل قلابة فول أو غيرها إلا إذا كان المنتج نفسه فول!).',
+        matchedModalProduct ? ('في نهاية ردك ضع كود الإضافة للمنتج الأساسي هكذا: [أضف: ' + matchedModalProduct.id + ': 1]') : '',
+        'اجعل ردك مرتباً وواضحاً في 4 إلى 7 أسطر جذابة بدون علامات نجمة **.'
+      ].filter(Boolean).join('\n')
+    : [
+        'أنت «بائع وشيف أورجنال الذكي» — إنسان لبق وشاطر، تاجر يمني أصيل يناقش الزبون بذكاء ويرشده لما ينفعه.',
+        'قواعد مهمة جداً:',
+        '1. ابحث جيداً في قائمة (المتوفر بالمتجر) أدناه قبل أن تقول أن أي منتج غير متوفر! جميع المنتجات الموجودة في القائمة متوفرة حالياً في المتجر بأسعارها الموضحة.',
+        '2. إذا سأل الزبون عن منتج متوفر أو ضغط على اقتراح منتج، اعرض له المنتج بسعره الحقيقي ولا تقل أبداً إنه غير متوفر، وضع له أزراراً مناسبة [أزرار: أضف للسلة | أفكار لتحضيره | منتجات مشابهة].',
+        '3. إذا طلب الزبون إضافة منتج للسلة أو اعتمد تشكيلة، ضع كود [أضف: رقم_المنتج: الكمية] لتظهر له بطاقة الإضافة الفورية.',
+        '4. لا تخلط بين المنتجات ولا تقترح طبخات عشوائية غير مرتبطة بكلام الزبون. اجعل ردك ودوداً ومختصراً (سطرين إلى 4 أسطر) بدون علامات **.',
+        ownerCustomNote ? ('توجيهات إضافية من مالك المتجر:\n' + ownerCustomNote) : ''
+      ].filter(Boolean).join('\n');
 
   const compactUser = [
-    "/no_think",
-    "المتوفر بالمتجر مرتب من الأرخص للأغلى: " + (compactCatalog || "لا يوجد"),
-    "السلة: " + cartSummary,
-    recentHistory ? "السياق:\n" + recentHistory : "",
-    "الزبون: " + currentMsg
-  ].filter(Boolean).join("\n");
+    '/no_think',
+    matchedModalProduct ? ('المنتج المختار حالياً في المتجر (متوفر 100%): #' + matchedModalProduct.id + ' ' + matchedModalProduct.name + ' بسعر ' + matchedModalProduct.price + ' ر.ي / ' + (matchedModalProduct.unit || 'حبة')) : '',
+    'المتوفر بالمتجر: ' + (compactCatalog || 'لا يوجد'),
+    !isProductModalQuery ? ('السلة: ' + cartSummary) : '',
+    (!isProductModalQuery && recentHistory) ? ('السياق:\n' + recentHistory) : '',
+    'الزبون: ' + currentMsg
+  ].filter(Boolean).join('\n');
 
   const keys = getAllActiveKeys();
-  const P = ["ht", "tps", "://"].join("");
+  const P = ['ht', 'tps', '://'].join('');
 
   for (let attempt = 0; attempt < keys.length; attempt++) {
     const idx = (keyIndex + attempt) % keys.length;
     const apiKey = keys[idx];
-    const isGroq = apiKey.startsWith("gsk_");
+    const isGroq = apiKey.startsWith('gsk_');
     const url = isGroq
-      ? P + ["api.groq.com", "openai", "v1", "chat", "completions"].join("/")
-      : P + ["openrouter.ai", "api", "v1", "chat", "completions"].join("/");
+      ? P + ['api.groq.com', 'openai', 'v1', 'chat', 'completions'].join('/')
+      : P + ['openrouter.ai', 'api', 'v1', 'chat', 'completions'].join('/');
 
     const models = isGroq
-      ? ["llama-3.3-70b-versatile", "qwen/qwen3.8-27b", "openai/gpt-oss-120b"]
-      : ["qwen/qwen3-235b-a22b:free", "meta-llama/llama-3.3-70b-instruct:free"];
+      ? ['llama-3.3-70b-versatile', 'qwen/qwen3.8-27b', 'openai/gpt-oss-120b']
+      : ['qwen/qwen3-235b-a22b:free', 'meta-llama/llama-3.3-70b-instruct:free'];
 
     for (const model of models) {
       try {
         const res = await fetch(url, {
-          method: "POST",
+          method: 'POST',
           headers: {
-            "content-type": "application/json",
-            authorization: "Bearer " + apiKey,
+            'content-type': 'application/json',
+            authorization: 'Bearer ' + apiKey,
           },
           body: JSON.stringify({
             model,
-            temperature: 0.35,
-            max_tokens: 280,
+            temperature: 0.3,
+            max_tokens: isProductModalQuery ? 420 : 300,
             messages: [
-              { role: "system", content: systemPrompt },
-              { role: "user", content: compactUser }
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: compactUser }
             ],
           }),
         });
@@ -291,18 +360,18 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
 
         const data: any = await res.json();
         const rawReply = data?.choices?.[0]?.message?.content;
-        if (rawReply && typeof rawReply === "string" && rawReply.trim()) {
+        if (rawReply && typeof rawReply === 'string' && rawReply.trim()) {
           const extracted = smartExtract(rawReply, catalog, currentMsg);
           if (extracted) {
             keyIndex = idx;
             return {
-              id: data.id || "chatcmpl-ok",
+              id: data.id || 'chatcmpl-ok',
               created: Math.floor(Date.now() / 1000),
               model,
               choices: [{
                 index: 0,
-                message: { role: "assistant", content: extracted },
-                finish_reason: "stop",
+                message: { role: 'assistant', content: extracted },
+                finish_reason: 'stop',
               }],
             };
           }
@@ -311,7 +380,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     }
   }
 
-  throw new Error("AI_UNAVAILABLE");
+  throw new Error('AI_UNAVAILABLE');
 }
 export async function listLLMModels(): Promise<string[]> {
   if (!ENV.forgeApiUrl) throw new Error("MANUS_API_URL is not configured");

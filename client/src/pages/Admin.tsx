@@ -704,7 +704,7 @@ function SmartBulkProductsStudio({
   };
 
   const handleFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const fileList = Array.from(e.target.files ?? []).slice(0, 35);
+    const fileList = Array.from(e.target.files ?? []).slice(0, 250);
     e.target.value = '';
     if (!fileList.length) return;
 
@@ -2220,10 +2220,14 @@ function makeDefaultYemenDeliveryTree(): AdminDeliveryTreeConfig {
 }
 
 function parseAdminDeliveryTree(raw?: string | null): AdminDeliveryTreeConfig {
-  if (!raw) return makeDefaultYemenDeliveryTree();
+  let source = raw;
+  if (!source) {
+    try { source = localStorage.getItem('original-admin-delivery-tree-v1'); } catch {}
+  }
+  if (!source) return makeDefaultYemenDeliveryTree();
   try {
-    const p = JSON.parse(raw);
-    if (!p || typeof p !== "object") return { strictSelectionOnly: true, globalFreeAbove: null, cities: [], vipFreePhones: [] };
+    const p = JSON.parse(source);
+    if (!p || typeof p !== 'object') return { strictSelectionOnly: true, globalFreeAbove: null, cities: [], vipFreePhones: [] };
     return {
       strictSelectionOnly: p.strictSelectionOnly !== false,
       globalFreeAbove: p.globalFreeAbove && Number(p.globalFreeAbove) > 0 ? Math.floor(Number(p.globalFreeAbove)) : null,
@@ -2237,56 +2241,112 @@ function parseAdminDeliveryTree(raw?: string | null): AdminDeliveryTreeConfig {
 
 function DeliveryZonesPanel() {
   const utils = trpc.useUtils();
-  const query = trpc.commerce.admin.settings.get.useQuery(undefined, { retry: 1 });
+  const query = trpc.commerce.admin.settings.get.useQuery(undefined, { retry: 1, staleTime: 0, refetchOnMount: 'always' });
   const [loaded, setLoaded] = useState(false);
-  const [tree, setTree] = useState<AdminDeliveryTreeConfig>({ strictSelectionOnly: true, globalFreeAbove: null, cities: [], vipFreePhones: [] });
-  const [selectedCityId, setSelectedCityId] = useState<string>("");
-  const [selectedAreaId, setSelectedAreaId] = useState<string>("");
+  const [tree, setTree] = useState<AdminDeliveryTreeConfig>(() => parseAdminDeliveryTree(null));
+  const [selectedCityId, setSelectedCityId] = useState<string>('');
+  const [selectedAreaId, setSelectedAreaId] = useState<string>('');
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latestTreeRef = useRef<AdminDeliveryTreeConfig>(tree);
+  latestTreeRef.current = tree;
 
-  const [newCityName, setNewCityName] = useState("");
-  const [newCityFee, setNewCityFee] = useState("500");
-  const [newAreaName, setNewAreaName] = useState("");
-  const [newAreaFee, setNewAreaFee] = useState("500");
-  const [newStreetsText, setNewStreetsText] = useState("");
-  const [newStreetFee, setNewStreetFee] = useState("500");
-  const [newStreetPromoFee, setNewStreetPromoFee] = useState("");
-  const [newStreetFreeAbove, setNewStreetFreeAbove] = useState("");
-  const [newStreetEta, setNewStreetEta] = useState("25 - 40 دقيقة");
+  const [newCityName, setNewCityName] = useState('');
+  const [newCityFee, setNewCityFee] = useState('500');
+  const [newAreaName, setNewAreaName] = useState('');
+  const [newAreaFee, setNewAreaFee] = useState('500');
+  const [newStreetsText, setNewStreetsText] = useState('');
+  const [newStreetFee, setNewStreetFee] = useState('500');
+  const [newStreetPromoFee, setNewStreetPromoFee] = useState('');
+  const [newStreetFreeAbove, setNewStreetFreeAbove] = useState('');
+  const [newStreetEta, setNewStreetEta] = useState('25 - 40 دقيقة');
 
-  const [vipPhone, setVipPhone] = useState("");
-  const [vipName, setVipName] = useState("");
-  const [vipMinOrder, setVipMinOrder] = useState("0");
-  const [bulkAreaFee, setBulkAreaFee] = useState("");
+  const [vipPhone, setVipPhone] = useState('');
+  const [vipName, setVipName] = useState('');
+  const [vipMinOrder, setVipMinOrder] = useState('0');
+  const [bulkAreaFee, setBulkAreaFee] = useState('');
+
+  const syncLocalInstantCatalogTree = (serializedTree: string) => {
+    try {
+      localStorage.setItem('original-admin-delivery-tree-v1', serializedTree);
+      if (typeof window !== 'undefined' && (window as any).__INITIAL_CATALOG__?.settings) {
+        (window as any).__INITIAL_CATALOG__.settings.deliveryTreeConfig = serializedTree;
+      }
+      const rawCat = localStorage.getItem('original-catalog-instant-v2');
+      if (rawCat) {
+        const parsedCat = JSON.parse(rawCat);
+        if (parsedCat && typeof parsedCat === 'object') {
+          parsedCat.settings = { ...(parsedCat.settings || {}), deliveryTreeConfig: serializedTree };
+          localStorage.setItem('original-catalog-instant-v2', JSON.stringify(parsedCat));
+        }
+      }
+    } catch {}
+  };
 
   useEffect(() => {
-    if (!query.data || loaded) return;
-    const parsed = parseAdminDeliveryTree((query.data as any).deliveryTreeConfig);
-    setTree(parsed);
-    if (parsed.cities[0]) {
-      setSelectedCityId(parsed.cities[0].id);
-      if (parsed.cities[0].areas[0]) setSelectedAreaId(parsed.cities[0].areas[0].id);
+    if (!query.data) return;
+    const serverRaw = (query.data as any).deliveryTreeConfig;
+    if (!loaded) {
+      const parsed = parseAdminDeliveryTree(serverRaw);
+      setTree(parsed);
+      if (serverRaw) syncLocalInstantCatalogTree(serverRaw);
+      if (parsed.cities[0]) {
+        setSelectedCityId(parsed.cities[0].id);
+        if (parsed.cities[0].areas[0]) setSelectedAreaId(parsed.cities[0].areas[0].id);
+      }
+      setLoaded(true);
     }
-    setLoaded(true);
   }, [query.data, loaded]);
 
   const saveMut = trpc.commerce.admin.settings.save.useMutation({
     onSuccess: async () => {
-      toast.success("✅ تم حفظ واعتماد منظومة مناطق وأسعار وعروض التوصيل في المتجر فوراً!");
       await Promise.all([utils.commerce.admin.settings.get.invalidate(), utils.commerce.catalog.home.invalidate()]);
     },
     onError: err => toast.error(err.message),
   });
 
-  const saveTreeNow = (nextTree: AdminDeliveryTreeConfig) => {
-    setTree(nextTree);
-    const flatZones = nextTree.cities.map(c => ({ name: c.name, fee: c.defaultFee, enabled: c.enabled }));
+  const persistTreeToServer = (nextTree: AdminDeliveryTreeConfig, showToast = false) => {
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
+    }
+    const serialized = JSON.stringify(nextTree);
+    syncLocalInstantCatalogTree(serialized);
+    const flatZones = nextTree.cities.map(c => ({ name: c.name, fee: Math.max(0, Math.round(Number(c.defaultFee) || 0)), enabled: c.enabled !== false }));
     saveMut.mutate({
       deliveryEnabled: true,
-      deliveryFee: nextTree.cities[0]?.defaultFee ?? 500,
-      deliveryZones: flatZones.length ? flatZones : undefined,
-      deliveryTreeConfig: JSON.stringify(nextTree),
-    } as any);
+      deliveryFee: Math.max(0, Math.round(Number(nextTree.cities[0]?.defaultFee) || 500)),
+      deliveryZones: flatZones,
+      deliveryTreeConfig: serialized,
+    } as any, {
+      onSuccess: () => {
+        if (showToast) toast.success('✅ تم حفظ واعتماد أسعار ومناطق التوصيل في المتجر فوراً!');
+      }
+    });
   };
+
+  const saveTreeNow = (nextTree: AdminDeliveryTreeConfig, showToast = true) => {
+    setTree(nextTree);
+    latestTreeRef.current = nextTree;
+    persistTreeToServer(nextTree, showToast);
+  };
+
+  const scheduleAutoSave = (nextTree: AdminDeliveryTreeConfig) => {
+    setTree(nextTree);
+    latestTreeRef.current = nextTree;
+    syncLocalInstantCatalogTree(JSON.stringify(nextTree));
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    autoSaveTimerRef.current = setTimeout(() => {
+      persistTreeToServer(latestTreeRef.current, false);
+    }, 450);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+      }
+    };
+  }, []);
 
   const activeCity = tree.cities.find(c => c.id === selectedCityId) ?? tree.cities[0] ?? null;
   const activeArea = activeCity?.areas.find(a => a.id === selectedAreaId) ?? activeCity?.areas[0] ?? null;
@@ -2298,25 +2358,25 @@ function DeliveryZonesPanel() {
     e.preventDefault();
     const name = newCityName.trim();
     if (!name) return;
-    const id = "city_" + Date.now() + "_" + Math.random().toString(36).slice(2, 5);
-    const fee = Math.max(0, Number(newCityFee) || 0);
-    const nextCity: AdminDeliveryCity = { id, name, defaultFee: fee, freeDeliveryPromo: false, promoBanner: "", enabled: true, areas: [] };
+    const id = 'city_' + Date.now() + '_' + Math.random().toString(36).slice(2, 5);
+    const fee = Math.max(0, Math.round(Number(newCityFee) || 0));
+    const nextCity: AdminDeliveryCity = { id, name, defaultFee: fee, freeDeliveryPromo: false, promoBanner: '', enabled: true, areas: [] };
     const nextTree = { ...tree, cities: [...tree.cities, nextCity] };
-    setTree(nextTree);
     setSelectedCityId(id);
-    setSelectedAreaId("");
-    setNewCityName("");
-    toast.success("تمت إضافة المحافظة «" + name + "» — أضف الآن المديريات/المناطق بداخلها");
+    setSelectedAreaId('');
+    setNewCityName('');
+    saveTreeNow(nextTree, false);
+    toast.success('✅ تمت إضافة وحفظ المحافظة «' + name + '»');
   };
 
   const addArea = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activeCity) { toast.error("اختر المحافظة أولاً"); return; }
+    if (!activeCity) { toast.error('اختر المحافظة أولاً'); return; }
     const parts = newAreaName.split(/[,،\n]+/).map(s => s.trim()).filter(Boolean);
     if (!parts.length) return;
-    const fee = Math.max(0, Number(newAreaFee) || activeCity.defaultFee || 0);
+    const fee = Math.max(0, Math.round(Number(newAreaFee) || activeCity.defaultFee || 0));
     const createdAreas: AdminDeliveryArea[] = parts.map((pName, idx) => ({
-      id: "area_" + Date.now() + "_" + idx + "_" + Math.random().toString(36).slice(2, 5),
+      id: 'area_' + Date.now() + '_' + idx + '_' + Math.random().toString(36).slice(2, 5),
       name: pName,
       defaultFee: fee,
       enabled: true,
@@ -2326,28 +2386,28 @@ function DeliveryZonesPanel() {
       ...tree,
       cities: tree.cities.map(c => c.id === activeCity.id ? { ...c, areas: [...c.areas, ...createdAreas] } : c),
     };
-    setTree(nextTree);
     setSelectedAreaId(createdAreas[0].id);
-    setNewAreaName("");
-    toast.success("تمت إضافة " + createdAreas.length + " منطقة داخل «" + activeCity.name + "»");
+    setNewAreaName('');
+    saveTreeNow(nextTree, false);
+    toast.success('✅ تمت إضافة وحفظ ' + createdAreas.length + ' منطقة داخل «' + activeCity.name + '»');
   };
 
   const addStreets = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activeCity || !activeArea) { toast.error("اختر المحافظة والمنطقة أولاً"); return; }
+    if (!activeCity || !activeArea) { toast.error('اختر المحافظة والمنطقة أولاً'); return; }
     const parts = newStreetsText.split(/[,،\n]+/).map(s => s.trim()).filter(Boolean);
     if (!parts.length) return;
-    const fee = Math.max(0, Number(newStreetFee) || activeArea.defaultFee || 0);
-    const promoFee = newStreetPromoFee.trim() !== "" ? Math.max(0, Number(newStreetPromoFee)) : null;
-    const freeAbove = newStreetFreeAbove.trim() !== "" && Number(newStreetFreeAbove) > 0 ? Math.floor(Number(newStreetFreeAbove)) : null;
+    const fee = Math.max(0, Math.round(Number(newStreetFee) || activeArea.defaultFee || 0));
+    const promoFee = newStreetPromoFee.trim() !== '' ? Math.max(0, Math.round(Number(newStreetPromoFee))) : null;
+    const freeAbove = newStreetFreeAbove.trim() !== '' && Number(newStreetFreeAbove) > 0 ? Math.floor(Number(newStreetFreeAbove)) : null;
     const createdStreets: AdminDeliveryStreet[] = parts.map((sName, idx) => ({
-      id: "st_" + Date.now() + "_" + idx + "_" + Math.random().toString(36).slice(2, 5),
+      id: 'st_' + Date.now() + '_' + idx + '_' + Math.random().toString(36).slice(2, 5),
       name: sName,
       fee,
       promoFee,
-      promoLabel: promoFee !== null ? (promoFee === 0 ? "🎉 توصيل مجاني لفترة محدودة!" : "🔥 عرض توصيل مخفض!") : "",
+      promoLabel: promoFee !== null ? (promoFee === 0 ? '🎉 توصيل مجاني لفترة محدودة!' : '🔥 عرض توصيل مخفض!') : '',
       freeAbove,
-      etaText: newStreetEta.trim() || "25 - 40 دقيقة",
+      etaText: newStreetEta.trim() || '25 - 40 دقيقة',
       enabled: true,
     }));
     const nextTree = {
@@ -2357,185 +2417,235 @@ function DeliveryZonesPanel() {
         areas: c.areas.map(a => a.id !== activeArea.id ? a : { ...a, streets: [...a.streets, ...createdStreets] }),
       }),
     };
-    setTree(nextTree);
-    setNewStreetsText("");
-    toast.success("تمت إضافة " + createdStreets.length + " شارع/حي داخل «" + activeCity.name + " — " + activeArea.name + "»");
+    setNewStreetsText('');
+    saveTreeNow(nextTree, false);
+    toast.success('✅ تمت إضافة وحفظ ' + createdStreets.length + ' شارع/حي داخل «' + activeCity.name + ' — ' + activeArea.name + '»');
   };
 
-  const updateStreet = (cityId: string, areaId: string, streetId: string, patch: Partial<AdminDeliveryStreet>) => {
-    setTree(curr => ({
-      ...curr,
-      cities: curr.cities.map(c => c.id !== cityId ? c : {
+  const updateStreet = (cityId: string, areaId: string, streetId: string, patch: Partial<AdminDeliveryStreet>, immediate = false) => {
+    const nextTree = {
+      ...latestTreeRef.current,
+      cities: latestTreeRef.current.cities.map(c => c.id !== cityId ? c : {
         ...c,
         areas: c.areas.map(a => a.id !== areaId ? a : {
           ...a,
           streets: a.streets.map(s => s.id !== streetId ? s : { ...s, ...patch }),
         }),
       }),
-    }));
+    };
+    if (immediate) saveTreeNow(nextTree, false);
+    else scheduleAutoSave(nextTree);
   };
 
   const deleteStreet = (cityId: string, areaId: string, streetId: string) => {
-    setTree(curr => ({
-      ...curr,
-      cities: curr.cities.map(c => c.id !== cityId ? c : {
+    const nextTree = {
+      ...latestTreeRef.current,
+      cities: latestTreeRef.current.cities.map(c => c.id !== cityId ? c : {
         ...c,
         areas: c.areas.map(a => a.id !== areaId ? a : {
           ...a,
           streets: a.streets.filter(s => s.id !== streetId),
         }),
       }),
-    }));
+    };
+    saveTreeNow(nextTree, false);
+    toast.success('تم حذف الشارع وحفظ التعديلات ✓');
+  };
+
+  const updateCityFeeAndPropagate = (cityId: string, nextFee: number, propagateAll: boolean) => {
+    const cleanFee = Math.max(0, Math.round(Number(nextFee) || 0));
+    const nextTree = {
+      ...latestTreeRef.current,
+      cities: latestTreeRef.current.cities.map(c => c.id !== cityId ? c : {
+        ...c,
+        defaultFee: cleanFee,
+        areas: propagateAll ? c.areas.map(a => ({
+          ...a,
+          defaultFee: cleanFee,
+          streets: a.streets.map(s => ({ ...s, fee: cleanFee })),
+        })) : c.areas,
+      }),
+    };
+    if (propagateAll) {
+      saveTreeNow(nextTree, false);
+      toast.success('✅ تم تعميم وحفظ السعر ' + money(cleanFee) + ' على جميع مناطق وشوارع المحافظة!');
+    } else {
+      scheduleAutoSave(nextTree);
+    }
+  };
+
+  const updateAreaFeeAndPropagate = (cityId: string, areaId: string, nextFee: number, propagateAll: boolean) => {
+    const cleanFee = Math.max(0, Math.round(Number(nextFee) || 0));
+    const nextTree = {
+      ...latestTreeRef.current,
+      cities: latestTreeRef.current.cities.map(c => c.id !== cityId ? c : {
+        ...c,
+        areas: c.areas.map(a => a.id !== areaId ? a : {
+          ...a,
+          defaultFee: cleanFee,
+          streets: propagateAll ? a.streets.map(s => ({ ...s, fee: cleanFee })) : a.streets,
+        }),
+      }),
+    };
+    if (propagateAll) {
+      saveTreeNow(nextTree, false);
+      toast.success('✅ تم تعميم وحفظ السعر ' + money(cleanFee) + ' على جميع شوارع المنطقة!');
+    } else {
+      scheduleAutoSave(nextTree);
+    }
   };
 
   const addVipPhone = (e: React.FormEvent) => {
     e.preventDefault();
-    const digits = vipPhone.replace(/\D/g, "").replace(/^00967|^967|^0/, "").slice(0, 9);
+    const digits = vipPhone.replace(/\D/g, '').replace(/^00967|^967|^0/, '').slice(0, 9);
     if (!/^(77|73|78|71|70)\d{7}$/.test(digits)) {
-      toast.error("يرجى إدخال رقم جوال يمني صحيح من 9 أرقام يبدأ بـ 77 أو 73 أو 78 أو 71 أو 70.");
+      toast.error('يرجى إدخال رقم جوال يمني صحيح من 9 أرقام يبدأ بـ 77 أو 73 أو 78 أو 71 أو 70.');
       return;
     }
     if (tree.vipFreePhones.some(v => v.phone === digits)) {
-      toast.error("هذا الرقم مضاف مسبقاً في قائمة التوصيل المجاني.");
+      toast.error('هذا الرقم مضاف مسبقاً في قائمة التوصيل المجاني.');
       return;
     }
     const nextVip: AdminVipFreePhone = {
       phone: digits,
-      name: vipName.trim() || "عميل مميز VIP",
+      name: vipName.trim() || 'عميل مميز VIP',
       minOrder: Math.max(0, Number(vipMinOrder) || 0),
       enabled: true,
     };
-    setTree(curr => ({ ...curr, vipFreePhones: [nextVip, ...curr.vipFreePhones] }));
-    setVipPhone("");
-    setVipName("");
-    setVipMinOrder("0");
-    toast.success("🎉 تمت إضافة الرقم " + digits + " لقائمة التوصيل المجاني!");
+    const nextTree = { ...tree, vipFreePhones: [nextVip, ...tree.vipFreePhones] };
+    setVipPhone('');
+    setVipName('');
+    setVipMinOrder('0');
+    saveTreeNow(nextTree, false);
+    toast.success('🎉 تمت إضافة وحفظ الرقم ' + digits + ' لقائمة التوصيل المجاني!');
   };
 
-  if (query.isLoading) return <AdminLoading />;
+  if (query.isLoading && !loaded) return <AdminLoading />;
 
   return (
-    <div className="admin-content">
+    <div className='admin-content'>
       <AdminHeading
-        eyebrow="تحكم كامل بالمحافظات والمديريات والشوارع وعروض التوصيل"
-        title="مناطق وأسعار وعروض التوصيل"
-        text="حدد المحافظات (مثل صنعاء، إب) وبداخلها المناطق/المديريات (مثل معين، السبعين) وبداخلها الشوارع (مثل الرقاص) مع تسعير كل شارع وعروض التوصيل المجاني."
+        eyebrow='حفظ فوري وتلقائي لجميع تعديلات الأسعار والمناطق والشوارع'
+        title='مناطق وأسعار وعروض التوصيل'
+        text='أي تعديل في سعر محافظة أو منطقة أو شارع يُحفظ تلقائياً في قاعدة البيانات ويظهر فوراً للزبائن.'
         icon={Truck}
       />
 
-      <div style={{ marginBottom: "16px", padding: "16px 18px", borderRadius: "18px", background: "linear-gradient(135deg, #174b36 0%, #0e3323 100%)", color: "#ffffff", display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: "12px", boxShadow: "0 10px 26px rgba(15, 51, 36, 0.18)" }}>
-        <div style={{ display: "grid", gap: "4px" }}>
-          <span style={{ color: "#f1d897", fontSize: "12px", fontWeight: 900 }}>🚀 منظومة التوصيل الذكية بالاختيار المتدرج (المحافظة ➔ المنطقة ➔ الشارع)</span>
-          <strong style={{ fontSize: "15.5px" }}>
+      <div style={{ marginBottom: '16px', padding: '16px 18px', borderRadius: '18px', background: 'linear-gradient(135deg, #174b36 0%, #0e3323 100%)', color: '#ffffff', display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '12px', boxShadow: '0 10px 26px rgba(15, 51, 36, 0.18)' }}>
+        <div style={{ display: 'grid', gap: '4px' }}>
+          <span style={{ color: '#f1d897', fontSize: '12px', fontWeight: 900 }}>🚀 منظومة التوصيل الذكية (الحفظ التلقائي الفوري مفعّل ✓)</span>
+          <strong style={{ fontSize: '15.5px' }}>
             لديك حالياً: {tree.cities.length} محافظات · {totalAreas} مديرية/منطقة · {totalStreets} شارع مسعّر · {tree.vipFreePhones.length} عميل توصيل مجاني
           </strong>
-          <small style={{ color: "#d4e8dc", fontSize: "11.5px" }}>بعد أي تعديل، اضغط زر «حفظ واعتماد التغييرات» ليظهر فوراً للزبائن عند تأكيد الطلب.</small>
+          <small style={{ color: '#d4e8dc', fontSize: '11.5px' }}>
+            {saveMut.isPending ? '⏳ جارٍ حفظ التعديلات في قاعدة البيانات...' : '✅ جميع أسعار التوصيل محفوظة ومعتمدة في المتجر الآن.'}
+          </small>
         </div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
           <button
-            type="button"
-            className="small-button"
-            style={{ background: "rgba(255,255,255,0.14)", color: "#ffffff", border: "1px solid rgba(255,255,255,0.3)", fontWeight: 800 }}
+            type='button'
+            className='small-button'
+            style={{ background: 'rgba(255,255,255,0.14)', color: '#ffffff', border: '1px solid rgba(255,255,255,0.3)', fontWeight: 800 }}
             onClick={() => {
-              if (tree.cities.length > 0 && !window.confirm("هل تريد تحميل القالب الجاهز لمحافظتي صنعاء وإب (مع المديريات والشوارع الشهيرة)؟ يمكنك تعديله بحرية بعد التحميل.")) return;
+              if (tree.cities.length > 0 && !window.confirm('هل تريد استعادة القالب الجاهز لمحافظتي صنعاء وإب؟')) return;
               const tpl = makeDefaultYemenDeliveryTree();
               tpl.vipFreePhones = tree.vipFreePhones;
-              setTree(tpl);
               setSelectedCityId(tpl.cities[0].id);
               setSelectedAreaId(tpl.cities[0].areas[0].id);
-              toast.success("✨ تم تحميل قالب مناطق وشوارع صنعاء وإب الجاهز! اضغط حفظ لاعتماده.");
+              saveTreeNow(tpl, true);
             }}
           >
-            ⚡ تحميل قالب صنعاء وإب الجاهز
+            ⚡ استعادة قالب صنعاء وإب
           </button>
           <button
-            type="button"
-            onClick={() => saveTreeNow(tree)}
+            type='button'
+            onClick={() => saveTreeNow(tree, true)}
             disabled={saveMut.isPending}
-            style={{ padding: "10px 18px", borderRadius: "12px", border: "none", background: "#f1d897", color: "#113826", fontWeight: 900, fontSize: "13px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "7px", boxShadow: "0 4px 14px rgba(0,0,0,0.2)" }}
+            style={{ padding: '10px 18px', borderRadius: '12px', border: 'none', background: '#f1d897', color: '#113826', fontWeight: 900, fontSize: '13px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '7px', boxShadow: '0 4px 14px rgba(0,0,0,0.2)' }}
           >
-            {saveMut.isPending ? <LoaderCircle size={16} className="spin" /> : <Save size={16} />}
-            💾 حفظ واعتماد مناطق وأسعار التوصيل الآن
+            {saveMut.isPending ? <LoaderCircle size={16} className='spin' /> : <Save size={16} />}
+            💾 حفظ وتأكيد جميع الأسعار الآن
           </button>
         </div>
       </div>
 
-      <section className="admin-form-card" style={{ marginBottom: "16px", padding: "14px 16px" }}>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "16px", alignItems: "center", justifyContent: "space-between" }}>
-          <label className="toggle-field" style={{ margin: 0, fontWeight: 800, color: "#143b29" }}>
+      <section className='admin-form-card' style={{ marginBottom: '16px', padding: '14px 16px' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'center', justifyContent: 'space-between' }}>
+          <label className='toggle-field' style={{ margin: 0, fontWeight: 800, color: '#143b29' }}>
             <input
-              type="checkbox"
+              type='checkbox'
               checked={tree.strictSelectionOnly}
-              onChange={e => setTree(curr => ({ ...curr, strictSelectionOnly: e.target.checked }))}
+              onChange={e => saveTreeNow({ ...tree, strictSelectionOnly: e.target.checked }, false)}
             />
-            <span>إلزام الزبون باختيار (المحافظة ➔ المنطقة ➔ الشارع) من القوائم فقط، وكتابة المعلم القريب فقط</span>
+            <span>إلزام الزبون باختيار (المحافظة ➔ المنطقة ➔ الشارع) من القوائم فقط</span>
           </label>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-            <span style={{ fontSize: "12px", fontWeight: 800, color: "#174b36" }}>🎁 توصيل مجاني عام لجميع المناطق إذا تجاوزت الفاتورة (ر.ي):</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '12px', fontWeight: 800, color: '#174b36' }}>🎁 توصيل مجاني عام لجميع المناطق إذا تجاوزت الفاتورة (ر.ي):</span>
             <input
-              type="number"
-              min="0"
-              step="500"
-              value={tree.globalFreeAbove ?? ""}
-              onChange={e => setTree(curr => ({ ...curr, globalFreeAbove: e.target.value ? Number(e.target.value) : null }))}
-              placeholder="اتركه فارغاً لإلغائه"
-              style={{ width: "155px", padding: "7px 10px", borderRadius: "10px", border: "1px solid #bfd2c6" }}
+              type='number'
+              min='0'
+              step='100'
+              value={tree.globalFreeAbove ?? ''}
+              onChange={e => scheduleAutoSave({ ...tree, globalFreeAbove: e.target.value ? Number(e.target.value) : null })}
+              onBlur={() => persistTreeToServer(latestTreeRef.current, false)}
+              placeholder='اتركه فارغاً لإلغائه'
+              style={{ width: '155px', padding: '7px 10px', borderRadius: '10px', border: '1px solid #bfd2c6' }}
             />
           </div>
         </div>
       </section>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(290px, 1fr))", gap: "14px", alignItems: "start" }}>
-        <section className="admin-form-card" style={{ margin: 0, padding: "16px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
-            <h3 style={{ margin: 0, fontSize: "15px", color: "#174b36" }}>1️⃣ المحافظات / المدن ({tree.cities.length})</h3>
-            <small style={{ color: "#5f7367" }}>مثل: صنعاء، إب</small>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(290px, 1fr))', gap: '14px', alignItems: 'start' }}>
+        <section className='admin-form-card' style={{ margin: 0, padding: '16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+            <h3 style={{ margin: 0, fontSize: '15px', color: '#174b36' }}>1️⃣ المحافظات / المدن ({tree.cities.length})</h3>
+            <small style={{ color: '#5f7367' }}>مثل: صنعاء، إب</small>
           </div>
-          <form onSubmit={addCity} style={{ display: "grid", gap: "8px", marginBottom: "12px", padding: "10px", borderRadius: "12px", background: "#f5faf7", border: "1px solid #d8e6dd" }}>
-            <input required value={newCityName} onChange={e => setNewCityName(e.target.value)} placeholder="اسم المحافظة (مثلاً: صنعاء، إب، تعز)..." style={{ padding: "8px 10px", borderRadius: "9px", background: "#fff" }} />
-            <div style={{ display: "flex", gap: "6px" }}>
-              <input type="number" min="0" value={newCityFee} onChange={e => setNewCityFee(e.target.value)} placeholder="سعر افتراضي ر.ي" style={{ flex: 1, padding: "7px 10px", borderRadius: "9px", background: "#fff" }} />
-              <button type="submit" className="small-button selected" style={{ fontWeight: 800 }}><Plus size={14} /> إضافة محافظة</button>
+          <form onSubmit={addCity} style={{ display: 'grid', gap: '8px', marginBottom: '12px', padding: '10px', borderRadius: '12px', background: '#f5faf7', border: '1px solid #d8e6dd' }}>
+            <input required value={newCityName} onChange={e => setNewCityName(e.target.value)} placeholder='اسم المحافظة (مثلاً: صنعاء، إب، تعز)...' style={{ padding: '8px 10px', borderRadius: '9px', background: '#fff' }} />
+            <div style={{ display: 'flex', gap: '6px' }}>
+              <input type='number' min='0' value={newCityFee} onChange={e => setNewCityFee(e.target.value)} placeholder='سعر افتراضي ر.ي' style={{ flex: 1, padding: '7px 10px', borderRadius: '9px', background: '#fff' }} />
+              <button type='submit' className='small-button selected' style={{ fontWeight: 800 }}><Plus size={14} /> إضافة محافظة</button>
             </div>
           </form>
           {!tree.cities.length ? (
-            <p className="subtle-note">لم تُضف محافظات بعد. أضف أول محافظة أو اضغط «تحميل قالب صنعاء وإب الجاهز» بالأعلى.</p>
+            <p className='subtle-note'>لم تُضف محافظات بعد.</p>
           ) : (
-            <div style={{ display: "grid", gap: "8px" }}>
+            <div style={{ display: 'grid', gap: '8px' }}>
               {tree.cities.map(city => {
                 const isSel = activeCity?.id === city.id;
                 return (
                   <div
                     key={city.id}
-                    onClick={() => { setSelectedCityId(city.id); setSelectedAreaId(city.areas[0]?.id || ""); }}
+                    onClick={() => { setSelectedCityId(city.id); setSelectedAreaId(city.areas[0]?.id || ''); }}
                     style={{
-                      padding: "10px 12px",
-                      borderRadius: "12px",
-                      background: isSel ? "#e8f6ee" : "#ffffff",
-                      border: isSel ? "2px solid #174b36" : "1px solid #dce6df",
-                      cursor: "pointer",
-                      display: "grid",
-                      gap: "6px",
+                      padding: '10px 12px',
+                      borderRadius: '12px',
+                      background: isSel ? '#e8f6ee' : '#ffffff',
+                      border: isSel ? '2px solid #174b36' : '1px solid #dce6df',
+                      cursor: 'pointer',
+                      display: 'grid',
+                      gap: '8px',
                     }}
                   >
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "6px" }}>
-                      <strong style={{ fontSize: "14px", color: "#123826" }}>🏙️ {city.name} ({city.areas.length} مناطق)</strong>
-                      <div style={{ display: "flex", gap: "4px" }} onClick={e => e.stopPropagation()}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                      <strong style={{ fontSize: '14px', color: '#123826' }}>🏙️ {city.name} ({city.areas.length} مناطق)</strong>
+                      <div style={{ display: 'flex', gap: '4px' }} onClick={e => e.stopPropagation()}>
                         <button
-                          type="button"
-                          className={"small-button" + (city.freeDeliveryPromo ? " selected" : "")}
-                          style={{ minHeight: "24px", padding: "2px 7px", fontSize: "10px" }}
-                          onClick={() => setTree(curr => ({ ...curr, cities: curr.cities.map(c => c.id === city.id ? { ...c, freeDeliveryPromo: !c.freeDeliveryPromo } : c) }))}
+                          type='button'
+                          className={'small-button' + (city.freeDeliveryPromo ? ' selected' : '')}
+                          style={{ minHeight: '24px', padding: '2px 7px', fontSize: '10px' }}
+                          onClick={() => saveTreeNow({ ...tree, cities: tree.cities.map(c => c.id === city.id ? { ...c, freeDeliveryPromo: !c.freeDeliveryPromo } : c) }, false)}
                         >
-                          {city.freeDeliveryPromo ? "🎁 التوصيل مجاني للكل ✓" : "🎁 عرض مجاني للمحافظة"}
+                          {city.freeDeliveryPromo ? '🎁 التوصيل مجاني للكل ✓' : '🎁 عرض مجاني للمحافظة'}
                         </button>
                         <button
-                          type="button"
-                          className="small-button danger-soft"
-                          style={{ minHeight: "24px", padding: "2px 6px" }}
+                          type='button'
+                          className='small-button danger-soft'
+                          style={{ minHeight: '24px', padding: '2px 6px' }}
                           onClick={() => {
-                            if (window.confirm("حذف محافظة «" + city.name + "» وجميع مناطقها؟")) {
-                              setTree(curr => ({ ...curr, cities: curr.cities.filter(c => c.id !== city.id) }));
+                            if (window.confirm('حذف محافظة «' + city.name + '» وجميع مناطقها؟')) {
+                              saveTreeNow({ ...tree, cities: tree.cities.filter(c => c.id !== city.id) }, false);
                             }
                           }}
                         >
@@ -2543,7 +2653,25 @@ function DeliveryZonesPanel() {
                         </button>
                       </div>
                     </div>
-                    <small style={{ color: "#4f6658", fontSize: "11px" }}>السعر الافتراضي: {money(city.defaultFee)} {city.freeDeliveryPromo ? " · 🔥 عرض توصيل مجاني نشط!" : ""}</small>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }} onClick={e => e.stopPropagation()}>
+                      <span style={{ fontSize: '11px', fontWeight: 800, color: '#174b36' }}>سعر المحافظة:</span>
+                      <input
+                        type='number'
+                        min='0'
+                        value={city.defaultFee}
+                        onChange={e => updateCityFeeAndPropagate(city.id, Number(e.target.value) || 0, false)}
+                        onBlur={() => persistTreeToServer(latestTreeRef.current, false)}
+                        style={{ width: '80px', padding: '4px 7px', borderRadius: '8px', border: '1px solid #bfd2c6', background: '#fff', fontWeight: 900, fontSize: '12px' }}
+                      />
+                      <button
+                        type='button'
+                        className='small-button selected'
+                        style={{ minHeight: '26px', padding: '2px 8px', fontSize: '10.5px', fontWeight: 800 }}
+                        onClick={() => updateCityFeeAndPropagate(city.id, city.defaultFee, true)}
+                      >
+                        تعميم على كل {city.name}
+                      </button>
+                    </div>
                   </div>
                 );
               })}
@@ -2551,26 +2679,26 @@ function DeliveryZonesPanel() {
           )}
         </section>
 
-        <section className="admin-form-card" style={{ margin: 0, padding: "16px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
-            <h3 style={{ margin: 0, fontSize: "15px", color: "#174b36" }}>
-              2️⃣ المناطق داخل «{activeCity?.name || "..."}» ({activeCity?.areas.length ?? 0})
+        <section className='admin-form-card' style={{ margin: 0, padding: '16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+            <h3 style={{ margin: 0, fontSize: '15px', color: '#174b36' }}>
+              2️⃣ المناطق داخل «{activeCity?.name || '...'}» ({activeCity?.areas.length ?? 0})
             </h3>
-            <small style={{ color: "#5f7367" }}>مثل: معين، السبعين</small>
+            <small style={{ color: '#5f7367' }}>مثل: معين، السبعين</small>
           </div>
           {activeCity ? (
             <>
-              <form onSubmit={addArea} style={{ display: "grid", gap: "8px", marginBottom: "12px", padding: "10px", borderRadius: "12px", background: "#f5faf7", border: "1px solid #d8e6dd" }}>
-                <input required value={newAreaName} onChange={e => setNewAreaName(e.target.value)} placeholder={"أضف منطقة في " + activeCity.name + " (مثلاً: معين، السبعين)..."} style={{ padding: "8px 10px", borderRadius: "9px", background: "#fff" }} />
-                <div style={{ display: "flex", gap: "6px" }}>
-                  <input type="number" min="0" value={newAreaFee} onChange={e => setNewAreaFee(e.target.value)} placeholder="سعر افتراضي ر.ي" style={{ flex: 1, padding: "7px 10px", borderRadius: "9px", background: "#fff" }} />
-                  <button type="submit" className="small-button selected" style={{ fontWeight: 800 }}><Plus size={14} /> إضافة منطقة</button>
+              <form onSubmit={addArea} style={{ display: 'grid', gap: '8px', marginBottom: '12px', padding: '10px', borderRadius: '12px', background: '#f5faf7', border: '1px solid #d8e6dd' }}>
+                <input required value={newAreaName} onChange={e => setNewAreaName(e.target.value)} placeholder={'أضف منطقة في ' + activeCity.name + ' (مثلاً: معين، السبعين)...'} style={{ padding: '8px 10px', borderRadius: '9px', background: '#fff' }} />
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <input type='number' min='0' value={newAreaFee} onChange={e => setNewAreaFee(e.target.value)} placeholder='سعر افتراضي ر.ي' style={{ flex: 1, padding: '7px 10px', borderRadius: '9px', background: '#fff' }} />
+                  <button type='submit' className='small-button selected' style={{ fontWeight: 800 }}><Plus size={14} /> إضافة منطقة</button>
                 </div>
               </form>
               {!activeCity.areas.length ? (
-                <p className="subtle-note">أضف المناطق أو المديريات التابعة لـ «{activeCity.name}» من الحقل أعلاه.</p>
+                <p className='subtle-note'>أضف المناطق أو المديريات التابعة لـ «{activeCity.name}» من الحقل أعلاه.</p>
               ) : (
-                <div style={{ display: "grid", gap: "8px" }}>
+                <div style={{ display: 'grid', gap: '8px' }}>
                   {activeCity.areas.map(area => {
                     const isSel = activeArea?.id === area.id;
                     return (
@@ -2578,37 +2706,56 @@ function DeliveryZonesPanel() {
                         key={area.id}
                         onClick={() => setSelectedAreaId(area.id)}
                         style={{
-                          padding: "10px 12px",
-                          borderRadius: "12px",
-                          background: isSel ? "#e8f6ee" : "#ffffff",
-                          border: isSel ? "2px solid #174b36" : "1px solid #dce6df",
-                          cursor: "pointer",
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                          gap: "8px",
+                          padding: '10px 12px',
+                          borderRadius: '12px',
+                          background: isSel ? '#e8f6ee' : '#ffffff',
+                          border: isSel ? '2px solid #174b36' : '1px solid #dce6df',
+                          cursor: 'pointer',
+                          display: 'grid',
+                          gap: '8px',
                         }}
                       >
-                        <div>
-                          <strong style={{ fontSize: "13.5px", color: "#123826", display: "block" }}>📍 {area.name}</strong>
-                          <small style={{ color: "#52685b", fontSize: "11px" }}>{area.streets.length} شوارع مضافة · افتراضي {money(area.defaultFee)}</small>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                          <div>
+                            <strong style={{ fontSize: '13.5px', color: '#123826', display: 'block' }}>📍 {area.name}</strong>
+                            <small style={{ color: '#52685b', fontSize: '11px' }}>{area.streets.length} شوارع مضافة</small>
+                          </div>
+                          <button
+                            type='button'
+                            className='small-button danger-soft'
+                            style={{ minHeight: '24px', padding: '2px 6px' }}
+                            onClick={e => {
+                              e.stopPropagation();
+                              if (window.confirm('حذف المنطقة «' + area.name + '» وشوارعها؟')) {
+                                saveTreeNow({
+                                  ...tree,
+                                  cities: tree.cities.map(c => c.id !== activeCity.id ? c : { ...c, areas: c.areas.filter(a => a.id !== area.id) }),
+                                }, false);
+                              }
+                            }}
+                          >
+                            <Trash2 size={12} />
+                          </button>
                         </div>
-                        <button
-                          type="button"
-                          className="small-button danger-soft"
-                          style={{ minHeight: "24px", padding: "2px 6px" }}
-                          onClick={e => {
-                            e.stopPropagation();
-                            if (window.confirm("حذف المنطقة «" + area.name + "» وشوارعها؟")) {
-                              setTree(curr => ({
-                                ...curr,
-                                cities: curr.cities.map(c => c.id !== activeCity.id ? c : { ...c, areas: c.areas.filter(a => a.id !== area.id) }),
-                              }));
-                            }
-                          }}
-                        >
-                          <Trash2 size={12} />
-                        </button>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }} onClick={e => e.stopPropagation()}>
+                          <span style={{ fontSize: '11px', fontWeight: 800, color: '#174b36' }}>سعر المنطقة:</span>
+                          <input
+                            type='number'
+                            min='0'
+                            value={area.defaultFee}
+                            onChange={e => updateAreaFeeAndPropagate(activeCity.id, area.id, Number(e.target.value) || 0, false)}
+                            onBlur={() => persistTreeToServer(latestTreeRef.current, false)}
+                            style={{ width: '78px', padding: '4px 7px', borderRadius: '8px', border: '1px solid #bfd2c6', background: '#fff', fontWeight: 900, fontSize: '12px' }}
+                          />
+                          <button
+                            type='button'
+                            className='small-button selected'
+                            style={{ minHeight: '26px', padding: '2px 8px', fontSize: '10.5px', fontWeight: 800 }}
+                            onClick={() => updateAreaFeeAndPropagate(activeCity.id, area.id, area.defaultFee, true)}
+                          >
+                            تعميم على شوارع {area.name}
+                          </button>
+                        </div>
                       </div>
                     );
                   })}
@@ -2616,152 +2763,143 @@ function DeliveryZonesPanel() {
               )}
             </>
           ) : (
-            <p className="subtle-note">اختر محافظة من اليمين أولاً.</p>
+            <p className='subtle-note'>اختر محافظة من اليمين أولاً.</p>
           )}
         </section>
       </div>
 
       {activeCity && activeArea && (
-        <section className="admin-form-card" style={{ marginTop: "16px", border: "1.5px solid #174b36" }}>
-          <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: "10px", marginBottom: "12px", paddingBottom: "10px", borderBottom: "1px solid #e1ece5" }}>
+        <section className='admin-form-card' style={{ marginTop: '16px', border: '1.5px solid #174b36' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '10px', marginBottom: '12px', paddingBottom: '10px', borderBottom: '1px solid #e1ece5' }}>
             <div>
-              <span className="eyebrow">3️⃣ تحديد الشوارع وأسعار وعروض التوصيل الدقيقة</span>
-              <h2 style={{ margin: "2px 0", fontSize: "17px", color: "#123826" }}>
+              <span className='eyebrow'>3️⃣ تحديد الشوارع وأسعار وعروض التوصيل الدقيقة</span>
+              <h2 style={{ margin: '2px 0', fontSize: '17px', color: '#123826' }}>
                 🛣️ الشوارع والأحياء داخل: «{activeCity.name} ➔ {activeArea.name}» ({activeArea.streets.length})
               </h2>
-              <small style={{ color: "#52685b" }}>يمكنك كتابة شارع واحد أو عدة شوارع مفصولة بفاصلة (مثلاً: الرقاص، الدائري، السنينة) وتحديد سعرها أو عمل عرض توصيل عليها.</small>
+              <small style={{ color: '#52685b' }}>أي تعديل على سعر أي شارع يُحفظ تلقائياً في قاعدة البيانات فوراً.</small>
             </div>
             {activeArea.streets.length > 0 && (
-              <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
-                <input type="number" min="0" value={bulkAreaFee} onChange={e => setBulkAreaFee(e.target.value)} placeholder="سعر موحد للمنطقة..." style={{ width: "135px", padding: "6px 9px", borderRadius: "9px", background: "#fff" }} />
+              <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                <input type='number' min='0' value={bulkAreaFee} onChange={e => setBulkAreaFee(e.target.value)} placeholder='سعر موحد للمنطقة...' style={{ width: '135px', padding: '6px 9px', borderRadius: '9px', background: '#fff' }} />
                 <button
-                  type="button"
-                  className="small-button selected"
+                  type='button'
+                  className='small-button selected'
                   onClick={() => {
                     if (!bulkAreaFee.trim()) return;
-                    const f = Math.max(0, Number(bulkAreaFee) || 0);
-                    setTree(curr => ({
-                      ...curr,
-                      cities: curr.cities.map(c => c.id !== activeCity.id ? c : {
-                        ...c,
-                        areas: c.areas.map(a => a.id !== activeArea.id ? a : {
-                          ...a,
-                          defaultFee: f,
-                          streets: a.streets.map(s => ({ ...s, fee: f })),
-                        }),
-                      }),
-                    }));
-                    setBulkAreaFee("");
-                    toast.success("تم توحيد سعر التوصيل لجميع شوارع «" + activeArea.name + "» بـ " + money(f));
+                    const f = Math.max(0, Math.round(Number(bulkAreaFee) || 0));
+                    updateAreaFeeAndPropagate(activeCity.id, activeArea.id, f, true);
+                    setBulkAreaFee('');
                   }}
                 >
-                  تطبيق على كل شوارع {activeArea.name}
+                  تطبيق وحفظ على كل شوارع {activeArea.name}
                 </button>
               </div>
             )}
           </div>
 
-          <form onSubmit={addStreets} style={{ padding: "12px", borderRadius: "14px", background: "#f4f9f6", border: "1px solid #cfe2d5", display: "grid", gap: "10px", marginBottom: "14px" }}>
-            <div className="form-fields-grid">
-              <label className="field-wide">اسم الشارع / الحي (أو عدة شوارع مفصولة بفاصلة) *
-                <input required value={newStreetsText} onChange={e => setNewStreetsText(e.target.value)} placeholder={"مثلاً: الرقاص، شارع هائل، الدائري، السنينة..."} style={{ background: "#fff" }} />
+          <form onSubmit={addStreets} style={{ padding: '12px', borderRadius: '14px', background: '#f4f9f6', border: '1px solid #cfe2d5', display: 'grid', gap: '10px', marginBottom: '14px' }}>
+            <div className='form-fields-grid'>
+              <label className='field-wide'>اسم الشارع / الحي (أو عدة شوارع مفصولة بفاصلة) *
+                <input required value={newStreetsText} onChange={e => setNewStreetsText(e.target.value)} placeholder='مثلاً: الرقاص، شارع هائل، الدائري، السنينة...' style={{ background: '#fff' }} />
               </label>
               <label>سعر التوصيل الأساسي (ر.ي) *
-                <input required type="number" min="0" value={newStreetFee} onChange={e => setNewStreetFee(e.target.value)} placeholder="مثلاً: 500" style={{ background: "#fff" }} />
+                <input required type='number' min='0' value={newStreetFee} onChange={e => setNewStreetFee(e.target.value)} placeholder='مثلاً: 500' style={{ background: '#fff' }} />
               </label>
               <label>🔥 سعر العرض الخاص (اختياري — اكتب 0 للتوصيل المجاني)
-                <input type="number" min="0" value={newStreetPromoFee} onChange={e => setNewStreetPromoFee(e.target.value)} placeholder="اتركه فارغاً إذا لا يوجد عرض" style={{ background: "#fff" }} />
+                <input type='number' min='0' value={newStreetPromoFee} onChange={e => setNewStreetPromoFee(e.target.value)} placeholder='اتركه فارغاً إذا لا يوجد عرض' style={{ background: '#fff' }} />
               </label>
               <label>🎁 مجاني إذا زاد الطلب عن (اختياري ر.ي)
-                <input type="number" min="0" value={newStreetFreeAbove} onChange={e => setNewStreetFreeAbove(e.target.value)} placeholder="مثلاً: 5000" style={{ background: "#fff" }} />
+                <input type='number' min='0' value={newStreetFreeAbove} onChange={e => setNewStreetFreeAbove(e.target.value)} placeholder='مثلاً: 5000' style={{ background: '#fff' }} />
               </label>
               <label>⏱️ وقت التوصيل المتوقع
-                <input value={newStreetEta} onChange={e => setNewStreetEta(e.target.value)} placeholder="25 - 40 دقيقة" style={{ background: "#fff" }} />
+                <input value={newStreetEta} onChange={e => setNewStreetEta(e.target.value)} placeholder='25 - 40 دقيقة' style={{ background: '#fff' }} />
               </label>
             </div>
-            <div style={{ display: "flex", justifyContent: "flex-end" }}>
-              <button type="submit" className="button button-primary"><Plus size={16} /> إضافة الشارع / الشوارع إلى «{activeArea.name}»</button>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button type='submit' className='button button-primary'><Plus size={16} /> إضافة وحفظ الشارع إلى «{activeArea.name}»</button>
             </div>
           </form>
 
           {!activeArea.streets.length ? (
-            <AdminEmpty title={"لا توجد شوارع مضافة في " + activeArea.name} text="أضف الشوارع من النموذج أعلاه ليختارها الزبون بضغطة زر." />
+            <AdminEmpty title={'لا توجد شوارع مضافة في ' + activeArea.name} text='أضف الشوارع من النموذج أعلاه ليختارها الزبون بضغطة زر.' />
           ) : (
-            <div style={{ display: "grid", gap: "8px" }}>
+            <div style={{ display: 'grid', gap: '8px' }}>
               {activeArea.streets.map(st => {
                 const hasPromo = st.promoFee !== null && st.promoFee !== undefined;
                 return (
                   <div
                     key={st.id}
                     style={{
-                      padding: "10px 12px",
-                      borderRadius: "12px",
-                      background: st.enabled ? "#ffffff" : "#f7f7f5",
-                      border: hasPromo ? "1.5px solid #e0a82e" : "1px solid #d8e4dc",
-                      display: "flex",
-                      flexWrap: "wrap",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      gap: "10px",
+                      padding: '10px 12px',
+                      borderRadius: '12px',
+                      background: st.enabled ? '#ffffff' : '#f7f7f5',
+                      border: hasPromo ? '1.5px solid #e0a82e' : '1px solid #d8e4dc',
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      gap: '10px',
                     }}
                   >
-                    <div style={{ display: "grid", gap: "2px", minWidth: "160px" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
-                        <strong style={{ fontSize: "14px", color: "#123826" }}>🛣️ {st.name}</strong>
+                    <div style={{ display: 'grid', gap: '2px', minWidth: '160px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                        <strong style={{ fontSize: '14px', color: '#123826' }}>🛣️ {st.name}</strong>
                         {hasPromo && (
-                          <span style={{ fontSize: "10px", fontWeight: 900, padding: "2px 8px", borderRadius: "99px", background: "#fff3cd", color: "#856404" }}>
-                            🔥 عرض: {st.promoFee === 0 ? "توصيل مجاني!" : money(st.promoFee!)}
+                          <span style={{ fontSize: '10px', fontWeight: 900, padding: '2px 8px', borderRadius: '99px', background: '#fff3cd', color: '#856404' }}>
+                            🔥 عرض: {st.promoFee === 0 ? 'توصيل مجاني!' : money(st.promoFee!)}
                           </span>
                         )}
                         {st.freeAbove && (
-                          <span style={{ fontSize: "10px", fontWeight: 800, padding: "2px 8px", borderRadius: "99px", background: "#e8f5ec", color: "#174b36" }}>
+                          <span style={{ fontSize: '10px', fontWeight: 800, padding: '2px 8px', borderRadius: '99px', background: '#e8f5ec', color: '#174b36' }}>
                             🎁 مجاني فوق {money(st.freeAbove)}
                           </span>
                         )}
                       </div>
-                      <small style={{ color: "#5a7062", fontSize: "11px" }}>{activeCity.name} ➔ {activeArea.name} ➔ {st.name} · ⏱️ {st.etaText}</small>
+                      <small style={{ color: '#5a7062', fontSize: '11px' }}>{activeCity.name} ➔ {activeArea.name} ➔ {st.name} · ⏱️ {st.etaText}</small>
                     </div>
 
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center" }}>
-                      <label style={{ display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "11px", fontWeight: 800, color: "#174b36" }}>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
+                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 800, color: '#174b36' }}>
                         <span>السعر:</span>
                         <input
-                          type="number"
-                          min="0"
+                          type='number'
+                          min='0'
                           value={st.fee}
-                          onChange={e => updateStreet(activeCity.id, activeArea.id, st.id, { fee: Math.max(0, Number(e.target.value) || 0) })}
-                          style={{ width: "78px", padding: "4px 7px", borderRadius: "8px", border: "1px solid #bfd2c6", fontWeight: 900 }}
+                          onChange={e => updateStreet(activeCity.id, activeArea.id, st.id, { fee: Math.max(0, Math.round(Number(e.target.value) || 0)) }, false)}
+                          onBlur={() => persistTreeToServer(latestTreeRef.current, false)}
+                          style={{ width: '78px', padding: '4px 7px', borderRadius: '8px', border: '1px solid #bfd2c6', fontWeight: 900 }}
                         />
                       </label>
-                      <label style={{ display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "11px", fontWeight: 800, color: "#9c6509" }}>
+                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 800, color: '#9c6509' }}>
                         <span>🔥 سعر عرض:</span>
                         <input
-                          type="number"
-                          min="0"
-                          value={st.promoFee ?? ""}
-                          placeholder="بلا"
+                          type='number'
+                          min='0'
+                          value={st.promoFee ?? ''}
+                          placeholder='بلا'
                           onChange={e => {
-                            const val = e.target.value.trim() === "" ? null : Math.max(0, Number(e.target.value));
-                            updateStreet(activeCity.id, activeArea.id, st.id, { promoFee: val, promoLabel: val !== null ? (val === 0 ? "🎉 توصيل مجاني!" : "🔥 عرض توصيل خاص!") : "" });
+                            const val = e.target.value.trim() === '' ? null : Math.max(0, Math.round(Number(e.target.value)));
+                            updateStreet(activeCity.id, activeArea.id, st.id, { promoFee: val, promoLabel: val !== null ? (val === 0 ? '🎉 توصيل مجاني!' : '🔥 عرض توصيل خاص!') : '' }, false);
                           }}
-                          style={{ width: "74px", padding: "4px 7px", borderRadius: "8px", border: "1px solid #e0c478", background: hasPromo ? "#fffbeb" : "#fff", fontWeight: 800 }}
+                          onBlur={() => persistTreeToServer(latestTreeRef.current, false)}
+                          style={{ width: '74px', padding: '4px 7px', borderRadius: '8px', border: '1px solid #e0c478', background: hasPromo ? '#fffbeb' : '#fff', fontWeight: 800 }}
                         />
                       </label>
                       <button
-                        type="button"
-                        className={"small-button" + (st.promoFee === 0 ? " selected" : "")}
-                        style={{ minHeight: "28px", padding: "2px 8px", fontSize: "11px" }}
+                        type='button'
+                        className={'small-button' + (st.promoFee === 0 ? ' selected' : '')}
+                        style={{ minHeight: '28px', padding: '2px 8px', fontSize: '11px' }}
                         onClick={() => {
                           const nextPromo = st.promoFee === 0 ? null : 0;
-                          updateStreet(activeCity.id, activeArea.id, st.id, { promoFee: nextPromo, promoLabel: nextPromo === 0 ? "🎉 توصيل مجاني!" : "" });
+                          updateStreet(activeCity.id, activeArea.id, st.id, { promoFee: nextPromo, promoLabel: nextPromo === 0 ? '🎉 توصيل مجاني!' : '' }, true);
                         }}
                       >
-                        {st.promoFee === 0 ? "🎁 مجاني ✓" : "جعله مجاني"}
+                        {st.promoFee === 0 ? '🎁 مجاني ✓' : 'جعله مجاني'}
                       </button>
                       <button
-                        type="button"
-                        className="small-button danger-soft"
-                        style={{ minHeight: "28px", padding: "2px 8px" }}
+                        type='button'
+                        className='small-button danger-soft'
+                        style={{ minHeight: '28px', padding: '2px 8px' }}
                         onClick={() => deleteStreet(activeCity.id, activeArea.id, st.id)}
                       >
                         <Trash2 size={13} />
@@ -2775,44 +2913,44 @@ function DeliveryZonesPanel() {
         </section>
       )}
 
-      <section className="admin-form-card" style={{ marginTop: "18px", border: "1.5px solid #e3c478", background: "linear-gradient(135deg, #fffdf7 0%, #fff9e8 100%)" }}>
-        <div style={{ marginBottom: "12px" }}>
-          <span className="eyebrow" style={{ color: "#9c6509" }}>ميزة استثنائية للعملاء المميزين والأهل والأصدقاء</span>
-          <h2 style={{ margin: "2px 0", fontSize: "17px", color: "#173c2a" }}>🌟 أشخاص لهم توصيل مجاني خاص برقم الهاتف ({tree.vipFreePhones.length})</h2>
-          <small style={{ color: "#5e6d63" }}>أضف رقم جوال أي شخص هنا (9 أرقام)، وبمجرد أن يطلب من المتجر سيحصل تلقائياً على توصيل مجاني (0 ر.ي) مهما كانت منطقته!</small>
+      <section className='admin-form-card' style={{ marginTop: '18px', border: '1.5px solid #e3c478', background: 'linear-gradient(135deg, #fffdf7 0%, #fff9e8 100%)' }}>
+        <div style={{ marginBottom: '12px' }}>
+          <span className='eyebrow' style={{ color: '#9c6509' }}>ميزة استثنائية للعملاء المميزين والأهل والأصدقاء</span>
+          <h2 style={{ margin: '2px 0', fontSize: '17px', color: '#173c2a' }}>🌟 أشخاص لهم توصيل مجاني خاص برقم الهاتف ({tree.vipFreePhones.length})</h2>
+          <small style={{ color: '#5e6d63' }}>أضف رقم جوال أي شخص هنا (9 أرقام)، وبمجرد أن يطلب من المتجر سيحصل تلقائياً على توصيل مجاني (0 ر.ي) مهما كانت منطقته!</small>
         </div>
 
-        <form onSubmit={addVipPhone} style={{ display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "flex-end", marginBottom: "12px", padding: "12px", borderRadius: "12px", background: "#ffffff", border: "1px solid #ead8a4" }}>
-          <label style={{ display: "grid", gap: "4px", fontSize: "12px", fontWeight: 800, color: "#174b36", flex: "1 1 170px" }}>
+        <form onSubmit={addVipPhone} style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'flex-end', marginBottom: '12px', padding: '12px', borderRadius: '12px', background: '#ffffff', border: '1px solid #ead8a4' }}>
+          <label style={{ display: 'grid', gap: '4px', fontSize: '12px', fontWeight: 800, color: '#174b36', flex: '1 1 170px' }}>
             <span>رقم الجوال اليمني (9 أرقام تبدأ بـ 77/73/78/71/70) *</span>
-            <input required maxLength={9} dir="ltr" value={vipPhone} onChange={e => setVipPhone(e.target.value.replace(/\D/g, "").slice(0, 9))} placeholder="مثال: 770731619" style={{ fontWeight: 800, textAlign: "left" }} />
+            <input required maxLength={9} dir='ltr' value={vipPhone} onChange={e => setVipPhone(e.target.value.replace(/\D/g, '').slice(0, 9))} placeholder='مثال: 770731619' style={{ fontWeight: 800, textAlign: 'left' }} />
           </label>
-          <label style={{ display: "grid", gap: "4px", fontSize: "12px", fontWeight: 800, color: "#174b36", flex: "1 1 170px" }}>
+          <label style={{ display: 'grid', gap: '4px', fontSize: '12px', fontWeight: 800, color: '#174b36', flex: '1 1 170px' }}>
             <span>اسم الزبون / الملاحظة</span>
-            <input value={vipName} onChange={e => setVipName(e.target.value)} placeholder="مثلاً: عميل مميز / صديق المتجر..." />
+            <input value={vipName} onChange={e => setVipName(e.target.value)} placeholder='مثلاً: عميل مميز / صديق المتجر...' />
           </label>
-          <label style={{ display: "grid", gap: "4px", fontSize: "12px", fontWeight: 800, color: "#174b36", width: "160px" }}>
+          <label style={{ display: 'grid', gap: '4px', fontSize: '12px', fontWeight: 800, color: '#174b36', width: '160px' }}>
             <span>الحد الأدنى للطلب (0 = دائماً)</span>
-            <input type="number" min="0" value={vipMinOrder} onChange={e => setVipMinOrder(e.target.value)} placeholder="0" />
+            <input type='number' min='0' value={vipMinOrder} onChange={e => setVipMinOrder(e.target.value)} placeholder='0' />
           </label>
-          <button type="submit" className="button button-primary"><Plus size={15} /> إضافة للتوصيل المجاني</button>
+          <button type='submit' className='button button-primary'><Plus size={15} /> إضافة للتوصيل المجاني</button>
         </form>
 
         {!tree.vipFreePhones.length ? (
-          <small style={{ color: "#68756c" }}>لم تُضف أرقام بعد. أي رقم تضيفه هنا سيحصل صاحبه على توصيل مجاني تلقائياً.</small>
+          <small style={{ color: '#68756c' }}>لم تُضف أرقام بعد. أي رقم تضيفه هنا سيحصل صاحبه على توصيل مجاني تلقائياً.</small>
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "8px" }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '8px' }}>
             {tree.vipFreePhones.map(v => (
-              <div key={v.phone} style={{ padding: "10px 12px", borderRadius: "12px", background: "#ffffff", border: "1px solid #e2cfa0", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
+              <div key={v.phone} style={{ padding: '10px 12px', borderRadius: '12px', background: '#ffffff', border: '1px solid #e2cfa0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
                 <div>
-                  <strong style={{ fontSize: "13px", color: "#123826", display: "block" }}>🌟 {v.name}</strong>
-                  <small style={{ color: "#174b36", fontWeight: 800 }} dir="ltr">📞 {v.phone}</small>
-                  <small style={{ color: "#68756c", display: "block", fontSize: "10.5px" }}>{v.minOrder > 0 ? ("مجاني للطلبات فوق " + money(v.minOrder)) : "🎁 توصيل مجاني دائماً"}</small>
+                  <strong style={{ fontSize: '13px', color: '#123826', display: 'block' }}>🌟 {v.name}</strong>
+                  <small style={{ color: '#174b36', fontWeight: 800 }} dir='ltr'>📞 {v.phone}</small>
+                  <small style={{ color: '#68756c', display: 'block', fontSize: '10.5px' }}>{v.minOrder > 0 ? ('مجاني للطلبات فوق ' + money(v.minOrder)) : '🎁 توصيل مجاني دائماً'}</small>
                 </div>
                 <button
-                  type="button"
-                  className="small-button danger-soft"
-                  onClick={() => setTree(curr => ({ ...curr, vipFreePhones: curr.vipFreePhones.filter(x => x.phone !== v.phone) }))}
+                  type='button'
+                  className='small-button danger-soft'
+                  onClick={() => saveTreeNow({ ...tree, vipFreePhones: tree.vipFreePhones.filter(x => x.phone !== v.phone) }, false)}
                 >
                   <Trash2 size={13} />
                 </button>
@@ -2822,9 +2960,9 @@ function DeliveryZonesPanel() {
         )}
       </section>
 
-      <div style={{ marginTop: "18px", display: "flex", justifyContent: "flex-end" }}>
-        <button type="button" className="button button-primary" disabled={saveMut.isPending} onClick={() => saveTreeNow(tree)} style={{ padding: "12px 24px", fontSize: "14px" }}>
-          {saveMut.isPending ? <LoaderCircle size={17} className="spin" /> : <Save size={17} />}
+      <div style={{ marginTop: '18px', display: 'flex', justifyContent: 'flex-end' }}>
+        <button type='button' className='button button-primary' disabled={saveMut.isPending} onClick={() => saveTreeNow(tree, true)} style={{ padding: '12px 24px', fontSize: '14px' }}>
+          {saveMut.isPending ? <LoaderCircle size={17} className='spin' /> : <Save size={17} />}
           💾 حفظ واعتماد جميع إعدادات ومناطق وعروض التوصيل
         </button>
       </div>
@@ -3908,7 +4046,7 @@ function SettingsPanel() {
       storeDescription: raw.storeDescription || "",
       contactPhone: raw.contactPhone || "",
       currency: raw.currency || "ر.ي",
-      storeIconUrl: raw.storeIconUrl || "",
+      storeIconUrl: raw.storeIconUrl || "/app-icon-512-orig.png",
       deliveryEnabled: raw.deliveryEnabled === "true",
       deliveryFee: raw.deliveryFee || "",
       deliveryZones: zones,
@@ -4918,7 +5056,7 @@ export default function Admin() {
   return (
     <div className="admin-app" dir="rtl">
       <aside className="admin-sidebar">
-        <Link href="/" className="admin-brand"><span className="brand-mark"><Leaf size={20} /></span><span><strong>ORIGINAL</strong><small>لوحة الإدارة</small></span></Link>
+        <Link href="/" className="admin-brand"><span className="brand-mark has-brand-image"><img src="/app-icon-512-orig.png" alt="ORIGINAL" /></span><span><strong>ORIGINAL</strong><small>لوحة الإدارة</small></span></Link>
         <div className="admin-profile">
           <span className="profile-initial">{(auth.user.name || "O").slice(0, 1)}</span>
           <span><strong>{auth.user.name || "مالك المتجر"}</strong><small>{roleLabel}</small></span>

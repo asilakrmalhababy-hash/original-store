@@ -21,6 +21,7 @@ import {
   orderEvents,
   orderItems,
   orders,
+  orderNumberSequences,
   offers,
   ownerPushSubscriptions,
   productRecommendations,
@@ -392,19 +393,28 @@ function canCreateMissingItemOrder(ip: string): boolean {
 }
 
 async function readSettings(db: NonNullable<Awaited<ReturnType<typeof getDb>>>) {
+  const g = globalThis as any;
+  if (!g.__savedSettingsMemory) g.__savedSettingsMemory = {};
   try {
     const rows = await db.select().from(storeSettings);
-    const settings: Record<string, string> = { deliveryEnabled: "true", deliveryFee: "0" };
+    const settings: Record<string, string> = { deliveryEnabled: 'true', deliveryFee: '0', storeIconUrl: '/app-icon-512-orig.png', ...g.__savedSettingsMemory };
     for (const row of rows) {
-      if (!PUBLIC_STORE_SETTING_KEYS.has(row.key)) continue;
+      if (!PUBLIC_STORE_SETTING_KEYS.has(row.key) && row.key !== 'deliveryTreeConfig') continue;
+      if (row.key === 'storeIconUrl' && !String(row.value || '').trim()) continue;
       settings[row.key] = row.value;
     }
-    const oldStoreNameNorm = new RegExp("أور" + "يجنال|اور" + "يجنال", "g");
-    if (settings.storeName) settings.storeName = settings.storeName.replace(oldStoreNameNorm, "أورجنال");
+    for (const [k, v] of Object.entries(g.__savedSettingsMemory)) {
+      if (typeof v === 'string' && (k !== 'storeIconUrl' || v.trim())) settings[k] = v;
+    }
+    if (!settings.storeIconUrl || !settings.storeIconUrl.trim()) {
+      settings.storeIconUrl = '/app-icon-512-orig.png';
+    }
+    const oldStoreNameNorm = new RegExp('أور' + 'يجنال|اور' + 'يجنال', 'g');
+    if (settings.storeName) settings.storeName = settings.storeName.replace(oldStoreNameNorm, 'أورجنال');
     return settings;
   } catch (err) {
-    console.warn("[Settings] Using fallback defaults:", err instanceof Error ? err.message : err);
-    return { deliveryEnabled: "true", deliveryFee: "0" };
+    console.warn('[Settings] Using fallback defaults:', err instanceof Error ? err.message : err);
+    return { deliveryEnabled: 'true', deliveryFee: '0', storeIconUrl: '/app-icon-512-orig.png', ...(g.__savedSettingsMemory || {}) };
   }
 }
 
@@ -752,7 +762,7 @@ function toFastImg<T extends { id: number; imageUrl?: string | null; updatedAt?:
     const ver = row.updatedAt ? new Date(row.updatedAt).getTime() : ((globalThis as any).__catalogVer || 1);
     if (raw.startsWith("data:image/")) {
       const m = raw.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,([\s\S]+)$/);
-      if (m) cacheMap.set(cacheKey, { contentType: m[1], buf: Buffer.from(m[2], "base64") });
+      if (m) { if (cacheMap.size > 300) { const firstK = cacheMap.keys().next().value; if (firstK) cacheMap.delete(firstK); } cacheMap.set(cacheKey, { contentType: m[1], buf: Buffer.from(m[2], "base64") }); }
       return { ...row, imageUrl: "/api/fast-img/" + kind + "/" + row.id + "?v=" + ver };
     }
     if (raw.startsWith(HTTP_PRE)) {
@@ -781,7 +791,8 @@ async function ensureOrderItemsFastSchema(dbInstance?: any) {
     const db = dbInstance || (await database());
     if (!db) return;
     __orderItemsSchemaFixed = true;
-    try { await db.execute(sql.raw("ALTER TABLE order_items MODIFY COLUMN productImage LONGTEXT NULL")); } catch {}
+    try { await db.execute(sql.raw("ALTER TABLE order_items MODIFY COLUMN productImage LONGTEXT NULL"));
+    try { await db.execute(sql.raw("ALTER TABLE store_settings MODIFY COLUMN value LONGTEXT NOT NULL")); } catch {} } catch {}
     try { await db.execute(sql.raw("UPDATE order_items SET productImage = CONCAT('/api/fast-img/product/', productId) WHERE productId IS NOT NULL AND productImage LIKE 'data:image/%'")); } catch {}
   } catch {}
 }
@@ -915,7 +926,7 @@ export const commerceRouter = router({
         .where(and(eq(productRecommendations.productId, product.id), eq(products.isPublished, true), eq(products.isAvailable, true)));
       return { ...toFastImg("product", product), recommendations: linked.map(row => toFastImg("product", row.product)) };
     })),
-    productsForReorder: publicProcedure.input(z.object({ ids: z.array(safeId).min(1).max(500) })).query(async ({ input }) => {
+    productsForReorder: publicProcedure.input(z.object({ ids: z.array(safeId).min(1).max(5000) })).query(async ({ input }) => {
       const db = await database();
       const rows = await db.select().from(products).where(and(inArray(products.id, [...new Set(input.ids)]), eq(products.isPublished, true), eq(products.isAvailable, true))); return rows.map(r => toFastImg('product', r));
     }),
@@ -1194,7 +1205,16 @@ export const commerceRouter = router({
         const currentLines = orderLines.map(line => ({ productId: line.product.id, name: line.product.name, quantity: line.quantity, unit: line.effectiveUnit, price: line.effectivePrice, lineTotal: line.effectiveLineTotal }));
         const currentQuoteHash = quoteFingerprint(currentLines, totals, currency, appliedOffer?.id ?? null);
         if (totals.total !== input.expectedTotal || currentQuoteHash !== input.expectedQuoteHash) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "تغيّر السعر أو التوفر أو رسوم التوصيل بعد المعاينة. اعرض الملخص المحدّث قبل تأكيد الطلب." });
-        const orderNumber = "OR-" + Date.now().toString(36).toUpperCase() + "-" + nanoid(5).toUpperCase();
+        const orderNumber = process.env.ORDER_NUMBER_MODE === "production"
+          ? await (async () => {
+              const sequence = await tx.insert(orderNumberSequences).values({});
+              const number = Number(sequence[0].insertId);
+              if (!Number.isSafeInteger(number) || number < 1) {
+                throw new Error("تعذر إنشاء الرقم التسلسلي للطلب");
+              }
+              return "OR-" + String(number).padStart(6, "0");
+            })()
+          : "TEST-" + Date.now().toString(36).toUpperCase() + "-" + nanoid(5).toUpperCase();
         const inserted = await tx.insert(orders).values({
           orderNumber, idempotencyKey: storedIdempotencyKey, userId: null, offerId: appliedOffer?.id ?? null,
           recipientName: input.recipientName, phone: normalizeYemeniPhone(input.phone), city: input.city, district: input.district,
@@ -1261,7 +1281,7 @@ export const commerceRouter = router({
       request: z.string().trim().min(1).max(1200),
       history: z.array(z.object({ role: z.enum(["user", "assistant"]), text: z.string().max(1800) })).max(20).optional(),
       cart: z.array(z.object({ productId: safeId, quantity: z.number().int().min(1).max(10000) })).max(100).optional(),
-      favoriteProductIds: z.array(safeId).max(500).optional(),
+      favoriteProductIds: z.array(safeId).max(5000).optional(),
       sessionId: z.string().max(80).optional(),
       customerName: z.string().max(160).optional(),
       customerPhone: z.string().max(40).optional(),
@@ -1314,7 +1334,7 @@ export const commerceRouter = router({
       }
 
       const [catalogRows, catRows] = db ? await Promise.all([
-        db.select({ id: products.id, name: products.name, description: products.description, categoryId: products.categoryId, price: products.price, unit: products.unit, stock: products.stock, minQuantity: products.minQuantity, quantityStep: products.quantityStep }).from(products).where(and(eq(products.isPublished, true), eq(products.isAvailable, true))).limit(150).catch(() => []),
+        db.select({ id: products.id, name: products.name, description: products.description, categoryId: products.categoryId, price: products.price, unit: products.unit, stock: products.stock, minQuantity: products.minQuantity, quantityStep: products.quantityStep }).from(products).where(and(eq(products.isPublished, true), eq(products.isAvailable, true))).limit(500).catch(() => []),
         db.select({ id: categories.id, name: categories.name }).from(categories).catch(() => []),
       ]) : [[], []];
       const catNameById = new Map(catRows.map((c: any) => [c.id, c.name]));
@@ -1336,7 +1356,7 @@ export const commerceRouter = router({
       ).join("\n");
 
       const userPrompt = [
-        "المنتجات المتاحة (مصدر الحقيقة الوحيد): " + JSON.stringify(catalog.slice(0, 80).map((p: any) => ({ id: p.id, name: p.name, category: catNameById.get(p.categoryId) || "عام", price: p.price, unit: p.unit }))),
+        "المنتجات المتاحة (مصدر الحقيقة الوحيد): " + JSON.stringify((() => { const normQ = (s: string) => String(s || "").replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي").replace(/ال/g, "").toLowerCase().trim(); const qTxt = normQ(input.request + " " + (input.history || []).map(h => h.text).join(" ")); const qWords = qTxt.split(/\s+/).filter(w => w.length >= 2); const scored = [...catalog].sort((a: any, b: any) => { const na = normQ(a.name); const nb = normQ(b.name); const sa = (qTxt.includes(na) ? 100 : 0) + qWords.reduce((acc, w) => acc + (na.includes(w) ? 15 : 0), 0); const sb = (qTxt.includes(nb) ? 100 : 0) + qWords.reduce((acc, w) => acc + (nb.includes(w) ? 15 : 0), 0); return sb - sa; }); return scored.slice(0, 120).map((p: any) => ({ id: p.id, name: p.name, category: catNameById.get(p.categoryId) || "عام", price: p.price, unit: p.unit })); })()),
         "مفضلات العميل: " + JSON.stringify(customerFavorites),
         "السلة الحالية: " + JSON.stringify(currentCart),
         history ? "سجل المحادثة السابق:\n" + history : "لا يوجد سياق سابق.",
@@ -1810,8 +1830,8 @@ export const commerceRouter = router({
         const db = await database();
         const allowedCats = (!ctx.user.isOwner && Array.isArray(ctx.user.allowedCategoryIds) && ctx.user.allowedCategoryIds.length > 0) ? ctx.user.allowedCategoryIds : null;
         const rows = allowedCats
-          ? await db.select().from(products).where(inArray(products.categoryId, allowedCats)).orderBy(desc(products.updatedAt)).limit(500)
-          : await db.select().from(products).orderBy(desc(products.updatedAt)).limit(500);
+          ? await db.select().from(products).where(inArray(products.categoryId, allowedCats)).orderBy(desc(products.updatedAt)).limit(10000)
+          : await db.select().from(products).orderBy(desc(products.updatedAt)).limit(10000);
         return rows.map(r => toFastImg("product", r));
       }),
       create: requireAnyPermission(["products.manage", "products.add"]).use(async ({ next }) => { const res = await next(); await clearCatalogCache(); return res; }).input(productInput).mutation(async ({ ctx, input }) => {
@@ -2116,16 +2136,58 @@ export const commerceRouter = router({
       }),
     }),
     settings: router({
-      get: requireAnyPermission(["settings.manage", "overview.view"]).query(async () => readSettings(await database())),
-      save: requirePermission("settings.manage").input(settingSchema).mutation(async ({ input }) => { clearCatalogCache();
+      get: requireAnyPermission(['settings.manage', 'overview.view']).query(async () => readSettings(await database())),
+      save: requirePermission('settings.manage').input(settingSchema).mutation(async ({ input }) => {
         const db = await database();
-        await db.transaction(async tx => {
-          for (const [key, value] of Object.entries(input)) {
-            const stored = value === null ? "" : typeof value === "string" ? value : JSON.stringify(value);
-            await tx.insert(storeSettings).values({ key, value: stored }).onDuplicateKeyUpdate({ set: { value: stored } });
+        const g = globalThis as any;
+        if (!g.__savedSettingsMemory) g.__savedSettingsMemory = {};
+        try { await db.execute(sql.raw('ALTER TABLE store_settings MODIFY COLUMN value LONGTEXT NOT NULL')); } catch {}
+
+        const entriesToSave: Array<[string, string]> = [];
+        for (const [key, value] of Object.entries(input)) {
+          if (value === undefined) continue;
+          const stored = value === null ? '' : typeof value === 'string' ? value : JSON.stringify(value);
+          entriesToSave.push([key, stored]);
+        }
+
+        if (input.deliveryTreeConfig === undefined && (input.deliveryFee !== undefined || input.deliveryZones !== undefined)) {
+          try {
+            const currentSettings = await readSettings(db);
+            const rawTree = currentSettings.deliveryTreeConfig;
+            const treeObj = rawTree ? JSON.parse(rawTree) : JSON.parse(JSON.stringify(DEFAULT_SERVER_DELIVERY_TREE));
+            if (treeObj && Array.isArray(treeObj.cities)) {
+              const baseFeeNum = input.deliveryFee !== undefined && input.deliveryFee !== null ? Number(input.deliveryFee) : null;
+              const zonesArr = Array.isArray(input.deliveryZones) ? input.deliveryZones : [];
+              treeObj.cities = treeObj.cities.map((c: any) => {
+                const matchedZone = zonesArr.find((z: any) => String(z.name || '').trim() === String(c.name || '').trim());
+                const nextCityFee = matchedZone ? Number(matchedZone.fee) : (baseFeeNum !== null && Number.isFinite(baseFeeNum) ? baseFeeNum : c.defaultFee);
+                return {
+                  ...c,
+                  defaultFee: nextCityFee,
+                  areas: Array.isArray(c.areas) ? c.areas.map((a: any) => ({
+                    ...a,
+                    defaultFee: nextCityFee,
+                    streets: Array.isArray(a.streets) ? a.streets.map((s: any) => ({ ...s, fee: nextCityFee })) : [],
+                  })) : [],
+                };
+              });
+              entriesToSave.push(['deliveryTreeConfig', JSON.stringify(treeObj)]);
+            }
+          } catch {}
+        }
+
+        for (const [key, stored] of entriesToSave) {
+          g.__savedSettingsMemory[key] = stored;
+          await db.insert(storeSettings).values({ key, value: stored }).onDuplicateKeyUpdate({ set: { value: stored } });
+        }
+
+        if (g.__fastHomeData && g.__fastHomeData.settings) {
+          for (const [key, stored] of entriesToSave) {
+            g.__fastHomeData.settings[key] = stored;
           }
-        });
-        clearCatalogCache(); return { success: true };
+        }
+        await clearCatalogCache();
+        return { success: true };
       }),
     }),
     orders: router({

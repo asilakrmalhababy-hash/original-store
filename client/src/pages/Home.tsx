@@ -51,7 +51,7 @@ function Header({ data, onSearch }: { data?: HomeData; onSearch: (text: string) 
   return <header className="store-header">
     <div className="header-main">
       <Link href="/" className="brand-lockup" aria-label={`${storeName} الرئيسية`}>
-        <span className={`brand-mark ${data?.settings.storeIconUrl ? "has-brand-image" : ""}`}>{data?.settings.storeIconUrl ? <img src={data.settings.storeIconUrl} alt="" /> : <Leaf size={22} strokeWidth={1.8} />}</span>
+        <span className="brand-mark has-brand-image"><img src={data?.settings?.storeIconUrl || "/app-icon-512-orig.png"} alt="ORIGINAL" /></span>
         <span className="brand-type"><strong>ORIGINAL</strong><small>{brandSubtitle}</small></span>
       </Link>
       <form className="header-search" onSubmit={submitSearch}>
@@ -441,147 +441,170 @@ const tinyChipStyle: React.CSSProperties = {
 };
 
 function AiRecipeModal({ product, onClose }: { product: PublicProduct; onClose: () => void }) {
-  const { add, cart, setQuantity } = useStore();
+  const { add } = useStore();
   const [, navigate] = useLocation();
-  const [customInput, setCustomInput] = useState("");
-  const [modalHistory, setModalHistory] = useState<Array<{ role: "user" | "assistant"; text: string }>>([]);
+  const [customInput, setCustomInput] = useState('');
+  const [activeMod, setActiveMod] = useState('');
   const recipeMutation = trpc.commerce.assistant.recipe.useMutation();
 
-  const sendProductQuery = (userQuestion = "") => {
-    const trimmed = userQuestion.trim();
-    const requestPayload = trimmed
-      ? "[سياق_منتج:" + product.name + "] " + trimmed
-      : "[تحليل_منتج] «" + product.name + "»";
-    const nextHist = trimmed ? [...modalHistory, { role: "user" as const, text: trimmed }] : modalHistory;
-    if (trimmed) setModalHistory(nextHist);
+  const isDrinkOrSnack = useMemo(() => {
+    return /(?:عصير|شراب|مشروب|موسي|استروك|طاقة|طاقه|زنجبيل|ون سي|راني|دلتا|روابي|سيزر|سن توب|بيبسي|كوكاكولا|سفن|ميرندا|فانتا|سبرايت|مياه|ماء|بسكويت|شيبس|شوكولاتة|شوكولاته|كيك)/i.test(product.name);
+  }, [product.name]);
 
-    recipeMutation.mutate(
-      {
-        request: requestPayload,
-        history: nextHist.slice(-8),
-        cart: cart.map(line => ({ productId: line.id, quantity: line.quantity })),
-      },
-      {
-        onSuccess: res => {
-          const parsed = splitCleanReplyAndChips(res.message, (res as any).suggestedQuestions);
-          setModalHistory(prev => [...prev, { role: "assistant", text: parsed.cleanText }]);
-          if (res.cartAction && Array.isArray(res.cartAction.items) && res.cartAction.items.length > 0) {
-            for (const item of res.cartAction.items) {
-              if (res.cartAction.type === "add") {
-                add({ id: item.productId, name: item.name, price: item.price, unit: item.unit, stock: item.stock, minQuantity: item.minQuantity, quantityStep: item.quantityStep }, item.quantity);
-              } else {
-                const cur = cart.find(c => c.id === item.productId);
-                if (cur) setQuantity(item.productId, Math.max(0, cur.quantity - item.quantity));
-              }
-            }
-            toast.success(res.cartAction.type === "add" ? "تمت الإضافة للسلة 🛒" : "تم تحديث السلة");
-          }
-        }
-      }
-    );
+  const askForProduct = (modification = '') => {
+    setActiveMod(modification);
+    const baseReq = isDrinkOrSnack
+      ? ('ما هي أفضل 3 طرق تقديم وأفكار للاستمتاع بـ «' + product.name + '» (تقديم بارد ومنعش، خلطة مبتكرة، وأفضل وقت وسناك معه)؟')
+      : ('ما هي أفضل 3 طرق لتحضير «' + product.name + '» (اقتصادية وسريعة، وشعبية يمنية، وصحية مميزة)؟');
+    recipeMutation.mutate({
+      request: modification ? (baseReq + ' التعديل المطلوب: ' + modification) : baseReq,
+    });
   };
 
   useEffect(() => {
-    setModalHistory([]);
-    sendProductQuery("");
+    askForProduct('');
   }, [product.id]);
 
   const data = recipeMutation.data;
   const isPending = recipeMutation.isPending;
-  const parsed = data ? splitCleanReplyAndChips(data.message, (data as any).suggestedQuestions) : { cleanText: "", chips: [] };
 
   const continueInAssistantChat = () => {
     try {
-      const existingRaw = localStorage.getItem("original-assistant-history-v2");
+      const existingRaw = localStorage.getItem('original-assistant-history-v2');
       const existing = existingRaw ? JSON.parse(existingRaw) : [];
       const historyArr = Array.isArray(existing) ? existing : [];
-      const nextHistory = [...historyArr, ...modalHistory].slice(-24);
-      localStorage.setItem("original-assistant-history-v2", JSON.stringify(nextHistory));
+      const userTurn = {
+        role: 'user',
+        text: activeMod
+          ? ('أريد أفكار وطريقة تحضير «' + product.name + '» (' + activeMod + ')')
+          : ('أريد أفضل أفكار وطرق تحضير لـ «' + product.name + '»'),
+      };
+      const assistantTurn = data
+        ? {
+            role: 'assistant',
+            text: data.message,
+            contextText: 'نتحدث عن المنتج المتوفر في المتجر: «' + product.name + '» بسعر ' + formatPrice(product.price),
+          }
+        : null;
+      const nextHistory = [...historyArr, userTurn, ...(assistantTurn ? [assistantTurn] : [])].slice(-32);
+      localStorage.setItem('original-assistant-history-v2', JSON.stringify(nextHistory));
     } catch {}
     onClose();
-    navigate("/assistant");
+    navigate('/assistant');
   };
 
+  const quickMods = isDrinkOrSnack
+    ? [
+        '🧊 تقديم بارد ومنعش جداً',
+        '🍹 خلطة موكيتل مبتكرة به',
+        '🥨 أفضل سناك خفيف معه',
+        '⚡ أفضل وقت لتناوله',
+      ]
+    : [
+        '⚡ وصفة اقتصادية وسريعة جداً',
+        '🌿 بدون توابل / خفيفة التوابل',
+        '🇾🇪 وصفة يمنية شعبية أصيلة',
+        '🥗 وجبة صحية وخفيفة',
+      ];
+
   return (
-    <div className="modal-backdrop" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <section className="checkout-modal" role="dialog" aria-modal="true" style={{ maxWidth: "440px", borderRadius: "18px", padding: "14px" }}>
-        <div className="modal-heading" style={{ marginBottom: "8px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <span style={{ width: "30px", height: "30px", borderRadius: "9px", background: "#174b36", color: "#fff", display: "grid", placeItems: "center" }}>
-              <Sparkles size={15} />
+    <div className='modal-backdrop' role='presentation' onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <section className='checkout-modal' role='dialog' aria-modal='true' style={{ maxWidth: '540px' }}>
+        <div className='modal-heading'>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span style={{ width: '36px', height: '36px', borderRadius: '12px', background: '#edf3e9', color: '#174b36', display: 'grid', placeItems: 'center' }}>
+              <Sparkles size={20} />
             </span>
             <div>
-              <h2 style={{ fontSize: "14px", fontWeight: 700, margin: 0 }}>{product.name}</h2>
+              <span className='eyebrow'>المساعد والشيف الذكي · أورجنال</span>
+              <h2 style={{ fontSize: '16px' }}>أفكار وطرق: {product.name}</h2>
             </div>
           </div>
-          <button type="button" className="icon-button" onClick={onClose}><X size={17} /></button>
+          <button type='button' className='icon-button' onClick={onClose}><X size={19} /></button>
         </div>
 
-        <div style={{ maxHeight: "64vh", overflowY: "auto", padding: "2px" }}>
+        <div style={{ maxHeight: '70vh', overflowY: 'auto', padding: '10px 4px', fontSize: '12px', lineHeight: '1.8' }}>
+          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px' }}>
+            {quickMods.map(mod => (
+              <button
+                key={mod}
+                type='button'
+                disabled={isPending}
+                onClick={() => askForProduct(mod)}
+                style={{
+                  padding: '6px 11px',
+                  borderRadius: '999px',
+                  border: activeMod === mod ? '1.5px solid #174b36' : '1px solid #d5e0d3',
+                  background: activeMod === mod ? '#174b36' : '#f5f8f3',
+                  color: activeMod === mod ? '#ffffff' : '#253e31',
+                  fontSize: '11px',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                }}
+              >
+                {mod}
+              </button>
+            ))}
+          </div>
+
           {isPending ? (
-            <div style={{ padding: "12px 6px" }}><AiThinkingStatus /></div>
-          ) : recipeMutation.error ? (
-            <div style={{ padding: "12px", textAlign: "center", color: "#9c3b37", fontSize: "12px" }}>
-              <p style={{ marginBottom: "6px" }}>الشبكة مشغولة لحظياً</p>
-              <button className="button button-outline" style={{ minHeight: "30px", fontSize: "11px" }} onClick={() => sendProductQuery(customInput)}>إعادة المحاولة</button>
+            <div style={{ padding: '12px 4px' }}>
+              <AiThinkingStatus />
             </div>
-          ) : parsed.cleanText ? (
-            <div style={{ background: "#f9fbf9", border: "1px solid #e4ece6", borderRadius: "12px", padding: "10px 12px", marginBottom: "10px" }}>
-              <div style={{ whiteSpace: "pre-line", color: "#1e293b", fontSize: "12.5px", lineHeight: "1.65" }}>
-                {parsed.cleanText}
+          ) : recipeMutation.error ? (
+            <div style={{ padding: '20px 10px', textAlign: 'center', color: '#9c3b37' }}>
+              <p>{recipeMutation.error.message || 'تعذر جلب الأفكار الآن.'}</p>
+              <button className='button button-outline' onClick={() => askForProduct(activeMod)}>إعادة المحاولة</button>
+            </div>
+          ) : data ? (
+            <div>
+              <div style={{ background: '#f5f8f3', border: '1px solid #dce8d8', borderRadius: '14px', padding: '14px', marginBottom: '12px', whiteSpace: 'pre-line', color: '#1e382b', fontSize: '13px', lineHeight: 1.75 }}>
+                {data.message}
               </div>
-              {data?.recipe && (
-                <div className="recipe-card" style={{ marginTop: "8px", padding: "9px 11px", borderRadius: "10px", background: "#fff", border: "1px solid #dce8df" }}>
-                  <strong style={{ fontSize: "12.5px", color: "#174b36", display: "block" }}>{data.recipe.name} <small style={{ fontWeight: 500, color: "#64748b" }}>(تكفي {data.recipe.servings})</small></strong>
-                  {data.recipe.steps?.length > 0 && (
-                    <ol style={{ margin: "6px 0", paddingInlineStart: "18px", fontSize: "11.5px", lineHeight: "1.6" }}>
-                      {data.recipe.steps.map((st: string, sIdx: number) => <li key={sIdx}>{st}</li>)}
-                    </ol>
-                  )}
-                  {data.ingredients?.length > 0 && (
-                    <button type="button" onClick={() => { data.ingredients.forEach((ing: any) => add({ id: ing.productId, name: ing.name, price: ing.price, unit: ing.unit, stock: ing.stock, minQuantity: ing.minQuantity, quantityStep: ing.quantityStep }, ing.quantity)); toast.success("أُضيفت مقادير الوصفة للسلة 🛒"); }} style={{ ...tinyChipStyle, background: "#174b36", color: "#fff", marginTop: "4px", padding: "4px 10px" }}>
-                      إضافة مقادير الوصفة للسلة
-                    </button>
-                  )}
+
+              <div style={{ background: '#edf5f0', border: '1px solid #cde0d4', borderRadius: '14px', padding: '12px', marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <div>
+                  <strong style={{ fontSize: '13px', color: '#143a28', display: 'block' }}>{product.name}</strong>
+                  <small style={{ color: '#4d6658', fontSize: '11.5px', fontWeight: 800 }}>{formatPrice(product.price)} / {product.unit}</small>
                 </div>
-              )}
-              {parsed.chips.length > 0 && (
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "5px", marginTop: "8px" }}>
-                  {parsed.chips.map((chip, idx) => (
-                    <button key={idx} type="button" disabled={isPending} onClick={() => sendProductQuery(chip)} style={tinyChipStyle}>
-                      {chip}
-                    </button>
-                  ))}
-                </div>
-              )}
+                <button
+                  type='button'
+                  className='button button-primary'
+                  style={{ minHeight: '38px', padding: '6px 14px', borderRadius: '11px', fontSize: '12.5px', fontWeight: 800 }}
+                  onClick={() => {
+                    add(product, product.minQuantity || 1);
+                    toast.success('تمت إضافة «' + product.name + '» إلى سلتك ✓');
+                  }}
+                >
+                  <ShoppingCart size={15} /> أضف «{product.name}» للسلة
+                </button>
+              </div>
+
+              <form
+                onSubmit={e => {
+                  e.preventDefault();
+                  if (!customInput.trim() || isPending) return;
+                  askForProduct(customInput.trim());
+                  setCustomInput('');
+                }}
+                style={{ display: 'flex', gap: '6px', marginTop: '8px', marginBottom: '10px' }}
+              >
+                <input
+                  value={customInput}
+                  onChange={e => setCustomInput(e.target.value)}
+                  placeholder='اطلب تعديلاً خاصاً (مثلاً: بدون سكر، طريقة سريعة، لـ 4 أشخاص)...'
+                  style={{ flex: 1, padding: '8px 11px', borderRadius: '11px', border: '1px solid #cddbd2', fontSize: '12px' }}
+                />
+                <button type='submit' className='button button-primary' disabled={isPending || !customInput.trim()} style={{ minHeight: '38px', padding: '0 14px', borderRadius: '11px' }}>
+                  <Sparkles size={15} />
+                </button>
+              </form>
+
+              <button type='button' className='button button-outline full-button' onClick={continueInAssistantChat} style={{ fontSize: '12px' }}>
+                <Sparkles size={15} /> متابعة النقاش في صفحة المساعد الذكي
+              </button>
             </div>
           ) : null}
-
-          <form
-            onSubmit={e => {
-              e.preventDefault();
-              if (!customInput.trim() || isPending) return;
-              const q = customInput.trim();
-              setCustomInput("");
-              sendProductQuery(q);
-            }}
-            style={{ display: "flex", gap: "6px", marginBottom: "8px" }}
-          >
-            <input
-              value={customInput}
-              onChange={e => setCustomInput(e.target.value)}
-              placeholder="اسأل أي سؤال..."
-              disabled={isPending}
-              style={{ flex: 1, minHeight: "34px", padding: "0 12px", borderRadius: "999px", border: "1px solid #cbd8ce", fontSize: "12px", background: "#fff" }}
-            />
-            <button type="submit" className="button button-primary" disabled={!customInput.trim() || isPending} style={{ minHeight: "34px", padding: "0 14px", borderRadius: "999px", fontSize: "11.5px" }}>
-              إرسال
-            </button>
-          </form>
-
-          <button type="button" className="button button-outline full-button" onClick={continueInAssistantChat} style={{ borderRadius: "999px", minHeight: "32px", fontSize: "11px" }}>
-            متابعة في صفحة المساعد
-          </button>
         </div>
       </section>
     </div>
@@ -859,8 +882,56 @@ function ProductCard({ product, onOpen, onAiRecipe, priority = false }: { produc
 
 
 function ProductGrid({ items, onOpen, onAiRecipe }: { items: PublicProduct[]; onOpen: (id: number) => void; onAiRecipe?: (p: PublicProduct) => void }) {
-  if (!items.length) return <EmptyState icon={ShoppingBag} title="المتجر ينتظر منتجاته الأولى" description="لا توجد منتجات منشورة بعد. ستظهر الأصناف هنا بعد أن تضيفها من لوحة الإدارة." action="تصفح الأقسام" href="/categories" />;
-  return <div className="product-grid">{items.map((product, idx) => <ProductCard key={product.id} product={product} priority={idx < 8} onOpen={() => onOpen(product.id)} onAiRecipe={onAiRecipe} />)}</div>;
+  const [visibleCount, setVisibleCount] = useState(24);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    setVisibleCount(24);
+  }, [items.length, items[0]?.id]);
+
+  useEffect(() => {
+    if (visibleCount >= items.length) return;
+    const node = loadMoreRef.current;
+    if (!node || typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver(
+      entries => {
+        if (entries[0]?.isIntersecting) {
+          setVisibleCount(curr => Math.min(items.length, curr + 24));
+        }
+      },
+      { rootMargin: '420px 0px' }
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [visibleCount, items.length]);
+
+  if (!items.length) {
+    return <EmptyState icon={ShoppingBag} title='المتجر ينتظر منتجاته الأولى' description='لا توجد منتجات منشورة بعد. ستظهر الأصناف هنا بعد أن تضيفها من لوحة الإدارة.' action='تصفح الأقسام' href='/categories' />;
+  }
+
+  const visibleItems = items.slice(0, visibleCount);
+
+  return (
+    <>
+      <div className='product-grid'>
+        {visibleItems.map((product, idx) => (
+          <ProductCard key={product.id} product={product} priority={idx < 6} onOpen={() => onOpen(product.id)} onAiRecipe={onAiRecipe} />
+        ))}
+      </div>
+      {visibleCount < items.length && (
+        <div ref={loadMoreRef} style={{ textAlign: 'center', padding: '16px 0 8px' }}>
+          <button
+            type='button'
+            className='button button-outline'
+            onClick={() => setVisibleCount(curr => Math.min(items.length, curr + 36))}
+            style={{ minHeight: '38px', padding: '6px 18px', borderRadius: '12px', fontSize: '12.5px', fontWeight: 800 }}
+          >
+            عرض المزيد من المنتجات ({items.length - visibleCount} متبقٍ)
+          </button>
+        </div>
+      )}
+    </>
+  );
 }
 
 function CategoryStrip({ data, onSelect }: { data: HomeData["categories"]; onSelect: (id: number) => void }) {
@@ -948,7 +1019,7 @@ function CategoryStrip({ data, onSelect }: { data: HomeData["categories"]; onSel
 function HomePage({ data, onOpen, onAiRecipe }: { data: HomeData; onOpen: (id: number) => void; onAiRecipe?: (p: PublicProduct) => void }) {
   const [, navigate] = useLocation();
   const [sort, setSort] = useState<"featured" | "price-asc" | "price-desc">("featured");
-  const { data: products, isLoading: productsLoading } = trpc.commerce.catalog.listProducts.useQuery({ sort, limit: 24 }, { enabled: sort !== "featured", retry: 1, staleTime: 15000, refetchInterval: false, refetchOnWindowFocus: true });
+  const { data: products, isLoading: productsLoading } = trpc.commerce.catalog.listProducts.useQuery({ sort, limit: 10000 }, { enabled: sort !== "featured", retry: 1, staleTime: 15000, refetchInterval: false, refetchOnWindowFocus: true });
   const featured = sort === "featured" ? (data.products?.length ? data.products : (products ?? [])) : (products ?? data.products);
   const changeCategory = (id: number) => { navigate("/products?category=" + id); };
 
@@ -1609,10 +1680,18 @@ const DEFAULT_PUBLIC_DELIVERY_TREE: PublicDeliveryTree = {
 };
 
 function readPublicDeliveryTree(raw?: string | null): PublicDeliveryTree {
-  if (!raw) return DEFAULT_PUBLIC_DELIVERY_TREE;
+  let source = raw;
+  if (!source) {
+    try {
+      source = (typeof window !== 'undefined' && (window as any).__INITIAL_CATALOG__?.settings?.deliveryTreeConfig)
+        || localStorage.getItem('original-admin-delivery-tree-v1')
+        || null;
+    } catch {}
+  }
+  if (!source) return DEFAULT_PUBLIC_DELIVERY_TREE;
   try {
-    const p = JSON.parse(raw);
-    if (!p || typeof p !== "object" || !Array.isArray(p.cities)) return DEFAULT_PUBLIC_DELIVERY_TREE;
+    const p = JSON.parse(source);
+    if (!p || typeof p !== 'object' || !Array.isArray(p.cities)) return DEFAULT_PUBLIC_DELIVERY_TREE;
     const activeCities = p.cities
       .filter((c: any) => c && c.enabled !== false)
       .map((c: any) => ({
@@ -2000,7 +2079,7 @@ function Checkout({ onClose, onSuccess, cart }: { onClose: () => void; onSuccess
   const utils = trpc.useUtils();
   const [, navigate] = useLocation();
   const customer = useCustomer();
-  const homeCatalog = trpc.commerce.catalog.home.useQuery(undefined, { staleTime: 60_000 });
+  const homeCatalog = trpc.commerce.catalog.home.useQuery(undefined, { staleTime: 0, refetchOnMount: 'always' });
   const deliveryTree = useMemo(() => readPublicDeliveryTree((homeCatalog.data?.settings as any)?.deliveryTreeConfig), [homeCatalog.data?.settings]);
   const subtotal = useMemo(() => cart.reduce((s, l) => s + l.price * l.quantity, 0), [cart]);
 
@@ -2688,7 +2767,7 @@ function useGuestPushSubscriptionSync() {
 function AccountPage() {
   const customer = useCustomer();
   const { favoriteIds } = useStore();
-  const homeCatalog = trpc.commerce.catalog.home.useQuery(undefined, { staleTime: 60000 });
+  const homeCatalog = trpc.commerce.catalog.home.useQuery(undefined, { staleTime: 0, refetchOnMount: 'always' });
   const deliveryTree = useMemo(() => readPublicDeliveryTree((homeCatalog.data?.settings as any)?.deliveryTreeConfig), [homeCatalog.data?.settings]);
   const cleanedCustomerPhone = cleanYemeniPhone(customer.phone);
   const hasSavedProfile = Boolean(customer.name.trim().length >= 2 && isValidYemeniPhone(cleanedCustomerPhone));
@@ -3869,6 +3948,6 @@ export default function Home() {
     if (location === "/assistant") return <AssistantPage />;
     return <HomePage data={data} onOpen={openProduct} onAiRecipe={setActiveAiProduct} />;
   }, [location, productId, productPath, data]);
-  return <div className="store-app" dir="rtl"><Header data={data} onSearch={text => navigate(`/products${text ? `?search=${encodeURIComponent(text)}` : ""}`)} />{!location.startsWith("/assistant") && <GamifiedRewardBar settings={data.settings} location={location} />}{home.isError && !data.products?.length && !data.categories?.length && <div className="connection-strip"><span>الاتصال بالخدمة غير متاح مؤقتًا</span><button onClick={() => void home.refetch()}>إعادة المحاولة</button></div>}{home.isError && !data.products?.length && !data.categories?.length ? <main className="page-shell inner-page"><LoadError onRetry={() => void home.refetch()} /></main> : content}{!location.startsWith("/assistant") && <footer className="store-footer"><div className="footer-brand"><span className={`brand-mark ${data.settings.storeIconUrl ? "has-brand-image" : ""}`}>{data.settings.storeIconUrl ? <img src={data.settings.storeIconUrl} alt="" /> : <Leaf size={18} />}</span><span><b>ORIGINAL</b><small>{data.settings.storeName === "ORIGINAL – أورجنال" || !data.settings.storeName ? "أورجنال" : data.settings.storeName}</small></span></div>{shouldShowFooterDescription(data.settings.storeDescription) && <span>{data.settings.storeDescription}</span>}<small>© {new Date().getFullYear()} {data.settings.storeName || "ORIGINAL"}</small></footer>}{activeAiProduct && <AiRecipeModal product={activeAiProduct} onClose={() => setActiveAiProduct(null)} />}
+  return <div className="store-app" dir="rtl"><Header data={data} onSearch={text => navigate(`/products${text ? `?search=${encodeURIComponent(text)}` : ""}`)} />{!location.startsWith("/assistant") && <GamifiedRewardBar settings={data.settings} location={location} />}{home.isError && !data.products?.length && !data.categories?.length && <div className="connection-strip"><span>الاتصال بالخدمة غير متاح مؤقتًا</span><button onClick={() => void home.refetch()}>إعادة المحاولة</button></div>}{home.isError && !data.products?.length && !data.categories?.length ? <main className="page-shell inner-page"><LoadError onRetry={() => void home.refetch()} /></main> : content}{!location.startsWith("/assistant") && <footer className="store-footer"><div className="footer-brand"><span className="brand-mark has-brand-image"><img src={data?.settings?.storeIconUrl || "/app-icon-512-orig.png"} alt="ORIGINAL" /></span><span><b>ORIGINAL</b><small>{data.settings.storeName === "ORIGINAL – أورجنال" || !data.settings.storeName ? "أورجنال" : data.settings.storeName}</small></span></div>{shouldShowFooterDescription(data.settings.storeDescription) && <span>{data.settings.storeDescription}</span>}<small>© {new Date().getFullYear()} {data.settings.storeName || "ORIGINAL"}</small></footer>}{activeAiProduct && <AiRecipeModal product={activeAiProduct} onClose={() => setActiveAiProduct(null)} />}
     <BottomNav active={currentNav} /></div>;
 }
