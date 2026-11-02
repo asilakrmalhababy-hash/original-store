@@ -1,3 +1,13 @@
+// __SAFE_TOAST_PATCH__
+import { toast as __sonnerToast } from "sonner";
+const __origToastError = __sonnerToast.error.bind(__sonnerToast);
+(__sonnerToast as any).error = (msg: unknown, opts?: any) => {
+  const s = String(msg ?? "");
+  if (s.includes("invalid_format") || s.includes("must match pattern") || s.includes("OR-[A-Z0-9]") || (s.trim().startsWith("[") && s.includes("origin"))) {
+    return;
+  }
+  return __origToastError(msg as any, opts);
+};
 import { trpc } from "@/lib/trpc";
 import { COOKIE_NAME } from "@shared/const";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";

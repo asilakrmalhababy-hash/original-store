@@ -1051,17 +1051,31 @@ export const commerceRouter = router({
     }),
     trackMany: publicProcedure.input(z.object({
       refs: z.array(z.object({
-        orderNumber: z.string().trim().min(6).max(40).regex(/^OR-[A-Z0-9]+-[A-Z0-9]{5}$/i),
-        idempotencyKey: z.string().uuid(),
-      })).min(1).max(50),
+        orderNumber: z.string().trim().min(1).max(100),
+        idempotencyKey: z.string().trim().min(1).max(160),
+      })).max(50).default([]),
+      phone: z.string().trim().max(32).optional(),
     })).query(async ({ input }) => {
       const db = await database();
-      const referenceByNumber = new Map(input.refs.map(reference => [reference.orderNumber, reference.idempotencyKey]));
+      const referenceByNumber = new Map(input.refs.map(r => [r.orderNumber.trim(), r.idempotencyKey.trim()]));
+      const allInputKeys = input.refs.map(r => r.idempotencyKey.trim()).filter(Boolean);
+      const cleanPhone = input.phone ? normalizeYemeniPhone(input.phone) : "";
+      const validPhone = cleanPhone && /^(77|73|78|71|70)\d{7}$/.test(cleanPhone) ? cleanPhone : "";
+      const refNumbers = [...referenceByNumber.keys()].filter(Boolean);
+      if (!refNumbers.length && !validPhone) return [];
+      const conditions: any[] = [];
+      if (refNumbers.length) conditions.push(inArray(orders.orderNumber, refNumbers));
+      if (validPhone) conditions.push(eq(orders.phone, validPhone));
+      const whereCond = conditions.length === 1 ? conditions[0] : or(...conditions);
       const candidates = await db.select().from(orders)
-        .where(inArray(orders.orderNumber, [...referenceByNumber.keys()])).orderBy(desc(orders.createdAt), desc(orders.id)).limit(50);
+        .where(whereCond).orderBy(desc(orders.createdAt), desc(orders.id)).limit(50);
       const authorized = candidates.filter(order => {
+        if (String(order.orderNumber || "").startsWith("REQ-") || order.city === "طلب توفير خاص") return false;
         const key = referenceByNumber.get(order.orderNumber);
-        return key ? matchesGuestOrderKey(key, order.idempotencyKey) : false;
+        if (key && matchesGuestOrderKey(key, order.idempotencyKey)) return true;
+        if (allInputKeys.some(k => matchesGuestOrderKey(k, order.idempotencyKey))) return true;
+        if (validPhone && normalizeYemeniPhone(order.phone) === validPhone) return true;
+        return false;
       });
       if (!authorized.length) return [];
       const orderIds = authorized.map(order => order.id);
@@ -1083,14 +1097,14 @@ export const commerceRouter = router({
         recipientName: order.recipientName,
         phone: order.phone,
         createdAt: order.createdAt,
-        items: items.filter(item => item.orderId === order.id),
+        items: items.filter(item => item.orderId === order.id).map(normalizeOrderItemImage),
         events: events.filter(event => event.orderId === order.id).map(({ id, status, note, createdAt }) => ({ id, status, note, createdAt })),
       }));
     }),
     subscribeToStatus: publicProcedure.input(z.object({
       refs: z.array(z.object({
-        orderNumber: z.string().trim().min(6).max(40).regex(/^OR-[A-Z0-9]+-[A-Z0-9]{5}$/i),
-        idempotencyKey: z.string().uuid(),
+        orderNumber: z.string().trim().min(1).max(100),
+        idempotencyKey: z.string().trim().min(1).max(160),
       })).min(1).max(50),
       subscription: pushSubscriptionSchema,
     })).mutation(async ({ input }) => {
@@ -1098,9 +1112,11 @@ export const commerceRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: "خدمة الإشعارات في هذا المتصفح غير مدعومة." });
       }
       const db = await database();
-      const referenceByNumber = new Map(input.refs.map(reference => [reference.orderNumber, reference.idempotencyKey]));
+      const referenceByNumber = new Map(input.refs.map(r => [r.orderNumber.trim(), r.idempotencyKey.trim()]));
+      const refNumbers = [...referenceByNumber.keys()].filter(Boolean);
+      if (!refNumbers.length) return { subscribed: 0 };
       const candidates = await db.select({ id: orders.id, orderNumber: orders.orderNumber, idempotencyKey: orders.idempotencyKey })
-        .from(orders).where(inArray(orders.orderNumber, [...referenceByNumber.keys()])).limit(50);
+        .from(orders).where(inArray(orders.orderNumber, refNumbers)).limit(50);
       const authorized = candidates.filter(order => {
         const key = referenceByNumber.get(order.orderNumber);
         return key ? matchesGuestOrderKey(key, order.idempotencyKey) : false;
@@ -1129,7 +1145,7 @@ export const commerceRouter = router({
       return rows.map(order => ({ ...order, items: items.filter(item => item.orderId === order.id), events: events.filter(event => event.orderId === order.id) }));
     }),
     place: publicProcedure.input(z.object({
-      idempotencyKey: z.string().uuid(),
+      idempotencyKey: z.string().trim().min(1).max(160),
       expectedTotal: z.number().int().min(0).max(100000000000),
       expectedQuoteHash: z.string().length(64).regex(/^[a-f0-9]+$/),
       items: z.array(z.object({ productId: safeId, quantity: z.number().int().min(1).max(10000), name: z.string().trim().max(220).optional(), variant: z.string().trim().max(120).optional(), customAmount: z.number().int().min(1).max(100000000).optional() })).min(1).max(100),

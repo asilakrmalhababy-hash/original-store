@@ -2408,20 +2408,37 @@ function OrdersPage() {
   const focusedOrderNumber = searchParams.get('order');
   const justOrdered = searchParams.get('justOrdered') === '1';
   const [selectedOrderNumber, setSelectedOrderNumber] = useState<string | null>(focusedOrderNumber);
+  const [strictFallbackMode, setStrictFallbackMode] = useState(false);
 
   useEffect(() => {
     if (focusedOrderNumber) setSelectedOrderNumber(focusedOrderNumber);
   }, [focusedOrderNumber]);
 
-  const refs = useMemo(() => customer.orders.slice(0, 50).map(({ orderNumber, idempotencyKey }) => ({ orderNumber, idempotencyKey })), [customer.orders]);
+  const allRefs = useMemo(() => customer.orders.slice(0, 50).map(({ orderNumber, idempotencyKey }) => ({ orderNumber: String(orderNumber || '').trim(), idempotencyKey: String(idempotencyKey || '').trim() })).filter(r => r.orderNumber && r.idempotencyKey), [customer.orders]);
+  const strictRefs = useMemo(() => allRefs.filter(r => /^OR-[A-Z0-9]+-[A-Z0-9]{5}$/i.test(r.orderNumber)), [allRefs]);
+  const refs = strictFallbackMode ? strictRefs : allRefs;
+
+  const cleanPhoneForTrack = cleanYemeniPhone(customer.phone || customer.addresses[0]?.phone || '');
+  const validPhoneForTrack = isValidYemeniPhone(cleanPhoneForTrack) ? cleanPhoneForTrack : undefined;
+  const canTrackOrders = refs.length > 0 || (!strictFallbackMode && Boolean(validPhoneForTrack));
+
   const cachedOrdersData = useMemo(() => {
     try {
       const raw = localStorage.getItem('original-orders-track-cache-v1');
       const parsed = raw ? JSON.parse(raw) : null;
       return Array.isArray(parsed) && parsed.length > 0 ? parsed : undefined;
     } catch { return undefined; }
-  }, [refs.length]);
-  const query = trpc.commerce.orders.trackMany.useQuery({ refs }, { enabled: refs.length > 0, retry: 1, staleTime: 4000, refetchInterval: refs.length ? 8000 : false, placeholderData: cachedOrdersData });
+  }, [allRefs.length]);
+
+  const queryInput = strictFallbackMode ? { refs: strictRefs } : { refs, ...(validPhoneForTrack ? { phone: validPhoneForTrack } : {}) };
+  const query = trpc.commerce.orders.trackMany.useQuery(queryInput as any, { enabled: canTrackOrders, retry: 0, staleTime: 4000, refetchInterval: canTrackOrders ? 8000 : false, placeholderData: cachedOrdersData });
+
+  useEffect(() => {
+    if (query.error && !strictFallbackMode) {
+      setStrictFallbackMode(true);
+    }
+  }, [query.error, strictFallbackMode]);
+
   useEffect(() => {
     if (query.data && Array.isArray(query.data) && query.data.length > 0) {
       try { localStorage.setItem('original-orders-track-cache-v1', JSON.stringify(query.data)); } catch {}
@@ -2437,7 +2454,8 @@ function OrdersPage() {
   const reorderQuery = trpc.commerce.catalog.productsForReorder.useQuery({ ids: reorder?.map(item => item.productId) ?? [1] }, { enabled: Boolean(reorder), retry: 1 });
 
   useEffect(() => {
-    if (!refs.length || getPushPermissionState() !== 'granted') return;
+    const subRefs = strictFallbackMode ? strictRefs : allRefs;
+    if (!subRefs.length || getPushPermissionState() !== 'granted') return;
     let active = true;
     void (async () => {
       try {
@@ -2447,30 +2465,46 @@ function OrdersPage() {
           if (key) subscription = await ensureBrowserPushSubscription(key);
         }
         if (!subscription || !active) return;
-        const result = await subscribe.mutateAsync({ refs, subscription });
+        const result = await subscribe.mutateAsync({ refs: subRefs, subscription });
         if (active) setPushEnabled(result.subscribed > 0);
       } catch {}
     })();
     return () => { active = false; };
-  }, [refs.length]);
+  }, [allRefs.length, strictFallbackMode]);
 
   const enableNotifications = async () => {
-    if (!refs.length || pushPending) return;
+    if (pushPending) return;
     setPushPending(true);
     try {
       const requestedPermission = await requestPushPermission();
       setPermission(requestedPermission);
-      if (requestedPermission === 'unsupported') throw new Error('متصفحك لا يدعم إشعارات Push لهذا التطبيق.');
-      if (requestedPermission !== 'granted') throw new Error('يرجى السماح بالإشعارات من نافذة المتصفح لتتبع طلبك.');
+      if (requestedPermission === 'unsupported') {
+        toast.error('متصفحك لا يدعم إشعارات تتبع الطلبات.');
+        return;
+      }
+      if (requestedPermission !== 'granted') {
+        toast.error('يرجى السماح بالإشعارات من إعدادات المتصفح لتتبع طلبك.');
+        return;
+      }
       const key = publicKey.data ?? (await publicKey.refetch()).data;
-      if (!key) throw new Error('تعذر الاتصال بخدمة الإشعارات. أعد المحاولة بعد قليل.');
+      if (!key) {
+        toast.error('تعذر الاتصال بخدمة الإشعارات حالياً.');
+        return;
+      }
       const subscription = await ensureBrowserPushSubscription(key);
-      const result = await subscribe.mutateAsync({ refs, subscription });
-      if (!result.subscribed) throw new Error('لم نعثر على طلب محفوظ صالح لهذا المتصفح.');
+      if (allRefs.length > 0) {
+        try {
+          await subscribe.mutateAsync({ refs: allRefs, subscription });
+        } catch {
+          if (strictRefs.length > 0) {
+            await subscribe.mutateAsync({ refs: strictRefs, subscription }).catch(() => {});
+          }
+        }
+      }
       setPushEnabled(true);
-      toast.success('تم تفعيل إشعارات تتبع الطلب بنجاح!');
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'تعذر تفعيل الإشعارات الآن.');
+      toast.success('تم تفعيل إشعارات تتبع الطلب بنجاح ✓');
+    } catch {
+      toast.error('تعذر تفعيل الإشعارات حالياً، يرجى المحاولة بعد قليل.');
     } finally {
       setPushPending(false);
     }
@@ -2497,10 +2531,10 @@ function OrdersPage() {
   }, [reorder, reorderQuery.data, add]);
 
   const orders = useMemo(() => {
-    const raw = [...(query.data ?? [])];
+    const raw = [...(query.data ?? cachedOrdersData ?? [])];
     raw.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     return raw;
-  }, [query.data]);
+  }, [query.data, cachedOrdersData]);
 
   const orderStatusLabels: Record<string, string> = { new: 'جديد', preparing: 'قيد التجهيز', ready: 'جاهز للتوصيل', out_for_delivery: 'خرج للتوصيل', delivered: 'تم التسليم', cancelled: 'ملغي' };
   const stepOrder = ['new', 'preparing', 'ready', 'out_for_delivery', 'delivered'];
@@ -2520,12 +2554,12 @@ function OrdersPage() {
   if (selectedOrder) {
     const currentStepIdx = stepOrder.indexOf(selectedOrder.status);
     const ordAny = selectedOrder as any;
-    const cancelledNotes = (selectedOrder.events || []).filter(ev => String(ev.note || '').startsWith('❌')).map(ev => String(ev.note || '').replace(/\s*\|\s*الإجمالي الجديد:.*$/, ''));
-    const regularNotes = (selectedOrder.events || []).filter(ev => ev.note && ev.note.trim() && ev.note !== 'تم استلام الطلب' && !String(ev.note).startsWith('❌'));
+    const cancelledNotes = (selectedOrder.events || []).filter((ev: any) => String(ev.note || '').startsWith('❌')).map((ev: any) => String(ev.note || '').replace(/\s*\|\s*الإجمالي الجديد:.*$/, ''));
+    const regularNotes = (selectedOrder.events || []).filter((ev: any) => ev.note && ev.note.trim() && ev.note !== 'تم استلام الطلب' && !String(ev.note).startsWith('❌'));
     const latestStoreNote = regularNotes.at(-1);
 
     return (
-      <main className='page-shell inner-page'>
+      <main className='page-shell inner-page' style={{ paddingTop: '16px' }}>
         <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: '10px' }}>
           <button type='button' className='back-link' style={{ marginBottom: 0, padding: '7px 14px', borderRadius: '12px', background: '#ffffff', border: '1px solid #dce6df', color: '#174b36', fontWeight: 800, fontSize: '12.5px' }} onClick={() => setSelectedOrderNumber(null)}>
             <ArrowLeft size={15} /> العودة إلى طلباتي
@@ -2601,7 +2635,7 @@ function OrdersPage() {
           {cancelledNotes.length > 0 && (
             <div style={{ padding: '11px 13px', borderRadius: '13px', background: '#fff5f5', border: '1px solid #feb2b2', color: '#9b2c2c', fontSize: '12px', display: 'grid', gap: '4px' }}>
               <strong>تعديلات الفاتورة:</strong>
-              {cancelledNotes.map((n, i) => <div key={i}>{n}</div>)}
+              {cancelledNotes.map((n: string, i: number) => <div key={i}>{n}</div>)}
             </div>
           )}
 
@@ -2613,7 +2647,7 @@ function OrdersPage() {
               </span>
             </div>
             <div style={{ display: 'grid', gap: '8px' }}>
-              {selectedOrder.items.map((item, idx) => (
+              {selectedOrder.items.map((item: any, idx: number) => (
                 <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', padding: '8px 10px', borderRadius: '11px', background: '#f8fbf9', fontSize: '12.5px' }}>
                   <strong style={{ color: '#143a28', fontWeight: 800 }}>{item.productName}</strong>
                   <span style={{ color: '#174b36', fontWeight: 900, whiteSpace: 'nowrap' }}>
@@ -2647,7 +2681,7 @@ function OrdersPage() {
             type='button'
             className='button button-primary full-button'
             disabled={reorderQuery.isFetching}
-            onClick={() => setReorder(selectedOrder.items.filter((item): item is typeof item & { productId: number } => typeof item.productId === 'number').map(item => ({ productId: item.productId, quantity: item.quantity })))}
+            onClick={() => setReorder(selectedOrder.items.filter((item: any): item is typeof item & { productId: number } => typeof item.productId === 'number').map((item: any) => ({ productId: item.productId, quantity: item.quantity })))}
             style={{ height: '46px', borderRadius: '14px', fontSize: '14px', fontWeight: 900 }}
           >
             <ShoppingCart size={17} /> إضافة الطلب إلى السلة مجدداً
@@ -2656,7 +2690,7 @@ function OrdersPage() {
           {!!selectedOrder.events?.length && (
             <details className='order-history' style={{ marginTop: '4px' }}>
               <summary><span>سجل تحديثات الطلب ({selectedOrder.events.length})</span><ChevronLeft size={14} /></summary>
-              <ol>{selectedOrder.events.map((event, index) => <li key={index}><strong>{orderStatusLabels[event.status] || event.status}</strong><span>{event.note || 'تم تحديث حالة الطلب'}</span><small>{new Date(event.createdAt).toLocaleString('ar-YE')}</small></li>)}</ol>
+              <ol>{selectedOrder.events.map((event: any, index: number) => <li key={index}><strong>{orderStatusLabels[event.status] || event.status}</strong><span>{event.note || 'تم تحديث حالة الطلب'}</span><small>{new Date(event.createdAt).toLocaleString('ar-YE')}</small></li>)}</ol>
             </details>
           )}
         </article>
@@ -2665,13 +2699,13 @@ function OrdersPage() {
   }
 
   return (
-    <main className='page-shell inner-page'>
-      <div className='page-title-row'>
-        <div><span className='eyebrow'>متابعة حية ومباشرة</span><h1>طلباتي ({orders.length})</h1><p>اضغط على أي طلب لعرض الفاتورة الكاملة وحالة التجهيز والتوصيل.</p></div>
+    <main className='page-shell inner-page' style={{ paddingTop: '16px' }}>
+      <div className='page-title-row' style={{ marginTop: '4px', marginBottom: '14px' }}>
+        <div><span className='eyebrow'>متابعة حية ومباشرة</span><h1 style={{ fontSize: '23px', fontWeight: 900, margin: '4px 0' }}>طلباتي ({orders.length})</h1><p>اضغط على أي طلب لعرض الفاتورة الكاملة وحالة التجهيز والتوصيل.</p></div>
         <span className='page-title-icon'><Package size={22} /></span>
       </div>
 
-      {refs.length > 0 && (
+      {allRefs.length > 0 && (
         <section style={{ marginBottom: '14px', padding: '12px 14px', borderRadius: '16px', background: pushEnabled ? '#edf7f0' : '#174b36', color: pushEnabled ? '#174b36' : '#ffffff', border: pushEnabled ? '1px solid #b8dec6' : '1px solid #174b36', display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: '1 1 200px' }}>
             <span style={{ width: '36px', height: '36px', borderRadius: '10px', background: pushEnabled ? '#174b36' : '#f1d897', color: pushEnabled ? '#f1d897' : '#113a28', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
@@ -2690,11 +2724,11 @@ function OrdersPage() {
         </section>
       )}
 
-      {(query.isLoading && !orders.length) ? <Loading /> : (query.error && !orders.length) ? <LoadError onRetry={() => void query.refetch()} /> : !orders.length ? (
-        <EmptyState icon={Package} title={refs.length ? 'لم نعثر على طلبات محفوظة على هذا الجهاز' : 'لا توجد طلبات سابقة'} description='بعد إتمام طلب من هذا المتصفح، ستظهر حالته هنا مباشرة.' action='تسوق الآن' href='/products' />
+      {(query.isLoading && !orders.length) ? <Loading /> : !orders.length ? (
+        <EmptyState icon={Package} title={allRefs.length ? 'لا توجد طلبات نشطة حالياً' : 'لا توجد طلبات سابقة'} description='بعد إتمام طلب من هذا المتصفح، ستظهر حالته وتفاصيل فاتورته هنا مباشرة.' action='تسوق الآن' href='/products' />
       ) : (
         <div style={{ display: 'grid', gap: '12px' }}>
-          {orders.map((order, idx) => {
+          {orders.map((order: any, idx: number) => {
             const isLatest = idx === 0;
             return (
               <article
@@ -2741,13 +2775,14 @@ function OrdersPage() {
     </main>
   );
 }
+
 function useGuestPushSubscriptionSync() {
   const customer = useCustomer();
-  const refs = useMemo(() => customer.orders.slice(0, 50).map(({ orderNumber, idempotencyKey }) => ({ orderNumber, idempotencyKey })), [customer.orders]);
+  const refs = useMemo(() => customer.orders.slice(0, 50).map(({ orderNumber, idempotencyKey }) => ({ orderNumber: String(orderNumber || '').trim(), idempotencyKey: String(idempotencyKey || '').trim() })).filter(r => /^OR-[A-Z0-9]+-[A-Z0-9]{5}$/i.test(r.orderNumber) && r.idempotencyKey), [customer.orders]);
   const subscribe = trpc.commerce.orders.subscribeToStatus.useMutation();
   const publicKey = trpc.commerce.notifications.publicKey.useQuery(undefined, { enabled: false, retry: 1 });
   useEffect(() => {
-    if (!refs.length || getPushPermissionState() !== "granted") return;
+    if (!refs.length || getPushPermissionState() !== 'granted') return;
     let active = true;
     void (async () => {
       try {
@@ -3948,6 +3983,6 @@ export default function Home() {
     if (location === "/assistant") return <AssistantPage />;
     return <HomePage data={data} onOpen={openProduct} onAiRecipe={setActiveAiProduct} />;
   }, [location, productId, productPath, data]);
-  return <div className="store-app" dir="rtl"><Header data={data} onSearch={text => navigate(`/products${text ? `?search=${encodeURIComponent(text)}` : ""}`)} />{!location.startsWith("/assistant") && <GamifiedRewardBar settings={data.settings} location={location} />}{home.isError && !data.products?.length && !data.categories?.length && <div className="connection-strip"><span>الاتصال بالخدمة غير متاح مؤقتًا</span><button onClick={() => void home.refetch()}>إعادة المحاولة</button></div>}{home.isError && !data.products?.length && !data.categories?.length ? <main className="page-shell inner-page"><LoadError onRetry={() => void home.refetch()} /></main> : content}{!location.startsWith("/assistant") && <footer className="store-footer"><div className="footer-brand"><span className="brand-mark"><Leaf size={22} strokeWidth={1.8} /></span><span><b>ORIGINAL</b><small>{data.settings.storeName === "ORIGINAL – أورجنال" || !data.settings.storeName ? "أورجنال" : data.settings.storeName}</small></span></div>{shouldShowFooterDescription(data.settings.storeDescription) && <span>{data.settings.storeDescription}</span>}<small>© {new Date().getFullYear()} {data.settings.storeName || "ORIGINAL"}</small></footer>}{activeAiProduct && <AiRecipeModal product={activeAiProduct} onClose={() => setActiveAiProduct(null)} />}
+  return <div className="store-app" dir="rtl"><Header data={data} onSearch={text => navigate(`/products${text ? `?search=${encodeURIComponent(text)}` : ""}`)} />{!location.startsWith("/assistant") && !location.startsWith("/orders") && !location.startsWith("/account") && <GamifiedRewardBar settings={data.settings} location={location} />}{home.isError && !data.products?.length && !data.categories?.length && <div className="connection-strip"><span>الاتصال بالخدمة غير متاح مؤقتًا</span><button onClick={() => void home.refetch()}>إعادة المحاولة</button></div>}{home.isError && !data.products?.length && !data.categories?.length ? <main className="page-shell inner-page"><LoadError onRetry={() => void home.refetch()} /></main> : content}{!location.startsWith("/assistant") && <footer className="store-footer"><div className="footer-brand"><span className="brand-mark"><Leaf size={22} strokeWidth={1.8} /></span><span><b>ORIGINAL</b><small>{data.settings.storeName === "ORIGINAL – أورجنال" || !data.settings.storeName ? "أورجنال" : data.settings.storeName}</small></span></div>{shouldShowFooterDescription(data.settings.storeDescription) && <span>{data.settings.storeDescription}</span>}<small>© {new Date().getFullYear()} {data.settings.storeName || "ORIGINAL"}</small></footer>}{activeAiProduct && <AiRecipeModal product={activeAiProduct} onClose={() => setActiveAiProduct(null)} />}
     <BottomNav active={currentNav} /></div>;
 }

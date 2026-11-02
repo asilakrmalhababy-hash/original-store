@@ -3451,6 +3451,13 @@ async function ensureOrderItemsFastSchema(dbInstance) {
   } catch {
   }
 }
+function normalizeOrderItemImage(item) {
+  if (!item || !item.productImage) return item;
+  if (item.productImage.startsWith("data:image/")) {
+    return { ...item, productImage: item.productId ? "/api/fast-img/product/" + item.productId : null };
+  }
+  return item;
+}
 async function refreshHomeCatalogCache() {
   if (__refreshingHomePromise) return __refreshingHomePromise;
   __refreshingHomePromise = (async () => {
@@ -3700,16 +3707,30 @@ var commerceRouter = router({
     }),
     trackMany: publicProcedure.input(z3.object({
       refs: z3.array(z3.object({
-        orderNumber: z3.string().trim().min(6).max(40).regex(/^OR-[A-Z0-9]+-[A-Z0-9]{5}$/i),
-        idempotencyKey: z3.string().uuid()
-      })).min(1).max(50)
+        orderNumber: z3.string().trim().min(1).max(100),
+        idempotencyKey: z3.string().trim().min(1).max(160)
+      })).max(50).default([]),
+      phone: z3.string().trim().max(32).optional()
     })).query(async ({ input }) => {
       const db = await database();
-      const referenceByNumber = new Map(input.refs.map((reference) => [reference.orderNumber, reference.idempotencyKey]));
-      const candidates = await db.select().from(orders).where(inArray(orders.orderNumber, [...referenceByNumber.keys()])).orderBy(desc(orders.createdAt), desc(orders.id)).limit(50);
+      const referenceByNumber = new Map(input.refs.map((r) => [r.orderNumber.trim(), r.idempotencyKey.trim()]));
+      const allInputKeys = input.refs.map((r) => r.idempotencyKey.trim()).filter(Boolean);
+      const cleanPhone = input.phone ? normalizeYemeniPhone(input.phone) : "";
+      const validPhone = cleanPhone && /^(77|73|78|71|70)\d{7}$/.test(cleanPhone) ? cleanPhone : "";
+      const refNumbers = [...referenceByNumber.keys()].filter(Boolean);
+      if (!refNumbers.length && !validPhone) return [];
+      const conditions = [];
+      if (refNumbers.length) conditions.push(inArray(orders.orderNumber, refNumbers));
+      if (validPhone) conditions.push(eq4(orders.phone, validPhone));
+      const whereCond = conditions.length === 1 ? conditions[0] : or(...conditions);
+      const candidates = await db.select().from(orders).where(whereCond).orderBy(desc(orders.createdAt), desc(orders.id)).limit(50);
       const authorized = candidates.filter((order) => {
+        if (String(order.orderNumber || "").startsWith("REQ-") || order.city === "\u0637\u0644\u0628 \u062A\u0648\u0641\u064A\u0631 \u062E\u0627\u0635") return false;
         const key = referenceByNumber.get(order.orderNumber);
-        return key ? matchesGuestOrderKey(key, order.idempotencyKey) : false;
+        if (key && matchesGuestOrderKey(key, order.idempotencyKey)) return true;
+        if (allInputKeys.some((k) => matchesGuestOrderKey(k, order.idempotencyKey))) return true;
+        if (validPhone && normalizeYemeniPhone(order.phone) === validPhone) return true;
+        return false;
       });
       if (!authorized.length) return [];
       const orderIds = authorized.map((order) => order.id);
@@ -3730,14 +3751,14 @@ var commerceRouter = router({
         recipientName: order.recipientName,
         phone: order.phone,
         createdAt: order.createdAt,
-        items: items.filter((item) => item.orderId === order.id),
+        items: items.filter((item) => item.orderId === order.id).map(normalizeOrderItemImage),
         events: events.filter((event) => event.orderId === order.id).map(({ id, status, note, createdAt }) => ({ id, status, note, createdAt }))
       }));
     }),
     subscribeToStatus: publicProcedure.input(z3.object({
       refs: z3.array(z3.object({
-        orderNumber: z3.string().trim().min(6).max(40).regex(/^OR-[A-Z0-9]+-[A-Z0-9]{5}$/i),
-        idempotencyKey: z3.string().uuid()
+        orderNumber: z3.string().trim().min(1).max(100),
+        idempotencyKey: z3.string().trim().min(1).max(160)
       })).min(1).max(50),
       subscription: pushSubscriptionSchema
     })).mutation(async ({ input }) => {
@@ -3745,8 +3766,10 @@ var commerceRouter = router({
         throw new TRPCError3({ code: "BAD_REQUEST", message: "\u062E\u062F\u0645\u0629 \u0627\u0644\u0625\u0634\u0639\u0627\u0631\u0627\u062A \u0641\u064A \u0647\u0630\u0627 \u0627\u0644\u0645\u062A\u0635\u0641\u062D \u063A\u064A\u0631 \u0645\u062F\u0639\u0648\u0645\u0629." });
       }
       const db = await database();
-      const referenceByNumber = new Map(input.refs.map((reference) => [reference.orderNumber, reference.idempotencyKey]));
-      const candidates = await db.select({ id: orders.id, orderNumber: orders.orderNumber, idempotencyKey: orders.idempotencyKey }).from(orders).where(inArray(orders.orderNumber, [...referenceByNumber.keys()])).limit(50);
+      const referenceByNumber = new Map(input.refs.map((r) => [r.orderNumber.trim(), r.idempotencyKey.trim()]));
+      const refNumbers = [...referenceByNumber.keys()].filter(Boolean);
+      if (!refNumbers.length) return { subscribed: 0 };
+      const candidates = await db.select({ id: orders.id, orderNumber: orders.orderNumber, idempotencyKey: orders.idempotencyKey }).from(orders).where(inArray(orders.orderNumber, refNumbers)).limit(50);
       const authorized = candidates.filter((order) => {
         const key = referenceByNumber.get(order.orderNumber);
         return key ? matchesGuestOrderKey(key, order.idempotencyKey) : false;
@@ -3775,7 +3798,7 @@ var commerceRouter = router({
       return rows.map((order) => ({ ...order, items: items.filter((item) => item.orderId === order.id), events: events.filter((event) => event.orderId === order.id) }));
     }),
     place: publicProcedure.input(z3.object({
-      idempotencyKey: z3.string().uuid(),
+      idempotencyKey: z3.string().trim().min(1).max(160),
       expectedTotal: z3.number().int().min(0).max(1e11),
       expectedQuoteHash: z3.string().length(64).regex(/^[a-f0-9]+$/),
       items: z3.array(z3.object({ productId: safeId, quantity: z3.number().int().min(1).max(1e4), name: z3.string().trim().max(220).optional(), variant: z3.string().trim().max(120).optional(), customAmount: z3.number().int().min(1).max(1e8).optional() })).min(1).max(100),

@@ -27,8 +27,8 @@ export type GuestCustomerData = {
 const STORAGE_KEY = "original-customer-browser-v1";
 const PENDING_ORDER_KEY = "original-pending-order-idempotency-v1";
 const EMPTY_DATA: GuestCustomerData = { name: "", phone: "", addresses: [], orders: [] };
-const ORDER_NUMBER_PATTERN = /^(?:OR-\\d{6,}|OR-[A-Z0-9]+-[A-Z0-9]{5}|TEST-[A-Z0-9-]+)$/;
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const ORDER_NUMBER_PATTERN = /^[A-Za-z0-9_#-]{3,80}$/i;
+const UUID_PATTERN = /^[A-Za-z0-9_#-]{6,160}$/i;
 const memoryPendingOrderKeys = new Map<string, string>();
 
 function isRecord(value: unknown): value is Record<string, unknown> {
