@@ -1,4 +1,3 @@
-import { lazy, Suspense } from "react";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
@@ -8,16 +7,12 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import { StoreProvider } from "./contexts/StoreContext";
 import { CustomerProvider } from "./contexts/CustomerContext";
 import Home from "./pages/Home";
-const Admin = lazy(() => import("./pages/Admin"));
-
-function AdminRoute() {
-  return <Suspense fallback={<main className="admin-gate" dir="rtl"><div className="admin-gate-card">جارٍ تحميل لوحة المالك…</div></main>}><Admin /></Suspense>;
-}
+import Admin from "./pages/Admin";
 
 function Router() {
   return <Switch>
-    <Route path="/admin/:section?" component={AdminRoute} />
-    <Route path="/Admin/:section?" component={AdminRoute} />
+    <Route path="/admin/:section?" component={Admin} />
+    <Route path="/Admin/:section?" component={Admin} />
     <Route path="/product/:id" component={Home} />
     <Route path="/products" component={Home} />
     <Route path="/categories" component={Home} />

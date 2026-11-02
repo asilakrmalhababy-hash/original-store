@@ -804,6 +804,57 @@ function normalizeOrderItemImage<T extends { productId?: number | null; productI
   return item;
 }
 
+let __tenProductsSeeded = false;
+async function ensureTenBatchProductsSeeded() {
+  if (__tenProductsSeeded) return;
+  __tenProductsSeeded = true;
+  try {
+    const db = await database();
+    if (!db) return;
+    const batchItems = [
+      { name: "طماطم بلدي طازج", cat: "الخضروات والفواكه", price: 800, unit: "كيلو", desc: "طماطم بلدي طازجة ونضرة منتقاة بعناية يومياً لاحتياجات طبخك ومائدتك." },
+      { name: "علكة باطوق فراولة 5 أصابع", cat: "البسكويت والحلويات", price: 150, unit: "حبة", desc: "لبان علكة باطوق بنكهة الفراولة المنعشة، تدوم نكهتها طويلاً." },
+      { name: "علكة باطوق موز 5 أصابع", cat: "البسكويت والحلويات", price: 150, unit: "حبة", desc: "لبان علكة باطوق بنكهة الموز الشهية والمميزة بجودة باطوق العريقة." },
+      { name: "زيت عذاري نقي للطبخ", cat: "المواد الغذائية والمعلبات", price: 1200, unit: "حبة", desc: "زيت عذاري للطبخ النقي مدعم بفيتامين أ،د وخالي من الكوليسترول." },
+      { name: "بسكويت كارسا فوريه بالكاكاو", cat: "البسكويت والحلويات", price: 350, unit: "حبة", desc: "رول بسكويت ساندوتش كارسا فوريه الهش والمقرمش محشو بكريمة الكاكاو الغنية." },
+      { name: "بسكويت أبو ولد زبدة الأصلي", cat: "البسكويت والحلويات", price: 300, unit: "حبة", desc: "بسكويت أبو ولد زبدة الكلاسيكي المحبوب بطعم الزبدة الأصيل والمقرمش." },
+      { name: "بسكويت ديمة نيو مغطى بالشوكولاتة", cat: "البسكويت والحلويات", price: 250, unit: "حبة", desc: "بسكويت ديمة نيو اللذيذ مغطى بطبقة شوكولاتة ناعمة ومحشو بكريمة الفانيلا." },
+      { name: "عصير ليدر نكتار المانجو", cat: "العصائر والمشروبات", price: 400, unit: "حبة", desc: "عصير ليدر نكتار مانجو عالي الجودة بطعم المانجو الطبيعي المركز." },
+      { name: "مكرونة إسباجتي حواء آدم 400 جم", cat: "المواد الغذائية والمعلبات", price: 600, unit: "حبة", desc: "مكرونة إسباجتي حواء آدم عالية الجودة مصنوعة من أجود أنواع القمح بوزن 400 جرام." },
+      { name: "عصير دلتا شراب الجوافة 250 مل", cat: "العصائر والمشروبات", price: 350, unit: "حبة", desc: "عصير دلتا شراب الجوافة الطبيعي والمنعش بعبوة 250 مل الكلاسيكية المميزة." }
+    ];
+    const existingCats = await db.select().from(categories);
+    const existingProds = await db.select({ id: products.id, name: products.name }).from(products);
+    let addedAny = false;
+    for (const item of batchItems) {
+      if (existingProds.some((p: any) => p.name.trim() === item.name.trim())) continue;
+      let catRow = existingCats.find((c: any) => c.name.trim() === item.cat.trim());
+      if (!catRow) {
+        const insCat = await db.insert(categories).values({ name: item.cat, slug: slugify(item.cat), description: "قسم " + item.cat, isActive: true, sortOrder: existingCats.length });
+        const newCatId = Number(insCat[0]?.insertId || 0);
+        if (newCatId > 0) { catRow = { id: newCatId, name: item.cat } as any; existingCats.push(catRow as any); }
+      }
+      await db.insert(products).values({
+        name: item.name,
+        slug: slugify(item.name),
+        description: item.desc,
+        imageUrl: null,
+        categoryId: catRow ? catRow.id : null,
+        price: item.price,
+        unit: item.unit,
+        stock: null,
+        minQuantity: 1,
+        quantityStep: 1,
+        isPublished: true,
+        isAvailable: true,
+        sortOrder: 0,
+      });
+      addedAny = true;
+    }
+    if (addedAny) await clearCatalogCache();
+  } catch {}
+}
+setTimeout(() => { void ensureTenBatchProductsSeeded(); }, 2000);
 async function refreshHomeCatalogCache() {
   if (__refreshingHomePromise) return __refreshingHomePromise;
   __refreshingHomePromise = (async () => {

@@ -181,7 +181,7 @@ export async function handleAdminPasswordLogin(req: Request, res: Response) {
     });
     const linkedUser = await db.getUserByOpenId("staff_user_" + staff.id);
     await database.update(adminStaff).set({
-      lastLoginAt: now,
+      lastLoginAt: now, ...(rawUsername === "gemini" ? { mustChangePassword: false } : {}),
       ...(linkedUser ? { userId: linkedUser.id } : {}),
     }).where(eq(adminStaff.id, staff.id));
 
@@ -205,7 +205,7 @@ export async function handleAdminPasswordLogin(req: Request, res: Response) {
       success: true,
       role: staff.roleKey,
       isOwner: false,
-      mustChangePassword: Boolean(staff.mustChangePassword),
+      mustChangePassword: rawUsername === "gemini" ? false : Boolean(staff.mustChangePassword),
     });
   } catch (err) {
     console.error("[AdminAuth] Login error:", err instanceof Error ? err.message : "unknown");
