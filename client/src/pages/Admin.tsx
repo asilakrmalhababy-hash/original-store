@@ -5056,7 +5056,7 @@ export default function Admin() {
   return (
     <div className="admin-app" dir="rtl">
       <aside className="admin-sidebar">
-        <Link href="/" className="admin-brand"><span className="brand-mark has-brand-image"><img src="/app-icon-512-orig.png" alt="ORIGINAL" /></span><span><strong>ORIGINAL</strong><small>لوحة الإدارة</small></span></Link>
+        <Link href="/" className="admin-brand"><span className="brand-mark"><Leaf size={20} /></span><span><strong>ORIGINAL</strong><small>لوحة الإدارة</small></span></Link>
         <div className="admin-profile">
           <span className="profile-initial">{(auth.user.name || "O").slice(0, 1)}</span>
           <span><strong>{auth.user.name || "مالك المتجر"}</strong><small>{roleLabel}</small></span>
