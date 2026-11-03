@@ -859,7 +859,7 @@ function ProductCard({ product, onOpen, onAiRecipe, priority = false }: { produc
   return <>
     <article className="product-card">
       <div className="product-visual" onClick={onOpen} role="button" tabIndex={0} onKeyDown={event => { if (event.key === "Enter") onOpen(); }}>
-        {product.imageUrl ? <img src={product.imageUrl} alt={product.name} loading={priority ? "eager" : "lazy"} fetchPriority={priority ? "high" : "auto"} decoding="async" /> : <div className="product-no-image"><Leaf size={27} strokeWidth={1.4} /><span>صورة المنتج</span></div>}
+        {product.imageUrl ? <img src={product.imageUrl} alt={product.name} loading="eager" fetchPriority={priority ? "high" : "auto"} decoding="async" /> : <div className="product-no-image"><Leaf size={27} strokeWidth={1.4} /><span>صورة المنتج</span></div>}
         <button type="button" className={"favorite-toggle " + (favorite ? "is-favorite" : "")} aria-label={favorite ? "إزالة من المفضلة" : "أضف للمفضلة"} aria-pressed={favorite} onClick={event => { event.stopPropagation(); toggleFavorite(product.id); toast.success(favorite ? "أُزيل من المفضلة" : "أُضيف إلى المفضلة على هذا الجهاز"); }}><Heart size={17} fill={favorite ? "currentColor" : "none"} /></button>
         {onAiRecipe && <button type="button" className="ai-recipe-toggle" aria-label="أفكار وتحضير بالذكاء الاصطناعي" title="أفكار ووصفات تحضير" onClick={event => { event.stopPropagation(); onAiRecipe(product); }}><Sparkles size={16} /></button>}
         {disabled && <span className="product-sold-out">غير متوفر</span>}
@@ -881,59 +881,44 @@ function ProductCard({ product, onOpen, onAiRecipe, priority = false }: { produc
 }
 
 
-function ProductGrid({ items, onOpen, onAiRecipe }: { items: PublicProduct[]; onOpen: (id: number) => void; onAiRecipe?: (p: PublicProduct) => void }) {
-  const [visibleCount, setVisibleCount] = useState(24);
+function ProductGrid({ items, onOpen, onAiRecipe, maxItems, totalStoreCount, onViewAll, gridKey = "default" }: { items: PublicProduct[]; onOpen: (id: number) => void; onAiRecipe?: (p: PublicProduct) => void; maxItems?: number; totalStoreCount?: number; onViewAll?: () => void; gridKey?: string }) {
+  const BATCH = 12;
+  const list = useMemo(() => (maxItems ? items.slice(0, maxItems) : items), [items, maxItems]);
+  const getSaved = () => { try { const m = (window as any).__gridVisibleCounts || {}; return m[gridKey] >= BATCH ? m[gridKey] : BATCH; } catch { return BATCH; } };
+  const [visibleCount, setVisibleCount] = useState<number>(getSaved);
+  const [loadingMore, setLoadingMore] = useState(false);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
-
+  const prevKey = useRef(gridKey);
+  useEffect(() => { if (prevKey.current !== gridKey) { prevKey.current = gridKey; setVisibleCount(getSaved()); setLoadingMore(false); } }, [gridKey]);
+  useEffect(() => { try { const w = window as any; w.__gridVisibleCounts = w.__gridVisibleCounts || {}; w.__gridVisibleCounts[gridKey] = visibleCount; } catch {} }, [visibleCount, gridKey]);
   useEffect(() => {
-    setVisibleCount(24);
-  }, [items.length, items[0]?.id]);
-
+    for (const p of list.slice(0, Math.min(list.length, visibleCount + BATCH))) {
+      if (p.imageUrl) { const img = new Image(); img.decoding = "async"; img.src = p.imageUrl; }
+    }
+  }, [list, visibleCount]);
   useEffect(() => {
-    if (visibleCount >= items.length) return;
+    if (visibleCount >= list.length || loadingMore) return;
     const node = loadMoreRef.current;
-    if (!node || typeof IntersectionObserver === 'undefined') return;
-    const observer = new IntersectionObserver(
-      entries => {
-        if (entries[0]?.isIntersecting) {
-          setVisibleCount(curr => Math.min(items.length, curr + 24));
-        }
-      },
-      { rootMargin: '420px 0px' }
-    );
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [visibleCount, items.length]);
-
-  if (!items.length) {
-    return <EmptyState icon={ShoppingBag} title='المتجر ينتظر منتجاته الأولى' description='لا توجد منتجات منشورة بعد. ستظهر الأصناف هنا بعد أن تضيفها من لوحة الإدارة.' action='تصفح الأقسام' href='/categories' />;
-  }
-
-  const visibleItems = items.slice(0, visibleCount);
-
-  return (
-    <>
-      <div className='product-grid'>
-        {visibleItems.map((product, idx) => (
-          <ProductCard key={product.id} product={product} priority={idx < 6} onOpen={() => onOpen(product.id)} onAiRecipe={onAiRecipe} />
-        ))}
-      </div>
-      {visibleCount < items.length && (
-        <div ref={loadMoreRef} style={{ textAlign: 'center', padding: '16px 0 8px' }}>
-          <button
-            type='button'
-            className='button button-outline'
-            onClick={() => setVisibleCount(curr => Math.min(items.length, curr + 36))}
-            style={{ minHeight: '38px', padding: '6px 18px', borderRadius: '12px', fontSize: '12.5px', fontWeight: 800 }}
-          >
-            عرض المزيد من المنتجات ({items.length - visibleCount} متبقٍ)
-          </button>
-        </div>
-      )}
-    </>
-  );
+    if (!node || typeof IntersectionObserver === "undefined") return;
+    const obs = new IntersectionObserver(entries => {
+      if (entries[0]?.isIntersecting) {
+        setLoadingMore(true);
+        setTimeout(() => { setVisibleCount(c => Math.min(list.length, c + BATCH)); setLoadingMore(false); }, 250);
+      }
+    }, { rootMargin: "110px 0px" });
+    obs.observe(node);
+    return () => obs.disconnect();
+  }, [visibleCount, list.length, loadingMore]);
+  if (!list.length) return <EmptyState icon={ShoppingBag} title="المتجر ينتظر منتجاته الأولى" description="لا توجد منتجات منشورة في هذا القسم حالياً." action="تصفح الأقسام" href="/categories" />;
+  const visibleItems = list.slice(0, visibleCount);
+  const done = visibleCount >= list.length;
+  const total = totalStoreCount ?? items.length;
+  return <>
+    <div className="product-grid">{visibleItems.map((p, i) => <ProductCard key={p.id} product={p} priority={i < 12} onOpen={() => onOpen(p.id)} onAiRecipe={onAiRecipe} />)}</div>
+    {!done && <div ref={loadMoreRef} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", padding: "18px 0 10px", color: "#174b36", fontSize: "12.5px", fontWeight: 800 }}><LoaderCircle size={20} className="spin" /><span>جارٍ عرض المزيد من المنتجات...</span></div>}
+    {done && onViewAll && <div style={{ textAlign: "center", padding: "20px 0 10px" }}><button type="button" className="button button-primary" onClick={onViewAll} style={{ minHeight: "44px", padding: "10px 24px", borderRadius: "14px", fontSize: "13.5px", fontWeight: 800, display: "inline-flex", alignItems: "center", gap: "8px" }}><span>عرض جميع المنتجات ({total} منتج)</span><ArrowLeft size={16} /></button></div>}
+  </>;
 }
-
 function CategoryStrip({ data, onSelect }: { data: HomeData["categories"]; onSelect: (id: number) => void }) {
   if (!data.length) return <div className="category-empty"><span className="category-empty-mark"><SlidersHorizontal size={19} /></span><div><strong>الأقسام قيد التجهيز</strong><p>أضف أقسام متجرك لتبدأ ترتيب المنتجات.</p></div><Link href="/categories"><ChevronLeft size={18} /></Link></div>;
   return (
@@ -1034,7 +1019,7 @@ function HomePage({ data, onOpen, onAiRecipe }: { data: HomeData; onOpen: (id: n
     {data.offers.length > 0 && <section className="offers-row"><div className="section-heading compact"><div><span className="eyebrow">عروض المتجر</span><h2>فرص تستحق الانتباه</h2></div><BadgePercent size={22} /></div><div className="offer-strip">{data.offers.map(offer => <div className="offer-chip" key={offer.id}><span className="offer-chip-icon"><BadgePercent size={18} /></span><div><strong>{offer.title}</strong><small>{offer.description || (offer.discountType === "percent" ? "خصم " + offer.discountValue + "%" : "خصم " + formatPrice(offer.discountValue))}</small></div><code>{offer.code}</code></div>)}</div></section>}
     <section className="store-section categories-section"><div className="section-heading"><div><h2>الأقسام</h2></div><Link className="text-link" href="/categories">عرض الكل <ArrowLeft size={15} /></Link></div><CategoryStrip data={data.categories} onSelect={changeCategory} /></section>
     {middleBanners.length > 0 && <BannerCarousel banners={middleBanners} />}
-    <section className="store-section products-section"><div className="section-heading"><div><h2>منتجات المتجر</h2></div><div className="section-tools"><label className="sort-select"><ArrowUpDown size={15} /><select aria-label="ترتيب المنتجات" value={sort} onChange={event => setSort(event.target.value as typeof sort)}><option value="featured">الأبرز</option><option value="price-asc">السعر: الأقل أولًا</option><option value="price-desc">السعر: الأعلى أولًا</option></select></label><Link className="text-link" href="/products">عرض الكل <ArrowLeft size={15} /></Link></div></div>{productsLoading && !featured.length ? <Loading /> : <ProductGrid items={featured} onOpen={onOpen} onAiRecipe={onAiRecipe} />}</section>
+    <section className="store-section products-section"><div className="section-heading"><div><h2>منتجات المتجر</h2></div><div className="section-tools"><label className="sort-select"><ArrowUpDown size={15} /><select aria-label="ترتيب المنتجات" value={sort} onChange={event => setSort(event.target.value as typeof sort)}><option value="featured">الأبرز</option><option value="price-asc">السعر: الأقل أولًا</option><option value="price-desc">السعر: الأعلى أولًا</option></select></label><Link className="text-link" href="/products">عرض الكل <ArrowLeft size={15} /></Link></div></div>{productsLoading && !featured.length ? <Loading /> : <ProductGrid items={featured} maxItems={40} totalStoreCount={featured.length} onViewAll={() => navigate("/products")} gridKey={"home:" + sort} onOpen={onOpen} onAiRecipe={onAiRecipe} />}</section>
     {bottomBanners.length > 0 && <BannerCarousel banners={bottomBanners} />}
   </main>;
 }
@@ -1338,10 +1323,11 @@ function ProductDetail({ id, allProducts = [], onSelectProduct, onBack, onAiReci
     setSelectedDetailVariant('');
   }, [id, product?.minQuantity]);
 
-  const currentIndex = useMemo(() => allProducts.findIndex(p => p.id === id), [allProducts, id]);
-  const hasGallery = allProducts.length > 1 && currentIndex >= 0;
-  const nextProduct = hasGallery ? allProducts[(currentIndex + 1) % allProducts.length] : null;
-  const prevProduct = hasGallery ? allProducts[(currentIndex - 1 + allProducts.length) % allProducts.length] : null;
+  const galleryList = useMemo(() => (!product ? allProducts : allProducts.some(p => p.id === product.id) ? allProducts : [...allProducts, product as PublicProduct]), [allProducts, product]);
+  const currentIndex = useMemo(() => galleryList.findIndex(p => p.id === id), [galleryList, id]);
+  const hasGallery = galleryList.length > 1 && currentIndex >= 0;
+  const nextProduct = hasGallery ? galleryList[(currentIndex + 1) % galleryList.length] : null;
+  const prevProduct = hasGallery ? galleryList[(currentIndex - 1 + galleryList.length) % galleryList.length] : null;
 
   useEffect(() => {
     if (nextProduct?.imageUrl) { const img = new Image(); img.src = nextProduct.imageUrl; }
@@ -1390,7 +1376,7 @@ function ProductDetail({ id, allProducts = [], onSelectProduct, onBack, onAiReci
         {hasGallery && (
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#ffffff', border: '1px solid #dfe7e0', borderRadius: '999px', padding: '4px 10px', fontSize: '11px', fontWeight: 800, color: '#174b36' }}>
             <button type='button' onClick={goNext} style={{ border: 0, background: 'transparent', cursor: 'pointer', padding: '2px 5px', fontWeight: 900, color: '#174b36' }}>‹ التالي</button>
-            <span style={{ color: '#78847b', fontSize: '10.5px' }} dir='ltr'>{currentIndex + 1} / {allProducts.length}</span>
+            <span style={{ color: '#78847b', fontSize: '10.5px' }} dir='ltr'>{currentIndex + 1} / {galleryList.length}</span>
             <button type='button' onClick={goPrev} style={{ border: 0, background: 'transparent', cursor: 'pointer', padding: '2px 5px', fontWeight: 900, color: '#174b36' }}>السابق ›</button>
           </div>
         )}
@@ -3950,39 +3936,62 @@ function GamifiedRewardBar({ settings, location }: { settings: Record<string, st
 
 export default function Home() {
   const storeCtx = useStore();
-  const trpcUtils = trpc.useUtils();
   const lastCatalogSigRef = useRef("");
   const [activeAiProduct, setActiveAiProduct] = useState<PublicProduct | null>(null);
   useGuestPushSubscriptionSync();
   const [location, navigate] = useLocation();
-  const [instantStoreData, setInstantStoreData] = useState<HomeData>(getInstantLocalCatalog);
-  const home = trpc.commerce.catalog.home.useQuery(undefined, {
-    retry: 1,
-    staleTime: 15000, refetchInterval: 20000,
-    refetchOnWindowFocus: true,
-  });
+  const [instantData, setInstantData] = useState<HomeData>(readLocalInstantCatalog);
+  const home = trpc.commerce.catalog.home.useQuery(undefined, { retry: 1, staleTime: 25000, refetchInterval: 30000, refetchOnMount: "always", refetchOnWindowFocus: true, placeholderData: instantData.products?.length ? instantData : undefined });
+  useEffect(() => {
+    try {
+      const w = window as any;
+      if (w.__isRestoringFromProduct && w.__navReturnState) {
+        const y = Number(w.__navReturnState.scrollY || 0);
+        w.__isRestoringFromProduct = false;
+        const go = () => { try { window.scrollTo({ top: y, left: 0, behavior: "instant" as ScrollBehavior }); document.documentElement.scrollTop = y; document.body.scrollTop = y; } catch {} };
+        go(); requestAnimationFrame(go); setTimeout(go, 45); return;
+      }
+      window.scrollTo({ top: 0, left: 0, behavior: "instant" as ScrollBehavior }); document.documentElement.scrollTop = 0; document.body.scrollTop = 0;
+    } catch {}
+  }, [location]);
   useEffect(() => {
     if (home.data && Array.isArray(home.data.products)) {
-      setInstantStoreData(home.data as HomeData);
-      try { localStorage.setItem(INSTANT_CATALOG_KEY, JSON.stringify(home.data)); } catch {}
+      const sig = home.data.products.length + ":" + (home.data.products[0]?.id || 0) + ":" + (home.data.products[home.data.products.length - 1]?.id || 0) + ":" + (home.data.categories?.length || 0);
+      if (lastCatalogSigRef.current === sig) return;
+      lastCatalogSigRef.current = sig;
+      setInstantData(home.data as HomeData);
+      storeCtx.syncCatalogProducts?.(home.data.products as any);
+      try { (window as any).__INITIAL_CATALOG__ = home.data; localStorage.setItem(INSTANT_CACHE_KEY, JSON.stringify(home.data)); } catch {}
     }
   }, [home.data]);
-  const data = ((home.data && home.data.products ? home.data : instantStoreData) ?? { categories: [], products: [], banners: [], offers: [], settings: {} }) as HomeData;
-  const openProduct = (id: number) => { try { window.scrollTo({ top: 0, left: 0, behavior: "instant" as ScrollBehavior }); document.documentElement.scrollTop = 0; document.body.scrollTop = 0; } catch {} navigate("/product/" + id); };
+  const data = ((home.data && home.data.products ? home.data : instantData) ?? { categories: [], products: [], banners: [], offers: [], settings: {} }) as HomeData;
+  const openProduct = (id: number) => {
+    try {
+      const w = window as any;
+      if (!window.location.pathname.startsWith("/product/")) {
+        w.__navReturnState = { returnPath: (window.location.pathname + window.location.search) || "/", scrollY: window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0 };
+      }
+      w.__isRestoringFromProduct = false;
+      window.scrollTo({ top: 0, left: 0, behavior: "instant" as ScrollBehavior }); document.documentElement.scrollTop = 0; document.body.scrollTop = 0;
+    } catch {}
+    navigate("/product/" + id);
+  };
+  const handleBackFromProduct = () => {
+    try { const w = window as any; w.__isRestoringFromProduct = true; navigate(w.__navReturnState?.returnPath || "/"); } catch { navigate("/"); }
+  };
   const currentNav = location.startsWith("/categories") ? "/categories" : location.startsWith("/products") ? "/products" : location.startsWith("/assistant") ? "/assistant" : location.startsWith("/account") ? "/account" : "/";
   const productPath = location.startsWith("/product/");
   const productId = productPath ? Number(location.split("/")[2]) : 0;
   const content = useMemo(() => {
-    if (productPath && Number.isInteger(productId)) return <ProductDetail key={productId} id={productId} allProducts={data.products} onSelectProduct={openProduct} onBack={() => navigate("/")} onAiRecipe={setActiveAiProduct} />;
-    if (location === "/products" || location.startsWith("/products?")) return <ProductListPage data={data} onOpen={openProduct} />;
+    if (productPath && Number.isInteger(productId)) return <ProductDetail id={productId} allProducts={data.products} onSelectProduct={openProduct} onBack={handleBackFromProduct} onAiRecipe={setActiveAiProduct} />;
+    if (location === "/products" || location.startsWith("/products?")) return <ProductListPage data={data} onOpen={openProduct} onAiRecipe={setActiveAiProduct} />;
     if (location === "/categories") return <CategoriesPage data={data} />;
-    if (location === "/cart") return <CartPage minOrder={Number(data.settings?.minOrderAmount || 0)} />;
+    if (location === "/cart") return <CartPage />;
     if (location === "/favorites") return <FavoritesPage allProducts={data.products} onOpen={openProduct} onAiRecipe={setActiveAiProduct} />;
     if (location === "/orders") return <OrdersPage />;
     if (location === "/account") return <AccountPage />;
     if (location === "/assistant") return <AssistantPage />;
     return <HomePage data={data} onOpen={openProduct} onAiRecipe={setActiveAiProduct} />;
   }, [location, productId, productPath, data]);
-  return <div className="store-app" dir="rtl"><Header data={data} onSearch={text => navigate(`/products${text ? `?search=${encodeURIComponent(text)}` : ""}`)} />{!location.startsWith("/assistant") && !location.startsWith("/orders") && !location.startsWith("/account") && <GamifiedRewardBar settings={data.settings} location={location} />}{home.isError && !data.products?.length && !data.categories?.length && <div className="connection-strip"><span>الاتصال بالخدمة غير متاح مؤقتًا</span><button onClick={() => void home.refetch()}>إعادة المحاولة</button></div>}{home.isError && !data.products?.length && !data.categories?.length ? <main className="page-shell inner-page"><LoadError onRetry={() => void home.refetch()} /></main> : content}{!location.startsWith("/assistant") && <footer className="store-footer"><div className="footer-brand"><span className="brand-mark"><Leaf size={22} strokeWidth={1.8} /></span><span><b>ORIGINAL</b><small>{data.settings.storeName === "ORIGINAL – أورجنال" || !data.settings.storeName ? "أورجنال" : data.settings.storeName}</small></span></div>{shouldShowFooterDescription(data.settings.storeDescription) && <span>{data.settings.storeDescription}</span>}<small>© {new Date().getFullYear()} {data.settings.storeName || "ORIGINAL"}</small></footer>}{activeAiProduct && <AiRecipeModal product={activeAiProduct} onClose={() => setActiveAiProduct(null)} />}
-    <BottomNav active={currentNav} /></div>;
+  return <div className="store-app" dir="rtl"><Header data={data} onSearch={text => navigate("/products" + (text ? "?search=" + encodeURIComponent(text) : ""))} />{!location.startsWith("/assistant") && !location.startsWith("/orders") && !location.startsWith("/account") && <GamifiedRewardBar settings={data.settings} location={location} />}{home.isError && !data.products?.length && !data.categories?.length && <div className="connection-strip"><span>الاتصال بالخدمة غير متاح مؤقتًا</span><button onClick={() => void home.refetch()}>إعادة المحاولة</button></div>}{home.isError && !data.products?.length && !data.categories?.length ? <main className="page-shell inner-page"><LoadError onRetry={() => void home.refetch()} /></main> : content}{!location.startsWith("/assistant") && <footer className="store-footer"><div className="footer-brand"><span className="brand-mark"><Leaf size={22} strokeWidth={1.8} /></span><span><b>ORIGINAL</b><small>{data.settings.storeName === "ORIGINAL – أورجنال" || !data.settings.storeName ? "أورجنال" : data.settings.storeName}</small></span></div>{shouldShowFooterDescription(data.settings.storeDescription) && <span>{data.settings.storeDescription}</span>}<small>© {new Date().getFullYear()} {data.settings.storeName || "ORIGINAL"}</small></footer>}{activeAiProduct && <AiRecipeModal product={activeAiProduct} onClose={() => setActiveAiProduct(null)} />}<BottomNav active={currentNav} /></div>;
 }

@@ -72,7 +72,7 @@ async function startServer() {
           const mime = m[1].toLowerCase();
           if (!ALLOWED_IMG_MIMES.has(mime)) return res.status(415).end();
           entry = { contentType: mime, buf: Buffer.from(m[2], "base64") };
-          if (cacheMap.size > 250) { const firstK = cacheMap.keys().next().value; if (firstK) cacheMap.delete(firstK); }
+          if (cacheMap.size > 2500) { const firstK = cacheMap.keys().next().value; if (firstK) cacheMap.delete(firstK); }
           cacheMap.set(cacheKey, entry);
         } else if (raw.startsWith(HTTP_PREFIX)) {
           if (!isSafeExternalImageUrl(raw)) return res.status(403).end();
@@ -103,6 +103,27 @@ async function startServer() {
     }
   });
   // --- FAST_IMG_ROUTE_END ---
+  let __prewarmFastImgDone = false;
+  const prewarmFastImages = async () => {
+    if (__prewarmFastImgDone) return;
+    __prewarmFastImgDone = true;
+    try {
+      const db = await getDb();
+      if (!db) { __prewarmFastImgDone = false; return; }
+      const { products, categories, banners } = await import("../../drizzle/schema");
+      const cacheMap = (globalThis as any).__fastImgCache || ((globalThis as any).__fastImgCache = new Map());
+      const loadT = async (k: string, t: any) => {
+        const rows = await db.select({ id: t.id, imageUrl: t.imageUrl }).from(t);
+        for (const r of rows) {
+          const raw = String(r.imageUrl || "").trim();
+          const m = raw.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,([\s\S]+)$/);
+          if (m) cacheMap.set(k + ":" + r.id, { contentType: m[1].toLowerCase(), buf: Buffer.from(m[2], "base64") });
+        }
+      };
+      await loadT("category", categories); await loadT("banner", banners); await loadT("product", products);
+    } catch { __prewarmFastImgDone = false; }
+  };
+  setTimeout(() => { void prewarmFastImages(); }, 1200);
 
   let cachedBrand: { name: string; icon: string; time: number } | null = null;
   const publicBrand = async () => {

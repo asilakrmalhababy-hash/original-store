@@ -492,7 +492,7 @@ button, a, input, select, textarea, summary, [role="button"] { touch-action: man
 .store-header { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; background: #f8f8f3 !important; }
 .bottom-nav { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; background: #ffffff !important; box-shadow: 0 -2px 10px rgb(0 0 0 / 5%) !important; }
 .modal-backdrop { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; background: rgb(15 39 27 / 58%) !important; }
-.product-card, .order-card, .entity-row { content-visibility: auto; contain-intrinsic-size: auto 240px; }
+.product-card, .order-card, .entity-row {   }
 .product-visual > img, .category-art > img, .cart-thumb > img { will-change: auto; }
 @media (hover: none), (pointer: coarse) {
   .product-card, .category-tile, .category-large, .button, .small-button { transition: none !important; }
@@ -706,7 +706,7 @@ button, a, input, select, textarea, summary, [role="button"] { touch-action: man
   background: rgba(15, 39, 27, 0.55) !important;
 }
 .product-card {
-  contain: content;
+  
   border-radius: 16px !important;
   border: 1px solid #e3ebe4 !important;
   padding: 9px !important;
@@ -756,7 +756,7 @@ button, a, input, select, textarea, summary, [role="button"] { touch-action: man
   transform: scale(0.93);
 }
 .category-tile {
-  contain: content;
+  
   border-radius: 16px !important;
   border: 1px solid #e4ece5 !important;
   box-shadow: 0 2px 8px rgba(23, 75, 54, 0.03);
@@ -1144,7 +1144,7 @@ img, svg, picture, video {
   background: #fff !important;
   box-shadow: 0 5px 18px rgba(19, 54, 34, .045) !important;
   overflow: hidden !important;
-  contain: content;
+  
 }
 
 .product-card:hover {
@@ -2281,3 +2281,7 @@ button, a, .product-card, .category-card, .header-action, .header-cart, .account
   font-size: 12px;
 }
 /* --- MASTER_VISUAL_FIX_END --- */
+
+/* ZERO_BLANK_CARDS_V66 */
+html, body { overscroll-behavior-y: contain; -webkit-overflow-scrolling: touch; }
+.product-card, .category-tile, .product-visual, .product-title-button, .product-card-bottom { content-visibility: visible !important; contain: none !important; }

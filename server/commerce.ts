@@ -863,7 +863,7 @@ async function refreshHomeCatalogCache() {
       void ensureOrderItemsFastSchema(db);
       const [categoryRows, productRows, bannerRows, offerRows, settings] = await Promise.all([
         db.select().from(categories).where(eq(categories.isActive, true)).orderBy(asc(categories.sortOrder), asc(categories.id)),
-        db.select().from(products).where(and(eq(products.isPublished, true), eq(products.isAvailable, true))).orderBy(asc(products.sortOrder), desc(products.createdAt)).limit(40),
+        db.select().from(products).where(and(eq(products.isPublished, true), eq(products.isAvailable, true))).orderBy(asc(products.sortOrder), desc(products.createdAt)).limit(10000),
         db.select().from(banners).where(and(eq(banners.isActive, true))).orderBy(asc(banners.sortOrder), desc(banners.createdAt)),
         db.select().from(offers).where(and(eq(offers.isActive, true))).orderBy(desc(offers.createdAt)),
         readSettings(db),
@@ -929,7 +929,7 @@ export const commerceRouter = router({
       search: z.string().trim().max(120).optional(),
       categoryId: safeId.optional(),
       sort: z.enum(["featured", "price-asc", "price-desc", "name"]).default("featured"),
-      limit: z.number().int().min(1).max(40).default(40),
+      limit: z.number().int().min(1).max(10000).default(5000),
       offset: z.number().int().min(0).default(0),
     }).optional()).query(async ({ input }) => {
       const db = await database();
