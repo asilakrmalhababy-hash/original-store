@@ -3053,7 +3053,7 @@ function AccountPage() {
               );
             })()}
             {/* --- ACCOUNT_CONTACT_INFO_END --- */}
-          </div>
+                      </div>
         ) : (
           <form className='form-stack' onSubmit={saveProfile} style={{ gap: '12px', background: '#f8fbf9', padding: '14px', borderRadius: '14px', border: '1px solid #dce8df' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -4050,6 +4050,7 @@ function GamifiedRewardBar({ settings, location }: { settings: Record<string, st
     </>
   );
 }
+
 
 
 

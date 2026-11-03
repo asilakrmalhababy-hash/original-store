@@ -4165,7 +4165,8 @@ function SettingsPanel() {
     </label>
   </div>
 </div>
-{/* --- ADMIN_AUTO_SCHEDULE_UI_END --- */}</div></section>
+{/* --- ADMIN_AUTO_SCHEDULE_UI_END --- */}
+{}</div></section>
 
     <section className="admin-form-card" style={{ border: "2px solid #e3c472", background: "linear-gradient(180deg, #fffdf7 0%, #ffffff 100%)" }}>
       <div className="form-card-heading">
@@ -4296,7 +4297,7 @@ function SettingsPanel() {
           </label>
         </div>
       </section>
-      {/* --- ADMIN_APP_INFO_UI_START --- */}
+            {/* --- ADMIN_APP_INFO_UI_START --- */}
 <section className="admin-form-card">
   <div className="form-card-heading">
     <span className="form-card-number">ℹ️</span>
