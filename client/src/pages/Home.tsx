@@ -3934,13 +3934,33 @@ function GamifiedRewardBar({ settings, location }: { settings: Record<string, st
   );
 }
 
+
+const INSTANT_CACHE_KEY = "original-catalog-instant-v2";
+function readLocalInstantCatalog(): HomeData {
+  try {
+    if (typeof window !== "undefined" && (window as any).__INITIAL_CATALOG__) {
+      const initCat = (window as any).__INITIAL_CATALOG__;
+      if (initCat && Array.isArray(initCat.products)) {
+        try { localStorage.setItem(INSTANT_CACHE_KEY, JSON.stringify(initCat)); } catch {}
+        return initCat;
+      }
+    }
+    const saved = typeof localStorage !== "undefined" ? localStorage.getItem(INSTANT_CACHE_KEY) : null;
+    if (saved) {
+      const p = JSON.parse(saved);
+      if (p && Array.isArray(p.products)) return p;
+    }
+  } catch {}
+  return { categories: [], products: [], banners: [], offers: [], settings: {} };
+}
+
 export default function Home() {
   const storeCtx = useStore();
   const lastCatalogSigRef = useRef("");
   const [activeAiProduct, setActiveAiProduct] = useState<PublicProduct | null>(null);
   useGuestPushSubscriptionSync();
   const [location, navigate] = useLocation();
-  const [instantData, setInstantData] = useState<HomeData>(readLocalInstantCatalog);
+  const [instantData, setInstantData] = useState<HomeData>(() => readLocalInstantCatalog());
   const home = trpc.commerce.catalog.home.useQuery(undefined, { retry: 1, staleTime: 25000, refetchInterval: 30000, refetchOnMount: "always", refetchOnWindowFocus: true, placeholderData: instantData.products?.length ? instantData : undefined });
   useEffect(() => {
     try {

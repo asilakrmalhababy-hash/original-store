@@ -1,3 +1,24 @@
+// --- GLOBAL_INSTANT_CATALOG_GUARD_START ---
+(globalThis as any).INSTANT_CACHE_KEY = "original-catalog-instant-v2";
+(globalThis as any).readLocalInstantCatalog = function readLocalInstantCatalog() {
+  try {
+    const k = "original-catalog-instant-v2";
+    if (typeof window !== "undefined" && (window as any).__INITIAL_CATALOG__) {
+      const ic = (window as any).__INITIAL_CATALOG__;
+      if (ic && Array.isArray(ic.products)) {
+        try { localStorage.setItem(k, JSON.stringify(ic)); } catch {}
+        return ic;
+      }
+    }
+    const saved = typeof localStorage !== "undefined" ? localStorage.getItem(k) : null;
+    if (saved) {
+      const p = JSON.parse(saved);
+      if (p && Array.isArray(p.products)) return p;
+    }
+  } catch {}
+  return { categories: [], products: [], banners: [], offers: [], settings: {} };
+};
+// --- GLOBAL_INSTANT_CATALOG_GUARD_END ---
 // __SAFE_TOAST_PATCH__
 import { toast as __sonnerToast } from "sonner";
 const __origToastError = __sonnerToast.error.bind(__sonnerToast);
