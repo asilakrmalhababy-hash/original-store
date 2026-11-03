@@ -349,6 +349,11 @@ const settingSchema = z.object({
   rewardValue: z.number().int().min(0).max(100).optional(),
   aiInstructions: z.string().trim().max(3000).optional(),
   deliveryTreeConfig: z.string().max(600000).optional(),
+  autoScheduleEnabled: z.boolean().optional(),
+  autoCloseTime: z.string().trim().max(20).optional(),
+  autoOpenTime: z.string().trim().max(20).optional(),
+  appInfoText: z.string().trim().max(8000).optional(),
+  contactWhyText: z.string().trim().max(5000).optional(),
 });
 
 function slugify(value: string) {
@@ -360,7 +365,7 @@ const PUBLIC_STORE_SETTING_KEYS = new Set([
   "storeName", "storeDescription", "contactPhone", "currency", "storeIconUrl",
   "deliveryEnabled", "deliveryFee", "deliveryZones", "orderPaused", "pausedMessage",
   "rewardEnabled", "rewardsThreshold", "rewardType", "rewardValue", "rewardsMessage",
-  "aiInstructions", "deliveryTreeConfig",
+  "aiInstructions", "deliveryTreeConfig", "autoScheduleEnabled", "autoCloseTime", "autoOpenTime", "appInfoText", "contactWhyText",
 ]);
 
 const __orderRateBuckets = new Map<string, { count: number; resetAt: number }>();
@@ -392,6 +397,33 @@ function canCreateMissingItemOrder(ip: string): boolean {
   return true;
 }
 
+// --- AUTO_SCHEDULE_HELPER_START ---
+function isServerStorePaused(settings: Record<string, string>): { paused: boolean; msg: string } {
+  if (settings.orderPaused === "true") return { paused: true, msg: settings.pausedMessage || "استقبال الطلبات متوقف مؤقتًا." };
+  if (settings.autoScheduleEnabled === "true") {
+    const cStr = String(settings.autoCloseTime || "").trim();
+    const oStr = String(settings.autoOpenTime || "").trim();
+    const cm = cStr.match(/^(\d{1,2}):(\d{2})$/);
+    const om = oStr.match(/^(\d{1,2}):(\d{2})$/);
+    if (cm && om) {
+      const cMins = Number(cm[1]) * 60 + Number(cm[2]);
+      const oMins = Number(om[1]) * 60 + Number(om[2]);
+      if (cMins !== oMins) {
+        const yemenNow = new Date(Date.now() + 3 * 3600 * 1000);
+        const curMins = yemenNow.getUTCHours() * 60 + yemenNow.getUTCMinutes();
+        const isClosed = cMins > oMins ? (curMins >= cMins || curMins < oMins) : (curMins >= cMins && curMins < oMins);
+        if (isClosed) {
+          const oh = Number(om[1]);
+          const period = oh >= 12 ? "مساءً" : "صباحاً";
+          const h12 = oh % 12 === 0 ? 12 : oh % 12;
+          return { paused: true, msg: settings.pausedMessage || ("🌙 المتجر مغلق حالياً خارج أوقات الدوام — يفتح تلقائياً الساعة " + h12 + ":" + om[2] + " " + period) };
+        }
+      }
+    }
+  }
+  return { paused: false, msg: "" };
+}
+// --- AUTO_SCHEDULE_HELPER_END ---
 async function readSettings(db: NonNullable<Awaited<ReturnType<typeof getDb>>>) {
   const g = globalThis as any;
   if (!g.__savedSettingsMemory) g.__savedSettingsMemory = {};
@@ -1050,7 +1082,7 @@ export const commerceRouter = router({
       const fastHome = g.__fastHomeData;
       const db = (!fastHome || input.offerCode) ? await database() : null;
       const settings = fastHome?.settings ? fastHome.settings : await readSettings(db || await database());
-      if (settings.orderPaused === "true") throw new TRPCError({ code: "PRECONDITION_FAILED", message: settings.pausedMessage || "استقبال الطلبات متوقف مؤقتًا." });
+      const pauseState = isServerStorePaused(settings); if (pauseState.paused) throw new TRPCError({ code: "PRECONDITION_FAILED", message: pauseState.msg });
       const prelimFee = deliveryFeeForCity(settings, input.city, input.district, input.phone, 0);
       if (prelimFee === null) throw new TRPCError({ code: "PRECONDITION_FAILED", message: settings.deliveryEnabled === "true" ? "منطقة التوصيل أو رسومها غير محددة بعد." : "لم يفعّل المتجر التوصيل بعد." });
       const requested = aggregateItems(input.items);
@@ -1212,7 +1244,7 @@ export const commerceRouter = router({
       if (existing) return { id: existing.id, orderNumber: existing.orderNumber, total: existing.total, duplicate: true };
       if (typeof enforceOrderCreateRateLimit === "function") enforceOrderCreateRateLimit(getClientIp(ctx.req));
       const settings = await readSettings(db);
-      if (settings.orderPaused === "true") throw new TRPCError({ code: "PRECONDITION_FAILED", message: settings.pausedMessage || "استقبال الطلبات متوقف مؤقتًا." });
+      const pauseState = isServerStorePaused(settings); if (pauseState.paused) throw new TRPCError({ code: "PRECONDITION_FAILED", message: pauseState.msg });
       const prelimDeliveryFee = deliveryFeeForCity(settings, input.city, input.district, input.phone, 0);
       if (prelimDeliveryFee === null) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "منطقة التوصيل أو رسومها غير محددة بعد." });
 

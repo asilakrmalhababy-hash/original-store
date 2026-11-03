@@ -69,7 +69,7 @@ function Header({ data, onSearch }: { data?: HomeData; onSearch: (text: string) 
       <nav className="desktop-links" aria-label="القائمة الرئيسية"><Link href="/">الرئيسية</Link><Link href="/categories">الأقسام</Link><Link href="/products">المنتجات</Link><Link href="/assistant" className="assistant-link"><Sparkles size={15} /> مساعد أورجنال</Link></nav>
       <div className="header-promise"><ShieldCheck size={15} /><span></span></div><PWAInstall />
     </div>
-    {data?.settings.orderPaused === "true" && <div className="service-notice"><Clock3 size={15} />{data.settings.pausedMessage || "استقبال الطلبات متوقف مؤقتًا"}</div>}
+    {(() => { const p = (globalThis as any).checkClientAutoPause ? (globalThis as any).checkClientAutoPause(data?.settings) : { paused: data?.settings.orderPaused === "true", msg: data?.settings.pausedMessage || "استقبال الطلبات متوقف مؤقتًا" }; return p.paused ? <div className="service-notice"><Clock3 size={15} />{p.msg}</div> : null; })()}
   </header>;
 }
 
@@ -2793,6 +2793,7 @@ function AccountPage() {
   const cleanedCustomerPhone = cleanYemeniPhone(customer.phone);
   const hasSavedProfile = Boolean(customer.name.trim().length >= 2 && isValidYemeniPhone(cleanedCustomerPhone));
   const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [accountPanel, setAccountPanel] = useState<"none" | "app_info" | "contact_options" | "contact_why">("none");
   const [name, setName] = useState(customer.name);
   const [phone, setPhone] = useState(cleanedCustomerPhone);
 
@@ -2936,6 +2937,122 @@ function AccountPage() {
                 <span style={{ padding: '2px 8px', borderRadius: '99px', background: '#eef5f0', fontSize: '11.5px' }}>{favoriteIds.length}</span>
               </Link>
             </div>
+            {/* --- ACCOUNT_CONTACT_INFO_START --- */}
+            <div style={{ display: 'grid', gap: '9px', marginTop: '4px' }}>
+              <button
+                type='button'
+                onClick={() => setAccountPanel(curr => curr === 'app_info' ? 'none' : 'app_info')}
+                className='original-account-shortcut'
+                style={{ width: '100%', cursor: 'pointer', padding: '12px 14px', borderRadius: '13px', background: accountPanel === 'app_info' ? '#174b36' : '#f4f9f6', color: accountPanel === 'app_info' ? '#ffffff' : '#143a28', border: '1.5px solid #174b36', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
+              >
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '9px', fontWeight: 900, fontSize: '13px' }}>
+                  <Leaf size={17} />
+                  <span>معلومات التطبيق</span>
+                </span>
+                <span style={{ fontSize: '11px', fontWeight: 700, opacity: 0.9 }}>نبذة وتعليمات الاستخدام ←</span>
+              </button>
+
+              <div
+                onClick={() => setAccountPanel(curr => curr === 'contact_options' ? 'none' : 'contact_options')}
+                role='button'
+                tabIndex={0}
+                onKeyDown={e => { if (e.key === 'Enter') setAccountPanel(curr => curr === 'contact_options' ? 'none' : 'contact_options'); }}
+                style={{ width: '100%', cursor: 'pointer', padding: '10px 12px', borderRadius: '13px', background: accountPanel === 'contact_options' ? '#174b36' : '#ffffff', color: accountPanel === 'contact_options' ? '#ffffff' : '#174b36', border: '1.5px solid #cfe2d6', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', boxShadow: '0 3px 10px rgba(23, 75, 54, 0.05)' }}
+              >
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '9px', fontWeight: 900, fontSize: '13px' }}>
+                  <MessageCircle size={18} />
+                  <span>تواصل معنا</span>
+                  <small style={{ fontSize: '11px', fontWeight: 700, color: accountPanel === 'contact_options' ? '#d9f2e4' : '#5c7265' }}>(مباشر · واتساب · اتصال)</small>
+                </div>
+
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                  <button
+                    type='button'
+                    title='لماذا تواصل معنا؟'
+                    aria-label='معلومات لماذا تواصل معنا'
+                    onClick={e => { e.stopPropagation(); setAccountPanel(curr => curr === 'contact_why' ? 'none' : 'contact_why'); }}
+                    style={{ width: '32px', height: '32px', borderRadius: '50%', border: '2px solid #e3b341', background: accountPanel === 'contact_why' ? '#e3b341' : '#fff8e1', color: '#7a4f01', fontWeight: 900, fontSize: '16px', display: 'grid', placeItems: 'center', cursor: 'pointer', boxShadow: '0 2px 8px rgba(227, 179, 65, 0.3)', flexShrink: 0 }}
+                  >
+                    !
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {accountPanel === 'app_info' && (() => {
+              const sName = homeCatalog.data?.settings?.storeName || 'ORIGINAL – أورجنال';
+              const infoTxt = String((homeCatalog.data?.settings as any)?.appInfoText || '').trim() || (globalThis as any).DEFAULT_APP_INFO || '';
+              const activeCities = deliveryTree.cities.map(c => c.name).join('، ');
+              return (
+                <div style={{ padding: '15px', borderRadius: '15px', background: '#f6faf7', border: '1.5px solid #174b36', display: 'grid', gap: '10px', marginTop: '4px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <strong style={{ fontSize: '14px', color: '#143a28', fontWeight: 900 }}>🌿 معلومات تطبيق {sName} وتعليمات الاستخدام</strong>
+                    <button type='button' className='icon-button' style={{ width: '28px', height: '28px' }} onClick={() => setAccountPanel('none')}><X size={15} /></button>
+                  </div>
+                  <div style={{ whiteSpace: 'pre-line', fontSize: '12.5px', color: '#1f3a2c', lineHeight: 1.85, background: '#ffffff', padding: '12px 14px', borderRadius: '12px', border: '1px solid #dce8df', fontWeight: 600 }}>
+                    {infoTxt}
+                  </div>
+                  <div style={{ display: 'grid', gap: '6px', fontSize: '11.5px', color: '#355242' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '7px', background: '#ffffff', padding: '8px 10px', borderRadius: '10px', border: '1px solid #e1ece4' }}><MapPin size={15} color='#174b36' /><span><strong>مدن التوصيل المعتمدة:</strong> {activeCities || 'صنعاء'}</span></div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '7px', background: '#ffffff', padding: '8px 10px', borderRadius: '10px', border: '1px solid #e1ece4' }}><ShieldCheck size={15} color='#174b36' /><span><strong>هدفنا:</strong> توصيل مقاضيك الطازجة لباب بيتك بأعلى جودة والدفع نقداً عند الاستلام.</span></div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {accountPanel === 'contact_options' && (() => {
+              const rawStorePhone = String(homeCatalog.data?.settings?.contactPhone || '770000000').trim();
+              const digitsOnly = rawStorePhone.replace(/\D+/g, '');
+              const waPhone = digitsOnly ? (digitsOnly.startsWith('967') ? digitsOnly : '967' + digitsOnly.replace(/^0+/, '')) : '';
+              const waLink = waPhone ? (['ht', 'tps://wa.me/'].join('') + waPhone) : '';
+              return (
+                <div style={{ padding: '15px', borderRadius: '15px', background: '#f6faf7', border: '1.5px solid #174b36', display: 'grid', gap: '10px', marginTop: '4px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <strong style={{ fontSize: '14px', color: '#143a28', fontWeight: 900 }}>📞 خيارات التواصل مع المتجر</strong>
+                    <button type='button' className='icon-button' style={{ width: '28px', height: '28px' }} onClick={() => setAccountPanel('none')}><X size={15} /></button>
+                  </div>
+                  <div style={{ display: 'grid', gap: '8px' }}>
+                    <Link href='/assistant' className='original-account-shortcut' style={{ background: '#ffffff', borderColor: '#174b36', padding: '12px 14px' }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '9px', fontWeight: 900, color: '#174b36' }}><Bot size={18} /><span>التواصل المباشر (محادثة إدارة المتجر داخل التطبيق)</span></span>
+                      <ArrowLeft size={16} />
+                    </Link>
+                    {waLink && (
+                      <a href={waLink} target='_blank' rel='noreferrer' className='original-account-shortcut' style={{ background: '#eef8f2', borderColor: '#25d366', color: '#0f5132', padding: '12px 14px' }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '9px', fontWeight: 900 }}><MessageCircle size={18} /><span>تواصل واتساب</span></span>
+                        <span style={{ fontSize: '11.5px', fontWeight: 800 }}>فتح واتساب ←</span>
+                      </a>
+                    )}
+                    <a href={'tel:' + rawStorePhone} className='original-account-shortcut' style={{ background: '#ffffff', borderColor: '#bfd6c8', padding: '12px 14px' }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '9px', fontWeight: 900, color: '#143a28' }}><Truck size={18} /><span>الاتصال بالمتجر</span></span>
+                      <strong dir='ltr' style={{ fontSize: '13px', color: '#174b36' }}>{rawStorePhone}</strong>
+                    </a>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {accountPanel === 'contact_why' && (() => {
+              const whyTxt = String((homeCatalog.data?.settings as any)?.contactWhyText || '').trim() || (globalThis as any).DEFAULT_CONTACT_WHY || '';
+              return (
+                <div style={{ padding: '15px', borderRadius: '15px', background: '#fffdf6', border: '2px solid #e3b341', display: 'grid', gap: '10px', marginTop: '4px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <strong style={{ fontSize: '14px', color: '#7a4f01', fontWeight: 900, display: 'inline-flex', alignItems: 'center', gap: '7px' }}>
+                      <span style={{ width: '24px', height: '24px', borderRadius: '50%', background: '#e3b341', color: '#ffffff', display: 'grid', placeItems: 'center', fontSize: '14px', fontWeight: 900 }}>!</span>
+                      <span>لماذا تواصل معنا؟</span>
+                    </strong>
+                    <button type='button' className='icon-button' style={{ width: '28px', height: '28px' }} onClick={() => setAccountPanel('none')}><X size={15} /></button>
+                  </div>
+                  <div style={{ whiteSpace: 'pre-line', fontSize: '12.5px', color: '#2b3a30', lineHeight: 1.85, background: '#ffffff', padding: '12px 14px', borderRadius: '12px', border: '1px solid #f0dfa8', fontWeight: 600 }}>
+                    {whyTxt}
+                  </div>
+                  <button type='button' className='button button-primary' style={{ minHeight: '38px', fontSize: '12.5px' }} onClick={() => setAccountPanel('contact_options')}>
+                    <span>انتقل إلى خيارات التواصل الآن</span>
+                    <ArrowLeft size={15} />
+                  </button>
+                </div>
+              );
+            })()}
+            {/* --- ACCOUNT_CONTACT_INFO_END --- */}
           </div>
         ) : (
           <form className='form-stack' onSubmit={saveProfile} style={{ gap: '12px', background: '#f8fbf9', padding: '14px', borderRadius: '14px', border: '1px solid #dce8df' }}>
@@ -3935,6 +4052,8 @@ function GamifiedRewardBar({ settings, location }: { settings: Record<string, st
 }
 
 
+
+
 const INSTANT_CACHE_KEY = "original-catalog-instant-v2";
 function readLocalInstantCatalog(): HomeData {
   try {
@@ -3953,7 +4072,6 @@ function readLocalInstantCatalog(): HomeData {
   } catch {}
   return { categories: [], products: [], banners: [], offers: [], settings: {} };
 }
-
 export default function Home() {
   const storeCtx = useStore();
   const lastCatalogSigRef = useRef("");

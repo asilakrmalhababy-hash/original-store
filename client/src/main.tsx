@@ -1,5 +1,7 @@
 // --- GLOBAL_INSTANT_CATALOG_GUARD_START ---
 (globalThis as any).INSTANT_CACHE_KEY = "original-catalog-instant-v2";
+(globalThis as any).DEFAULT_APP_INFO = "تطبيق أورجنال (ORIGINAL) هو وجهتك الأولى للتسوق الذكي وتوصيل كافة احتياجات المنزل والمقاضي الغذائية والخضروات والفواكه الطازجة إلى باب بيتك بأعلى جودة وأسعار منافسة، وهدفنا توفير وقتك وجهدك بخدمة سريعة وموثوقة.\n\n📌 تعليمات وطريقة استخدام التطبيق:\n1️⃣ تصفح واختيار المنتجات: تصفح الأقسام أو ابحث عن أي منتج وأضفه للسلة بضغطة زر، مع إمكانية تحديد الوزن أو النوع للأصناف الموزونة.\n2️⃣ حفظ بياناتك وعنوانك: من صفحة «حسابي» احفظ اسمك ورقم جوالك وعنوان التوصيل لمرة واحدة ليتم تعبئتها تلقائياً في جميع طلباتك القادمة.\n3️⃣ إتمام الطلب ومتابعته: راجع سلة المشتريات واضغط «إتمام الطلب»، ثم تابع حالة طلبك خطوة بخطوة من صفحة «طلباتي» حتى يصل لباب منزلك.\n4️⃣ المساعد الذكي وشريط الهدايا: استمتع بالهدايا والخصومات التلقائية عند إكمال مبلغ شريط المكافآت، واستعن بمساعد أورجنال الذكي لاقتراح الوصفات الاقتصادية أو طلب توفير أي منتج.";
+(globalThis as any).DEFAULT_CONTACT_WHY = "عزيزنا العميل، نسعد بتواصلك معنا في أي وقت في الحالات التالية:\n• إذا لم تجد منتجاً معيناً في المتجر وترغب بأن نوفره لك.\n• إذا كان لديك أي استفسار حول المنتجات أو الأسعار أو مناطق التوصيل.\n• إذا واجهت أي خطأ تقني في التطبيق أو مشكلة أو تأخير في طلبك.\n• إذا كانت لديك أي ملاحظة أو اقتراح لتطوير خدمات متجر أورجنال.\n\nلا تتردد في مراسلتنا أو الاتصال بنا، وفريقنا في خدمتك دائماً مع خالص الشكر والتقدير!";
 (globalThis as any).readLocalInstantCatalog = function readLocalInstantCatalog() {
   try {
     const k = "original-catalog-instant-v2";
@@ -17,6 +19,33 @@
     }
   } catch {}
   return { categories: [], products: [], banners: [], offers: [], settings: {} };
+};
+(globalThis as any).checkClientAutoPause = function checkClientAutoPause(settings?: Record<string, string>) {
+  if (!settings) return { paused: false, msg: "" };
+  if (settings.orderPaused === "true") return { paused: true, msg: settings.pausedMessage || "استقبال الطلبات متوقف مؤقتًا" };
+  if (settings.autoScheduleEnabled === "true") {
+    const cStr = String(settings.autoCloseTime || "").trim();
+    const oStr = String(settings.autoOpenTime || "").trim();
+    const cm = cStr.match(/^(\d{1,2}):(\d{2})$/);
+    const om = oStr.match(/^(\d{1,2}):(\d{2})$/);
+    if (cm && om) {
+      const cMins = Number(cm[1]) * 60 + Number(cm[2]);
+      const oMins = Number(om[1]) * 60 + Number(om[2]);
+      if (cMins !== oMins) {
+        const yemenNow = new Date(Date.now() + 3 * 3600 * 1000);
+        const curMins = yemenNow.getUTCHours() * 60 + yemenNow.getUTCMinutes();
+        const isClosed = cMins > oMins ? (curMins >= cMins || curMins < oMins) : (curMins >= cMins && curMins < oMins);
+        if (isClosed) {
+          const oh = Number(om[1]);
+          const omStr = om[2];
+          const period = oh >= 12 ? "مساءً" : "صباحاً";
+          const h12 = oh % 12 === 0 ? 12 : oh % 12;
+          return { paused: true, msg: settings.pausedMessage || ("🌙 المتجر مغلق حالياً — يفتح تلقائياً الساعة " + h12 + ":" + omStr + " " + period) };
+        }
+      }
+    }
+  }
+  return { paused: false, msg: "" };
 };
 // --- GLOBAL_INSTANT_CATALOG_GUARD_END ---
 // __SAFE_TOAST_PATCH__

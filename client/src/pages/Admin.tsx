@@ -4037,6 +4037,11 @@ function SettingsPanel() {
     rewardValue: "0",
     rewardsMessage: "",
     aiInstructions: "",
+    autoScheduleEnabled: false,
+    autoCloseTime: "23:00",
+    autoOpenTime: "07:00",
+    appInfoText: "",
+    contactWhyText: "",
   });
   const [rcfg, setRcfg] = useState<AdminRewardCfg>({
     rewardMode: "custom_gift",
@@ -4071,6 +4076,11 @@ function SettingsPanel() {
       rewardValue: raw.rewardValue || "0",
       rewardsMessage: unpacked.cleanMessage,
       aiInstructions: (raw as any).aiInstructions || "",
+      autoScheduleEnabled: (raw as any).autoScheduleEnabled === "true",
+      autoCloseTime: (raw as any).autoCloseTime || "23:00",
+      autoOpenTime: (raw as any).autoOpenTime || "07:00",
+      appInfoText: (raw as any).appInfoText || (globalThis as any).DEFAULT_APP_INFO || "",
+      contactWhyText: (raw as any).contactWhyText || (globalThis as any).DEFAULT_CONTACT_WHY || "",
     });
     setRcfg(unpacked.cfg);
     setReady(true);
@@ -4118,6 +4128,12 @@ function SettingsPanel() {
       rewardType: mappedRewardType,
       rewardValue: Math.min(100, Math.max(0, Number(values.rewardValue) || 0)),
       rewardsMessage: packedMessage,
+      aiInstructions: values.aiInstructions,
+      autoScheduleEnabled: values.autoScheduleEnabled,
+      autoCloseTime: values.autoCloseTime,
+      autoOpenTime: values.autoOpenTime,
+      appInfoText: values.appInfoText,
+      contactWhyText: values.contactWhyText,
     });
   };
 
@@ -4129,7 +4145,27 @@ function SettingsPanel() {
 
   return <div className="admin-content"><AdminHeading eyebrow="مركز التحكم" title="إعدادات المتجر وشريط الهدايا الحماسي" text="اضبط هوية المتجر ومناطق التوصيل وشريط المكافآت التفاعلي لرفع حماس ومشتريات الزبائن." icon={Settings2} />{query.isLoading ? <AdminLoading /> : query.error ? <AdminError message={query.error.message} retry={() => void query.refetch()} /> : <form className="settings-form" onSubmit={submit}>
     <section className="admin-form-card"><div className="form-card-heading"><span className="form-card-number">01</span><div><h2>بيانات المتجر وهويته</h2><p>المعلومات والشعار الذي تختاره بنفسك.</p></div></div><div className="settings-brand-layout"><div className="form-fields-grid"><label>اسم المتجر<input required maxLength={100} value={values.storeName} onChange={e => update("storeName", e.target.value)} /></label><label>هاتف التواصل<input type="tel" value={values.contactPhone} onChange={e => update("contactPhone", e.target.value)} placeholder="أضف رقم المتجر" /></label><label>رمز العملة<input maxLength={20} value={values.currency} onChange={e => update("currency", e.target.value)} /></label><label className="field-wide">وصف المتجر<textarea rows={2} value={values.storeDescription} onChange={e => update("storeDescription", e.target.value)} /></label></div><ImageField title="قص شعار وأيقونة أورجنال" value={values.storeIconUrl} onChange={value => update("storeIconUrl", value)} kind="icon" aspect={1} /></div></section>
-    <section className="admin-form-card"><div className="form-card-heading"><span className="form-card-number">02</span><div><h2>التوصيل واستقبال الطلبات</h2><p>لا يُفتح الشراء حتى تحدد منطقة أو رسومًا قابلة للتطبيق.</p></div></div><div className="form-fields-grid"><label className="toggle-field"><input type="checkbox" checked={values.deliveryEnabled} onChange={e => update("deliveryEnabled", e.target.checked)} /> تفعيل استقبال طلبات التوصيل</label><label>رسوم أساسية (ر.ي)<input type="number" min="0" step="1" value={values.deliveryFee} onChange={e => update("deliveryFee", e.target.value)} placeholder="غير محدد" /></label><div className="field-wide settings-zone-editor"><div className="admin-section-heading"><div><h3>مناطق التوصيل</h3><p>يمكن وضع رسوم مختلفة لكل مدينة أو منطقة.</p></div><button type="button" className="small-button" onClick={addZone}><Plus size={14} /> إضافة منطقة</button></div>{!values.deliveryZones.length ? <p className="subtle-note">لم تُضف مناطق بعد؛ سيُستخدم الرسم الأساسي إذا حُدد.</p> : values.deliveryZones.map((zone, index) => <div className="delivery-zone-row" key={index}><label>الاسم<input value={zone.name} onChange={e => patchZone(index, { name: e.target.value })} placeholder="اسم المنطقة" /></label><label>الرسم (ر.ي)<input type="number" min="0" step="1" value={zone.fee} onChange={e => patchZone(index, { fee: Number(e.target.value) })} /></label><label className="toggle-field"><input type="checkbox" checked={zone.enabled} onChange={e => patchZone(index, { enabled: e.target.checked })} /> مفعّلة</label><button type="button" className="small-button danger-soft" onClick={() => update("deliveryZones", values.deliveryZones.filter((_, i) => i !== index))}>حذف</button></div>)}</div><label className="toggle-field"><input type="checkbox" checked={values.orderPaused} onChange={e => update("orderPaused", e.target.checked)} /> إيقاف استقبال الطلبات مؤقتًا</label><label className="field-wide">رسالة الإيقاف<textarea value={values.pausedMessage} onChange={e => update("pausedMessage", e.target.value)} placeholder="اكتب الرسالة التي يراها العميل" /></label></div></section>
+    <section className="admin-form-card"><div className="form-card-heading"><span className="form-card-number">02</span><div><h2>التوصيل واستقبال الطلبات</h2><p>لا يُفتح الشراء حتى تحدد منطقة أو رسومًا قابلة للتطبيق.</p></div></div><div className="form-fields-grid"><label className="toggle-field"><input type="checkbox" checked={values.deliveryEnabled} onChange={e => update("deliveryEnabled", e.target.checked)} /> تفعيل استقبال طلبات التوصيل</label><label>رسوم أساسية (ر.ي)<input type="number" min="0" step="1" value={values.deliveryFee} onChange={e => update("deliveryFee", e.target.value)} placeholder="غير محدد" /></label><div className="field-wide settings-zone-editor"><div className="admin-section-heading"><div><h3>مناطق التوصيل</h3><p>يمكن وضع رسوم مختلفة لكل مدينة أو منطقة.</p></div><button type="button" className="small-button" onClick={addZone}><Plus size={14} /> إضافة منطقة</button></div>{!values.deliveryZones.length ? <p className="subtle-note">لم تُضف مناطق بعد؛ سيُستخدم الرسم الأساسي إذا حُدد.</p> : values.deliveryZones.map((zone, index) => <div className="delivery-zone-row" key={index}><label>الاسم<input value={zone.name} onChange={e => patchZone(index, { name: e.target.value })} placeholder="اسم المنطقة" /></label><label>الرسم (ر.ي)<input type="number" min="0" step="1" value={zone.fee} onChange={e => patchZone(index, { fee: Number(e.target.value) })} /></label><label className="toggle-field"><input type="checkbox" checked={zone.enabled} onChange={e => patchZone(index, { enabled: e.target.checked })} /> مفعّلة</label><button type="button" className="small-button danger-soft" onClick={() => update("deliveryZones", values.deliveryZones.filter((_, i) => i !== index))}>حذف</button></div>)}</div><label className="toggle-field"><input type="checkbox" checked={values.orderPaused} onChange={e => update("orderPaused", e.target.checked)} /> إيقاف استقبال الطلبات مؤقتًا</label><label className="field-wide">رسالة الإيقاف<textarea value={values.pausedMessage} onChange={e => update("pausedMessage", e.target.value)} placeholder="اكتب الرسالة التي يراها العميل" /></label>
+{/* --- ADMIN_AUTO_SCHEDULE_UI_START --- */}
+<div className="field-wide" style={{ marginTop: "10px", padding: "14px", borderRadius: "14px", background: "#f4f9f6", border: "1.5px solid #174b36", display: "grid", gap: "10px" }}>
+  <div>
+    <strong style={{ fontSize: "13.5px", color: "#143a28", display: "block" }}>⏰ جدولة إيقاف وفتح المتجر تلقائياً (بتوقيت اليمن)</strong>
+    <small style={{ color: "#52665a", fontSize: "11px" }}>حدد وقت الإغلاق ووقت الافتتاح اليومي ليتوقف المتجر ويفتح تلقائياً بدون تدخل يدوي.</small>
+  </div>
+  <label className="toggle-field" style={{ background: "#ffffff", padding: "10px 12px", borderRadius: "10px", border: "1px solid #cfe0d4", fontWeight: 800 }}>
+    <input type="checkbox" checked={(values as any).autoScheduleEnabled} onChange={e => update("autoScheduleEnabled" as any, e.target.checked as any)} />
+    <span>{(values as any).autoScheduleEnabled ? "✅ الجدولة التلقائية مفعّلة (يتوقف ويفتح تلقائياً حسب الوقت أدناه)" : "تفعيل إيقاف وفتح المتجر تلقائياً حسب الوقت"}</span>
+  </label>
+  <div className="form-fields-grid" style={{ gap: "10px" }}>
+    <label>🌙 وقت إيقاف المتجر تلقائياً (الإغلاق)
+      <input type="time" value={(values as any).autoCloseTime || "23:00"} onChange={e => update("autoCloseTime" as any, e.target.value as any)} style={{ background: "#ffffff", fontWeight: 800 }} />
+    </label>
+    <label>☀️ وقت فتح المتجر تلقائياً (الافتتاح)
+      <input type="time" value={(values as any).autoOpenTime || "07:00"} onChange={e => update("autoOpenTime" as any, e.target.value as any)} style={{ background: "#ffffff", fontWeight: 800 }} />
+    </label>
+  </div>
+</div>
+{/* --- ADMIN_AUTO_SCHEDULE_UI_END --- */}</div></section>
 
     <section className="admin-form-card" style={{ border: "2px solid #e3c472", background: "linear-gradient(180deg, #fffdf7 0%, #ffffff 100%)" }}>
       <div className="form-card-heading">
@@ -4260,6 +4296,33 @@ function SettingsPanel() {
           </label>
         </div>
       </section>
+      {/* --- ADMIN_APP_INFO_UI_START --- */}
+<section className="admin-form-card">
+  <div className="form-card-heading">
+    <span className="form-card-number">ℹ️</span>
+    <div>
+      <h2>معلومات التطبيق ورسالة «لماذا تواصل معنا (!)» في صفحة حسابي</h2>
+      <p>تحكم في النصوص التي تظهر للزبون عند الضغط على «معلومات التطبيق» أو على إشارة التعجب (!) بجانب «تواصل معنا».</p>
+    </div>
+  </div>
+  <div className="form-stack" style={{ gap: "12px" }}>
+    <label className="field-wide">
+      <span style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span>🌿 نص «معلومات التطبيق» (نبذة عن التطبيق، الهدف منه، وتعليمات الاستخدام)</span>
+        <button type="button" className="text-link" style={{ fontSize: "11px" }} onClick={() => update("appInfoText" as any, ((globalThis as any).DEFAULT_APP_INFO || "") as any)}>استعادة النص الافتراضي</button>
+      </span>
+      <textarea rows={6} maxLength={7500} value={(values as any).appInfoText} onChange={e => update("appInfoText" as any, e.target.value as any)} placeholder="اكتب نبذة عن التطبيق وتعليمات الاستخدام..." />
+    </label>
+    <label className="field-wide">
+      <span style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span>❗ نص إشارة علامة التعجب (!) بجانب «تواصل معنا» (لماذا تواصل معنا؟)</span>
+        <button type="button" className="text-link" style={{ fontSize: "11px" }} onClick={() => update("contactWhyText" as any, ((globalThis as any).DEFAULT_CONTACT_WHY || "") as any)}>استعادة النص الافتراضي</button>
+      </span>
+      <textarea rows={5} maxLength={4500} value={(values as any).contactWhyText} onChange={e => update("contactWhyText" as any, e.target.value as any)} placeholder="اكتب توضيح للزبون متى ولماذا يتواصل معكم..." />
+    </label>
+  </div>
+</section>
+{/* --- ADMIN_APP_INFO_UI_END --- */}
       <button className="button button-primary settings-save" disabled={save.isPending}>{save.isPending ? <LoaderCircle className="spin" size={16} /> : <Save size={17} />}{save.isPending ? "جارٍ الحفظ..." : "حفظ كل الإعدادات"}</button>
   </form>}</div>;
 }
