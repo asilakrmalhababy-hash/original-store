@@ -29,7 +29,28 @@ async function startServer() {
   const server = createServer(app);
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
-  app.get("/api/health", (_req, res) => res.json({ status: "ok", ts: Date.now() }));
+  app.get("/api/health", async (_req, res) => {
+    const mem = process.memoryUsage();
+    const cacheMap: Map<string, { contentType: string; buf: Buffer }> = (globalThis as any).__fastImgCache || new Map();
+    let imgCacheBytes = 0;
+    for (const v of cacheMap.values()) imgCacheBytes += (v?.buf?.byteLength || 0);
+    let dbPingMs = -1;
+    try {
+      const t0 = Date.now();
+      const db = await getDb();
+      if (db) { await db.select({ key: storeSettings.key }).from(storeSettings).limit(1); dbPingMs = Date.now() - t0; }
+    } catch {}
+    res.json({
+      status: "ok",
+      uptimeMinutes: Math.round(process.uptime() / 60),
+      ramUsedMB: Math.round(mem.rss / 1048576),
+      ramSafeLimitMB: 512,
+      cachedImagesCount: cacheMap.size,
+      cachedImagesMB: Math.round((imgCacheBytes / 1048576) * 10) / 10,
+      dbLatencyMs: dbPingMs,
+      ts: Date.now()
+    });
+  });
   if (!(globalThis as any).__keepAliveTimer) {
     (globalThis as any).__keepAliveTimer = setInterval(() => {
       const extUrl = process.env.RENDER_EXTERNAL_URL || (HTTPS_PREFIX + "original-store-xmyf.onrender.com");
