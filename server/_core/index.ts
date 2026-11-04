@@ -1,3 +1,4 @@
+import zlib from "zlib";
 import "dotenv/config";
 import express from "express";
 import { createServer } from "http";
@@ -181,6 +182,26 @@ async function startServer() {
 
   registerOAuthRoutes(app);
 
+  app.use("/api/trpc", (req, res, next) => {
+    const accept = String(req.headers["accept-encoding"] || "");
+    if (accept.includes("gzip")) {
+      const origSend = res.send.bind(res);
+      res.send = ((body: any) => {
+        try {
+          const raw = typeof body === "string" ? Buffer.from(body) : Buffer.isBuffer(body) ? body : null;
+          if (raw && raw.length > 1024 && !res.getHeader("Content-Encoding")) {
+            const compressed = zlib.gzipSync(raw, { level: zlib.constants.Z_BEST_SPEED });
+            res.setHeader("Content-Encoding", "gzip");
+            res.setHeader("Vary", "Accept-Encoding");
+            res.removeHeader("Content-Length");
+            return origSend(compressed);
+          }
+        } catch {}
+        return origSend(body);
+      }) as any;
+    }
+    next();
+  });
   app.use(
     "/api/trpc",
     createExpressMiddleware({

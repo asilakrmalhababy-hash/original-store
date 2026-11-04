@@ -892,6 +892,111 @@ function ProductGrid({ items, onOpen, onAiRecipe, maxItems, totalStoreCount, onV
   useEffect(() => { if (prevKey.current !== gridKey) { prevKey.current = gridKey; setVisibleCount(getSaved()); setLoadingMore(false); } }, [gridKey]);
   useEffect(() => { try { const w = window as any; w.__gridVisibleCounts = w.__gridVisibleCounts || {}; w.__gridVisibleCounts[gridKey] = visibleCount; } catch {} }, [visibleCount, gridKey]);
   useEffect(() => {
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      if (cancelled) return;
+      const w = window as any;
+      const seen: Set<string> = w.__preloadedImgSet || (w.__preloadedImgSet = new Set<string>());
+      const slice = list.slice(0, Math.min(list.length, visibleCount + BATCH));
+      let idx = 0;
+      const step = () => {
+        if (cancelled) return;
+        let count = 0;
+        while (idx < slice.length && count < 4) {
+          const url = slice[idx++]?.imageUrl;
+          if (url && !seen.has(url)) {
+            seen.add(url);
+            const img = new Image();
+            img.decoding = "async";
+            img.src = url;
+            count++;
+          }
+        }
+        if (idx < slice.length) setTimeout(step, 35);
+      };
+      step();
+    }, 45);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [list, visibleCount]);
+  useEffect(() => {
+    if (visibleCount >= list.length || loadingMore) return;
+    const node = loadMoreRef.current;
+    if (!node || typeof IntersectionObserver === "undefined") return;
+    const obs = new IntersectionObserver(entries => {
+      if (entries[0]?.isIntersecting) {
+        setLoadingMore(true);
+        setTimeout(() => { setVisibleCount(c => Math.min(list.length, c + BATCH)); setLoadingMore(false); }, 220);
+      }
+    }, { rootMargin: "120px 0px" });
+    obs.observe(node);
+    return () => obs.disconnect();
+  }, [visibleCount, list.length, loadingMore]);
+  if (!list.length) return <EmptyState icon={ShoppingBag} title="المتجر ينتظر منتجاته الأولى" description="لا توجد منتجات منشورة في هذا القسم حالياً." action="تصفح الأقسام" href="/categories" />;
+  const visibleItems = list.slice(0, visibleCount);
+  const done = visibleCount >= list.length;
+  const total = totalStoreCount ?? items.length;
+  return <>
+    <div className="product-grid">{visibleItems.map((p, i) => <ProductCard key={p.id} product={p} priority={i < 8} onOpen={() => onOpen(p.id)} onAiRecipe={onAiRecipe} />)}</div>
+    {!done && <div ref={loadMoreRef} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "10px", padding: "18px 12px", margin: "10px auto", color: "#174b36", fontWeight: 800, fontSize: "0.86rem" }}><div style={{ width: "22px", height: "22px", borderRadius: "50%", border: "2.5px solid #d5e6dc", borderTopColor: "#174b36", animation: "spin 0.65s linear infinite" }} /><span>جاري تحميل المزيد من المنتجات...</span></div>}
+    {done && maxItems && total > maxItems && onViewAll && <div style={{ display: "flex", justifyContent: "center", padding: "18px 12px 10px" }}><button type="button" onClick={onViewAll} style={{ display: "inline-flex", alignItems: "center", gap: "10px", padding: "14px 28px", borderRadius: "18px", background: "linear-gradient(135deg, #174b36 0%, #0f3525 100%)", color: "#fff", border: "1.5px solid #d4af37", fontWeight: 900, fontSize: "0.95rem", boxShadow: "0 10px 24px rgba(15, 53, 37, 0.22)", cursor: "pointer" }}><span>عرض جميع المنتجات ({total} منتج)</span><ArrowLeft size={18} /></button></div>}
+  </>;
+}
+function ProductCard({ product, onOpen, onAiRecipe, priority = false }: { product: PublicProduct; onOpen: () => void; onAiRecipe?: (p: PublicProduct) => void; priority?: boolean }) {
+  const { add, isFavorite, toggleFavorite } = useStore();
+  const favorite = isFavorite(product.id);
+  const disabled = product.stock !== null && product.stock < (product.minQuantity || 1);
+  const { variants, weightEnabled, minWeightAmount } = useMemo(() => unpackProductVariants(product.description), [product.description]);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerVariant, setPickerVariant] = useState<string>("");
+
+  const handleAddClick = (e: React.MouseEvent, preferredVariant?: string) => {
+    e.stopPropagation();
+    if (disabled) return;
+    if (variants.length > 0 || weightEnabled) {
+      setPickerVariant(preferredVariant || variants[0] || "");
+      setPickerOpen(true);
+      return;
+    }
+    add(product, product.minQuantity || 1);
+    toast.success("أُضيف إلى السلة");
+  };
+
+  return <>
+    <article className="product-card">
+      <div className="product-visual" onClick={onOpen} role="button" tabIndex={0} onKeyDown={event => { if (event.key === "Enter") onOpen(); }}>
+        {product.imageUrl ? <img src={product.imageUrl} alt={product.name} loading="eager" fetchPriority={priority ? "high" : "auto"} decoding="async" /> : <div className="product-no-image"><Leaf size={27} strokeWidth={1.4} /><span>صورة المنتج</span></div>}
+        <button type="button" className={"favorite-toggle " + (favorite ? "is-favorite" : "")} aria-label={favorite ? "إزالة من المفضلة" : "أضف للمفضلة"} aria-pressed={favorite} onClick={event => { event.stopPropagation(); toggleFavorite(product.id); toast.success(favorite ? "أُزيل من المفضلة" : "أُضيف إلى المفضلة على هذا الجهاز"); }}><Heart size={17} fill={favorite ? "currentColor" : "none"} /></button>
+        {onAiRecipe && <button type="button" className="ai-recipe-toggle" aria-label="أفكار وتحضير بالذكاء الاصطناعي" title="أفكار ووصفات تحضير" onClick={event => { event.stopPropagation(); onAiRecipe(product); }}><Sparkles size={16} /></button>}
+        {disabled && <span className="product-sold-out">غير متوفر</span>}
+      </div>
+      <button type="button" className="product-title-button" onClick={onOpen}><strong>{product.name}</strong><span>{product.unit}</span></button>
+      <div className="product-card-bottom"><div><b>{formatPrice(product.price)}</b><small> / {product.unit}</small></div><button type="button" className="add-button" disabled={disabled} onClick={e => handleAddClick(e)} aria-label={"إضافة " + product.name + " للسلة"}><Plus size={18} /></button></div>
+    </article>
+    {pickerOpen && (
+      <VariantPickerModal
+        product={product}
+        variants={variants}
+        weightEnabled={weightEnabled}
+        minWeightAmount={minWeightAmount}
+        initialVariant={pickerVariant}
+        onClose={() => setPickerOpen(false)}
+      />
+    )}
+  </>;
+}
+
+
+function ProductGrid({ items, onOpen, onAiRecipe, maxItems, totalStoreCount, onViewAll, gridKey = "default" }: { items: PublicProduct[]; onOpen: (id: number) => void; onAiRecipe?: (p: PublicProduct) => void; maxItems?: number; totalStoreCount?: number; onViewAll?: () => void; gridKey?: string }) {
+  const BATCH = 12;
+  const list = useMemo(() => (maxItems ? items.slice(0, maxItems) : items), [items, maxItems]);
+  const getSaved = () => { try { const m = (window as any).__gridVisibleCounts || {}; return m[gridKey] >= BATCH ? m[gridKey] : BATCH; } catch { return BATCH; } };
+  const [visibleCount, setVisibleCount] = useState<number>(getSaved);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
+  const prevKey = useRef(gridKey);
+  useEffect(() => { if (prevKey.current !== gridKey) { prevKey.current = gridKey; setVisibleCount(getSaved()); setLoadingMore(false); } }, [gridKey]);
+  useEffect(() => { try { const w = window as any; w.__gridVisibleCounts = w.__gridVisibleCounts || {}; w.__gridVisibleCounts[gridKey] = visibleCount; } catch {} }, [visibleCount, gridKey]);
+  useEffect(() => {
     for (const p of list.slice(0, Math.min(list.length, visibleCount + BATCH))) {
       if (p.imageUrl) { const img = new Image(); img.decoding = "async"; img.src = p.imageUrl; }
     }
@@ -2065,7 +2170,7 @@ function Checkout({ onClose, onSuccess, cart }: { onClose: () => void; onSuccess
   const utils = trpc.useUtils();
   const [, navigate] = useLocation();
   const customer = useCustomer();
-  const homeCatalog = trpc.commerce.catalog.home.useQuery(undefined, { staleTime: 0, refetchOnMount: 'always' });
+  const homeCatalog = trpc.commerce.catalog.home.useQuery(undefined, { staleTime: 30000, placeholderData: readLocalInstantCatalog() as any });
   const deliveryTree = useMemo(() => readPublicDeliveryTree((homeCatalog.data?.settings as any)?.deliveryTreeConfig), [homeCatalog.data?.settings]);
   const subtotal = useMemo(() => cart.reduce((s, l) => s + l.price * l.quantity, 0), [cart]);
 
@@ -2417,7 +2522,7 @@ function OrdersPage() {
   }, [allRefs.length]);
 
   const queryInput = strictFallbackMode ? { refs: strictRefs } : { refs, ...(validPhoneForTrack ? { phone: validPhoneForTrack } : {}) };
-  const query = trpc.commerce.orders.trackMany.useQuery(queryInput as any, { enabled: canTrackOrders, retry: 0, staleTime: 4000, refetchInterval: canTrackOrders ? 8000 : false, placeholderData: cachedOrdersData });
+  const query = trpc.commerce.orders.trackMany.useQuery(queryInput as any, { enabled: canTrackOrders, retry: 0, staleTime: 10000, refetchInterval: canTrackOrders ? 10000 : false, initialData: cachedOrdersData as any, placeholderData: cachedOrdersData });
 
   useEffect(() => {
     if (query.error && !strictFallbackMode) {
@@ -2788,7 +2893,7 @@ function useGuestPushSubscriptionSync() {
 function AccountPage() {
   const customer = useCustomer();
   const { favoriteIds } = useStore();
-  const homeCatalog = trpc.commerce.catalog.home.useQuery(undefined, { staleTime: 0, refetchOnMount: 'always' });
+  const homeCatalog = trpc.commerce.catalog.home.useQuery(undefined, { staleTime: 30000, placeholderData: readLocalInstantCatalog() as any });
   const deliveryTree = useMemo(() => readPublicDeliveryTree((homeCatalog.data?.settings as any)?.deliveryTreeConfig), [homeCatalog.data?.settings]);
   const cleanedCustomerPhone = cleanYemeniPhone(customer.phone);
   const hasSavedProfile = Boolean(customer.name.trim().length >= 2 && isValidYemeniPhone(cleanedCustomerPhone));
@@ -2938,121 +3043,60 @@ function AccountPage() {
               </Link>
             </div>
             {/* --- ACCOUNT_CONTACT_INFO_START --- */}
-            <div style={{ display: 'grid', gap: '9px', marginTop: '4px' }}>
-              <button
-                type='button'
-                onClick={() => setAccountPanel(curr => curr === 'app_info' ? 'none' : 'app_info')}
-                className='original-account-shortcut'
-                style={{ width: '100%', cursor: 'pointer', padding: '12px 14px', borderRadius: '13px', background: accountPanel === 'app_info' ? '#174b36' : '#f4f9f6', color: accountPanel === 'app_info' ? '#ffffff' : '#143a28', border: '1.5px solid #174b36', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
-              >
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '9px', fontWeight: 900, fontSize: '13px' }}>
-                  <Leaf size={17} />
-                  <span>معلومات التطبيق</span>
-                </span>
-                <span style={{ fontSize: '11px', fontWeight: 700, opacity: 0.9 }}>نبذة وتعليمات الاستخدام ←</span>
-              </button>
-
-              <div
-                onClick={() => setAccountPanel(curr => curr === 'contact_options' ? 'none' : 'contact_options')}
-                role='button'
-                tabIndex={0}
-                onKeyDown={e => { if (e.key === 'Enter') setAccountPanel(curr => curr === 'contact_options' ? 'none' : 'contact_options'); }}
-                style={{ width: '100%', cursor: 'pointer', padding: '10px 12px', borderRadius: '13px', background: accountPanel === 'contact_options' ? '#174b36' : '#ffffff', color: accountPanel === 'contact_options' ? '#ffffff' : '#174b36', border: '1.5px solid #cfe2d6', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', boxShadow: '0 3px 10px rgba(23, 75, 54, 0.05)' }}
-              >
-                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '9px', fontWeight: 900, fontSize: '13px' }}>
-                  <MessageCircle size={18} />
-                  <span>تواصل معنا</span>
-                  <small style={{ fontSize: '11px', fontWeight: 700, color: accountPanel === 'contact_options' ? '#d9f2e4' : '#5c7265' }}>(مباشر · واتساب · اتصال)</small>
-                </div>
-
-                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-                  <button
-                    type='button'
-                    title='لماذا تواصل معنا؟'
-                    aria-label='معلومات لماذا تواصل معنا'
-                    onClick={e => { e.stopPropagation(); setAccountPanel(curr => curr === 'contact_why' ? 'none' : 'contact_why'); }}
-                    style={{ width: '32px', height: '32px', borderRadius: '50%', border: '2px solid #e3b341', background: accountPanel === 'contact_why' ? '#e3b341' : '#fff8e1', color: '#7a4f01', fontWeight: 900, fontSize: '16px', display: 'grid', placeItems: 'center', cursor: 'pointer', boxShadow: '0 2px 8px rgba(227, 179, 65, 0.3)', flexShrink: 0 }}
-                  >
-                    !
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {accountPanel === 'app_info' && (() => {
-              const sName = homeCatalog.data?.settings?.storeName || 'ORIGINAL – أورجنال';
-              const infoTxt = String((homeCatalog.data?.settings as any)?.appInfoText || '').trim() || (globalThis as any).DEFAULT_APP_INFO || '';
-              const activeCities = deliveryTree.cities.map(c => c.name).join('، ');
-              return (
-                <div style={{ padding: '15px', borderRadius: '15px', background: '#f6faf7', border: '1.5px solid #174b36', display: 'grid', gap: '10px', marginTop: '4px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <strong style={{ fontSize: '14px', color: '#143a28', fontWeight: 900 }}>🌿 معلومات تطبيق {sName} وتعليمات الاستخدام</strong>
-                    <button type='button' className='icon-button' style={{ width: '28px', height: '28px' }} onClick={() => setAccountPanel('none')}><X size={15} /></button>
-                  </div>
-                  <div style={{ whiteSpace: 'pre-line', fontSize: '12.5px', color: '#1f3a2c', lineHeight: 1.85, background: '#ffffff', padding: '12px 14px', borderRadius: '12px', border: '1px solid #dce8df', fontWeight: 600 }}>
-                    {infoTxt}
-                  </div>
-                  <div style={{ display: 'grid', gap: '6px', fontSize: '11.5px', color: '#355242' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '7px', background: '#ffffff', padding: '8px 10px', borderRadius: '10px', border: '1px solid #e1ece4' }}><MapPin size={15} color='#174b36' /><span><strong>مدن التوصيل المعتمدة:</strong> {activeCities || 'صنعاء'}</span></div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '7px', background: '#ffffff', padding: '8px 10px', borderRadius: '10px', border: '1px solid #e1ece4' }}><ShieldCheck size={15} color='#174b36' /><span><strong>هدفنا:</strong> توصيل مقاضيك الطازجة لباب بيتك بأعلى جودة والدفع نقداً عند الاستلام.</span></div>
-                  </div>
-                </div>
-              );
-            })()}
-
-            {accountPanel === 'contact_options' && (() => {
-              const rawStorePhone = String(homeCatalog.data?.settings?.contactPhone || '770000000').trim();
-              const digitsOnly = rawStorePhone.replace(/\D+/g, '');
-              const waPhone = digitsOnly ? (digitsOnly.startsWith('967') ? digitsOnly : '967' + digitsOnly.replace(/^0+/, '')) : '';
-              const waLink = waPhone ? (['ht', 'tps://wa.me/'].join('') + waPhone) : '';
-              return (
-                <div style={{ padding: '15px', borderRadius: '15px', background: '#f6faf7', border: '1.5px solid #174b36', display: 'grid', gap: '10px', marginTop: '4px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <strong style={{ fontSize: '14px', color: '#143a28', fontWeight: 900 }}>📞 خيارات التواصل مع المتجر</strong>
-                    <button type='button' className='icon-button' style={{ width: '28px', height: '28px' }} onClick={() => setAccountPanel('none')}><X size={15} /></button>
-                  </div>
-                  <div style={{ display: 'grid', gap: '8px' }}>
-                    <Link href='/assistant' className='original-account-shortcut' style={{ background: '#ffffff', borderColor: '#174b36', padding: '12px 14px' }}>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '9px', fontWeight: 900, color: '#174b36' }}><Bot size={18} /><span>التواصل المباشر (محادثة إدارة المتجر داخل التطبيق)</span></span>
-                      <ArrowLeft size={16} />
-                    </Link>
-                    {waLink && (
-                      <a href={waLink} target='_blank' rel='noreferrer' className='original-account-shortcut' style={{ background: '#eef8f2', borderColor: '#25d366', color: '#0f5132', padding: '12px 14px' }}>
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '9px', fontWeight: 900 }}><MessageCircle size={18} /><span>تواصل واتساب</span></span>
-                        <span style={{ fontSize: '11.5px', fontWeight: 800 }}>فتح واتساب ←</span>
-                      </a>
-                    )}
-                    <a href={'tel:' + rawStorePhone} className='original-account-shortcut' style={{ background: '#ffffff', borderColor: '#bfd6c8', padding: '12px 14px' }}>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '9px', fontWeight: 900, color: '#143a28' }}><Truck size={18} /><span>الاتصال بالمتجر</span></span>
-                      <strong dir='ltr' style={{ fontSize: '13px', color: '#174b36' }}>{rawStorePhone}</strong>
-                    </a>
-                  </div>
-                </div>
-              );
-            })()}
-
-            {accountPanel === 'contact_why' && (() => {
-              const whyTxt = String((homeCatalog.data?.settings as any)?.contactWhyText || '').trim() || (globalThis as any).DEFAULT_CONTACT_WHY || '';
-              return (
-                <div style={{ padding: '15px', borderRadius: '15px', background: '#fffdf6', border: '2px solid #e3b341', display: 'grid', gap: '10px', marginTop: '4px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <strong style={{ fontSize: '14px', color: '#7a4f01', fontWeight: 900, display: 'inline-flex', alignItems: 'center', gap: '7px' }}>
-                      <span style={{ width: '24px', height: '24px', borderRadius: '50%', background: '#e3b341', color: '#ffffff', display: 'grid', placeItems: 'center', fontSize: '14px', fontWeight: 900 }}>!</span>
-                      <span>لماذا تواصل معنا؟</span>
-                    </strong>
-                    <button type='button' className='icon-button' style={{ width: '28px', height: '28px' }} onClick={() => setAccountPanel('none')}><X size={15} /></button>
-                  </div>
-                  <div style={{ whiteSpace: 'pre-line', fontSize: '12.5px', color: '#2b3a30', lineHeight: 1.85, background: '#ffffff', padding: '12px 14px', borderRadius: '12px', border: '1px solid #f0dfa8', fontWeight: 600 }}>
-                    {whyTxt}
-                  </div>
-                  <button type='button' className='button button-primary' style={{ minHeight: '38px', fontSize: '12.5px' }} onClick={() => setAccountPanel('contact_options')}>
-                    <span>انتقل إلى خيارات التواصل الآن</span>
-                    <ArrowLeft size={15} />
-                  </button>
-                </div>
-              );
-            })()}
-            {/* --- ACCOUNT_CONTACT_INFO_END --- */}
+<div style={{ display: 'grid', gap: '9px', marginTop: '4px' }}>
+  <button type='button' onClick={() => setAccountPanel(curr => curr === 'app_info' ? 'none' : 'app_info')} className='original-account-shortcut' style={{ width: '100%', cursor: 'pointer', padding: '12px 14px', borderRadius: '13px', background: accountPanel === 'app_info' ? '#174b36' : '#f4f9f6', color: accountPanel === 'app_info' ? '#ffffff' : '#143a28', border: '1.5px solid #174b36', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '9px', fontWeight: 900, fontSize: '13px' }}><Leaf size={17} /><span>معلومات التطبيق</span></span>
+    <span style={{ fontSize: '11px', fontWeight: 700, opacity: 0.9 }}>نبذة وتعليمات الاستخدام ←</span>
+  </button>
+  <div onClick={() => setAccountPanel(curr => curr === 'contact_options' ? 'none' : 'contact_options')} role='button' tabIndex={0} onKeyDown={e => { if (e.key === 'Enter') setAccountPanel(curr => curr === 'contact_options' ? 'none' : 'contact_options'); }} style={{ width: '100%', cursor: 'pointer', padding: '10px 12px', borderRadius: '13px', background: accountPanel === 'contact_options' ? '#174b36' : '#ffffff', color: accountPanel === 'contact_options' ? '#ffffff' : '#174b36', border: '1.5px solid #cfe2d6', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', boxShadow: '0 3px 10px rgba(23, 75, 54, 0.05)' }}>
+    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '9px', fontWeight: 900, fontSize: '13px' }}><MessageCircle size={18} /><span>تواصل معنا</span><small style={{ fontSize: '11px', fontWeight: 700, color: accountPanel === 'contact_options' ? '#d9f2e4' : '#5c7265' }}>(مباشر · واتساب · اتصال)</small></div>
+    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+      <button type='button' title='لماذا تواصل معنا؟' aria-label='معلومات لماذا تواصل معنا' onClick={e => { e.stopPropagation(); setAccountPanel(curr => curr === 'contact_why' ? 'none' : 'contact_why'); }} style={{ width: '32px', height: '32px', borderRadius: '50%', border: '2px solid #e3b341', background: accountPanel === 'contact_why' ? '#e3b341' : '#fff8e1', color: '#7a4f01', fontWeight: 900, fontSize: '16px', display: 'grid', placeItems: 'center', cursor: 'pointer', boxShadow: '0 2px 8px rgba(227, 179, 65, 0.3)', flexShrink: 0 }}>!</button>
+    </div>
+  </div>
+</div>
+{accountPanel === 'app_info' && (() => {
+  const sName = homeCatalog.data?.settings?.storeName || 'ORIGINAL – أورجنال';
+  const infoTxt = String((homeCatalog.data?.settings as any)?.appInfoText || '').trim() || (globalThis as any).DEFAULT_APP_INFO || '';
+  const activeCities = deliveryTree.cities.map(c => c.name).join('، ');
+  return (
+    <div style={{ padding: '15px', borderRadius: '15px', background: '#f6faf7', border: '1.5px solid #174b36', display: 'grid', gap: '10px', marginTop: '4px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><strong style={{ fontSize: '14px', color: '#143a28', fontWeight: 900 }}>🌿 معلومات تطبيق {sName} وتعليمات الاستخدام</strong><button type='button' className='icon-button' style={{ width: '28px', height: '28px' }} onClick={() => setAccountPanel('none')}><X size={15} /></button></div>
+      <div style={{ whiteSpace: 'pre-line', fontSize: '12.5px', color: '#1f3a2c', lineHeight: 1.85, background: '#ffffff', padding: '12px 14px', borderRadius: '12px', border: '1px solid #dce8df', fontWeight: 600 }}>{infoTxt}</div>
+      <div style={{ display: 'grid', gap: '6px', fontSize: '11.5px', color: '#355242' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '7px', background: '#ffffff', padding: '8px 10px', borderRadius: '10px', border: '1px solid #e1ece4' }}><MapPin size={15} color='#174b36' /><span><strong>مدن التوصيل المعتمدة:</strong> {activeCities || 'صنعاء'}</span></div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '7px', background: '#ffffff', padding: '8px 10px', borderRadius: '10px', border: '1px solid #e1ece4' }}><ShieldCheck size={15} color='#174b36' /><span><strong>هدفنا:</strong> توصيل مقاضيك الطازجة لباب بيتك بأعلى جودة والدفع نقداً عند الاستلام.</span></div>
+      </div>
+    </div>
+  );
+})()}
+{accountPanel === 'contact_options' && (() => {
+  const rawStorePhone = String(homeCatalog.data?.settings?.contactPhone || '770000000').trim();
+  const digitsOnly = rawStorePhone.replace(/\D+/g, '');
+  const waPhone = digitsOnly ? (digitsOnly.startsWith('967') ? digitsOnly : '967' + digitsOnly.replace(/^0+/, '')) : '';
+  const waLink = waPhone ? (['ht', 'tps://wa.me/'].join('') + waPhone) : '';
+  return (
+    <div style={{ padding: '15px', borderRadius: '15px', background: '#f6faf7', border: '1.5px solid #174b36', display: 'grid', gap: '10px', marginTop: '4px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><strong style={{ fontSize: '14px', color: '#143a28', fontWeight: 900 }}>📞 خيارات التواصل مع المتجر</strong><button type='button' className='icon-button' style={{ width: '28px', height: '28px' }} onClick={() => setAccountPanel('none')}><X size={15} /></button></div>
+      <div style={{ display: 'grid', gap: '8px' }}>
+        <Link href='/assistant' className='original-account-shortcut' style={{ background: '#ffffff', borderColor: '#174b36', padding: '12px 14px' }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: '9px', fontWeight: 900, color: '#174b36' }}><Bot size={18} /><span>التواصل المباشر (محادثة إدارة المتجر داخل التطبيق)</span></span><ArrowLeft size={16} /></Link>
+        {waLink && (<a href={waLink} target='_blank' rel='noreferrer' className='original-account-shortcut' style={{ background: '#eef8f2', borderColor: '#25d366', color: '#0f5132', padding: '12px 14px' }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: '9px', fontWeight: 900 }}><MessageCircle size={18} /><span>تواصل واتساب</span></span><span style={{ fontSize: '11.5px', fontWeight: 800 }}>فتح واتساب ←</span></a>)}
+        <a href={'tel:' + rawStorePhone} className='original-account-shortcut' style={{ background: '#ffffff', borderColor: '#bfd6c8', padding: '12px 14px' }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: '9px', fontWeight: 900, color: '#143a28' }}><Truck size={18} /><span>الاتصال بالمتجر</span></span><strong dir='ltr' style={{ fontSize: '13px', color: '#174b36' }}>{rawStorePhone}</strong></a>
+      </div>
+    </div>
+  );
+})()}
+{accountPanel === 'contact_why' && (() => {
+  const whyTxt = String((homeCatalog.data?.settings as any)?.contactWhyText || '').trim() || (globalThis as any).DEFAULT_CONTACT_WHY || '';
+  return (
+    <div style={{ padding: '15px', borderRadius: '15px', background: '#fffdf6', border: '2px solid #e3b341', display: 'grid', gap: '10px', marginTop: '4px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><strong style={{ fontSize: '14px', color: '#7a4f01', fontWeight: 900, display: 'inline-flex', alignItems: 'center', gap: '7px' }}><span style={{ width: '24px', height: '24px', borderRadius: '50%', background: '#e3b341', color: '#ffffff', display: 'grid', placeItems: 'center', fontSize: '14px', fontWeight: 900 }}>!</span><span>لماذا تواصل معنا؟</span></strong><button type='button' className='icon-button' style={{ width: '28px', height: '28px' }} onClick={() => setAccountPanel('none')}><X size={15} /></button></div>
+      <div style={{ whiteSpace: 'pre-line', fontSize: '12.5px', color: '#2b3a30', lineHeight: 1.85, background: '#ffffff', padding: '12px 14px', borderRadius: '12px', border: '1px solid #f0dfa8', fontWeight: 600 }}>{whyTxt}</div>
+      <button type='button' className='button button-primary' style={{ minHeight: '38px', fontSize: '12.5px' }} onClick={() => setAccountPanel('contact_options')}><span>انتقل إلى خيارات التواصل الآن</span><ArrowLeft size={15} /></button>
+    </div>
+  );
+})()}
+{/* --- ACCOUNT_CONTACT_INFO_END --- */}
                       </div>
         ) : (
           <form className='form-stack' onSubmit={saveProfile} style={{ gap: '12px', background: '#f8fbf9', padding: '14px', borderRadius: '14px', border: '1px solid #dce8df' }}>
@@ -4073,8 +4117,56 @@ function readLocalInstantCatalog(): HomeData {
   } catch {}
   return { categories: [], products: [], banners: [], offers: [], settings: {} };
 }
+const INSTANT_CACHE_KEY = "original-instant-catalog-v5";
+function readLocalInstantCatalog(): HomeData {
+  try {
+    const w = window as any;
+    if (w.__INITIAL_CATALOG__ && Array.isArray(w.__INITIAL_CATALOG__.products) && w.__INITIAL_CATALOG__.products.length > 0) return w.__INITIAL_CATALOG__ as HomeData;
+    const raw = localStorage.getItem(INSTANT_CACHE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && Array.isArray(parsed.products)) return parsed as HomeData;
+    }
+  } catch {}
+  return { categories: [], products: [], banners: [], offers: [], settings: {} };
+}
+function computeStorePauseStatus(settings?: Record<string, string>): { paused: boolean; message: string } {
+  if (!settings) return { paused: false, message: '' };
+  if (settings.orderPaused === 'true') return { paused: true, message: settings.pausedMessage || 'استقبال الطلبات متوقف مؤقتًا.' };
+  if (settings.autoScheduleEnabled === 'true') {
+    const cStr = String(settings.autoCloseTime || '').trim();
+    const oStr = String(settings.autoOpenTime || '').trim();
+    const cm = cStr.match(/^(\d{1,2}):(\d{2})$/);
+    const om = oStr.match(/^(\d{1,2}):(\d{2})$/);
+    if (cm && om) {
+      const cMins = Number(cm[1]) * 60 + Number(cm[2]);
+      const oMins = Number(om[1]) * 60 + Number(om[2]);
+      if (cMins !== oMins) {
+        const yemenNow = new Date(Date.now() + 3 * 3600 * 1000);
+        const curMins = yemenNow.getUTCHours() * 60 + yemenNow.getUTCMinutes();
+        const isClosed = cMins > oMins ? (curMins >= cMins || curMins < oMins) : (curMins >= cMins && curMins < oMins);
+        if (isClosed) {
+          const oh = Number(om[1]);
+          const period = oh >= 12 ? 'مساءً' : 'صباحاً';
+          const h12 = oh % 12 === 0 ? 12 : oh % 12;
+          return { paused: true, message: settings.pausedMessage || ('🌙 المتجر مغلق حالياً خارج أوقات الدوام — يفتح تلقائياً الساعة ' + h12 + ':' + om[2] + ' ' + period) };
+        }
+      }
+    }
+  }
+  return { paused: false, message: '' };
+}
+
 export default function Home() {
   const storeCtx = useStore();
+  const customerForPrefetch = useCustomer();
+  const bgRefs = useMemo(() => customerForPrefetch.orders.slice(0, 50).map(({ orderNumber, idempotencyKey }) => ({ orderNumber: String(orderNumber || '').trim(), idempotencyKey: String(idempotencyKey || '').trim() })).filter(r => r.orderNumber && r.idempotencyKey), [customerForPrefetch.orders]);
+  const bgPhone = cleanYemeniPhone(customerForPrefetch.phone || customerForPrefetch.addresses[0]?.phone || '');
+  const bgValidPhone = isValidYemeniPhone(bgPhone) ? bgPhone : undefined;
+  const [bgOrdersEnabled, setBgOrdersEnabled] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setBgOrdersEnabled(true), 1200); return () => clearTimeout(t); }, []);
+  const bgOrdersPrefetch = trpc.commerce.orders.trackMany.useQuery({ refs: bgRefs, ...(bgValidPhone ? { phone: bgValidPhone } : {}) } as any, { enabled: bgOrdersEnabled && (bgRefs.length > 0 || Boolean(bgValidPhone)), retry: 0, staleTime: 15000 });
+  useEffect(() => { if (bgOrdersPrefetch.data && Array.isArray(bgOrdersPrefetch.data) && bgOrdersPrefetch.data.length > 0) { try { localStorage.setItem('original-orders-track-cache-v1', JSON.stringify(bgOrdersPrefetch.data)); } catch {} } }, [bgOrdersPrefetch.data]);
   const lastCatalogSigRef = useRef("");
   const [activeAiProduct, setActiveAiProduct] = useState<PublicProduct | null>(null);
   useGuestPushSubscriptionSync();

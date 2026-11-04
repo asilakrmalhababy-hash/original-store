@@ -427,6 +427,7 @@ function isServerStorePaused(settings: Record<string, string>): { paused: boolea
 async function readSettings(db: NonNullable<Awaited<ReturnType<typeof getDb>>>) {
   const g = globalThis as any;
   if (!g.__savedSettingsMemory) g.__savedSettingsMemory = {};
+  if (g.__settingsCacheVal && g.__settingsCacheTs && Date.now() - g.__settingsCacheTs < 15000) return { ...g.__settingsCacheVal, ...g.__savedSettingsMemory };
   try {
     const rows = await db.select().from(storeSettings);
     const settings: Record<string, string> = { deliveryEnabled: 'true', deliveryFee: '0', storeIconUrl: '/app-icon-512-orig.png', ...g.__savedSettingsMemory };
@@ -443,6 +444,8 @@ async function readSettings(db: NonNullable<Awaited<ReturnType<typeof getDb>>>) 
     }
     const oldStoreNameNorm = new RegExp('أور' + 'يجنال|اور' + 'يجنال', 'g');
     if (settings.storeName) settings.storeName = settings.storeName.replace(oldStoreNameNorm, 'أورجنال');
+    g.__settingsCacheVal = { ...settings };
+    g.__settingsCacheTs = Date.now();
     return settings;
   } catch (err) {
     console.warn('[Settings] Using fallback defaults:', err instanceof Error ? err.message : err);

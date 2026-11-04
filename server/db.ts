@@ -286,6 +286,23 @@ async function initializeSchemaAndRestore(pool: mysql.Pool) {
   isRestoring = false;
 }
 
+let _indexesEnsured = false;
+async function ensurePerformanceIndexes(pool: mysql.Pool) {
+  if (_indexesEnsured) return;
+  _indexesEnsured = true;
+  const stmts = [
+    'CREATE INDEX idx_products_pub_sort ON products (isPublished, isAvailable, sortOrder)',
+    'CREATE INDEX idx_products_cat ON products (categoryId)',
+    'CREATE INDEX idx_orders_phone ON orders (phone)',
+    'CREATE INDEX idx_orders_created ON orders (createdAt)',
+    'CREATE INDEX idx_order_items_oid ON order_items (orderId)',
+    'CREATE INDEX idx_order_events_oid ON order_events (orderId)'
+  ];
+  for (const sql of stmts) {
+    await new Promise<void>(resolve => pool.query(sql, () => resolve()));
+  }
+}
+
 export async function getDb() {
   if (!activeDb) {
     setupTask = (async () => {
