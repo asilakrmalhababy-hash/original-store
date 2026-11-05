@@ -4064,7 +4064,7 @@ function SettingsPanel() {
       storeDescription: raw.storeDescription || "",
       contactPhone: raw.contactPhone || "",
       currency: raw.currency || "ر.ي",
-      storeIconUrl: raw.storeIconUrl || "/app-icon-512-v84.png",
+      storeIconUrl: raw.storeIconUrl || "/app-icon-512-v85.png",
       deliveryEnabled: raw.deliveryEnabled === "true",
       deliveryFee: raw.deliveryFee || "",
       deliveryZones: zones,

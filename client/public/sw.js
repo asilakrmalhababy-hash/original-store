@@ -1,5 +1,5 @@
-const CACHE = "original-shell-v84";
-const PRECACHE = ["/", "/offline.html", "/manifest.webmanifest", "/app-icon-180-v84.png", "/app-icon-192-v84.png", "/app-icon-512-v84.png", "/notif-icon-v3.png", "/notif-badge-v3.png", /*__ASSET_LIST__*/];
+const CACHE = "original-shell-v85";
+const PRECACHE = ["/", "/offline.html", "/manifest.webmanifest", "/app-icon-180-v85.png", "/app-icon-192-v85.png", "/app-icon-512-v85.png", "/notif-icon-v3.png", "/notif-badge-v3.png", /*__ASSET_LIST__*/];
 
 self.addEventListener("install", event => {
   self.skipWaiting();
@@ -28,14 +28,13 @@ self.addEventListener("fetch", event => {
 
   if (request.mode === "navigate") {
     event.respondWith(caches.open(CACHE).then(async cache => {
-      try {
-        const response = await fetch(request);
-        if (response && response.ok) {
-          cache.put("/", response.clone());
-          return response;
-        }
-      } catch {}
-      return (await cache.match("/")) || (await cache.match("/offline.html"));
+      const cached = await cache.match("/");
+      const netFetch = fetch(request).then(res => {
+        if (res && res.ok) cache.put("/", res.clone());
+        return res;
+      }).catch(() => null);
+      if (cached) return cached;
+      return (await netFetch) || (await cache.match("/offline.html")) || Response.error();
     }));
     return;
   }

@@ -7,7 +7,9 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import { StoreProvider } from "./contexts/StoreContext";
 import { CustomerProvider } from "./contexts/CustomerContext";
 import Home from "./pages/Home";
-import Admin from "./pages/Admin";
+import { lazy, Suspense } from "react";
+const AdminLazy = lazy(() => import("./pages/Admin"));
+function Admin(props: any) { return <Suspense fallback={<div style={{padding:40,textAlign:"center"}}>جاري تحميل لوحة الإدارة...</div>}><AdminLazy {...props} /></Suspense>; }
 
 function Router() {
   return <Switch>

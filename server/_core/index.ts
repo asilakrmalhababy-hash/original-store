@@ -157,27 +157,19 @@ async function startServer() {
     const imagePath = brand.icon && !brand.icon.startsWith("data:") ? new URL(brand.icon, HTTPS_PREFIX + "app.invalid").pathname : "";
     const type = imagePath.endsWith(".png") ? "image/png" : imagePath.endsWith(".jpg") || imagePath.endsWith(".jpeg") ? "image/jpeg" : imagePath.endsWith(".webp") ? "image/webp" : "image/png";
     const icons = [
-      { src: "/app-icon-512-v84.png", sizes: "192x192", type: "image/png", purpose: "any" },
-      { src: "/app-icon-512-v84.png", sizes: "512x512", type: "image/png", purpose: "any" },
+      { src: "/app-icon-512-v85.png", sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: "/app-icon-512-v85.png", sizes: "512x512", type: "image/png", purpose: "any" },
     ];
     res.set("Cache-Control", "public, max-age=300").type("application/manifest+json").send(JSON.stringify({ id: "/", name: brand.name, short_name: "أورجنال", description: "متجر ORIGINAL – أورجنال", lang: "ar", dir: "rtl", start_url: "/", scope: "/", display: "standalone", background_color: "#f8f8f2", theme_color: "#174b36", icons }));
   });
 
   app.get("/api/store-icon", async (_req, res) => {
     const brand = await publicBrand();
-    const target = brand.icon && !brand.icon.startsWith("data:") ? brand.icon : "/app-icon-512-v84.png";
+    const target = brand.icon && !brand.icon.startsWith("data:") ? brand.icon : "/app-icon-512-v85.png";
     res.set("Cache-Control", "public, max-age=300").redirect(302, target);
   });
 
-  app.get("/api/platform/config.js", async (_req, res) => {
-    const g = globalThis as any;
-    if (!g.__fastHomeData && typeof g.__loadCatalogHome === "function") {
-      try { await g.__loadCatalogHome(); } catch {}
-    }
-    const initialJson = g.__fastHomeData ? JSON.stringify(g.__fastHomeData).replace(/</g, "\\u003c").replace(/>/g, "\\u003e").replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029") : "null";
-    const preloadScript = "window.__INITIAL_CATALOG__ = " + initialJson + ";";
-    res.set("Cache-Control", "no-store").type("application/javascript").send(publicPlatformScript() + "\n" + preloadScript);
-  });
+  app.get("/api/platform/config.js", (_req, res) => { res.set("Cache-Control", "public, max-age=3600").type("application/javascript").send(publicPlatformScript()); });
 
   registerOAuthRoutes(app);
 
