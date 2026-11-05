@@ -1,4 +1,3 @@
-import zlib from "zlib";
 import "dotenv/config";
 import express from "express";
 import { createServer } from "http";
@@ -29,28 +28,7 @@ async function startServer() {
   const server = createServer(app);
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
-  app.get("/api/health", async (_req, res) => {
-    const mem = process.memoryUsage();
-    const cacheMap: Map<string, { contentType: string; buf: Buffer }> = (globalThis as any).__fastImgCache || new Map();
-    let imgCacheBytes = 0;
-    for (const v of cacheMap.values()) imgCacheBytes += (v?.buf?.byteLength || 0);
-    let dbPingMs = -1;
-    try {
-      const t0 = Date.now();
-      const db = await getDb();
-      if (db) { await db.select({ key: storeSettings.key }).from(storeSettings).limit(1); dbPingMs = Date.now() - t0; }
-    } catch {}
-    res.json({
-      status: "ok",
-      uptimeMinutes: Math.round(process.uptime() / 60),
-      ramUsedMB: Math.round(mem.rss / 1048576),
-      ramSafeLimitMB: 512,
-      cachedImagesCount: cacheMap.size,
-      cachedImagesMB: Math.round((imgCacheBytes / 1048576) * 10) / 10,
-      dbLatencyMs: dbPingMs,
-      ts: Date.now()
-    });
-  });
+  app.get("/api/health", (_req, res) => res.json({ status: "ok", ts: Date.now() }));
   if (!(globalThis as any).__keepAliveTimer) {
     (globalThis as any).__keepAliveTimer = setInterval(() => {
       const extUrl = process.env.RENDER_EXTERNAL_URL || (HTTPS_PREFIX + "original-store-xmyf.onrender.com");
@@ -179,15 +157,15 @@ async function startServer() {
     const imagePath = brand.icon && !brand.icon.startsWith("data:") ? new URL(brand.icon, HTTPS_PREFIX + "app.invalid").pathname : "";
     const type = imagePath.endsWith(".png") ? "image/png" : imagePath.endsWith(".jpg") || imagePath.endsWith(".jpeg") ? "image/jpeg" : imagePath.endsWith(".webp") ? "image/webp" : "image/png";
     const icons = [
-      { src: "/app-icon-512-v72.png", sizes: "192x192", type: "image/png", purpose: "any" },
-      { src: "/app-icon-512-v72.png", sizes: "512x512", type: "image/png", purpose: "any" },
+      { src: "/app-icon-512-v5.png", sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: "/app-icon-512-v5.png", sizes: "512x512", type: "image/png", purpose: "any" },
     ];
     res.set("Cache-Control", "public, max-age=300").type("application/manifest+json").send(JSON.stringify({ id: "/", name: brand.name, short_name: "أورجنال", description: "متجر ORIGINAL – أورجنال", lang: "ar", dir: "rtl", start_url: "/", scope: "/", display: "standalone", background_color: "#f8f8f2", theme_color: "#174b36", icons }));
   });
 
   app.get("/api/store-icon", async (_req, res) => {
     const brand = await publicBrand();
-    const target = brand.icon && !brand.icon.startsWith("data:") ? brand.icon : "/app-icon-512-v72.png";
+    const target = brand.icon && !brand.icon.startsWith("data:") ? brand.icon : "/app-icon-512-v5.png";
     res.set("Cache-Control", "public, max-age=300").redirect(302, target);
   });
 
@@ -203,26 +181,6 @@ async function startServer() {
 
   registerOAuthRoutes(app);
 
-  app.use("/api/trpc", (req, res, next) => {
-    const accept = String(req.headers["accept-encoding"] || "");
-    if (accept.includes("gzip")) {
-      const origSend = res.send.bind(res);
-      res.send = ((body: any) => {
-        try {
-          const raw = typeof body === "string" ? Buffer.from(body) : Buffer.isBuffer(body) ? body : null;
-          if (raw && raw.length > 1024 && !res.getHeader("Content-Encoding")) {
-            const compressed = zlib.gzipSync(raw, { level: zlib.constants.Z_BEST_SPEED });
-            res.setHeader("Content-Encoding", "gzip");
-            res.setHeader("Vary", "Accept-Encoding");
-            res.removeHeader("Content-Length");
-            return origSend(compressed);
-          }
-        } catch {}
-        return origSend(body);
-      }) as any;
-    }
-    next();
-  });
   app.use(
     "/api/trpc",
     createExpressMiddleware({

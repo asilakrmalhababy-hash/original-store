@@ -1,29 +1,3 @@
-// --- GLOBAL_INSTANT_HELPERS_START ---
-const INSTANT_CACHE_KEY = "original-instant-catalog-v5";
-function readLocalInstantCatalog() {
-  try {
-    const w = window as any;
-    if (w.__INITIAL_CATALOG__ && Array.isArray(w.__INITIAL_CATALOG__.products) && w.__INITIAL_CATALOG__.products.length > 0) return w.__INITIAL_CATALOG__;
-    const raw = localStorage.getItem(INSTANT_CACHE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed && Array.isArray(parsed.products)) return parsed;
-    }
-  } catch {}
-  return { categories: [], products: [], banners: [], offers: [], settings: {} };
-}
-(globalThis as any).INSTANT_CACHE_KEY = INSTANT_CACHE_KEY;
-(globalThis as any).readLocalInstantCatalog = readLocalInstantCatalog;
-(globalThis as any).DEFAULT_APP_INFO = [
-  "🌿 نبذة عن تطبيق أورجنال (ORIGINAL):\nتطبيق أورجنال هو متجرك الإلكتروني المتكامل لتسوق المقاضي والمنتجات الغذائية والاستهلاكية والخضروات والفواكه الطازجة في اليمن بسهولة وموثوقية عالية.",
-  "🎯 الهدف من التطبيق:\nتوفير وقتك وجهدك في التسوق اليومي، مع ضمان جودة المنتجات، الأسعار الواضحة، والتوصيل السريع والآمن إلى باب منزلك مع خدمة الدفع النقدي عند الاستلام.",
-  "📖 تعليمات استخدام التطبيق:\n1️⃣ تصفح الأقسام أو ابحث عن أي منتج وأضفه إلى السلة بالكمية المطلوبة.\n2️⃣ افتح السلة وحدد مدينتك ومنطقتك وعنوانك التفصيلي ورقم جوالك.\n3️⃣ اضغط على إرسال الطلب، وتابع حالته لحظة بلحظة من صفحة (طلباتي)."
-].join("\n\n");
-(globalThis as any).DEFAULT_CONTACT_WHY = [
-  "💡 لماذا تتواصل معنا؟\nفريق خدمة العملاء وإدارة متجر أورجنال في خدمتك المباشرة دائماً من أجل:",
-  "• الاستفسار عن طلبك الحالي أو تعديل موعد وعنوان التوصيل.\n• طلب توفير منتج خاص غير معروض حالياً في المتجر.\n• الإبلاغ عن أي ملاحظة حول جودة المنتجات أو سرعة التوصيل.\n• تقديم مقترحاتك لتطوير خدمات التطبيق."
-].join("\n\n");
-// --- GLOBAL_INSTANT_HELPERS_END ---
 // --- GLOBAL_INSTANT_CATALOG_GUARD_START ---
 (globalThis as any).INSTANT_CACHE_KEY = "original-catalog-instant-v2";
 (globalThis as any).DEFAULT_APP_INFO = "تطبيق أورجنال (ORIGINAL) هو وجهتك الأولى للتسوق الذكي وتوصيل كافة احتياجات المنزل والمقاضي الغذائية والخضروات والفواكه الطازجة إلى باب بيتك بأعلى جودة وأسعار منافسة، وهدفنا توفير وقتك وجهدك بخدمة سريعة وموثوقة.\n\n📌 تعليمات وطريقة استخدام التطبيق:\n1️⃣ تصفح واختيار المنتجات: تصفح الأقسام أو ابحث عن أي منتج وأضفه للسلة بضغطة زر، مع إمكانية تحديد الوزن أو النوع للأصناف الموزونة.\n2️⃣ حفظ بياناتك وعنوانك: من صفحة «حسابي» احفظ اسمك ورقم جوالك وعنوان التوصيل لمرة واحدة ليتم تعبئتها تلقائياً في جميع طلباتك القادمة.\n3️⃣ إتمام الطلب ومتابعته: راجع سلة المشتريات واضغط «إتمام الطلب»، ثم تابع حالة طلبك خطوة بخطوة من صفحة «طلباتي» حتى يصل لباب منزلك.\n4️⃣ المساعد الذكي وشريط الهدايا: استمتع بالهدايا والخصومات التلقائية عند إكمال مبلغ شريط المكافآت، واستعن بمساعد أورجنال الذكي لاقتراح الوصفات الاقتصادية أو طلب توفير أي منتج.";

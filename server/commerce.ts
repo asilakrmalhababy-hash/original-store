@@ -369,7 +369,6 @@ const PUBLIC_STORE_SETTING_KEYS = new Set([
 ]);
 
 const __orderRateBuckets = new Map<string, { count: number; resetAt: number }>();
-
 function enforceOrderCreateRateLimit(ip: string) {
   const now = Date.now();
   const key = (ip || "unknown").slice(0, 80);
@@ -428,10 +427,9 @@ function isServerStorePaused(settings: Record<string, string>): { paused: boolea
 async function readSettings(db: NonNullable<Awaited<ReturnType<typeof getDb>>>) {
   const g = globalThis as any;
   if (!g.__savedSettingsMemory) g.__savedSettingsMemory = {};
-  if (g.__settingsCacheVal && g.__settingsCacheTs && Date.now() - g.__settingsCacheTs < 15000) return { ...g.__settingsCacheVal, ...g.__savedSettingsMemory };
   try {
     const rows = await db.select().from(storeSettings);
-    const settings: Record<string, string> = { deliveryEnabled: 'true', deliveryFee: '0', storeIconUrl: '/app-icon-512-v72.png', ...g.__savedSettingsMemory };
+    const settings: Record<string, string> = { deliveryEnabled: 'true', deliveryFee: '0', storeIconUrl: '/app-icon-512-orig.png', ...g.__savedSettingsMemory };
     for (const row of rows) {
       if (!PUBLIC_STORE_SETTING_KEYS.has(row.key) && row.key !== 'deliveryTreeConfig') continue;
       if (row.key === 'storeIconUrl' && !String(row.value || '').trim()) continue;
@@ -441,16 +439,14 @@ async function readSettings(db: NonNullable<Awaited<ReturnType<typeof getDb>>>) 
       if (typeof v === 'string' && (k !== 'storeIconUrl' || v.trim())) settings[k] = v;
     }
     if (!settings.storeIconUrl || !settings.storeIconUrl.trim()) {
-      settings.storeIconUrl = '/app-icon-512-v72.png';
+      settings.storeIconUrl = '/app-icon-512-orig.png';
     }
     const oldStoreNameNorm = new RegExp('أور' + 'يجنال|اور' + 'يجنال', 'g');
     if (settings.storeName) settings.storeName = settings.storeName.replace(oldStoreNameNorm, 'أورجنال');
-    g.__settingsCacheVal = { ...settings };
-    g.__settingsCacheTs = Date.now();
     return settings;
   } catch (err) {
     console.warn('[Settings] Using fallback defaults:', err instanceof Error ? err.message : err);
-    return { deliveryEnabled: 'true', deliveryFee: '0', storeIconUrl: '/app-icon-512-v72.png', ...(g.__savedSettingsMemory || {}) };
+    return { deliveryEnabled: 'true', deliveryFee: '0', storeIconUrl: '/app-icon-512-orig.png', ...(g.__savedSettingsMemory || {}) };
   }
 }
 
@@ -797,8 +793,8 @@ function toFastImg<T extends { id: number; imageUrl?: string | null; updatedAt?:
     const cacheKey = kind + ":" + row.id;
     const ver = row.updatedAt ? new Date(row.updatedAt).getTime() : ((globalThis as any).__catalogVer || 1);
     if (raw.startsWith("data:image/")) {
-      const m = raw.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,([\s\S]+)$/);
-      if (m) { if (cacheMap.size > 300) { const firstK = cacheMap.keys().next().value; if (firstK) cacheMap.delete(firstK); } cacheMap.set(cacheKey, { contentType: m[1], buf: Buffer.from(m[2], "base64") }); }
+      const commaIdx = raw.indexOf(","); const m = commaIdx > 11 ? [raw, raw.slice(5, commaIdx).split(";")[0], raw.slice(commaIdx + 1)] : null;
+      if (m) { if (cacheMap.size > 60) { const firstK = cacheMap.keys().next().value; if (firstK) cacheMap.delete(firstK); } cacheMap.set(cacheKey, { contentType: m[1], buf: Buffer.from(m[2], "base64") }); }
       return { ...row, imageUrl: "/api/fast-img/" + kind + "/" + row.id + "?v=" + ver };
     }
     if (raw.startsWith(HTTP_PRE)) {
@@ -859,7 +855,7 @@ async function ensureTenBatchProductsSeeded() {
       { name: "مكرونة إسباجتي حواء آدم 400 جم", cat: "المواد الغذائية والمعلبات", price: 600, unit: "حبة", desc: "مكرونة إسباجتي حواء آدم عالية الجودة مصنوعة من أجود أنواع القمح بوزن 400 جرام." },
       { name: "عصير دلتا شراب الجوافة 250 مل", cat: "العصائر والمشروبات", price: 350, unit: "حبة", desc: "عصير دلتا شراب الجوافة الطبيعي والمنعش بعبوة 250 مل الكلاسيكية المميزة." }
     ];
-    const existingCats = await db.select().from(categories);
+    const existingCats = await db.select({ id: categories.id, name: categories.name }).from(categories);
     const existingProds = await db.select({ id: products.id, name: products.name }).from(products);
     let addedAny = false;
     for (const item of batchItems) {
@@ -924,49 +920,6 @@ async function refreshHomeCatalogCache() {
 (globalThis as any).__loadCatalogHome = refreshHomeCatalogCache;
 setTimeout(() => { void refreshHomeCatalogCache().catch(() => {}); }, 80);
 // --- FAST_IMG_HELPER_END ---
-const fastProductColumns = {
-  id: products.id,
-  name: products.name,
-  slug: products.slug,
-  description: products.description,
-  imageUrl: sql<string | null>`CASE WHEN ${products.imageUrl} IS NULL OR ${products.imageUrl} = '' THEN NULL WHEN ${products.imageUrl} LIKE 'data:image/%' THEN CONCAT('/api/fast-img/product/', ${products.id}, '?v=', COALESCE(UNIX_TIMESTAMP(${products.updatedAt}), 1)) ELSE ${products.imageUrl} END`,
-  categoryId: products.categoryId,
-  price: products.price,
-  unit: products.unit,
-  stock: products.stock,
-  minQuantity: products.minQuantity,
-  quantityStep: products.quantityStep,
-  isPublished: products.isPublished,
-  isAvailable: products.isAvailable,
-  sortOrder: products.sortOrder,
-  createdAt: products.createdAt,
-  updatedAt: products.updatedAt,
-};
-const fastCategoryColumns = {
-  id: categories.id,
-  name: categories.name,
-  slug: categories.slug,
-  description: categories.description,
-  imageUrl: sql<string | null>`CASE WHEN ${categories.imageUrl} IS NULL OR ${categories.imageUrl} = '' THEN NULL WHEN ${categories.imageUrl} LIKE 'data:image/%' THEN CONCAT('/api/fast-img/category/', ${categories.id}, '?v=', COALESCE(UNIX_TIMESTAMP(${categories.updatedAt}), 1)) ELSE ${categories.imageUrl} END`,
-  color: categories.color,
-  isActive: categories.isActive,
-  sortOrder: categories.sortOrder,
-  createdAt: categories.createdAt,
-  updatedAt: categories.updatedAt,
-};
-const fastBannerColumns = {
-  id: banners.id,
-  title: banners.title,
-  body: banners.body,
-  imageUrl: sql<string | null>`CASE WHEN ${banners.imageUrl} IS NULL OR ${banners.imageUrl} = '' THEN NULL WHEN ${banners.imageUrl} LIKE 'data:image/%' THEN CONCAT('/api/fast-img/banner/', ${banners.id}, '?v=', COALESCE(UNIX_TIMESTAMP(${banners.updatedAt}), 1)) ELSE ${banners.imageUrl} END`,
-  actionText: banners.actionText,
-  actionUrl: banners.actionUrl,
-  isActive: banners.isActive,
-  sortOrder: banners.sortOrder,
-  createdAt: banners.createdAt,
-  updatedAt: banners.updatedAt,
-};
-
 export const commerceRouter = router({
     access: publicProcedure.query(({ ctx }) => {
     const isAdminActive = ctx.user?.role === "admin" && !ctx.user.suspended;
@@ -2512,21 +2465,3 @@ async function __prewarmCatalog() {
 }
 setTimeout(__prewarmCatalog, 800);
 setInterval(__prewarmCatalog, 45000).unref();
-
-// Safe periodic RAM sweep for rate limits
-
-// Safe periodic RAM sweep for rate limits
-
-// Safe periodic RAM sweep for rate limits
-
-// Safe periodic RAM sweep for rate limits
-if (!(globalThis as any).__periodicRamSweep) {
-  (globalThis as any).__periodicRamSweep = setInterval(() => {
-    try {
-      const now = Date.now();
-      for (const [k, v] of __orderRateBuckets) { if (now > v.resetAt) __orderRateBuckets.delete(k); }
-      for (const [k, v] of __missingItemRateBuckets) { if (now > v.resetAt) __missingItemRateBuckets.delete(k); }
-      for (const [k, v] of assistantRateWindows) { if (now - v.startedAt >= 60000) assistantRateWindows.delete(k); }
-    } catch {}
-  }, 10 * 60 * 1000);
-}
