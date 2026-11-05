@@ -40,6 +40,25 @@ type PublicProduct = { id: number; name: string; slug: string; description: stri
 
 type HomeData = { categories: Array<{ id: number; name: string; description: string | null; imageUrl: string | null; color: string; slug: string }>; products: PublicProduct[]; banners: Array<{ id: number; title: string; body: string | null; imageUrl: string | null; actionText: string | null; actionUrl: string | null }>; offers: Array<{ id: number; title: string; description: string | null; code: string; discountType: string; discountValue: number }>; settings: Record<string, string> };
 
+function useInstantProductList(allProducts: any[] | undefined, input: any, opts?: any) {
+  const hasLocal = Array.isArray(allProducts) && allProducts.length > 0;
+  const q = trpc.commerce.catalog.listProducts.useQuery(input, { ...(opts || {}), enabled: !hasLocal });
+  const filtered = useMemo(() => {
+    const base = hasLocal ? allProducts! : (q.data || []);
+    let l = [...base];
+    if (input?.categoryId !== undefined) l = l.filter(p => p.categoryId === input.categoryId);
+    if (input?.search) {
+      const s = String(input.search).toLowerCase();
+      l = l.filter(p => String(p.name || "").toLowerCase().includes(s) || String(p.description || "").toLowerCase().includes(s));
+    }
+    if (input?.sort === "price-asc") l.sort((a, b) => a.price - b.price);
+    else if (input?.sort === "price-desc") l.sort((a, b) => b.price - a.price);
+    else if (input?.sort === "name") l.sort((a, b) => String(a.name).localeCompare(String(b.name), "ar"));
+    return input?.limit ? l.slice(0, input.limit) : l;
+  }, [hasLocal, allProducts, q.data, input?.categoryId, input?.search, input?.sort, input?.limit]);
+  return { ...q, data: filtered, isLoading: !hasLocal && q.isLoading, error: hasLocal ? null : q.error };
+}
+
 function Header({ data, onSearch }: { data?: HomeData; onSearch: (text: string) => void }) {
   const { cart } = useStore();
   const { name } = useCustomer();
@@ -51,7 +70,7 @@ function Header({ data, onSearch }: { data?: HomeData; onSearch: (text: string) 
   return <header className="store-header">
     <div className="header-main">
       <Link href="/" className="brand-lockup" aria-label={`${storeName} الرئيسية`}>
-        <img src="/app-icon-192-v83.png" alt="ORIGINAL" className="brand-mark" style={{ borderRadius: "12px", objectFit: "cover", padding: 0, border: "1.5px solid #d4af37" }} />
+        <img src="/app-icon-192-v84.png" alt="ORIGINAL" className="brand-mark" style={{ borderRadius: "12px", objectFit: "cover", padding: 0, border: "1.5px solid #d4af37" }} />
         <span className="brand-type"><strong>ORIGINAL</strong><small>{brandSubtitle}</small></span>
       </Link>
       <form className="header-search" onSubmit={submitSearch}>
@@ -1004,7 +1023,7 @@ function CategoryStrip({ data, onSelect }: { data: HomeData["categories"]; onSel
 function HomePage({ data, onOpen, onAiRecipe }: { data: HomeData; onOpen: (id: number) => void; onAiRecipe?: (p: PublicProduct) => void }) {
   const [, navigate] = useLocation();
   const [sort, setSort] = useState<"featured" | "price-asc" | "price-desc">("featured");
-  const { data: products, isLoading: productsLoading } = trpc.commerce.catalog.listProducts.useQuery({ sort, limit: 10000 }, { enabled: sort !== "featured", retry: 1, staleTime: 15000, refetchInterval: false, refetchOnWindowFocus: true });
+  const { data: products, isLoading: productsLoading } = useInstantProductList(data?.products, { sort, limit: 10000 }, { enabled: sort !== "featured", retry: 1, staleTime: 15000, refetchInterval: false, refetchOnWindowFocus: true });
   const featured = sort === "featured" ? (data.products?.length ? data.products : (products ?? [])) : (products ?? data.products);
   const changeCategory = (id: number) => { navigate("/products?category=" + id); };
 
@@ -1047,7 +1066,7 @@ function ProductListPage({ data, onOpen, onAiRecipe }: { data: HomeData; onOpen:
     offset,
   };
 
-  const query = trpc.commerce.catalog.listProducts.useQuery(input, {
+  const query = useInstantProductList(data?.products, input, {
     retry: 1,
     staleTime: 15000,
     refetchOnWindowFocus: false,
@@ -4104,6 +4123,7 @@ export default function Home() {
     }
   }, [home.data]);
   const data = ((home.data && home.data.products ? home.data : instantData) ?? { categories: [], products: [], banners: [], offers: [], settings: {} }) as HomeData;
+  (globalThis as any).__CATALOG_LOADING__ = Boolean(home.isLoading && !data?.products?.length);
   const openProduct = (id: number) => {
     try {
       const w = window as any;
@@ -4132,5 +4152,5 @@ export default function Home() {
     if (location === "/assistant") return <AssistantPage />;
     return <HomePage data={data} onOpen={openProduct} onAiRecipe={setActiveAiProduct} />;
   }, [location, productId, productPath, data]);
-  return <div className="store-app" dir="rtl"><Header data={data} onSearch={text => navigate("/products" + (text ? "?search=" + encodeURIComponent(text) : ""))} />{!location.startsWith("/assistant") && !location.startsWith("/orders") && !location.startsWith("/account") && <GamifiedRewardBar settings={data.settings} location={location} />}{home.isError && !data.products?.length && !data.categories?.length && <div className="connection-strip"><span>الاتصال بالخدمة غير متاح مؤقتًا</span><button onClick={() => void home.refetch()}>إعادة المحاولة</button></div>}{home.isError && !data.products?.length && !data.categories?.length ? <main className="page-shell inner-page"><LoadError onRetry={() => void home.refetch()} /></main> : content}{!location.startsWith("/assistant") && <footer className="store-footer"><div className="footer-brand"><img src="/app-icon-192-v83.png" alt="ORIGINAL" className="brand-mark" style={{ borderRadius: "12px", objectFit: "cover", padding: 0, border: "1.5px solid #d4af37" }} /><span><b>ORIGINAL</b><small>{data.settings.storeName === "ORIGINAL – أورجنال" || !data.settings.storeName ? "أورجنال" : data.settings.storeName}</small></span></div>{shouldShowFooterDescription(data.settings.storeDescription) && <span>{data.settings.storeDescription}</span>}<small>© {new Date().getFullYear()} {data.settings.storeName || "ORIGINAL"}</small></footer>}{activeAiProduct && <AiRecipeModal product={activeAiProduct} onClose={() => setActiveAiProduct(null)} />}<BottomNav active={currentNav} /></div>;
+  return <div className="store-app" dir="rtl"><Header data={data} onSearch={text => navigate("/products" + (text ? "?search=" + encodeURIComponent(text) : ""))} />{!location.startsWith("/assistant") && !location.startsWith("/orders") && !location.startsWith("/account") && <GamifiedRewardBar settings={data.settings} location={location} />}{home.isError && !data.products?.length && !data.categories?.length && <div className="connection-strip"><span>الاتصال بالخدمة غير متاح مؤقتًا</span><button onClick={() => void home.refetch()}>إعادة المحاولة</button></div>}{home.isError && !data.products?.length && !data.categories?.length ? <main className="page-shell inner-page"><LoadError onRetry={() => void home.refetch()} /></main> : content}{!location.startsWith("/assistant") && <footer className="store-footer"><div className="footer-brand"><img src="/app-icon-192-v84.png" alt="ORIGINAL" className="brand-mark" style={{ borderRadius: "12px", objectFit: "cover", padding: 0, border: "1.5px solid #d4af37" }} /><span><b>ORIGINAL</b><small>{data.settings.storeName === "ORIGINAL – أورجنال" || !data.settings.storeName ? "أورجنال" : data.settings.storeName}</small></span></div>{shouldShowFooterDescription(data.settings.storeDescription) && <span>{data.settings.storeDescription}</span>}<small>© {new Date().getFullYear()} {data.settings.storeName || "ORIGINAL"}</small></footer>}{activeAiProduct && <AiRecipeModal product={activeAiProduct} onClose={() => setActiveAiProduct(null)} />}<BottomNav active={currentNav} /></div>;
 }

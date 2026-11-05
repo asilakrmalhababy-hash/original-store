@@ -123,7 +123,7 @@ function clearCatalogCache(removedProductId?: number) {
     if (removedProductId && g.__fastHomeData && Array.isArray(g.__fastHomeData.products)) {
       g.__fastHomeData.products = g.__fastHomeData.products.filter((p: any) => p.id !== removedProductId);
     }
-    g.__fastHomeData = null;
+    g.__fastHomeTime = 0;
     g.__fastHomeTime = 0;
     g.__catalogVer = Date.now();
     if (typeof g.__resetRefreshingPromise === "function") g.__resetRefreshingPromise();
@@ -429,7 +429,7 @@ async function readSettings(db: NonNullable<Awaited<ReturnType<typeof getDb>>>) 
   if (!g.__savedSettingsMemory) g.__savedSettingsMemory = {};
   try {
     const rows = await db.select().from(storeSettings);
-    const settings: Record<string, string> = { deliveryEnabled: 'true', deliveryFee: '0', storeIconUrl: '/app-icon-512-v83.png', ...g.__savedSettingsMemory };
+    const settings: Record<string, string> = { deliveryEnabled: 'true', deliveryFee: '0', storeIconUrl: '/app-icon-512-v84.png', ...g.__savedSettingsMemory };
     for (const row of rows) {
       if (!PUBLIC_STORE_SETTING_KEYS.has(row.key) && row.key !== 'deliveryTreeConfig') continue;
       if (row.key === 'storeIconUrl' && !String(row.value || '').trim()) continue;
@@ -439,14 +439,14 @@ async function readSettings(db: NonNullable<Awaited<ReturnType<typeof getDb>>>) 
       if (typeof v === 'string' && (k !== 'storeIconUrl' || v.trim())) settings[k] = v;
     }
     if (!settings.storeIconUrl || !settings.storeIconUrl.trim()) {
-      settings.storeIconUrl = '/app-icon-512-v83.png';
+      settings.storeIconUrl = '/app-icon-512-v84.png';
     }
     const oldStoreNameNorm = new RegExp('أور' + 'يجنال|اور' + 'يجنال', 'g');
     if (settings.storeName) settings.storeName = settings.storeName.replace(oldStoreNameNorm, 'أورجنال');
     return settings;
   } catch (err) {
     console.warn('[Settings] Using fallback defaults:', err instanceof Error ? err.message : err);
-    return { deliveryEnabled: 'true', deliveryFee: '0', storeIconUrl: '/app-icon-512-v83.png', ...(g.__savedSettingsMemory || {}) };
+    return { deliveryEnabled: 'true', deliveryFee: '0', storeIconUrl: '/app-icon-512-v84.png', ...(g.__savedSettingsMemory || {}) };
   }
 }
 
@@ -887,6 +887,24 @@ async function ensureTenBatchProductsSeeded() {
   } catch {}
 }
 setTimeout(() => { void ensureTenBatchProductsSeeded(); }, 2000);
+const fastProductColumns = {
+  id: products.id, name: products.name, slug: products.slug, description: products.description,
+  imageUrl: sql<string | null>`CASE WHEN ${products.imageUrl} IS NULL OR ${products.imageUrl} = '' THEN NULL WHEN ${products.imageUrl} LIKE 'data:image/%' THEN CONCAT('/api/fast-img/product/', ${products.id}, '?v=', COALESCE(UNIX_TIMESTAMP(${products.updatedAt}), 1)) ELSE ${products.imageUrl} END`,
+  categoryId: products.categoryId, price: products.price, unit: products.unit, stock: products.stock,
+  minQuantity: products.minQuantity, quantityStep: products.quantityStep, isPublished: products.isPublished,
+  isAvailable: products.isAvailable, sortOrder: products.sortOrder, createdAt: products.createdAt, updatedAt: products.updatedAt,
+};
+const fastCategoryColumns = {
+  id: categories.id, name: categories.name, slug: categories.slug, description: categories.description,
+  imageUrl: sql<string | null>`CASE WHEN ${categories.imageUrl} IS NULL OR ${categories.imageUrl} = '' THEN NULL WHEN ${categories.imageUrl} LIKE 'data:image/%' THEN CONCAT('/api/fast-img/category/', ${categories.id}, '?v=', COALESCE(UNIX_TIMESTAMP(${categories.updatedAt}), 1)) ELSE ${categories.imageUrl} END`,
+  color: categories.color, isActive: categories.isActive, sortOrder: categories.sortOrder, createdAt: categories.createdAt, updatedAt: categories.updatedAt,
+};
+const fastBannerColumns = {
+  id: banners.id, title: banners.title, body: banners.body,
+  imageUrl: sql<string | null>`CASE WHEN ${banners.imageUrl} IS NULL OR ${banners.imageUrl} = '' THEN NULL WHEN ${banners.imageUrl} LIKE 'data:image/%' THEN CONCAT('/api/fast-img/banner/', ${banners.id}, '?v=', COALESCE(UNIX_TIMESTAMP(${banners.updatedAt}), 1)) ELSE ${banners.imageUrl} END`,
+  actionText: banners.actionText, actionUrl: banners.actionUrl, isActive: banners.isActive, sortOrder: banners.sortOrder, createdAt: banners.createdAt, updatedAt: banners.updatedAt,
+};
+
 async function refreshHomeCatalogCache() {
   if (__refreshingHomePromise) return __refreshingHomePromise;
   __refreshingHomePromise = (async () => {
@@ -894,18 +912,18 @@ async function refreshHomeCatalogCache() {
       const db = await database();
       void ensureOrderItemsFastSchema(db);
       const [categoryRows, productRows, bannerRows, offerRows, settings] = await Promise.all([
-        db.select().from(categories).where(eq(categories.isActive, true)).orderBy(asc(categories.sortOrder), asc(categories.id)),
-        db.select().from(products).where(and(eq(products.isPublished, true), eq(products.isAvailable, true))).orderBy(asc(products.sortOrder), desc(products.createdAt)).limit(10000),
-        db.select().from(banners).where(and(eq(banners.isActive, true))).orderBy(asc(banners.sortOrder), desc(banners.createdAt)),
+        db.select(fastCategoryColumns).from(categories).where(eq(categories.isActive, true)).orderBy(asc(categories.sortOrder), asc(categories.id)),
+        db.select(fastProductColumns).from(products).where(and(eq(products.isPublished, true), eq(products.isAvailable, true))).orderBy(asc(products.sortOrder), desc(products.createdAt)).limit(10000),
+        db.select(fastBannerColumns).from(banners).where(and(eq(banners.isActive, true))).orderBy(asc(banners.sortOrder), desc(banners.createdAt)),
         db.select().from(offers).where(and(eq(offers.isActive, true))).orderBy(desc(offers.createdAt)),
         readSettings(db),
       ]);
       const validBanners = bannerRows.filter(b => Boolean(b.imageUrl && b.imageUrl.trim()));
       const g = globalThis as any;
       g.__fastHomeData = {
-        categories: categoryRows.map(r => toFastImg("category", r)),
-        products: productRows.map(r => toFastImg("product", r)),
-        banners: validBanners.map(r => toFastImg("banner", r)),
+        categories: categoryRows,
+        products: productRows,
+        banners: validBanners,
         offers: offerRows,
         settings,
       };
