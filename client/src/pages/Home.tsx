@@ -4095,66 +4095,20 @@ function GamifiedRewardBar({ settings, location }: { settings: Record<string, st
   );
 }
 
-
-
-
-
 const INSTANT_CACHE_KEY = "original-catalog-instant-v2";
 function readLocalInstantCatalog(): HomeData {
   try {
     if (typeof window !== "undefined" && (window as any).__INITIAL_CATALOG__) {
       const initCat = (window as any).__INITIAL_CATALOG__;
-      if (initCat && Array.isArray(initCat.products)) {
-        try { localStorage.setItem(INSTANT_CACHE_KEY, JSON.stringify(initCat)); } catch {}
-        return initCat;
-      }
+      if (initCat && Array.isArray(initCat.products)) return initCat as HomeData;
     }
-    const saved = typeof localStorage !== "undefined" ? localStorage.getItem(INSTANT_CACHE_KEY) : null;
-    if (saved) {
-      const p = JSON.parse(saved);
-      if (p && Array.isArray(p.products)) return p;
-    }
-  } catch {}
-  return { categories: [], products: [], banners: [], offers: [], settings: {} };
-}
-const INSTANT_CACHE_KEY = "original-instant-catalog-v5";
-function readLocalInstantCatalog(): HomeData {
-  try {
-    const w = window as any;
-    if (w.__INITIAL_CATALOG__ && Array.isArray(w.__INITIAL_CATALOG__.products) && w.__INITIAL_CATALOG__.products.length > 0) return w.__INITIAL_CATALOG__ as HomeData;
-    const raw = localStorage.getItem(INSTANT_CACHE_KEY);
+    const raw = typeof localStorage !== "undefined" ? localStorage.getItem(INSTANT_CACHE_KEY) : null;
     if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed && Array.isArray(parsed.products)) return parsed as HomeData;
+      const p = JSON.parse(raw);
+      if (p && Array.isArray(p.products)) return p as HomeData;
     }
   } catch {}
   return { categories: [], products: [], banners: [], offers: [], settings: {} };
-}
-function computeStorePauseStatus(settings?: Record<string, string>): { paused: boolean; message: string } {
-  if (!settings) return { paused: false, message: '' };
-  if (settings.orderPaused === 'true') return { paused: true, message: settings.pausedMessage || 'استقبال الطلبات متوقف مؤقتًا.' };
-  if (settings.autoScheduleEnabled === 'true') {
-    const cStr = String(settings.autoCloseTime || '').trim();
-    const oStr = String(settings.autoOpenTime || '').trim();
-    const cm = cStr.match(/^(\d{1,2}):(\d{2})$/);
-    const om = oStr.match(/^(\d{1,2}):(\d{2})$/);
-    if (cm && om) {
-      const cMins = Number(cm[1]) * 60 + Number(cm[2]);
-      const oMins = Number(om[1]) * 60 + Number(om[2]);
-      if (cMins !== oMins) {
-        const yemenNow = new Date(Date.now() + 3 * 3600 * 1000);
-        const curMins = yemenNow.getUTCHours() * 60 + yemenNow.getUTCMinutes();
-        const isClosed = cMins > oMins ? (curMins >= cMins || curMins < oMins) : (curMins >= cMins && curMins < oMins);
-        if (isClosed) {
-          const oh = Number(om[1]);
-          const period = oh >= 12 ? 'مساءً' : 'صباحاً';
-          const h12 = oh % 12 === 0 ? 12 : oh % 12;
-          return { paused: true, message: settings.pausedMessage || ('🌙 المتجر مغلق حالياً خارج أوقات الدوام — يفتح تلقائياً الساعة ' + h12 + ':' + om[2] + ' ' + period) };
-        }
-      }
-    }
-  }
-  return { paused: false, message: '' };
 }
 
 export default function Home() {
