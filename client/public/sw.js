@@ -1,4 +1,4 @@
-const CACHE = "original-shell-v74";
+const CACHE = "original-shell-v75";
 const PRECACHE = ["/", "/offline.html", "/manifest.webmanifest", "/app-icon-180-v72.png", "/app-icon-192-v72.png", "/app-icon-512-v72.png", "/notif-icon-v3.png", "/notif-badge-v3.png", /*__ASSET_LIST__*/];
 
 self.addEventListener("install", event => {

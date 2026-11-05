@@ -2473,6 +2473,8 @@ setInterval(__prewarmCatalog, 45000).unref();
 // Safe periodic RAM sweep for rate limits
 
 // Safe periodic RAM sweep for rate limits
+
+// Safe periodic RAM sweep for rate limits
 if (!(globalThis as any).__periodicRamSweep) {
   (globalThis as any).__periodicRamSweep = setInterval(() => {
     try {
