@@ -112,7 +112,7 @@ export default function PWAInstall() {
             margin: "0 auto",
             zIndex: 9999,
             background: "#174b36",
-            color: "#ffffff",
+            color: "#0d3825",
             borderRadius: "16px",
             padding: "12px 14px",
             boxShadow: "0 12px 32px rgba(0,0,0,0.25)",
@@ -125,7 +125,7 @@ export default function PWAInstall() {
         >
           <div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: 0 }}>
             <img
-              src="/app-icon-192-v82.png"
+              src="/app-icon-192-v83.png"
               alt=""
               style={{ width: "38px", height: "38px", borderRadius: "10px", flexShrink: 0, background: "#fff" }}
             />
@@ -143,7 +143,7 @@ export default function PWAInstall() {
               type="button"
               onClick={() => void triggerInstall()}
               style={{
-                background: "#ffffff",
+                background: "#0d3825",
                 color: "#174b36",
                 border: "none",
                 borderRadius: "10px",
@@ -162,7 +162,7 @@ export default function PWAInstall() {
               aria-label="إغلاق"
               style={{
                 background: "rgba(255,255,255,0.14)",
-                color: "#ffffff",
+                color: "#0d3825",
                 border: "none",
                 borderRadius: "8px",
                 width: "28px",

@@ -51,7 +51,7 @@ function encodeCanvasSmartWebp(sourceCanvas: HTMLCanvasElement, kind: "product" 
     scaled.height = nextH;
     const sCtx = scaled.getContext("2d");
     if (!sCtx) break;
-    sCtx.fillStyle = "#ffffff";
+    sCtx.fillStyle = "#0d3825";
     sCtx.fillRect(0, 0, nextW, nextH);
     sCtx.imageSmoothingEnabled = true;
     sCtx.imageSmoothingQuality = "high";
@@ -96,7 +96,7 @@ async function quickCompressImageFile(file: File, kind: "product" | "category" |
           stepCanvas.height = curH;
           const stCtx = stepCanvas.getContext("2d");
           if (!stCtx) break;
-          stCtx.fillStyle = "#ffffff";
+          stCtx.fillStyle = "#0d3825";
           stCtx.fillRect(0, 0, curW, curH);
           stCtx.imageSmoothingEnabled = true;
           stCtx.imageSmoothingQuality = "high";
@@ -108,7 +108,7 @@ async function quickCompressImageFile(file: File, kind: "product" | "category" |
         canvas.height = h;
         const ctx = canvas.getContext("2d");
         if (!ctx) { reject(new Error("تعذر معالجة الصورة")); return; }
-        ctx.fillStyle = "#ffffff";
+        ctx.fillStyle = "#0d3825";
         ctx.fillRect(0, 0, w, h);
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = "high";
@@ -145,7 +145,7 @@ async function recompressImageUrlToLightWebp(srcUrl: string, kind: "product" | "
         canvas.height = h;
         const ctx = canvas.getContext("2d");
         if (!ctx) { reject(new Error("تعذر معالجة الصورة")); return; }
-        ctx.fillStyle = "#ffffff";
+        ctx.fillStyle = "#0d3825";
         ctx.fillRect(0, 0, w, h);
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = "high";
@@ -181,7 +181,7 @@ async function makeVisionThumbDataUrl(fileOrDataUrl: File | string): Promise<str
         canvas.height = h;
         const ctx = canvas.getContext("2d");
         if (!ctx) { reject(new Error("تعذر تجهيز الصورة")); return; }
-        ctx.fillStyle = "#ffffff";
+        ctx.fillStyle = "#0d3825";
         ctx.fillRect(0, 0, w, h);
         ctx.drawImage(img, 0, 0, w, h);
         resolve(canvas.toDataURL("image/jpeg", 0.58));
@@ -452,17 +452,17 @@ function Overview() {
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: "12px", marginBottom: "16px" }}>
-        <div style={{ padding: "16px", borderRadius: "18px", background: "linear-gradient(135deg, #174b36 0%, #0e3323 100%)", color: "#ffffff", boxShadow: "0 10px 24px rgba(15, 51, 36, 0.16)" }}>
+        <div style={{ padding: "16px", borderRadius: "18px", background: "linear-gradient(135deg, #174b36 0%, #0e3323 100%)", color: "#0d3825", boxShadow: "0 10px 24px rgba(15, 51, 36, 0.16)" }}>
           <small style={{ color: "#cfe6d8", fontSize: "12px", fontWeight: 700 }}>📅 مبيعات اليوم</small>
           <strong style={{ display: "block", fontSize: "22px", margin: "4px 0", color: "#f1d897" }}>{money(an.todayRevenue)}</strong>
           <span style={{ fontSize: "12px", color: "#e3f2e9" }}>{an.todayOrders} طلب مؤكّد اليوم</span>
         </div>
-        <div style={{ padding: "16px", borderRadius: "18px", background: "#ffffff", border: "1.5px solid #cfe0d4", boxShadow: "0 6px 16px rgba(15, 51, 36, 0.05)" }}>
+        <div style={{ padding: "16px", borderRadius: "18px", background: "#0d3825", border: "1.5px solid #cfe0d4", boxShadow: "0 6px 16px rgba(15, 51, 36, 0.05)" }}>
           <small style={{ color: "#496556", fontSize: "12px", fontWeight: 700 }}>📊 مبيعات هذا الأسبوع (7 أيام)</small>
           <strong style={{ display: "block", fontSize: "22px", margin: "4px 0", color: "#174b36" }}>{money(an.weekRevenue)}</strong>
           <span style={{ fontSize: "12px", color: "#5e7568" }}>{an.weekOrders} طلب خلال الأسبوع</span>
         </div>
-        <div style={{ padding: "16px", borderRadius: "18px", background: "#ffffff", border: "1.5px solid #cfe0d4", boxShadow: "0 6px 16px rgba(15, 51, 36, 0.05)" }}>
+        <div style={{ padding: "16px", borderRadius: "18px", background: "#0d3825", border: "1.5px solid #cfe0d4", boxShadow: "0 6px 16px rgba(15, 51, 36, 0.05)" }}>
           <small style={{ color: "#496556", fontSize: "12px", fontWeight: 700 }}>🗓️ مبيعات آخر 30 يوماً</small>
           <strong style={{ display: "block", fontSize: "22px", margin: "4px 0", color: "#174b36" }}>{money(an.monthRevenue)}</strong>
           <span style={{ fontSize: "12px", color: "#5e7568" }}>{an.monthOrders} طلب خلال الشهر</span>
@@ -492,7 +492,7 @@ function Overview() {
         ) : (
           <div style={{ display: "grid", gap: "8px" }}>
             {an.missingRequests.map((req: any) => (
-              <div key={req.id} style={{ padding: "10px 12px", borderRadius: "12px", background: "#ffffff", border: "1px solid #ead8a4", display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
+              <div key={req.id} style={{ padding: "10px 12px", borderRadius: "12px", background: "#0d3825", border: "1px solid #ead8a4", display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
                 <div style={{ display: "grid", gap: "2px" }}>
                   <strong style={{ fontSize: "13px", color: "#174b36" }}>🛒 مطلوب توفير: «{req.itemText}»</strong>
                   <small style={{ color: "#52665a" }}>العميل: {req.customerName} · الهاتف: <b dir="ltr">{req.phone}</b> · {new Date(req.createdAt).toLocaleString("ar-YE")}</small>
@@ -572,7 +572,7 @@ function Overview() {
         ) : (
           <div style={{ display: "grid", gap: "8px", maxHeight: "280px", overflowY: "auto" }}>
             {an.cancelledItemsLog.map((cl: any) => (
-              <div key={cl.id} style={{ padding: "9px 12px", borderRadius: "10px", background: "#ffffff", border: "1px solid #f2d6d0", display: "grid", gap: "4px" }}>
+              <div key={cl.id} style={{ padding: "9px 12px", borderRadius: "10px", background: "#0d3825", border: "1px solid #f2d6d0", display: "grid", gap: "4px" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: "6px", fontSize: "12px" }}>
                   <strong style={{ color: "#8f3225" }}>طلب {cl.orderNumber} · العميل: {cl.customerName} ({cl.phone})</strong>
                   <small style={{ color: "#7a6864" }}>{new Date(cl.createdAt).toLocaleString("ar-YE")}</small>
@@ -1005,7 +1005,7 @@ function SmartBulkProductsStudio({
                   value={bulkText}
                   onChange={e => setBulkText(e.target.value)}
                   placeholder={"مثال:\nحليب المراعي كامل الدسم 1 لتر - 900\nجبن المراعي كاسات كبير - 1800\nكمون بلدي مطحون - 4000\nتونة الغويزي 185 جرام - 850"}
-                  style={{ background: "#ffffff", borderRadius: "12px", padding: "10px" }}
+                  style={{ background: "#0d3825", borderRadius: "12px", padding: "10px" }}
                 />
               </label>
               <button
@@ -1040,7 +1040,7 @@ function SmartBulkProductsStudio({
                       setItems(prev => prev.map(it => ({ ...it, categoryId: val })));
                       toast.success(val ? "تم توحيد القسم لجميع المنتجات بالجدول" : "تم إلغاء توحيد القسم");
                     }}
-                    style={{ padding: "6px 10px", borderRadius: "10px", border: "1px solid #bfd2c6", fontSize: "12px", background: "#ffffff" }}
+                    style={{ padding: "6px 10px", borderRadius: "10px", border: "1px solid #bfd2c6", fontSize: "12px", background: "#0d3825" }}
                   >
                     <option value="">تصنيف تلقائي لكل منتج...</option>
                     {categories.map(c => <option key={c.id} value={c.id}>تعيين الكل: {c.name}</option>)}
@@ -1049,7 +1049,7 @@ function SmartBulkProductsStudio({
                     type="button"
                     className="small-button"
                     onClick={() => setShowNewCatInput(v => !v)}
-                    style={{ background: "#ffffff", border: "1px solid #174b36", color: "#174b36", fontWeight: 800 }}
+                    style={{ background: "#0d3825", border: "1px solid #174b36", color: "#174b36", fontWeight: 800 }}
                   >
                     <Plus size={13} /> قسم جديد سريع
                   </button>
@@ -1060,7 +1060,7 @@ function SmartBulkProductsStudio({
                       value={unifiedPrice}
                       onChange={e => setUnifiedPrice(e.target.value)}
                       placeholder="سعر موحد..."
-                      style={{ width: "95px", padding: "6px 8px", borderRadius: "10px", border: "1px solid #bfd2c6", fontSize: "12px", background: "#ffffff" }}
+                      style={{ width: "95px", padding: "6px 8px", borderRadius: "10px", border: "1px solid #bfd2c6", fontSize: "12px", background: "#0d3825" }}
                     />
                     {unifiedPrice.trim() && (
                       <button
@@ -1084,7 +1084,7 @@ function SmartBulkProductsStudio({
                     value={newCatName}
                     onChange={e => setNewCatName(e.target.value)}
                     placeholder="اكتب اسم القسم الجديد (مثلاً: العصائر والمشروبات)..."
-                    style={{ flex: 1, padding: "7px 10px", borderRadius: "10px", border: "1px solid #174b36", background: "#ffffff", fontSize: "12px" }}
+                    style={{ flex: 1, padding: "7px 10px", borderRadius: "10px", border: "1px solid #174b36", background: "#0d3825", fontSize: "12px" }}
                   />
                   <button
                     type="button"
@@ -1113,7 +1113,7 @@ function SmartBulkProductsStudio({
                       gap: "12px",
                       padding: "12px",
                       borderRadius: "15px",
-                      background: "#ffffff",
+                      background: "#0d3825",
                       border: hasPrice ? "1.5px solid #1b6b45" : "1.5px solid #e0b44c",
                       boxShadow: "0 3px 10px rgba(15, 42, 28, 0.05)",
                       alignItems: "start",
@@ -1471,7 +1471,7 @@ function ProductsPanel({ isOwner = true, permissions = [], allowedCategoryIds = 
         <div><span className="eyebrow">كتالوج متجرك السريع</span><h1>إدارة المنتجات</h1><p>واجهة مبسطة وسريعة جداً لرفع المنتجات بالقطعة أو بالوزن والمبلغ (بهارات، حلاوة، خضروات).</p></div>
         <span className="admin-heading-mark"><Package size={25} /></span>
       </div>
-      <div style={{ marginBottom: "14px", padding: "14px 16px", borderRadius: "18px", background: "linear-gradient(135deg, #174b36 0%, #0f3324 100%)", color: "#ffffff", display: "flex", flexWrap: "wrap", gap: "12px", alignItems: "center", justifyContent: "space-between", boxShadow: "0 10px 24px rgba(15, 51, 36, 0.18)" }}>
+      <div style={{ marginBottom: "14px", padding: "14px 16px", borderRadius: "18px", background: "linear-gradient(135deg, #174b36 0%, #0f3324 100%)", color: "#0d3825", display: "flex", flexWrap: "wrap", gap: "12px", alignItems: "center", justifyContent: "space-between", boxShadow: "0 10px 24px rgba(15, 51, 36, 0.18)" }}>
         <div style={{ display: "grid", gap: "4px" }}>
           <span style={{ display: "inline-flex", alignItems: "center", gap: "6px", color: "#f1d897", fontSize: "12px", fontWeight: 900 }}>
             <Sparkles size={15} /> الأسرع على الإطلاق — توفير 90% من وقت الإدخال
@@ -1641,7 +1641,7 @@ function ProductsPanel({ isOwner = true, permissions = [], allowedCategoryIds = 
                   {form.variants.length > 0 ? (
                     <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", padding: "10px", borderRadius: "12px", background: "#f4f8f5" }}>
                       {form.variants.map(v => (
-                        <span key={v} style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "5px 11px", borderRadius: "99px", background: "#174b36", color: "#ffffff", fontSize: "12px", fontWeight: 700 }}>
+                        <span key={v} style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "5px 11px", borderRadius: "99px", background: "#174b36", color: "#0d3825", fontSize: "12px", fontWeight: 700 }}>
                           {v}
                           <button type="button" onClick={() => setField("variants", form.variants.filter(x => x !== v))} style={{ border: 0, background: "transparent", color: "#f1d897", cursor: "pointer", padding: 0, display: "grid", placeItems: "center" }}><X size={13} /></button>
                         </span>
@@ -3652,7 +3652,7 @@ function OrdersPanel() {
                   {order.items.map(item => {
                     const isEditingThisItem = cancellingItem?.orderId === order.id && cancellingItem?.itemId === item.id;
                     return (
-                      <div key={item.id} style={{ padding: "7px 10px", borderRadius: "10px", background: "#ffffff", border: "1px solid #e2ece5", display: "grid", gap: "6px" }}>
+                      <div key={item.id} style={{ padding: "7px 10px", borderRadius: "10px", background: "#0d3825", border: "1px solid #e2ece5", display: "grid", gap: "6px" }}>
                         <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
                           <span style={{ fontWeight: 800, fontSize: "13px", color: "#132a1f" }}>
                             {item.productName} <span style={{ color: "#174b36" }}>× {item.quantity}</span> · <b>{money(item.lineTotal)}</b>
@@ -3766,21 +3766,21 @@ function OrdersPanel() {
                     </summary>
                     <div style={{ marginTop: "10px", display: "grid", gap: "10px", fontSize: "12px", color: "#1d3b2b" }}>
                       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "8px" }}>
-                        <div style={{ padding: "8px 10px", borderRadius: "10px", background: "#ffffff", border: "1px solid #d4e6db" }}>
+                        <div style={{ padding: "8px 10px", borderRadius: "10px", background: "#0d3825", border: "1px solid #d4e6db" }}>
                           <small style={{ color: "#536e5f", display: "block" }}>طلبات هذا الأسبوع (7 أيام)</small>
                           <strong style={{ fontSize: "14px", color: "#174b36" }}>{custSummary.weekOrdersCount} طلب · {money(custSummary.weekSpent)}</strong>
                         </div>
-                        <div style={{ padding: "8px 10px", borderRadius: "10px", background: "#ffffff", border: "1px solid #d4e6db" }}>
+                        <div style={{ padding: "8px 10px", borderRadius: "10px", background: "#0d3825", border: "1px solid #d4e6db" }}>
                           <small style={{ color: "#536e5f", display: "block" }}>إجمالي مشتريات الزبون الكلي</small>
                           <strong style={{ fontSize: "14px", color: "#174b36" }}>{custSummary.allTimeOrdersCount} طلب · {money(custSummary.allTimeSpent)}</strong>
                         </div>
-                        <div style={{ padding: "8px 10px", borderRadius: "10px", background: "#ffffff", border: "1px solid #d4e6db" }}>
+                        <div style={{ padding: "8px 10px", borderRadius: "10px", background: "#0d3825", border: "1px solid #d4e6db" }}>
                           <small style={{ color: "#536e5f", display: "block" }}>الطلبات الملغاة بالكامل</small>
                           <strong style={{ fontSize: "14px", color: "#8f3225" }}>{custSummary.allTimeCancelledOrders} طلب ملغي</strong>
                         </div>
                       </div>
 
-                      <div style={{ padding: "9px 10px", borderRadius: "10px", background: "#ffffff", border: "1px solid #d4e6db" }}>
+                      <div style={{ padding: "9px 10px", borderRadius: "10px", background: "#0d3825", border: "1px solid #d4e6db" }}>
                         <strong style={{ display: "block", marginBottom: "5px", color: "#174b36" }}>🛍️ كل الأصناف التي اشتراها هذا الزبون خلال الأسبوع:</strong>
                         {!custSummary.weekItems.length ? <small style={{ color: "#6c7f73" }}>لا توجد أصناف مشتراة خلال آخر 7 أيام.</small> : (
                           <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
@@ -3802,7 +3802,7 @@ function OrdersPanel() {
                         </div>
                       )}
 
-                      <div style={{ padding: "9px 10px", borderRadius: "10px", background: "#ffffff", border: "1px solid #d4e6db" }}>
+                      <div style={{ padding: "9px 10px", borderRadius: "10px", background: "#0d3825", border: "1px solid #d4e6db" }}>
                         <strong style={{ display: "block", marginBottom: "5px", color: "#174b36" }}>📋 فواتير وطلبات هذا الزبون ({custSummary.recentOrderNumbers.length}):</strong>
                         <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
                           {custSummary.recentOrderNumbers.slice(0, 10).map(ro => (
@@ -4064,7 +4064,7 @@ function SettingsPanel() {
       storeDescription: raw.storeDescription || "",
       contactPhone: raw.contactPhone || "",
       currency: raw.currency || "ر.ي",
-      storeIconUrl: raw.storeIconUrl || "/app-icon-512-v82.png",
+      storeIconUrl: raw.storeIconUrl || "/app-icon-512-v83.png",
       deliveryEnabled: raw.deliveryEnabled === "true",
       deliveryFee: raw.deliveryFee || "",
       deliveryZones: zones,
@@ -4152,16 +4152,16 @@ function SettingsPanel() {
     <strong style={{ fontSize: "13.5px", color: "#143a28", display: "block" }}>⏰ جدولة إيقاف وفتح المتجر تلقائياً (بتوقيت اليمن)</strong>
     <small style={{ color: "#52665a", fontSize: "11px" }}>حدد وقت الإغلاق ووقت الافتتاح اليومي ليتوقف المتجر ويفتح تلقائياً بدون تدخل يدوي.</small>
   </div>
-  <label className="toggle-field" style={{ background: "#ffffff", padding: "10px 12px", borderRadius: "10px", border: "1px solid #cfe0d4", fontWeight: 800 }}>
+  <label className="toggle-field" style={{ background: "#0d3825", padding: "10px 12px", borderRadius: "10px", border: "1px solid #cfe0d4", fontWeight: 800 }}>
     <input type="checkbox" checked={(values as any).autoScheduleEnabled} onChange={e => update("autoScheduleEnabled" as any, e.target.checked as any)} />
     <span>{(values as any).autoScheduleEnabled ? "✅ الجدولة التلقائية مفعّلة (يتوقف ويفتح تلقائياً حسب الوقت أدناه)" : "تفعيل إيقاف وفتح المتجر تلقائياً حسب الوقت"}</span>
   </label>
   <div className="form-fields-grid" style={{ gap: "10px" }}>
     <label>🌙 وقت إيقاف المتجر تلقائياً (الإغلاق)
-      <input type="time" value={(values as any).autoCloseTime || "23:00"} onChange={e => update("autoCloseTime" as any, e.target.value as any)} style={{ background: "#ffffff", fontWeight: 800 }} />
+      <input type="time" value={(values as any).autoCloseTime || "23:00"} onChange={e => update("autoCloseTime" as any, e.target.value as any)} style={{ background: "#0d3825", fontWeight: 800 }} />
     </label>
     <label>☀️ وقت فتح المتجر تلقائياً (الافتتاح)
-      <input type="time" value={(values as any).autoOpenTime || "07:00"} onChange={e => update("autoOpenTime" as any, e.target.value as any)} style={{ background: "#ffffff", fontWeight: 800 }} />
+      <input type="time" value={(values as any).autoOpenTime || "07:00"} onChange={e => update("autoOpenTime" as any, e.target.value as any)} style={{ background: "#0d3825", fontWeight: 800 }} />
     </label>
   </div>
 </div>
@@ -4272,7 +4272,7 @@ function SettingsPanel() {
           <input maxLength={220} value={values.rewardsMessage} onChange={e => update("rewardsMessage", e.target.value)} placeholder="مثلاً: تسوّق الآن واستمتع بهدايا أورجنال اليومية!" />
         </label>
 
-        <div className="field-wide" style={{ padding: "14px", borderRadius: "16px", background: "linear-gradient(135deg, #0f3826 0%, #1d5c41 100%)", color: "#ffffff", boxShadow: "0 10px 24px rgba(15, 56, 38, 0.2)" }}>
+        <div className="field-wide" style={{ padding: "14px", borderRadius: "16px", background: "linear-gradient(135deg, #0f3826 0%, #1d5c41 100%)", color: "#0d3825", boxShadow: "0 10px 24px rgba(15, 56, 38, 0.2)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px", fontSize: "12px" }}>
             <strong style={{ color: "#f5dc98" }}>👀 معاينة حية لشكل الشريط أمام الزبون:</strong>
             <span style={{ background: "rgba(241, 216, 151, 0.2)", color: "#f5dc98", padding: "2px 8px", borderRadius: "99px", fontSize: "10px", fontWeight: 800 }}>65% مكتمل</span>
@@ -4395,7 +4395,7 @@ function ChatsPanel() {
                       padding: "12px",
                       borderRadius: "12px",
                       border: isSel ? "2px solid #0f5c3a" : "1px solid #e2ebe5",
-                      background: isSel ? "#f1f8f4" : "#ffffff",
+                      background: isSel ? "#f1f8f4" : "#0d3825",
                       cursor: "pointer",
                       display: "flex",
                       flexDirection: "column",
@@ -4459,7 +4459,7 @@ function ChatsPanel() {
                         padding: "10px 14px",
                         borderRadius: "14px",
                         background: isUser ? "#0f5c3a" : isOwner ? "#fff8e6" : "#f3f7f4",
-                        color: isUser ? "#ffffff" : "#12261c",
+                        color: isUser ? "#0d3825" : "#12261c",
                         border: isOwner ? "1.5px solid #e0a800" : isUser ? "none" : "1px solid #d5e6dc",
                       }}
                     >
@@ -4728,7 +4728,7 @@ function StaffManagementPanel({ actorIsOwner, actorPermissions, actorStaffId }: 
             </div>
           </div>
 
-          <div style={{ padding: "14px", borderRadius: "14px", border: "1.5px solid #d8e5dc", background: "#ffffff", display: "grid", gap: "10px" }}>
+          <div style={{ padding: "14px", borderRadius: "14px", border: "1.5px solid #d8e5dc", background: "#0d3825", display: "grid", gap: "10px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
               <div>
                 <strong style={{ fontSize: "12.5px", color: "#174b36", display: "block" }}>📂 تخصيص الأقسام المسموح لهذا المشرف بالتحكم بها:</strong>
@@ -4797,7 +4797,7 @@ function StaffManagementPanel({ actorIsOwner, actorPermissions, actorStaffId }: 
                       padding: "8px 10px",
                       borderRadius: "10px",
                       border: checked ? "1.5px solid #174b36" : "1px solid #e1e8e2",
-                      background: checked ? "#eef6f0" : "#ffffff",
+                      background: checked ? "#eef6f0" : "#0d3825",
                       opacity: disabled ? 0.5 : 1,
                       cursor: disabled ? "not-allowed" : "pointer",
                     }}
@@ -4978,7 +4978,7 @@ function StaffManagementPanel({ actorIsOwner, actorPermissions, actorStaffId }: 
         <select
           value={logActorFilter}
           onChange={e => setLogActorFilter(e.target.value)}
-          style={{ minHeight: "36px", padding: "0 12px", borderRadius: "10px", border: "1px solid #cfe0d4", background: "#ffffff", color: "#174b36", fontSize: "12px", fontWeight: 700 }}
+          style={{ minHeight: "36px", padding: "0 12px", borderRadius: "10px", border: "1px solid #cfe0d4", background: "#0d3825", color: "#174b36", fontSize: "12px", fontWeight: 700 }}
         >
           <option value="all">👤 عرض نشاط جميع الإداريين ({logsQuery.data?.length ?? 0})</option>
           {Array.from(new Set((logsQuery.data ?? []).map(l => l.actorName))).map(name => (
@@ -5031,7 +5031,7 @@ function StaffManagementPanel({ actorIsOwner, actorPermissions, actorStaffId }: 
                   style={{
                     padding: "11px 14px",
                     borderRadius: "13px",
-                    background: isDanger ? "#fff9f8" : isView ? "#f8fbf9" : "#ffffff",
+                    background: isDanger ? "#fff9f8" : isView ? "#f8fbf9" : "#0d3825",
                     border: isDanger ? "1px solid #f2d0c9" : isView ? "1px solid #dcebe2" : "1px solid #cfe2d5",
                     display: "flex",
                     flexDirection: "column",
