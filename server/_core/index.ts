@@ -132,7 +132,7 @@ async function startServer() {
       if (g.__fastHomeData?.settings) {
         const s = g.__fastHomeData.settings;
         const candidate = String(s.storeIconUrl || "");
-        const icon = candidate.startsWith("/manus-storage/") || candidate.startsWith(HTTPS_PREFIX) || candidate.startsWith("data:image/") ? candidate : "";
+        const icon = "";
         return { name: s.storeName || "ORIGINAL – أورجنال", icon };
       }
       if (cachedBrand && Date.now() - cachedBrand.time < 300000) {
@@ -143,7 +143,7 @@ async function startServer() {
       const rows = await db.select({ key: storeSettings.key, value: storeSettings.value }).from(storeSettings).where(eq(storeSettings.key, "storeIconUrl")).limit(1);
       const nameRows = await db.select({ value: storeSettings.value }).from(storeSettings).where(eq(storeSettings.key, "storeName")).limit(1);
       const candidate = rows[0]?.value ?? "";
-      const icon = candidate.startsWith("/manus-storage/") || candidate.startsWith(HTTPS_PREFIX) ? candidate : "";
+      const icon = "";
       const name = (nameRows[0]?.value || "ORIGINAL – أورجنال").replace(new RegExp("أور" + "يجنال|اور" + "يجنال", "g"), "أورجنال");
       cachedBrand = { name, icon, time: Date.now() };
       return { name, icon };
@@ -152,20 +152,20 @@ async function startServer() {
     }
   };
 
-  app.get("/api/app-manifest.webmanifest", async (_req, res) => {
+  app.get("/manifest.webmanifest?v=82", async (_req, res) => {
     const brand = await publicBrand();
     const imagePath = brand.icon && !brand.icon.startsWith("data:") ? new URL(brand.icon, HTTPS_PREFIX + "app.invalid").pathname : "";
     const type = imagePath.endsWith(".png") ? "image/png" : imagePath.endsWith(".jpg") || imagePath.endsWith(".jpeg") ? "image/jpeg" : imagePath.endsWith(".webp") ? "image/webp" : "image/png";
     const icons = [
-      { src: "/app-icon-512-v5.png", sizes: "192x192", type: "image/png", purpose: "any" },
-      { src: "/app-icon-512-v5.png", sizes: "512x512", type: "image/png", purpose: "any" },
+      { src: "/app-icon-512-v82.png", sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: "/app-icon-512-v82.png", sizes: "512x512", type: "image/png", purpose: "any" },
     ];
     res.set("Cache-Control", "public, max-age=300").type("application/manifest+json").send(JSON.stringify({ id: "/", name: brand.name, short_name: "أورجنال", description: "متجر ORIGINAL – أورجنال", lang: "ar", dir: "rtl", start_url: "/", scope: "/", display: "standalone", background_color: "#f8f8f2", theme_color: "#174b36", icons }));
   });
 
   app.get("/api/store-icon", async (_req, res) => {
     const brand = await publicBrand();
-    const target = brand.icon && !brand.icon.startsWith("data:") ? brand.icon : "/app-icon-512-v5.png";
+    const target = brand.icon && !brand.icon.startsWith("data:") ? brand.icon : "/app-icon-512-v82.png";
     res.set("Cache-Control", "public, max-age=300").redirect(302, target);
   });
 

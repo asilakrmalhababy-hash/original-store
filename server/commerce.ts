@@ -429,7 +429,7 @@ async function readSettings(db: NonNullable<Awaited<ReturnType<typeof getDb>>>) 
   if (!g.__savedSettingsMemory) g.__savedSettingsMemory = {};
   try {
     const rows = await db.select().from(storeSettings);
-    const settings: Record<string, string> = { deliveryEnabled: 'true', deliveryFee: '0', storeIconUrl: '/app-icon-512-orig.png', ...g.__savedSettingsMemory };
+    const settings: Record<string, string> = { deliveryEnabled: 'true', deliveryFee: '0', storeIconUrl: '/app-icon-512-v82.png', ...g.__savedSettingsMemory };
     for (const row of rows) {
       if (!PUBLIC_STORE_SETTING_KEYS.has(row.key) && row.key !== 'deliveryTreeConfig') continue;
       if (row.key === 'storeIconUrl' && !String(row.value || '').trim()) continue;
@@ -439,14 +439,14 @@ async function readSettings(db: NonNullable<Awaited<ReturnType<typeof getDb>>>) 
       if (typeof v === 'string' && (k !== 'storeIconUrl' || v.trim())) settings[k] = v;
     }
     if (!settings.storeIconUrl || !settings.storeIconUrl.trim()) {
-      settings.storeIconUrl = '/app-icon-512-orig.png';
+      settings.storeIconUrl = '/app-icon-512-v82.png';
     }
     const oldStoreNameNorm = new RegExp('أور' + 'يجنال|اور' + 'يجنال', 'g');
     if (settings.storeName) settings.storeName = settings.storeName.replace(oldStoreNameNorm, 'أورجنال');
     return settings;
   } catch (err) {
     console.warn('[Settings] Using fallback defaults:', err instanceof Error ? err.message : err);
-    return { deliveryEnabled: 'true', deliveryFee: '0', storeIconUrl: '/app-icon-512-orig.png', ...(g.__savedSettingsMemory || {}) };
+    return { deliveryEnabled: 'true', deliveryFee: '0', storeIconUrl: '/app-icon-512-v82.png', ...(g.__savedSettingsMemory || {}) };
   }
 }
 
