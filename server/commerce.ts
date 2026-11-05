@@ -369,14 +369,7 @@ const PUBLIC_STORE_SETTING_KEYS = new Set([
 ]);
 
 const __orderRateBuckets = new Map<string, { count: number; resetAt: number }>();
-if (!(globalThis as any).__periodicRamSweep) {
-  (globalThis as any).__periodicRamSweep = setInterval(() => {
-    const now = Date.now();
-    for (const [k, v] of __orderRateBuckets) { if (now > v.resetAt) __orderRateBuckets.delete(k); }
-    try { for (const [k, v] of __missingItemRateBuckets) { if (now > v.resetAt) __missingItemRateBuckets.delete(k); } } catch {}
-    try { for (const [k, v] of assistantRateWindows) { if (now - v.startedAt >= 60000) assistantRateWindows.delete(k); } } catch {}
-  }, 10 * 60 * 1000);
-}
+
 function enforceOrderCreateRateLimit(ip: string) {
   const now = Date.now();
   const key = (ip || "unknown").slice(0, 80);
@@ -2476,3 +2469,15 @@ async function __prewarmCatalog() {
 }
 setTimeout(__prewarmCatalog, 800);
 setInterval(__prewarmCatalog, 45000).unref();
+
+// Safe periodic RAM sweep for rate limits
+if (!(globalThis as any).__periodicRamSweep) {
+  (globalThis as any).__periodicRamSweep = setInterval(() => {
+    try {
+      const now = Date.now();
+      for (const [k, v] of __orderRateBuckets) { if (now > v.resetAt) __orderRateBuckets.delete(k); }
+      for (const [k, v] of __missingItemRateBuckets) { if (now > v.resetAt) __missingItemRateBuckets.delete(k); }
+      for (const [k, v] of assistantRateWindows) { if (now - v.startedAt >= 60000) assistantRateWindows.delete(k); }
+    } catch {}
+  }, 10 * 60 * 1000);
+}
