@@ -1,5 +1,5 @@
-const CACHE = "original-shell-v87";
-const PRECACHE = ["/", "/offline.html", "/manifest.webmanifest", "/app-icon-180-v85.png", "/app-icon-192-v85.png", "/app-icon-512-v85.png", "/notif-icon-v3.png", "/notif-badge-v3.png", /*__ASSET_LIST__*/];
+const CACHE = "original-shell-v88";
+const PRECACHE = ["/", "/offline.html", "/manifest.webmanifest", "/app-icon-180-v85.png", "/app-icon-192-v85.png", "/app-icon-512-v85.png", "/notif-icon-v3.png", "/notif-badge-v3.png"];
 
 self.addEventListener("install", event => {
   self.skipWaiting();
@@ -11,12 +11,6 @@ self.addEventListener("activate", event => {
     caches.keys()
       .then(keys => Promise.all(keys.filter(key => key !== CACHE).map(key => caches.delete(key))))
       .then(() => self.clients.claim())
-      .then(async () => {
-        const clients = await self.clients.matchAll({ type: "window" });
-        for (const client of clients) {
-          try { await client.navigate(client.url); } catch {}
-        }
-      })
   );
 });
 
@@ -25,16 +19,21 @@ self.addEventListener("fetch", event => {
   if (request.method !== "GET") return;
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
+  if (url.pathname.startsWith("/api/") && !url.pathname.startsWith("/api/fast-img/")) return;
 
   if (request.mode === "navigate") {
     event.respondWith(caches.open(CACHE).then(async cache => {
-      const cached = await cache.match("/");
-      const netFetch = fetch(request).then(res => {
-        if (res && res.ok) cache.put("/", res.clone());
-        return res;
-      }).catch(() => null);
-      if (cached) return cached;
-      return (await netFetch) || (await cache.match("/offline.html")) || Response.error();
+      try {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 2500);
+        const res = await fetch(request, { signal: ctrl.signal });
+        clearTimeout(timer);
+        if (res && res.ok) {
+          cache.put("/", res.clone());
+          return res;
+        }
+      } catch {}
+      return (await cache.match("/")) || (await cache.match("/offline.html")) || fetch(request);
     }));
     return;
   }
@@ -42,11 +41,17 @@ self.addEventListener("fetch", event => {
   if (url.pathname.startsWith("/api/fast-img/") || url.pathname.includes("/assets/") || url.pathname.endsWith(".png") || url.pathname.endsWith(".webmanifest")) {
     event.respondWith(caches.open(CACHE).then(async cache => {
       const cached = await cache.match(request, { ignoreSearch: !url.pathname.startsWith("/api/fast-img/") });
-      if (cached) return cached;
+      if (cached) {
+        const cct = (cached.headers && cached.headers.get("content-type")) || "";
+        if (!(url.pathname.endsWith(".js") && cct.includes("text/html"))) return cached;
+      }
       try {
-        const response = await fetch(request);
-        if (response.ok) cache.put(request, response.clone());
-        return response;
+        const res = await fetch(request);
+        const ct = (res && res.headers && res.headers.get("content-type")) || "";
+        if (res && res.ok && !(url.pathname.endsWith(".js") && ct.includes("text/html"))) {
+          cache.put(request, res.clone());
+        }
+        return res;
       } catch {
         return new Response("", { status: 504 });
       }

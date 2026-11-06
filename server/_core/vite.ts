@@ -48,30 +48,41 @@ export async function setupVite(app: Express, server: Server) {
 }
 
 export function serveStatic(app: Express) {
-  const distPath =
-    process.env.NODE_ENV === "development"
-      ? path.resolve(import.meta.dirname, "../..", "dist", "public")
-      : path.resolve(import.meta.dirname, "public");
+  const cand = path.resolve(process.cwd(), "dist", "public");
+  const distPath = fs.existsSync(cand) ? cand : path.resolve(import.meta.dirname, "public");
+  const assetsDir = path.join(distPath, "assets");
   const indexPath = path.resolve(distPath, "index.html");
   let cachedIndexGzip: Buffer | null = null;
   let cachedIndexRaw = "";
-  const gzipAssetCache = new Map<string, { buf: Buffer; ct: string }>();
+  const gzipCache = new Map<string, Buffer>();
 
-  app.use("/assets", (req, res, next) => {
-    if (!String(req.headers["accept-encoding"] || "").includes("gzip")) return next();
-    if (!req.path.endsWith(".js") && !req.path.endsWith(".css")) return next();
-    let hit = gzipAssetCache.get(req.path);
-    if (!hit) {
-      const fp = path.join(distPath, "assets", path.basename(req.path));
-      if (!fs.existsSync(fp)) return next();
-      hit = {
-        buf: zlib.gzipSync(fs.readFileSync(fp), { level: zlib.constants.Z_BEST_SPEED }),
-        ct: req.path.endsWith(".js") ? "application/javascript; charset=utf-8" : "text/css; charset=utf-8",
-      };
-      gzipAssetCache.set(req.path, hit);
+  app.use("/assets", (req, res) => {
+    const reqBase = path.basename(req.path);
+    let fp = path.join(assetsDir, reqBase);
+    let isFallback = false;
+    if (!fs.existsSync(fp)) {
+      const m = reqBase.match(/^([a-zA-Z0-9_]+)-[a-zA-Z0-9_-]+(\.(?:js|css))$/);
+      const found = m && fs.existsSync(assetsDir) ? fs.readdirSync(assetsDir).find(f => f.startsWith(m[1] + "-") && f.endsWith(m[2])) : null;
+      if (!found) return res.status(404).end();
+      fp = path.join(assetsDir, found);
+      isFallback = true;
     }
-    res.set({ "Content-Type": hit.ct, "Content-Encoding": "gzip", "Cache-Control": "public, max-age=31536000, immutable", "Vary": "Accept-Encoding" });
-    return res.send(hit.buf);
+    const isJs = fp.endsWith(".js");
+    const isCss = fp.endsWith(".css");
+    if (!isJs && !isCss) return res.sendFile(fp);
+    const ct = isJs ? "application/javascript; charset=utf-8" : "text/css; charset=utf-8";
+    const cc = isFallback ? "no-cache" : "public, max-age=31536000, immutable";
+    if (!String(req.headers["accept-encoding"] || "").includes("gzip")) {
+      res.set({ "Content-Type": ct, "Cache-Control": cc });
+      return res.sendFile(fp);
+    }
+    let gz = gzipCache.get(fp);
+    if (!gz) {
+      gz = zlib.gzipSync(fs.readFileSync(fp), { level: zlib.constants.Z_BEST_SPEED });
+      gzipCache.set(fp, gz);
+    }
+    res.set({ "Content-Type": ct, "Content-Encoding": "gzip", "Cache-Control": cc, "Vary": "Accept-Encoding" });
+    return res.send(gz);
   });
 
   const sendFastIndex = (req: express.Request, res: express.Response) => {
