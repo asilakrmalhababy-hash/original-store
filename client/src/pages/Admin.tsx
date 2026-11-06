@@ -1288,7 +1288,7 @@ function ProductsPanel({ isOwner = true, permissions = [], allowedCategoryIds = 
   const [optimizingImages, setOptimizingImages] = useState(false);
 
   const refreshCatalog = async () => {
-    try { (window as any).__INITIAL_CATALOG__ = null; localStorage.removeItem("original-catalog-instant-v2"); } catch {}
+    try { (window as any).__INITIAL_CATALOG__ = null; localStorage.removeItem("original-catalog-instant-v87"); } catch {}
     return Promise.all([
       utils.commerce.catalog.home.invalidate(),
       utils.commerce.catalog.listProducts.invalidate(),
@@ -2284,12 +2284,12 @@ function DeliveryZonesPanel() {
       if (typeof window !== 'undefined' && (window as any).__INITIAL_CATALOG__?.settings) {
         (window as any).__INITIAL_CATALOG__.settings.deliveryTreeConfig = serializedTree;
       }
-      const rawCat = localStorage.getItem('original-catalog-instant-v2');
+      const rawCat = localStorage.getItem('original-catalog-instant-v87');
       if (rawCat) {
         const parsedCat = JSON.parse(rawCat);
         if (parsedCat && typeof parsedCat === 'object') {
           parsedCat.settings = { ...(parsedCat.settings || {}), deliveryTreeConfig: serializedTree };
-          localStorage.setItem('original-catalog-instant-v2', JSON.stringify(parsedCat));
+          localStorage.setItem('original-catalog-instant-v87', JSON.stringify(parsedCat));
         }
       }
     } catch {}

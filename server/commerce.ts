@@ -889,20 +889,20 @@ async function ensureTenBatchProductsSeeded() {
 setTimeout(() => { void ensureTenBatchProductsSeeded(); }, 2000);
 const fastProductColumns = {
   id: products.id, name: products.name, slug: products.slug, description: products.description,
-  imageUrl: sql<string | null>`CASE WHEN ${products.imageUrl} IS NULL OR ${products.imageUrl} = '' THEN NULL WHEN ${products.imageUrl} LIKE 'data:image/%' THEN CONCAT('/api/fast-img/product/', ${products.id}, '?v=', COALESCE(UNIX_TIMESTAMP(${products.updatedAt}), 1)) ELSE ${products.imageUrl} END`,
+  imageUrl: sql<string | null>`CASE WHEN ${products.imageUrl} IS NULL OR ${products.imageUrl} = '' THEN NULL WHEN ${products.imageUrl} LIKE 'data:image/%' THEN CONCAT('/api/fast-img/product/', ${products.id}) ELSE ${products.imageUrl} END`,
   categoryId: products.categoryId, price: products.price, unit: products.unit, stock: products.stock,
   minQuantity: products.minQuantity, quantityStep: products.quantityStep, isPublished: products.isPublished,
   isAvailable: products.isAvailable, sortOrder: products.sortOrder, createdAt: products.createdAt, updatedAt: products.updatedAt,
 };
 const fastCategoryColumns = {
   id: categories.id, name: categories.name, slug: categories.slug, description: categories.description,
-  imageUrl: sql<string | null>`CASE WHEN ${categories.imageUrl} IS NULL OR ${categories.imageUrl} = '' THEN NULL WHEN ${categories.imageUrl} LIKE 'data:image/%' THEN CONCAT('/api/fast-img/category/', ${categories.id}, '?v=', COALESCE(UNIX_TIMESTAMP(${categories.updatedAt}), 1)) ELSE ${categories.imageUrl} END`,
-  color: categories.color, isActive: categories.isActive, sortOrder: categories.sortOrder, createdAt: categories.createdAt, updatedAt: categories.updatedAt,
+  imageUrl: sql<string | null>`CASE WHEN ${categories.imageUrl} IS NULL OR ${categories.imageUrl} = '' THEN NULL WHEN ${categories.imageUrl} LIKE 'data:image/%' THEN CONCAT('/api/fast-img/category/', ${categories.id}) ELSE ${categories.imageUrl} END`,
+  color: categories.color, isActive: categories.isActive, sortOrder: categories.sortOrder, createdAt: categories.createdAt,
 };
 const fastBannerColumns = {
   id: banners.id, title: banners.title, body: banners.body,
-  imageUrl: sql<string | null>`CASE WHEN ${banners.imageUrl} IS NULL OR ${banners.imageUrl} = '' THEN NULL WHEN ${banners.imageUrl} LIKE 'data:image/%' THEN CONCAT('/api/fast-img/banner/', ${banners.id}, '?v=', COALESCE(UNIX_TIMESTAMP(${banners.updatedAt}), 1)) ELSE ${banners.imageUrl} END`,
-  actionText: banners.actionText, actionUrl: banners.actionUrl, isActive: banners.isActive, sortOrder: banners.sortOrder, createdAt: banners.createdAt, updatedAt: banners.updatedAt,
+  imageUrl: sql<string | null>`CASE WHEN ${banners.imageUrl} IS NULL OR ${banners.imageUrl} = '' THEN NULL WHEN ${banners.imageUrl} LIKE 'data:image/%' THEN CONCAT('/api/fast-img/banner/', ${banners.id}) ELSE ${banners.imageUrl} END`,
+  actionText: banners.actionText, actionUrl: banners.actionUrl, isActive: banners.isActive, sortOrder: banners.sortOrder, createdAt: banners.createdAt,
 };
 
 async function refreshHomeCatalogCache() {

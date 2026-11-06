@@ -1,5 +1,5 @@
 
-const INSTANT_CATALOG_KEY = "original-instant-catalog-v3";
+const INSTANT_CATALOG_KEY = "original-catalog-instant-v87";
 function getInstantLocalCatalog(): HomeData {
   try {
     const raw = localStorage.getItem(INSTANT_CATALOG_KEY);
@@ -4074,7 +4074,7 @@ function GamifiedRewardBar({ settings, location }: { settings: Record<string, st
 
 
 
-const INSTANT_CACHE_KEY = "original-catalog-instant-v2";
+const INSTANT_CACHE_KEY = "original-catalog-instant-v87";
 function readLocalInstantCatalog(): HomeData {
   try {
     if (typeof window !== "undefined" && (window as any).__INITIAL_CATALOG__) {
@@ -4101,7 +4101,7 @@ export default function Home() {
   const [instantData, setInstantData] = useState<HomeData>(() => readLocalInstantCatalog());
   const initCat = useMemo(() => (globalThis as any).readLocalInstantCatalog ? (globalThis as any).readLocalInstantCatalog() : undefined, []);
   const home = trpc.commerce.catalog.home.useQuery(undefined, { retry: 1, staleTime: 0, refetchOnMount: "always", refetchOnWindowFocus: true, refetchInterval: 4000, placeholderData: initCat?.products?.length ? initCat : undefined });
-  useEffect(() => { if (home.data && Array.isArray(home.data.categories)) { try { localStorage.setItem("original-catalog-instant-v2", JSON.stringify(home.data)); } catch {} } }, [home.data]);
+  useEffect(() => { if (home.data && Array.isArray(home.data.categories)) { try { localStorage.setItem("original-catalog-instant-v87", JSON.stringify(home.data)); } catch {} } }, [home.data]);
   useEffect(() => {
     try {
       const w = window as any;
@@ -4116,7 +4116,7 @@ export default function Home() {
   }, [location]);
   useEffect(() => {
     if (home.data && Array.isArray(home.data.products)) {
-      const sig = home.data.products.length + ":" + (home.data.products[0]?.id || 0) + ":" + (home.data.products[home.data.products.length - 1]?.id || 0) + ":" + (home.data.categories?.length || 0);
+      const sig = JSON.stringify(home.data);
       if (lastCatalogSigRef.current === sig) return;
       lastCatalogSigRef.current = sig;
       setInstantData(home.data as HomeData);
@@ -4124,7 +4124,7 @@ export default function Home() {
       try { (window as any).__INITIAL_CATALOG__ = home.data; localStorage.setItem(INSTANT_CACHE_KEY, JSON.stringify(home.data)); } catch {}
     }
   }, [home.data]);
-  const data = (home.data ?? ((globalThis as any).readLocalInstantCatalog ? (globalThis as any).readLocalInstantCatalog() : { categories: [], products: [], banners: [], offers: [], settings: {} })) as HomeData;
+  const data = (home.data ?? instantData) as HomeData;
   (globalThis as any).__CATALOG_LOADING__ = Boolean(home.isLoading && !data?.products?.length);
   const openProduct = (id: number) => {
     try {
