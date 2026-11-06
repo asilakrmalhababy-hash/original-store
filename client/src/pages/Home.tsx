@@ -82,10 +82,10 @@ function RollingWhatsAppWidget({ settings, location }: { settings?: Record<strin
   };
 
   useEffect(() => {
-    const initTimer = setTimeout(() => startRoll(), 3500);
+    const initTimer = setTimeout(() => startRoll(), 2500);
     const interval = setInterval(() => {
       startRoll();
-    }, 32000);
+    }, 30000);
     return () => {
       clearTimeout(initTimer);
       clearInterval(interval);
@@ -96,86 +96,92 @@ function RollingWhatsAppWidget({ settings, location }: { settings?: Record<strin
   if (location.startsWith("/assistant") || location.startsWith("/cart")) return null;
 
   const waHref = buildStoreWhatsAppHref(settings);
+  const ease = "1.2s cubic-bezier(0.25, 1, 0.5, 1)";
 
   return (
     <div
-      dir="rtl"
+      dir="ltr"
       style={{
         position: "fixed",
         bottom: "82px",
-        left: "14px",
+        left: "12px",
+        height: "58px",
         zIndex: 55,
+        pointerEvents: "none",
         display: "flex",
         alignItems: "center",
-        pointerEvents: "none",
-        maxWidth: "calc(100vw - 28px)",
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: "10px", pointerEvents: "auto" }}>
-        <a
-          href={waHref}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={(e) => {
-            if (!active) {
-              e.preventDefault();
-              startRoll();
-            }
-          }}
-          aria-label="تواصل معنا عبر واتساب"
-          style={{
-            width: "50px",
-            height: "50px",
-            minWidth: "50px",
-            borderRadius: "50%",
-            background: "linear-gradient(135deg, #25D366 0%, #128C7E 100%)",
-            color: "#fff",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            boxShadow: "0 6px 22px rgba(18,140,126,0.45)",
-            border: "2.5px solid #fff",
-            textDecoration: "none",
-            transform: active ? "translateX(calc(100vw - 92px)) rotate(720deg)" : "translateX(0px) rotate(0deg)",
-            transition: "transform 1.1s cubic-bezier(0.34, 1.25, 0.64, 1)",
-            cursor: "pointer",
-            order: 2,
-          }}
-        >
-          <WhatsAppSvg size={28} />
-        </a>
-
-        <a
-          href={waHref}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{
-            order: 1,
-            background: "rgba(13, 56, 37, 0.96)",
-            backdropFilter: "blur(8px)",
-            color: "#fff",
-            padding: "9px 13px",
-            borderRadius: "16px",
-            border: "1px solid rgba(212, 175, 55, 0.6)",
-            boxShadow: "0 8px 24px rgba(0,0,0,0.28)",
-            fontSize: "11.5px",
-            lineHeight: "1.45",
-            fontWeight: 700,
-            textDecoration: "none",
-            maxWidth: "235px",
-            opacity: active ? 1 : 0,
-            transform: active ? "scale(1) translateX(0)" : "scale(0.7) translateX(-20px)",
-            pointerEvents: active ? "auto" : "none",
-            transition: "opacity 0.6s ease 0.3s, transform 0.6s cubic-bezier(0.34, 1.2, 0.64, 1) 0.3s",
-            display: "block",
-          }}
-        >
-          <span style={{ color: "#efd48f", display: "block", marginBottom: "2px", fontSize: "11px" }}>
-            💬 خدمة العملاء المباشرة:
-          </span>
+      <a
+        href={waHref}
+        target="_blank"
+        rel="noopener noreferrer"
+        dir="rtl"
+        style={{
+          position: "absolute",
+          left: "0px",
+          width: "242px",
+          background: "#ffffff",
+          color: "#111827",
+          padding: "8px 14px",
+          borderRadius: "16px",
+          border: "2px solid #d4af37",
+          boxShadow: "0 8px 22px rgba(15, 53, 37, 0.18)",
+          fontSize: "12px",
+          lineHeight: "1.45",
+          fontWeight: 800,
+          textDecoration: "none",
+          boxSizing: "border-box",
+          clipPath: active ? "inset(-12px 0px -12px -12px)" : "inset(-12px 100% -12px -12px)",
+          WebkitClipPath: active ? "inset(-12px 0px -12px -12px)" : "inset(-12px 100% -12px -12px)",
+          opacity: active ? 1 : 0,
+          pointerEvents: active ? "auto" : "none",
+          transition: "clip-path " + ease + ", -webkit-clip-path " + ease + ", opacity 0.25s ease",
+          willChange: "clip-path",
+        }}
+      >
+        <span style={{ color: "#174b36", display: "block", marginBottom: "2px", fontSize: "11.5px", fontWeight: 900 }}>
+          💬 تواصل مباشر عبر واتساب:
+        </span>
+        <span style={{ color: "#111827", display: "block" }}>
           إذا لم تجد شيء في المتجر أو لديك استفسار أو طلب، فتواصل معنا
-        </a>
-      </div>
+        </span>
+      </a>
+
+      <a
+        href={waHref}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(e) => {
+          if (!active) {
+            e.preventDefault();
+            startRoll();
+          }
+        }}
+        aria-label="تواصل معنا عبر واتساب"
+        style={{
+          position: "absolute",
+          left: "0px",
+          width: "52px",
+          height: "52px",
+          borderRadius: "50%",
+          background: "linear-gradient(135deg, #25D366 0%, #128C7E 100%)",
+          color: "#ffffff",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          boxShadow: "0 6px 20px rgba(18, 140, 126, 0.42)",
+          border: "2.5px solid #d4af37",
+          textDecoration: "none",
+          pointerEvents: "auto",
+          transform: active ? "translate3d(252px, 0, 0) rotate(720deg)" : "translate3d(0px, 0, 0) rotate(0deg)",
+          transition: "transform " + ease,
+          willChange: "transform",
+          cursor: "pointer",
+        }}
+      >
+        <WhatsAppSvg size={28} />
+      </a>
     </div>
   );
 }
