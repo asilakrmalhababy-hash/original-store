@@ -69,6 +69,117 @@ function WhatsAppSvg({ size = 18 }: { size?: number }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91C21.95 6.45 17.5 2 12.04 2zm5.82 14.12c-.24.68-1.41 1.3-1.95 1.38-.5.08-1.13.11-1.83-.11-.42-.13-.97-.31-1.67-.61-2.94-1.27-4.86-4.25-5.01-4.45-.15-.2-1.2-1.59-1.2-3.04 0-1.45.76-2.16 1.03-2.46.27-.3.59-.37.79-.37.2 0 .4 0 .57.01.18.01.43-.07.67.51.24.59.84 2.04.91 2.19.07.15.12.32.02.52-.1.2-.15.32-.3.5-.15.17-.31.39-.44.52-.15.15-.3.31-.13.61.17.3.76 1.26 1.64 2.04 1.13 1.01 2.08 1.32 2.38 1.47.3.15.47.12.64-.07.17-.2.74-.86.94-1.16.2-.3.4-.25.67-.15.27.1 1.73.82 2.03.97.3.15.49.22.57.35.07.12.07.72-.17 1.4z"/></svg>;
 }
 
+function RollingWhatsAppWidget({ settings, location }: { settings?: Record<string, string>; location: string }) {
+  const [active, setActive] = useState(false);
+  const timerRef = useRef<any>(null);
+
+  const startRoll = () => {
+    setActive(true);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      setActive(false);
+    }, 5000);
+  };
+
+  useEffect(() => {
+    const initTimer = setTimeout(() => startRoll(), 3500);
+    const interval = setInterval(() => {
+      startRoll();
+    }, 32000);
+    return () => {
+      clearTimeout(initTimer);
+      clearInterval(interval);
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
+
+  if (location.startsWith("/assistant") || location.startsWith("/cart")) return null;
+
+  const waHref = buildStoreWhatsAppHref(settings);
+
+  return (
+    <div
+      dir="rtl"
+      style={{
+        position: "fixed",
+        bottom: "82px",
+        left: "14px",
+        zIndex: 55,
+        display: "flex",
+        alignItems: "center",
+        pointerEvents: "none",
+        maxWidth: "calc(100vw - 28px)",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: "10px", pointerEvents: "auto" }}>
+        <a
+          href={waHref}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => {
+            if (!active) {
+              e.preventDefault();
+              startRoll();
+            }
+          }}
+          aria-label="تواصل معنا عبر واتساب"
+          style={{
+            width: "50px",
+            height: "50px",
+            minWidth: "50px",
+            borderRadius: "50%",
+            background: "linear-gradient(135deg, #25D366 0%, #128C7E 100%)",
+            color: "#fff",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            boxShadow: "0 6px 22px rgba(18,140,126,0.45)",
+            border: "2.5px solid #fff",
+            textDecoration: "none",
+            transform: active ? "translateX(calc(100vw - 92px)) rotate(720deg)" : "translateX(0px) rotate(0deg)",
+            transition: "transform 1.1s cubic-bezier(0.34, 1.25, 0.64, 1)",
+            cursor: "pointer",
+            order: 2,
+          }}
+        >
+          <WhatsAppSvg size={28} />
+        </a>
+
+        <a
+          href={waHref}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            order: 1,
+            background: "rgba(13, 56, 37, 0.96)",
+            backdropFilter: "blur(8px)",
+            color: "#fff",
+            padding: "9px 13px",
+            borderRadius: "16px",
+            border: "1px solid rgba(212, 175, 55, 0.6)",
+            boxShadow: "0 8px 24px rgba(0,0,0,0.28)",
+            fontSize: "11.5px",
+            lineHeight: "1.45",
+            fontWeight: 700,
+            textDecoration: "none",
+            maxWidth: "235px",
+            opacity: active ? 1 : 0,
+            transform: active ? "scale(1) translateX(0)" : "scale(0.7) translateX(-20px)",
+            pointerEvents: active ? "auto" : "none",
+            transition: "opacity 0.6s ease 0.3s, transform 0.6s cubic-bezier(0.34, 1.2, 0.64, 1) 0.3s",
+            display: "block",
+          }}
+        >
+          <span style={{ color: "#efd48f", display: "block", marginBottom: "2px", fontSize: "11px" }}>
+            💬 خدمة العملاء المباشرة:
+          </span>
+          إذا لم تجد شيء في المتجر أو لديك استفسار أو طلب، فتواصل معنا
+        </a>
+      </div>
+    </div>
+  );
+}
+
 function Header({ data, onSearch }: { data?: HomeData; onSearch: (text: string) => void }) {
   const { cart } = useStore();
   const { name } = useCustomer();
@@ -4165,5 +4276,5 @@ export default function Home() {
     if (location === "/assistant") return <AssistantPage />;
     return <HomePage data={data} onOpen={openProduct} onAiRecipe={setActiveAiProduct} />;
   }, [location, productId, productPath, data]);
-  return <div className="store-app" dir="rtl"><Header data={data} onSearch={text => navigate("/products" + (text ? "?search=" + encodeURIComponent(text) : ""))} />{!location.startsWith("/assistant") && !location.startsWith("/orders") && !location.startsWith("/account") && <GamifiedRewardBar settings={data.settings} location={location} />}{home.isError && !data.products?.length && !data.categories?.length && <div className="connection-strip"><span>الاتصال بالخدمة غير متاح مؤقتًا</span><button onClick={() => void home.refetch()}>إعادة المحاولة</button></div>}{home.isError && !data.products?.length && !data.categories?.length ? <main className="page-shell inner-page"><LoadError onRetry={() => void home.refetch()} /></main> : content}{!location.startsWith("/assistant") && <footer className="store-footer"><div className="footer-brand"><img src="/app-icon-192-v85.png" alt="ORIGINAL" className="brand-mark" style={{ borderRadius: "12px", objectFit: "cover", padding: 0, border: "1.5px solid #d4af37" }} /><span><b>ORIGINAL</b><small>{data.settings.storeName === "ORIGINAL – أورجنال" || !data.settings.storeName ? "أورجنال" : data.settings.storeName}</small></span></div>{shouldShowFooterDescription(data.settings.storeDescription) && <span>{data.settings.storeDescription}</span>}<small>© {new Date().getFullYear()} {data.settings.storeName || "ORIGINAL"}</small></footer>}{activeAiProduct && <AiRecipeModal product={activeAiProduct} onClose={() => setActiveAiProduct(null)} />}{!location.startsWith("/assistant") && !location.startsWith("/cart") && <a href={buildStoreWhatsAppHref(data?.settings)} target="_blank" rel="noopener noreferrer" aria-label="تواصل معنا عبر واتساب" style={{ position: "fixed", bottom: "84px", left: "16px", width: "48px", height: "48px", borderRadius: "50%", background: "linear-gradient(135deg, #25D366 0%, #128C7E 100%)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 6px 20px rgba(18,140,126,0.38)", zIndex: 45, border: "2px solid #fff", textDecoration: "none" }}><WhatsAppSvg size={26} /></a>}<BottomNav active={currentNav} /></div>;
+  return <div className="store-app" dir="rtl"><Header data={data} onSearch={text => navigate("/products" + (text ? "?search=" + encodeURIComponent(text) : ""))} />{!location.startsWith("/assistant") && !location.startsWith("/orders") && !location.startsWith("/account") && <GamifiedRewardBar settings={data.settings} location={location} />}{home.isError && !data.products?.length && !data.categories?.length && <div className="connection-strip"><span>الاتصال بالخدمة غير متاح مؤقتًا</span><button onClick={() => void home.refetch()}>إعادة المحاولة</button></div>}{home.isError && !data.products?.length && !data.categories?.length ? <main className="page-shell inner-page"><LoadError onRetry={() => void home.refetch()} /></main> : content}{!location.startsWith("/assistant") && <footer className="store-footer"><div className="footer-brand"><img src="/app-icon-192-v85.png" alt="ORIGINAL" className="brand-mark" style={{ borderRadius: "12px", objectFit: "cover", padding: 0, border: "1.5px solid #d4af37" }} /><span><b>ORIGINAL</b><small>{data.settings.storeName === "ORIGINAL – أورجنال" || !data.settings.storeName ? "أورجنال" : data.settings.storeName}</small></span></div>{shouldShowFooterDescription(data.settings.storeDescription) && <span>{data.settings.storeDescription}</span>}<small>© {new Date().getFullYear()} {data.settings.storeName || "ORIGINAL"}</small></footer>}{activeAiProduct && <AiRecipeModal product={activeAiProduct} onClose={() => setActiveAiProduct(null)} />}<RollingWhatsAppWidget settings={data?.settings} location={location} /><BottomNav active={currentNav} /></div>;
 }
