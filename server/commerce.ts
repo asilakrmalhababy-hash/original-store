@@ -938,6 +938,29 @@ async function refreshHomeCatalogCache() {
 (globalThis as any).__loadCatalogHome = refreshHomeCatalogCache;
 setTimeout(() => { void refreshHomeCatalogCache().catch(() => {}); }, 80);
 // --- FAST_IMG_HELPER_END ---
+function resolveServerVariantOption(product: any, itemName?: string): { price: number; unit: string; name: string } {
+  const rawDesc = String(product?.description || "");
+  const vm = rawDesc.match(/\[\[variants:([\s\S]*?)\]\]/);
+  const reqName = String(itemName || "").trim();
+  if (vm && reqName) {
+    try {
+      const arr = JSON.parse(vm[1]);
+      if (Array.isArray(arr)) {
+        for (const v of arr) {
+          const s = String(v || "").trim();
+          const m = s.match(/^(.+?)\s*[:=]\s*(\d+(?:\.\d+)?)\s*$/);
+          const vLabel = m ? m[1].trim() : s;
+          const vPrice = m && Number(m[2]) > 0 ? Math.round(Number(m[2])) : Number(product.price);
+          if (vLabel && (reqName.includes("(" + vLabel + ")") || reqName === vLabel || reqName.endsWith(vLabel))) {
+            return { price: vPrice, unit: m ? vLabel : product.unit, name: product.name + " (" + vLabel + ")" };
+          }
+        }
+      }
+    } catch {}
+  }
+  return { price: Number(product.price), unit: product.unit, name: reqName || product.name };
+}
+
 export const commerceRouter = router({
     access: publicProcedure.query(({ ctx }) => {
     const isAdminActive = ctx.user?.role === "admin" && !ctx.user.suspended;
@@ -1136,7 +1159,7 @@ export const commerceRouter = router({
         }
         if (item.quantity < product.minQuantity || (item.quantity - product.minQuantity) % product.quantityStep !== 0) throw new TRPCError({ code: "BAD_REQUEST", message: "الكمية المطلوبة من «" + product.name + "» لا توافق وحدة البيع." });
         if (product.stock !== null && product.stock < item.quantity) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "الكمية المتوفرة من «" + product.name + "» لا تكفي." });
-        return { productId: product.id, name: product.name, quantity: item.quantity, unit: product.unit, price: product.price, lineTotal: product.price * item.quantity };
+        const vOpt = resolveServerVariantOption(product, (item as any).name); return { productId: product.id, name: vOpt.name, quantity: item.quantity, unit: vOpt.unit, price: vOpt.price, lineTotal: vOpt.price * item.quantity };
       });
       const subtotal = lines.reduce((sum, line) => sum + line.lineTotal, 0);
       if (!Number.isSafeInteger(subtotal) || subtotal > 100000000000) throw new TRPCError({ code: "BAD_REQUEST", message: "إجمالي السلة يتجاوز الحد المسموح." });

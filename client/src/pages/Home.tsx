@@ -824,6 +824,15 @@ function formatWeightLabel(grams: number): string {
   return grams.toLocaleString("en-US") + " جرام";
 }
 
+function parseVariantOption(raw: string, fallbackPrice: number): { raw: string; label: string; price: number; hasPrice: boolean } {
+  const s = String(raw || "").trim();
+  const m = s.match(/^(.+?)\s*[:=]\s*(\d+(?:\.\d+)?)\s*$/);
+  if (m && Number(m[2]) > 0) {
+    return { raw: s, label: m[1].trim(), price: Math.round(Number(m[2])), hasPrice: true };
+  }
+  return { raw: s, label: s, price: fallbackPrice, hasPrice: false };
+}
+
 function VariantPickerModal({
   product,
   variants,
