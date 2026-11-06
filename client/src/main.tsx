@@ -5,13 +5,6 @@
 (globalThis as any).readLocalInstantCatalog = function readLocalInstantCatalog() {
   try {
     const k = "original-catalog-instant-v2";
-    if (typeof window !== "undefined" && (window as any).__INITIAL_CATALOG__) {
-      const ic = (window as any).__INITIAL_CATALOG__;
-      if (ic && Array.isArray(ic.products)) {
-        try { localStorage.setItem(k, JSON.stringify(ic)); } catch {}
-        return ic;
-      }
-    }
     const saved = typeof localStorage !== "undefined" ? localStorage.getItem(k) : null;
     if (saved) {
       const p = JSON.parse(saved);

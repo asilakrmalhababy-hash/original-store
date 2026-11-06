@@ -4099,7 +4099,9 @@ export default function Home() {
   useGuestPushSubscriptionSync();
   const [location, navigate] = useLocation();
   const [instantData, setInstantData] = useState<HomeData>(() => readLocalInstantCatalog());
-  const home = trpc.commerce.catalog.home.useQuery(undefined, { retry: 1, staleTime: 25000, refetchInterval: 30000, refetchOnMount: "always", refetchOnWindowFocus: true, placeholderData: instantData.products?.length ? instantData : undefined });
+  const initCat = useMemo(() => (globalThis as any).readLocalInstantCatalog ? (globalThis as any).readLocalInstantCatalog() : undefined, []);
+  const home = trpc.commerce.catalog.home.useQuery(undefined, { retry: 1, staleTime: 0, refetchOnMount: "always", refetchOnWindowFocus: true, refetchInterval: 4000, placeholderData: initCat?.products?.length ? initCat : undefined });
+  useEffect(() => { if (home.data && Array.isArray(home.data.categories)) { try { localStorage.setItem("original-catalog-instant-v2", JSON.stringify(home.data)); } catch {} } }, [home.data]);
   useEffect(() => {
     try {
       const w = window as any;
@@ -4122,7 +4124,7 @@ export default function Home() {
       try { (window as any).__INITIAL_CATALOG__ = home.data; localStorage.setItem(INSTANT_CACHE_KEY, JSON.stringify(home.data)); } catch {}
     }
   }, [home.data]);
-  const data = ((home.data && home.data.products ? home.data : instantData) ?? { categories: [], products: [], banners: [], offers: [], settings: {} }) as HomeData;
+  const data = (home.data ?? ((globalThis as any).readLocalInstantCatalog ? (globalThis as any).readLocalInstantCatalog() : { categories: [], products: [], banners: [], offers: [], settings: {} })) as HomeData;
   (globalThis as any).__CATALOG_LOADING__ = Boolean(home.isLoading && !data?.products?.length);
   const openProduct = (id: number) => {
     try {

@@ -74,9 +74,6 @@ export function serveStatic(app: Express) {
     return res.send(hit.buf);
   });
 
-  let lastHydratedTime = 0;
-  let cachedHydratedGzip: Buffer | null = null;
-  let cachedHydratedRaw = "";
   const sendFastIndex = (req: express.Request, res: express.Response) => {
     try {
       if (!cachedIndexRaw && fs.existsSync(indexPath)) {
@@ -84,22 +81,11 @@ export function serveStatic(app: Express) {
         cachedIndexGzip = zlib.gzipSync(Buffer.from(cachedIndexRaw), { level: zlib.constants.Z_BEST_SPEED });
       }
       if (cachedIndexRaw) {
-        const g = globalThis as any;
-        if (g.__fastHomeData && g.__fastHomeTime !== lastHydratedTime) {
-          const sj = JSON.stringify(g.__fastHomeData).replace(/</g, "\u003c").replace(/>/g, "\u003e");
-          if (sj.length < 250000) {
-            cachedHydratedRaw = cachedIndexRaw.replace("</head>", "<script>window.__INITIAL_CATALOG__=" + sj + ";</script></head>");
-            cachedHydratedGzip = zlib.gzipSync(Buffer.from(cachedHydratedRaw), { level: zlib.constants.Z_BEST_SPEED });
-            lastHydratedTime = g.__fastHomeTime || 1;
-          }
-        }
-        const rawOut = cachedHydratedRaw || cachedIndexRaw;
-        const gzOut = cachedHydratedGzip || cachedIndexGzip;
-        if (String(req.headers["accept-encoding"] || "").includes("gzip") && gzOut) {
-          res.status(200).set({ "Content-Type": "text/html; charset=utf-8", "Content-Encoding": "gzip", "Cache-Control": "no-cache", "Vary": "Accept-Encoding" }).send(gzOut);
+        if (String(req.headers["accept-encoding"] || "").includes("gzip") && cachedIndexGzip) {
+          res.status(200).set({ "Content-Type": "text/html; charset=utf-8", "Content-Encoding": "gzip", "Cache-Control": "no-store", "Vary": "Accept-Encoding" }).send(cachedIndexGzip);
           return;
         }
-        res.status(200).set({ "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" }).send(rawOut);
+        res.status(200).set({ "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" }).send(cachedIndexRaw);
         return;
       }
     } catch {}

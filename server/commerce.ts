@@ -123,8 +123,8 @@ function clearCatalogCache(removedProductId?: number) {
     if (removedProductId && g.__fastHomeData && Array.isArray(g.__fastHomeData.products)) {
       g.__fastHomeData.products = g.__fastHomeData.products.filter((p: any) => p.id !== removedProductId);
     }
-    g.__fastHomeTime = 0;
-    g.__fastHomeTime = 0;
+    g.__fastHomeData = null; g.__fastHomeTime = 0;
+    g.__fastHomeData = null; g.__fastHomeTime = 0;
     g.__catalogVer = Date.now();
     if (typeof g.__resetRefreshingPromise === "function") g.__resetRefreshingPromise();
     if (typeof g.__loadCatalogHome === "function") { setTimeout(() => { void g.__loadCatalogHome().catch(() => {}); }, 5); }
@@ -883,7 +883,7 @@ async function ensureTenBatchProductsSeeded() {
       });
       addedAny = true;
     }
-    if (addedAny) await clearCatalogCache();
+    if (addedAny) (globalThis as any).__fastHomeData = null; (globalThis as any).__fastHomeTime = 0; await clearCatalogCache();
   } catch {}
 }
 setTimeout(() => { void ensureTenBatchProductsSeeded(); }, 2000);
@@ -968,7 +968,7 @@ export const commerceRouter = router({
       const now = Date.now();
       const g = globalThis as any;
       if (g.__fastHomeData) {
-        if (now - (g.__fastHomeTime || 0) > 600000) {
+        if (now - (g.__fastHomeTime || 0) > 3000) {
           void refreshHomeCatalogCache().catch(() => {});
         }
         return g.__fastHomeData;
@@ -1951,7 +1951,7 @@ export const commerceRouter = router({
           : await db.select().from(products).orderBy(desc(products.updatedAt)).limit(10000);
         return rows.map(r => toFastImg("product", r));
       }),
-      create: requireAnyPermission(["products.manage", "products.add"]).use(async ({ next }) => { const res = await next(); await clearCatalogCache(); return res; }).input(productInput).mutation(async ({ ctx, input }) => {
+      create: requireAnyPermission(["products.manage", "products.add"]).use(async ({ next }) => { const res = await next(); (globalThis as any).__fastHomeData = null; (globalThis as any).__fastHomeTime = 0; await clearCatalogCache(); return res; }).input(productInput).mutation(async ({ ctx, input }) => {
         const allowedCats = (!ctx.user.isOwner && Array.isArray(ctx.user.allowedCategoryIds) && ctx.user.allowedCategoryIds.length > 0) ? ctx.user.allowedCategoryIds : null;
         if (allowedCats && (!input.categoryId || !allowedCats.includes(input.categoryId))) {
           throw new TRPCError({ code: "FORBIDDEN", message: "صلاحيتك مخصصة لإدارة أقسام محددة فقط؛ اختر قسماً ضمن صلاحياتك." });
@@ -1966,7 +1966,7 @@ export const commerceRouter = router({
         })();
         return { id: Number(result[0].insertId) };
       }),
-      update: requireAnyPermission(["products.manage", "products.edit", "inventory.manage"]).use(async ({ next }) => { const res = await next(); await clearCatalogCache(); return res; }).input(z.object({ id: safeId, values: productInput.partial() })).mutation(async ({ ctx, input }) => {
+      update: requireAnyPermission(["products.manage", "products.edit", "inventory.manage"]).use(async ({ next }) => { const res = await next(); (globalThis as any).__fastHomeData = null; (globalThis as any).__fastHomeTime = 0; await clearCatalogCache(); return res; }).input(z.object({ id: safeId, values: productInput.partial() })).mutation(async ({ ctx, input }) => {
         const canEditProduct = hasPermission(ctx.user.permissions, ctx.user.isOwner, "products.edit") || hasPermission(ctx.user.permissions, ctx.user.isOwner, "products.manage");
         if (!canEditProduct) {
           const allowedKeys = new Set(["price", "stock", "isAvailable", "minQuantity", "quantityStep"]);
@@ -1988,7 +1988,7 @@ export const commerceRouter = router({
         const cleanVals = { ...input.values }; if (typeof cleanVals.imageUrl === "string" && cleanVals.imageUrl.startsWith("/api/fast-img/")) delete cleanVals.imageUrl; (globalThis as any).__fastImgCache?.delete("product:" + input.id); await db.update(products).set(cleanVals).where(eq(products.id, input.id));
         return { success: true };
       }),
-      bulkAdjustPrices: requireAnyPermission(["products.manage", "products.edit", "inventory.manage"]).use(async ({ next }) => { const res = await next(); await clearCatalogCache(); return res; }).input(z.object({
+      bulkAdjustPrices: requireAnyPermission(["products.manage", "products.edit", "inventory.manage"]).use(async ({ next }) => { const res = await next(); (globalThis as any).__fastHomeData = null; (globalThis as any).__fastHomeTime = 0; await clearCatalogCache(); return res; }).input(z.object({
         categoryId: z.number().int().positive().nullable().optional(),
         mode: z.enum(["percent", "fixed"]),
         amount: z.number().min(-90).max(1000000),
@@ -2021,7 +2021,7 @@ export const commerceRouter = router({
         }
         return { updatedCount };
       }),
-      archive: requireAnyPermission(["products.manage", "products.edit", "products.delete"]).use(async ({ next }) => { const res = await next(); await clearCatalogCache(); return res; }).input(z.object({ id: safeId })).mutation(async ({ ctx, input }) => {
+      archive: requireAnyPermission(["products.manage", "products.edit", "products.delete"]).use(async ({ next }) => { const res = await next(); (globalThis as any).__fastHomeData = null; (globalThis as any).__fastHomeTime = 0; await clearCatalogCache(); return res; }).input(z.object({ id: safeId })).mutation(async ({ ctx, input }) => {
         const db = await database();
         const allowedCats = (!ctx.user.isOwner && Array.isArray(ctx.user.allowedCategoryIds) && ctx.user.allowedCategoryIds.length > 0) ? ctx.user.allowedCategoryIds : null;
         if (allowedCats) {
@@ -2033,7 +2033,7 @@ export const commerceRouter = router({
         return { success: true };
       }),
       // --- PRODUCT_DELETE_ENDPOINT ---
-      delete: requireAnyPermission(["products.manage", "products.delete"]).use(async ({ next }) => { const res = await next(); await clearCatalogCache(); return res; }).input(z.object({ id: safeId })).mutation(async ({ ctx, input }) => {
+      delete: requireAnyPermission(["products.manage", "products.delete"]).use(async ({ next }) => { const res = await next(); (globalThis as any).__fastHomeData = null; (globalThis as any).__fastHomeTime = 0; await clearCatalogCache(); return res; }).input(z.object({ id: safeId })).mutation(async ({ ctx, input }) => {
         const db = await database();
         const allowedCats = (!ctx.user.isOwner && Array.isArray(ctx.user.allowedCategoryIds) && ctx.user.allowedCategoryIds.length > 0) ? ctx.user.allowedCategoryIds : null;
         if (allowedCats) {
@@ -2099,7 +2099,7 @@ export const commerceRouter = router({
           return parseBulkProductsTextAI({ rawText: input.rawText, categories: catRows });
         }),
       bulkCreate: requireAnyPermission(["products.manage", "products.add"])
-        .use(async ({ next }) => { const res = await next(); await clearCatalogCache(); return res; })
+        .use(async ({ next }) => { const res = await next(); (globalThis as any).__fastHomeData = null; (globalThis as any).__fastHomeTime = 0; await clearCatalogCache(); return res; })
         .input(z.object({ items: z.array(productInput).min(1).max(60) }))
         .mutation(async ({ ctx, input }) => {
           const db = await database();
@@ -2303,7 +2303,7 @@ export const commerceRouter = router({
             g.__fastHomeData.settings[key] = stored;
           }
         }
-        await clearCatalogCache();
+        (globalThis as any).__fastHomeData = null; (globalThis as any).__fastHomeTime = 0; await clearCatalogCache();
         return { success: true };
       }),
     }),
@@ -2340,7 +2340,7 @@ export const commerceRouter = router({
         ]);
         return rows.map(order => ({ ...order, items: items.filter(item => item.orderId === order.id), events: events.filter(event => event.orderId === order.id) }));
       }),
-      removeItem: requirePermission("orders.manage").use(async ({ next }) => { const res = await next(); await clearCatalogCache(); return res; }).input(z.object({
+      removeItem: requirePermission("orders.manage").use(async ({ next }) => { const res = await next(); (globalThis as any).__fastHomeData = null; (globalThis as any).__fastHomeTime = 0; await clearCatalogCache(); return res; }).input(z.object({
         orderId: safeId,
         itemId: safeId,
         cancelQty: z.number().int().min(1).max(1000).optional(),
