@@ -72,6 +72,12 @@ function WhatsAppSvg({ size = 18 }: { size?: number }) {
 function RollingWhatsAppWidget({ settings, location }: { settings?: Record<string, string>; location: string }) {
   const [active, setActive] = useState(false);
   const timerRef = useRef<any>(null);
+  const widgetRef = useRef<HTMLDivElement | null>(null);
+
+  const stopRoll = () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setActive(false);
+  };
 
   const startRoll = () => {
     setActive(true);
@@ -93,18 +99,39 @@ function RollingWhatsAppWidget({ settings, location }: { settings?: Record<strin
     };
   }, []);
 
+  useEffect(() => {
+    if (!active) return;
+    const onUserInteract = (e: Event) => {
+      if (widgetRef.current && e.target instanceof Node && widgetRef.current.contains(e.target)) return;
+      stopRoll();
+    };
+    window.addEventListener("scroll", onUserInteract, { passive: true, capture: true });
+    window.addEventListener("touchstart", onUserInteract, { passive: true });
+    window.addEventListener("touchmove", onUserInteract, { passive: true });
+    window.addEventListener("mousedown", onUserInteract, { passive: true });
+    window.addEventListener("wheel", onUserInteract, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onUserInteract, { capture: true } as any);
+      window.removeEventListener("touchstart", onUserInteract);
+      window.removeEventListener("touchmove", onUserInteract);
+      window.removeEventListener("mousedown", onUserInteract);
+      window.removeEventListener("wheel", onUserInteract);
+    };
+  }, [active]);
+
   if (location.startsWith("/assistant") || location.startsWith("/cart")) return null;
 
   const waHref = buildStoreWhatsAppHref(settings);
-  const ease = "1.2s cubic-bezier(0.25, 1, 0.5, 1)";
+  const ease = "1.05s cubic-bezier(0.22, 1, 0.36, 1)";
 
   return (
     <div
-      dir="ltr"
+      ref={widgetRef}
+      dir="rtl"
       style={{
         position: "fixed",
         bottom: "82px",
-        left: "12px",
+        right: "12px",
         height: "58px",
         zIndex: 55,
         pointerEvents: "none",
@@ -119,7 +146,7 @@ function RollingWhatsAppWidget({ settings, location }: { settings?: Record<strin
         dir="rtl"
         style={{
           position: "absolute",
-          left: "0px",
+          right: "0px",
           width: "242px",
           background: "#ffffff",
           color: "#111827",
@@ -132,12 +159,13 @@ function RollingWhatsAppWidget({ settings, location }: { settings?: Record<strin
           fontWeight: 800,
           textDecoration: "none",
           boxSizing: "border-box",
-          clipPath: active ? "inset(-12px 0px -12px -12px)" : "inset(-12px 100% -12px -12px)",
-          WebkitClipPath: active ? "inset(-12px 0px -12px -12px)" : "inset(-12px 100% -12px -12px)",
+          clipPath: active ? "inset(-12px -12px -12px 0px)" : "inset(-12px -12px -12px 100%)",
+          WebkitClipPath: active ? "inset(-12px -12px -12px 0px)" : "inset(-12px -12px -12px 100%)",
           opacity: active ? 1 : 0,
           pointerEvents: active ? "auto" : "none",
-          transition: "clip-path " + ease + ", -webkit-clip-path " + ease + ", opacity 0.25s ease",
+          transition: "clip-path " + ease + ", -webkit-clip-path " + ease + ", opacity 0.2s ease",
           willChange: "clip-path",
+          backfaceVisibility: "hidden",
         }}
       >
         <span style={{ color: "#174b36", display: "block", marginBottom: "2px", fontSize: "11.5px", fontWeight: 900 }}>
@@ -161,7 +189,7 @@ function RollingWhatsAppWidget({ settings, location }: { settings?: Record<strin
         aria-label="تواصل معنا عبر واتساب"
         style={{
           position: "absolute",
-          left: "0px",
+          right: "0px",
           width: "52px",
           height: "52px",
           borderRadius: "50%",
@@ -174,9 +202,10 @@ function RollingWhatsAppWidget({ settings, location }: { settings?: Record<strin
           border: "2.5px solid #d4af37",
           textDecoration: "none",
           pointerEvents: "auto",
-          transform: active ? "translate3d(252px, 0, 0) rotate(720deg)" : "translate3d(0px, 0, 0) rotate(0deg)",
+          transform: active ? "translate3d(-252px, 0, 0) rotate(-720deg)" : "translate3d(0px, 0, 0) rotate(0deg)",
           transition: "transform " + ease,
           willChange: "transform",
+          backfaceVisibility: "hidden",
           cursor: "pointer",
         }}
       >
