@@ -3777,6 +3777,124 @@ function OrdersPanel() {
                     <strong style={{ fontSize: "12px", color: "#174b36" }}>🛒 أصناف الفاتورة المعتمدة ({order.items.length}):</strong>
                     {canModifyItems && <small style={{ fontSize: "11px", color: "#5c7365" }}>اضغط «إلغاء الصنف» لحذفه من الفاتورة وإبلاغ الزبون</small>}
                   </div>
+                  <div
+                    className="v104-order-controller"
+                    ref={el => {
+                      if (!el) return;
+                      const itemsBox = el.parentElement as HTMLElement | null;
+                      const orderCard = itemsBox?.parentElement as HTMLElement | null;
+                      const ordersList = orderCard?.parentElement as HTMLElement | null;
+                      if (!orderCard || !ordersList || orderCard.dataset.v104Ready === "1") return;
+                      orderCard.dataset.v104Ready = "1";
+                      orderCard.classList.add("v104-admin-order-card");
+                      ordersList.classList.add("v104-admin-orders-list");
+
+                      const kids = Array.from(orderCard.children) as HTMLElement[];
+                      kids.forEach((child, idx) => {
+                        const txt = child.textContent || "";
+                        const isTopHeader = idx === 0 || idx === 1;
+                        const isTotalRow = txt.indexOf("الإجمالي النهائي") !== -1 && txt.indexOf("أصناف الفاتورة") === -1;
+                        if (!isTopHeader && !isTotalRow) {
+                          child.classList.add("v104-detail-section");
+                        }
+                      });
+
+                      const backBar = document.createElement("div");
+                      backBar.className = "v104-back-bar";
+                      backBar.style.cssText = "margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1.5px solid #cfe0d7;";
+                      const backBtn = document.createElement("button");
+                      backBtn.type = "button";
+                      backBtn.innerHTML = "→ رجوع إلى قائمة جميع الطلبات";
+                      backBtn.style.cssText = "width: 100%; background: #0d3825; color: #d4af37; border: none; border-radius: 12px; padding: 11px 16px; font-weight: 800; font-size: 0.92rem; cursor: pointer; text-align: center;";
+                      backBtn.onclick = (ev) => {
+                        ev.stopPropagation();
+                        orderCard.classList.remove("v104-order-open");
+                        ordersList.classList.remove("v104-single-order-mode");
+                      };
+                      backBar.appendChild(backBtn);
+                      orderCard.insertBefore(backBar, orderCard.firstChild);
+
+                      const openBar = document.createElement("div");
+                      openBar.className = "v104-open-bar";
+                      openBar.style.cssText = "margin-top: 10px; padding-top: 10px; border-top: 1px solid #e2ece7; display: flex; justify-content: space-between; align-items: center;";
+                      const openBtn = document.createElement("button");
+                      openBtn.type = "button";
+                      openBtn.innerHTML = "تفاصيل الطلب وإدارة الفاتورة ‹";
+                      openBtn.style.cssText = "width: 100%; background: #eef8f3; color: #0d3825; border: 1.5px solid #0d3825; border-radius: 12px; padding: 10px 14px; font-weight: 800; font-size: 0.88rem; cursor: pointer; display: flex; justify-content: space-between; align-items: center;";
+                      openBtn.onclick = (ev) => {
+                        ev.stopPropagation();
+                        Array.from(ordersList.querySelectorAll(".v104-admin-order-card")).forEach(c => c.classList.remove("v104-order-open"));
+                        orderCard.classList.add("v104-order-open");
+                        ordersList.classList.add("v104-single-order-mode");
+                        window.scrollTo({ top: 0, behavior: "smooth" });
+                      };
+                      openBar.appendChild(openBtn);
+                      orderCard.appendChild(openBar);
+                    }}
+                  />
+                  <div className="v99-add-invoice-item" style={{ background: "#ffffff", border: "1.5px dashed #0d3825", borderRadius: "10px", padding: "10px", marginTop: "8px", marginBottom: "10px", width: "100%", boxSizing: "border-box" }}>
+                    <div style={{ fontSize: "0.82rem", fontWeight: 800, color: "#0d3825", marginBottom: "8px" }}>
+                      ➕ إضافة منتج أو صنف جديد للفاتورة (مع السعر وإشعار الزبون فوراً):
+                    </div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", alignItems: "center", width: "100%" }}>
+                      <input
+                        id={"v99-item-name-" + order.id}
+                        placeholder="اسم الصنف (مثال: جبن سالم)"
+                        style={{ flex: "1 1 100%", minWidth: "0", width: "100%", background: "#f8fbf9", color: "#0d3825", border: "1px solid #b6dec8", borderRadius: "8px", padding: "8px 10px", fontSize: "0.85rem", boxSizing: "border-box" }}
+                      />
+                      <input
+                        id={"v99-item-qty-" + order.id}
+                        type="number"
+                        defaultValue={1}
+                        min={1}
+                        placeholder="الكمية"
+                        style={{ flex: "1 1 70px", minWidth: "0", background: "#f8fbf9", color: "#0d3825", border: "1px solid #b6dec8", borderRadius: "8px", padding: "8px 6px", fontSize: "0.85rem", textAlign: "center", boxSizing: "border-box" }}
+                      />
+                      <input
+                        id={"v99-item-price-" + order.id}
+                        type="number"
+                        placeholder="السعر (ر.ي)"
+                        style={{ flex: "1 1 100px", minWidth: "0", background: "#f8fbf9", color: "#0d3825", border: "1px solid #b6dec8", borderRadius: "8px", padding: "8px 8px", fontSize: "0.85rem", boxSizing: "border-box" }}
+                      />
+                      <button
+                        type="button"
+                        style={{ flex: "1 1 100%", background: "#0d3825", color: "#d4af37", border: "none", borderRadius: "8px", padding: "9px 12px", fontSize: "0.85rem", fontWeight: 800, cursor: "pointer", textAlign: "center" }}
+                        onClick={async () => {
+                          const nEl = document.getElementById("v99-item-name-" + order.id) as HTMLInputElement | null;
+                          const qEl = document.getElementById("v99-item-qty-" + order.id) as HTMLInputElement | null;
+                          const pEl = document.getElementById("v99-item-price-" + order.id) as HTMLInputElement | null;
+                          const itemName = nEl?.value?.trim() || "";
+                          const qty = Number(qEl?.value || 1);
+                          const unitPrice = Number(pEl?.value || 0);
+                          if (!itemName || unitPrice <= 0) {
+                            alert("يرجى كتابة اسم الصنف وتحديد السعر بالريال");
+                            return;
+                          }
+                          try {
+                            const resp = await fetch("/api/admin/order-add-item", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ orderId: order.id, orderNumber: order.orderNumber, name: itemName, quantity: qty, unitPrice })
+                            });
+                            const data = await resp.json();
+                            if (data?.ok) {
+                              if (nEl) nEl.value = "";
+                              if (pEl) pEl.value = "";
+                              if (qEl) qEl.value = "1";
+                              alert("✅ " + (data.message || "تمت إضافة الصنف للفاتورة وتحديث الإجمالي بنجاح"));
+                              window.location.reload();
+                            } else {
+                              alert("تعذر إضافة الصنف: " + (data?.error || ""));
+                            }
+                          } catch (err) {
+                            alert("حدث خطأ أثناء الاتصال بالسيرفر");
+                          }
+                        }}
+                      >
+                        + إضافة الصنف للفاتورة وإشعار الزبون
+                      </button>
+                    </div>
+                  </div>
                   {order.items.map(item => {
                     const isEditingThisItem = cancellingItem?.orderId === order.id && cancellingItem?.itemId === item.id;
                     return (

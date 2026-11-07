@@ -27,6 +27,18 @@ import PWAInstall from "@/components/PWAInstall";
 import { buildMissingIngredientNote } from "@/lib/assistant-note";
 import { ensureBrowserPushSubscription, getExistingBrowserPushSubscription, getPushPermissionState, requestPushPermission } from "@/lib/pushNotifications";
 
+function extractVariantPriceV104(rawText: any, fallbackPrice: any): number {
+  const base = Number(fallbackPrice || 0);
+  if (!rawText) return base;
+  const str = String(rawText).trim();
+  const m = str.match(/:\s*(\d+(?:\.\d+)?)/);
+  if (m && m[1]) {
+    const p = parseFloat(m[1]);
+    if (!isNaN(p) && p > 0) return p;
+  }
+  return base;
+}
+
 const formatPrice = (amount: number) => `${Math.max(0, amount).toLocaleString("en-US")} ر.ي`;
 const stateLabels: Record<string, string> = { new: "جديد", preparing: "قيد التجهيز", ready: "جاهز للتوصيل", out_for_delivery: "خرج للتوصيل", delivered: "تم التسليم", cancelled: "ملغي" };
 
@@ -1014,7 +1026,7 @@ function VariantPickerModal({
           <ShoppingCart size={17} />
           {weightEnabled
             ? ("تأكيد الإضافة (" + formatPrice(finalAmount) + ")")
-            : ("إضافة إلى السلة (" + formatPrice(product.price * qty) + ")")}
+            : ("إضافة إلى السلة (" + formatPrice(extractVariantPriceV104(finalGrams, product?.price) * qty) + ")")}
         </button>
       </section>
     </div>
@@ -3894,7 +3906,7 @@ function AssistantPage() {
                         <div key={item.productId} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", padding: "6px 9px", borderRadius: "10px", background: "#ffffff", border: "1px solid #dfece4", fontSize: "11.5px", color: "#1e3f2f" }}>
                           <div>
                             <strong>{item.name}</strong>
-                            <small style={{ display: "block", color: "#5c7467", fontSize: "10.5px" }}>{item.quantity} × {formatPrice(item.price)} ({item.unit})</small>
+                            <small style={{ display: "block", color: "#5c7467", fontSize: "10.5px" }}>{item.quantity} × {formatPrice(extractVariantPriceV104(item?.name, item?.price))} ({item.unit})</small>
                           </div>
                           <button
                             type="button"

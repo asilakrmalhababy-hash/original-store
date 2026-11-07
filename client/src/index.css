@@ -2285,3 +2285,69 @@ button, a, .product-card, .category-card, .header-action, .header-cart, .account
 /* ZERO_BLANK_CARDS_V66 */
 html, body { overscroll-behavior-y: contain; -webkit-overflow-scrolling: touch; }
 .product-card, .category-tile, .product-visual, .product-title-button, .product-card-bottom { content-visibility: visible !important; contain: none !important; }
+
+
+/* v104: Mobile responsiveness, high-contrast colors, and 2-screen Admin Orders (like طلباتي) */
+:root, html, body, .admin-shell, .app-shell {
+  color-scheme: light only !important;
+  forced-color-adjust: none !important;
+}
+.admin-shell * {
+  forced-color-adjust: none !important;
+  box-sizing: border-box !important;
+}
+@media (max-width: 900px) {
+  .admin-shell, .admin-shell > div, .admin-shell main, .admin-shell section, .admin-shell article {
+    max-width: 100% !important;
+    min-width: 0 !important;
+    overflow-x: hidden !important;
+  }
+}
+.admin-shell div[style*="#0d3825"],
+.admin-shell div[style*="rgb(13, 56, 37)"],
+.admin-shell div[style*="linear-gradient"],
+.admin-shell label[style*="#0d3825"],
+.admin-shell label[style*="rgb(13, 56, 37)"],
+.admin-shell section[style*="#0d3825"],
+.admin-shell section[style*="linear-gradient"] {
+  background: #eef8f3 !important;
+  background-image: none !important;
+  color: #0d3825 !important;
+  border-color: #9dcab3 !important;
+}
+.admin-shell div[style*="#0d3825"] *:not(button),
+.admin-shell div[style*="linear-gradient"] *:not(button),
+.admin-shell label[style*="#0d3825"] *:not(button),
+.admin-shell section[style*="linear-gradient"] *:not(button) {
+  color: #0d3825 !important;
+}
+.admin-shell button[style*="#0d3825"],
+.admin-shell button.primary-button {
+  background: #0d3825 !important;
+  color: #d4af37 !important;
+}
+
+/* 2-Screen Admin Orders Flow (Compact List View -> Click -> Dedicated Single-Order Detail View) */
+.v104-admin-order-card {
+  background: #ffffff !important;
+  border: 1.5px solid #cfe0d7 !important;
+  border-radius: 16px !important;
+  padding: 14px !important;
+  margin-bottom: 12px !important;
+  box-shadow: 0 3px 10px rgba(13, 56, 37, 0.05) !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+}
+.v104-admin-order-card:not(.v104-order-open) .v104-detail-section {
+  display: none !important;
+}
+.v104-admin-order-card:not(.v104-order-open) .v104-back-bar {
+  display: none !important;
+}
+.v104-admin-order-card.v104-order-open .v104-open-bar {
+  display: none !important;
+}
+.v104-admin-orders-list.v104-single-order-mode > .v104-admin-order-card:not(.v104-order-open) {
+  display: none !important;
+}

@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="ar" dir="rtl">
   <head>
+    <meta name="color-scheme" content="light only" />
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#174b36" />
@@ -40,5 +41,74 @@
       </div>
     </div>
     <script type="module" src="/src/main.tsx"></script>
+  
+    <script>
+      (function() {
+        function syncVariantModalPrice() {
+          try {
+            var buttons = Array.from(document.querySelectorAll("button"));
+            var addBtn = buttons.find(function(b) {
+              return b.textContent && b.textContent.indexOf("إضافة إلى السلة") !== -1;
+            });
+            if (!addBtn) return;
+            var modal = addBtn.closest("div[style*='border-radius'], .modal-card, .dialog, [role='dialog']") || addBtn.parentElement;
+            if (!modal) return;
+            var modalButtons = Array.from(modal.querySelectorAll("button"));
+            var selectedOptBtn = modalButtons.find(function(b) {
+              if (b === addBtn) return false;
+              var txt = (b.textContent || "").trim();
+              if (txt.indexOf(":") === -1) return false;
+              var bg = window.getComputedStyle(b).backgroundColor || "";
+              var cls = b.className || "";
+              return cls.indexOf("selected") !== -1 || cls.indexOf("active") !== -1 || (bg && bg !== "rgb(255, 255, 255)" && bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent");
+            });
+            if (!selectedOptBtn) return;
+            var rawTxt = (selectedOptBtn.textContent || "").trim();
+            var m = rawTxt.match(/:\s*(\d+(?:\.\d+)?)/);
+            if (!m || !m[1]) return;
+            var unitPrice = parseFloat(m[1]);
+            if (isNaN(unitPrice) || unitPrice <= 0) return;
+
+            var qty = 1;
+            var spans = Array.from(modal.querySelectorAll("span, div, strong"));
+            for (var i = 0; i < spans.length; i++) {
+              var st = (spans[i].textContent || "").trim();
+              if (/^\d+$/.test(st) && spans[i].children.length === 0) {
+                var val = parseInt(st, 10);
+                if (val >= 1 && val <= 999) {
+                  qty = val;
+                  break;
+                }
+              }
+            }
+            var totalPrice = Math.round(unitPrice * qty);
+
+            spans.forEach(function(el) {
+              if (el.children.length === 0 && el.textContent && el.textContent.indexOf("ر.ي") !== -1 && el.textContent.indexOf("إضافة") === -1) {
+                var newLabel = el.textContent.replace(/\d[\d,.]*\s*(?=ر\.ي)/, unitPrice.toLocaleString("en-US") + " ");
+                if (el.textContent !== newLabel) el.textContent = newLabel;
+              }
+            });
+
+            var walker = document.createTreeWalker(addBtn, NodeFilter.SHOW_TEXT, null);
+            var node;
+            while ((node = walker.nextNode())) {
+              if (node.nodeValue && node.nodeValue.indexOf("إضافة إلى السلة") !== -1) {
+                var updated = "إضافة إلى السلة (" + totalPrice.toLocaleString("en-US") + " ر.ي)";
+                if (node.nodeValue.trim() !== updated) {
+                  node.nodeValue = " " + updated + " ";
+                }
+              }
+            }
+          } catch (e) {}
+        }
+        document.addEventListener("click", function() {
+          setTimeout(syncVariantModalPrice, 10);
+          setTimeout(syncVariantModalPrice, 60);
+        }, true);
+        setInterval(syncVariantModalPrice, 250);
+      })();
+    </script>
+
   </body>
 </html>
