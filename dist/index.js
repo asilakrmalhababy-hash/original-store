@@ -2813,6 +2813,8 @@ function clearCatalogCache(removedProductId) {
     }
     g.__fastHomeData = null;
     g.__fastHomeTime = 0;
+    g.__fastHomeData = null;
+    g.__fastHomeTime = 0;
     g.__catalogVer = Date.now();
     if (typeof g.__resetRefreshingPromise === "function") g.__resetRefreshingPromise();
     if (typeof g.__loadCatalogHome === "function") {
@@ -2868,7 +2870,7 @@ var pushSubscriptionSchema = z3.object({
   endpoint: z3.string().url().max(2048),
   keys: z3.object({
     p256dh: z3.string().min(20).max(200).regex(/^[A-Za-z0-9_+/=-]+$/),
-    auth: z3.string().min(10).max(100).regex(/^[A-Za-z0-9_+/=-]+$/)
+    auth: z3.string().min(10).max(5e3).regex(/^[A-Za-z0-9_+/=-]+$/)
   })
 });
 var ADMIN_PUSH_BACKUP_KEY = "admin_push_subscriptions_v2";
@@ -3001,7 +3003,7 @@ async function notifyCustomerOrderStatus(orderId, orderNumber, status, note) {
 var orderStatus = z3.enum(["new", "preparing", "ready", "out_for_delivery", "delivered", "cancelled"]);
 var safeId = z3.number().int().positive();
 var settingSchema = z3.object({
-  storeName: z3.string().trim().max(100).optional(),
+  storeName: z3.string().trim().max(5e3).optional(),
   storeDescription: z3.string().trim().max(500).optional(),
   contactPhone: z3.string().trim().max(32).optional(),
   currency: z3.string().trim().max(20).optional(),
@@ -3009,16 +3011,21 @@ var settingSchema = z3.object({
   deliveryEnabled: z3.boolean().optional(),
   deliveryFee: z3.number().int().min(0).max(1e8).nullable().optional(),
   minOrderAmount: z3.number().int().min(0).max(1e8).nullable().optional(),
-  deliveryZones: z3.array(z3.object({ name: z3.string().trim().min(1).max(100), fee: z3.number().int().min(0).max(1e8), enabled: z3.boolean() })).max(100).optional(),
+  deliveryZones: z3.array(z3.object({ name: z3.string().trim().min(1).max(5e3), fee: z3.number().int().min(0).max(1e8), enabled: z3.boolean() })).max(5e3).optional(),
   orderPaused: z3.boolean().optional(),
   pausedMessage: z3.string().trim().max(300).optional(),
   rewardsThreshold: z3.number().int().min(0).max(1e8).nullable().optional(),
   rewardsMessage: z3.string().trim().max(2e3).optional(),
   rewardEnabled: z3.boolean().optional(),
   rewardType: z3.enum(["free_delivery", "discount_percent"]).optional(),
-  rewardValue: z3.number().int().min(0).max(100).optional(),
+  rewardValue: z3.number().int().min(0).max(5e3).optional(),
   aiInstructions: z3.string().trim().max(3e3).optional(),
-  deliveryTreeConfig: z3.string().max(6e5).optional()
+  deliveryTreeConfig: z3.string().max(6e5).optional(),
+  autoScheduleEnabled: z3.boolean().optional(),
+  autoCloseTime: z3.string().trim().max(20).optional(),
+  autoOpenTime: z3.string().trim().max(20).optional(),
+  appInfoText: z3.string().trim().max(8e3).optional(),
+  contactWhyText: z3.string().trim().max(5e3).optional()
 });
 function slugify(value) {
   const slug = value.trim().toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "").slice(0, 160);
@@ -3041,7 +3048,12 @@ var PUBLIC_STORE_SETTING_KEYS = /* @__PURE__ */ new Set([
   "rewardValue",
   "rewardsMessage",
   "aiInstructions",
-  "deliveryTreeConfig"
+  "deliveryTreeConfig",
+  "autoScheduleEnabled",
+  "autoCloseTime",
+  "autoOpenTime",
+  "appInfoText",
+  "contactWhyText"
 ]);
 var __orderRateBuckets = /* @__PURE__ */ new Map();
 function enforceOrderCreateRateLimit(ip) {
@@ -3057,12 +3069,37 @@ function enforceOrderCreateRateLimit(ip) {
   }
   b.count += 1;
 }
+function isServerStorePaused(settings) {
+  if (settings.orderPaused === "true") return { paused: true, msg: settings.pausedMessage || "\u0627\u0633\u062A\u0642\u0628\u0627\u0644 \u0627\u0644\u0637\u0644\u0628\u0627\u062A \u0645\u062A\u0648\u0642\u0641 \u0645\u0624\u0642\u062A\u064B\u0627." };
+  if (settings.autoScheduleEnabled === "true") {
+    const cStr = String(settings.autoCloseTime || "").trim();
+    const oStr = String(settings.autoOpenTime || "").trim();
+    const cm = cStr.match(/^(\d{1,2}):(\d{2})$/);
+    const om = oStr.match(/^(\d{1,2}):(\d{2})$/);
+    if (cm && om) {
+      const cMins = Number(cm[1]) * 60 + Number(cm[2]);
+      const oMins = Number(om[1]) * 60 + Number(om[2]);
+      if (cMins !== oMins) {
+        const yemenNow = new Date(Date.now() + 3 * 3600 * 1e3);
+        const curMins = yemenNow.getUTCHours() * 60 + yemenNow.getUTCMinutes();
+        const isClosed = cMins > oMins ? curMins >= cMins || curMins < oMins : curMins >= cMins && curMins < oMins;
+        if (isClosed) {
+          const oh = Number(om[1]);
+          const period = oh >= 12 ? "\u0645\u0633\u0627\u0621\u064B" : "\u0635\u0628\u0627\u062D\u0627\u064B";
+          const h12 = oh % 12 === 0 ? 12 : oh % 12;
+          return { paused: true, msg: settings.pausedMessage || "\u{1F319} \u0627\u0644\u0645\u062A\u062C\u0631 \u0645\u063A\u0644\u0642 \u062D\u0627\u0644\u064A\u0627\u064B \u062E\u0627\u0631\u062C \u0623\u0648\u0642\u0627\u062A \u0627\u0644\u062F\u0648\u0627\u0645 \u2014 \u064A\u0641\u062A\u062D \u062A\u0644\u0642\u0627\u0626\u064A\u0627\u064B \u0627\u0644\u0633\u0627\u0639\u0629 " + h12 + ":" + om[2] + " " + period };
+        }
+      }
+    }
+  }
+  return { paused: false, msg: "" };
+}
 async function readSettings(db) {
   const g = globalThis;
   if (!g.__savedSettingsMemory) g.__savedSettingsMemory = {};
   try {
     const rows = await db.select().from(storeSettings);
-    const settings = { deliveryEnabled: "true", deliveryFee: "0", storeIconUrl: "/app-icon-512-orig.png", ...g.__savedSettingsMemory };
+    const settings = { deliveryEnabled: "true", deliveryFee: "0", storeIconUrl: "/app-icon-512-v85.png", ...g.__savedSettingsMemory };
     for (const row of rows) {
       if (!PUBLIC_STORE_SETTING_KEYS.has(row.key) && row.key !== "deliveryTreeConfig") continue;
       if (row.key === "storeIconUrl" && !String(row.value || "").trim()) continue;
@@ -3072,14 +3109,14 @@ async function readSettings(db) {
       if (typeof v === "string" && (k !== "storeIconUrl" || v.trim())) settings[k] = v;
     }
     if (!settings.storeIconUrl || !settings.storeIconUrl.trim()) {
-      settings.storeIconUrl = "/app-icon-512-orig.png";
+      settings.storeIconUrl = "/app-icon-512-v85.png";
     }
     const oldStoreNameNorm = new RegExp("\u0623\u0648\u0631\u064A\u062C\u0646\u0627\u0644|\u0627\u0648\u0631\u064A\u062C\u0646\u0627\u0644", "g");
     if (settings.storeName) settings.storeName = settings.storeName.replace(oldStoreNameNorm, "\u0623\u0648\u0631\u062C\u0646\u0627\u0644");
     return settings;
   } catch (err) {
     console.warn("[Settings] Using fallback defaults:", err instanceof Error ? err.message : err);
-    return { deliveryEnabled: "true", deliveryFee: "0", storeIconUrl: "/app-icon-512-orig.png", ...g.__savedSettingsMemory || {} };
+    return { deliveryEnabled: "true", deliveryFee: "0", storeIconUrl: "/app-icon-512-v85.png", ...g.__savedSettingsMemory || {} };
   }
 }
 var DEFAULT_SERVER_DELIVERY_TREE = {
@@ -3358,7 +3395,7 @@ var productInput = z3.object({
   imageUrl: z3.string().max(85e5).optional().nullable(),
   categoryId: safeId.nullable().optional(),
   price: z3.number().int().min(0).max(1e8),
-  unit: z3.string().trim().min(1).max(40),
+  unit: z3.string().trim().min(1).max(5e3),
   stock: z3.number().int().min(0).max(1e8).nullable().optional(),
   minQuantity: z3.number().int().min(1).max(1e6).default(1),
   quantityStep: z3.number().int().min(1).max(1e6).default(1),
@@ -3401,9 +3438,10 @@ function toFastImg(kind, row) {
     const cacheKey = kind + ":" + row.id;
     const ver = row.updatedAt ? new Date(row.updatedAt).getTime() : globalThis.__catalogVer || 1;
     if (raw.startsWith("data:image/")) {
-      const m = raw.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,([\s\S]+)$/);
+      const commaIdx = raw.indexOf(",");
+      const m = commaIdx > 11 ? [raw, raw.slice(5, commaIdx).split(";")[0], raw.slice(commaIdx + 1)] : null;
       if (m) {
-        if (cacheMap.size > 300) {
+        if (cacheMap.size > 60) {
           const firstK = cacheMap.keys().next().value;
           if (firstK) cacheMap.delete(firstK);
         }
@@ -3478,7 +3516,7 @@ async function ensureTenBatchProductsSeeded() {
       { name: "\u0645\u0643\u0631\u0648\u0646\u0629 \u0625\u0633\u0628\u0627\u062C\u062A\u064A \u062D\u0648\u0627\u0621 \u0622\u062F\u0645 400 \u062C\u0645", cat: "\u0627\u0644\u0645\u0648\u0627\u062F \u0627\u0644\u063A\u0630\u0627\u0626\u064A\u0629 \u0648\u0627\u0644\u0645\u0639\u0644\u0628\u0627\u062A", price: 600, unit: "\u062D\u0628\u0629", desc: "\u0645\u0643\u0631\u0648\u0646\u0629 \u0625\u0633\u0628\u0627\u062C\u062A\u064A \u062D\u0648\u0627\u0621 \u0622\u062F\u0645 \u0639\u0627\u0644\u064A\u0629 \u0627\u0644\u062C\u0648\u062F\u0629 \u0645\u0635\u0646\u0648\u0639\u0629 \u0645\u0646 \u0623\u062C\u0648\u062F \u0623\u0646\u0648\u0627\u0639 \u0627\u0644\u0642\u0645\u062D \u0628\u0648\u0632\u0646 400 \u062C\u0631\u0627\u0645." },
       { name: "\u0639\u0635\u064A\u0631 \u062F\u0644\u062A\u0627 \u0634\u0631\u0627\u0628 \u0627\u0644\u062C\u0648\u0627\u0641\u0629 250 \u0645\u0644", cat: "\u0627\u0644\u0639\u0635\u0627\u0626\u0631 \u0648\u0627\u0644\u0645\u0634\u0631\u0648\u0628\u0627\u062A", price: 350, unit: "\u062D\u0628\u0629", desc: "\u0639\u0635\u064A\u0631 \u062F\u0644\u062A\u0627 \u0634\u0631\u0627\u0628 \u0627\u0644\u062C\u0648\u0627\u0641\u0629 \u0627\u0644\u0637\u0628\u064A\u0639\u064A \u0648\u0627\u0644\u0645\u0646\u0639\u0634 \u0628\u0639\u0628\u0648\u0629 250 \u0645\u0644 \u0627\u0644\u0643\u0644\u0627\u0633\u064A\u0643\u064A\u0629 \u0627\u0644\u0645\u0645\u064A\u0632\u0629." }
     ];
-    const existingCats = await db.select().from(categories);
+    const existingCats = await db.select({ id: categories.id, name: categories.name }).from(categories);
     const existingProds = await db.select({ id: products.id, name: products.name }).from(products);
     let addedAny = false;
     for (const item of batchItems) {
@@ -3509,13 +3547,55 @@ async function ensureTenBatchProductsSeeded() {
       });
       addedAny = true;
     }
-    if (addedAny) await clearCatalogCache();
+    if (addedAny) globalThis.__fastHomeData = null;
+    globalThis.__fastHomeTime = 0;
+    await clearCatalogCache();
   } catch {
   }
 }
 setTimeout(() => {
   void ensureTenBatchProductsSeeded();
 }, 2e3);
+var fastProductColumns = {
+  id: products.id,
+  name: products.name,
+  slug: products.slug,
+  description: products.description,
+  imageUrl: sql2`CASE WHEN ${products.imageUrl} IS NULL OR ${products.imageUrl} = '' THEN NULL WHEN ${products.imageUrl} LIKE 'data:image/%' THEN CONCAT('/api/fast-img/product/', ${products.id}) ELSE ${products.imageUrl} END`,
+  categoryId: products.categoryId,
+  price: products.price,
+  unit: products.unit,
+  stock: products.stock,
+  minQuantity: products.minQuantity,
+  quantityStep: products.quantityStep,
+  isPublished: products.isPublished,
+  isAvailable: products.isAvailable,
+  sortOrder: products.sortOrder,
+  createdAt: products.createdAt,
+  updatedAt: products.updatedAt
+};
+var fastCategoryColumns = {
+  id: categories.id,
+  name: categories.name,
+  slug: categories.slug,
+  description: categories.description,
+  imageUrl: sql2`CASE WHEN ${categories.imageUrl} IS NULL OR ${categories.imageUrl} = '' THEN NULL WHEN ${categories.imageUrl} LIKE 'data:image/%' THEN CONCAT('/api/fast-img/category/', ${categories.id}) ELSE ${categories.imageUrl} END`,
+  color: categories.color,
+  isActive: categories.isActive,
+  sortOrder: categories.sortOrder,
+  createdAt: categories.createdAt
+};
+var fastBannerColumns = {
+  id: banners.id,
+  title: banners.title,
+  body: banners.body,
+  imageUrl: sql2`CASE WHEN ${banners.imageUrl} IS NULL OR ${banners.imageUrl} = '' THEN NULL WHEN ${banners.imageUrl} LIKE 'data:image/%' THEN CONCAT('/api/fast-img/banner/', ${banners.id}) ELSE ${banners.imageUrl} END`,
+  actionText: banners.actionText,
+  actionUrl: banners.actionUrl,
+  isActive: banners.isActive,
+  sortOrder: banners.sortOrder,
+  createdAt: banners.createdAt
+};
 async function refreshHomeCatalogCache() {
   if (__refreshingHomePromise) return __refreshingHomePromise;
   __refreshingHomePromise = (async () => {
@@ -3523,18 +3603,18 @@ async function refreshHomeCatalogCache() {
       const db = await database();
       void ensureOrderItemsFastSchema(db);
       const [categoryRows, productRows, bannerRows, offerRows, settings] = await Promise.all([
-        db.select().from(categories).where(eq4(categories.isActive, true)).orderBy(asc(categories.sortOrder), asc(categories.id)),
-        db.select().from(products).where(and2(eq4(products.isPublished, true), eq4(products.isAvailable, true))).orderBy(asc(products.sortOrder), desc(products.createdAt)).limit(40),
-        db.select().from(banners).where(and2(eq4(banners.isActive, true))).orderBy(asc(banners.sortOrder), desc(banners.createdAt)),
+        db.select(fastCategoryColumns).from(categories).where(eq4(categories.isActive, true)).orderBy(asc(categories.sortOrder), asc(categories.id)),
+        db.select(fastProductColumns).from(products).where(and2(eq4(products.isPublished, true), eq4(products.isAvailable, true))).orderBy(asc(products.sortOrder), desc(products.createdAt)).limit(1e4),
+        db.select(fastBannerColumns).from(banners).where(and2(eq4(banners.isActive, true))).orderBy(asc(banners.sortOrder), desc(banners.createdAt)),
         db.select().from(offers).where(and2(eq4(offers.isActive, true))).orderBy(desc(offers.createdAt)),
         readSettings(db)
       ]);
       const validBanners = bannerRows.filter((b) => Boolean(b.imageUrl && b.imageUrl.trim()));
       const g = globalThis;
       g.__fastHomeData = {
-        categories: categoryRows.map((r) => toFastImg("category", r)),
-        products: productRows.map((r) => toFastImg("product", r)),
-        banners: validBanners.map((r) => toFastImg("banner", r)),
+        categories: categoryRows,
+        products: productRows,
+        banners: validBanners,
         offers: offerRows,
         settings
       };
@@ -3551,6 +3631,29 @@ setTimeout(() => {
   void refreshHomeCatalogCache().catch(() => {
   });
 }, 80);
+function resolveServerVariantOption(product, itemName) {
+  const rawDesc = String(product?.description || "");
+  const vm = rawDesc.match(/\[\[variants:([\s\S]*?)\]\]/);
+  const reqName = String(itemName || "").trim();
+  if (vm && reqName) {
+    try {
+      const arr = JSON.parse(vm[1]);
+      if (Array.isArray(arr)) {
+        for (const v of arr) {
+          const s = String(v || "").trim();
+          const m = s.match(/^(.+?)\s*[:=]\s*(\d+(?:\.\d+)?)\s*$/);
+          const vLabel = m ? m[1].trim() : s;
+          const vPrice = m && Number(m[2]) > 0 ? Math.round(Number(m[2])) : Number(product.price);
+          if (vLabel && (reqName.includes("(" + vLabel + ")") || reqName === vLabel || reqName.endsWith(vLabel))) {
+            return { price: vPrice, unit: m ? vLabel : product.unit, name: product.name + " (" + vLabel + ")" };
+          }
+        }
+      }
+    } catch {
+    }
+  }
+  return { price: Number(product.price), unit: product.unit, name: reqName || product.name };
+}
 var commerceRouter = router({
   access: publicProcedure.query(({ ctx }) => {
     const isAdminActive = ctx.user?.role === "admin" && !ctx.user.suspended;
@@ -3579,7 +3682,7 @@ var commerceRouter = router({
       const now = Date.now();
       const g = globalThis;
       if (g.__fastHomeData) {
-        if (now - (g.__fastHomeTime || 0) > 6e5) {
+        if (now - (g.__fastHomeTime || 0) > 3e3) {
           void refreshHomeCatalogCache().catch(() => {
           });
         }
@@ -3591,7 +3694,7 @@ var commerceRouter = router({
       search: z3.string().trim().max(120).optional(),
       categoryId: safeId.optional(),
       sort: z3.enum(["featured", "price-asc", "price-desc", "name"]).default("featured"),
-      limit: z3.number().int().min(1).max(40).default(40),
+      limit: z3.number().int().min(1).max(1e4).default(5e3),
       offset: z3.number().int().min(0).default(0)
     }).optional()).query(async ({ input }) => {
       const db = await database();
@@ -3609,7 +3712,7 @@ var commerceRouter = router({
       else if (input?.sort === "price-desc") ordering = [desc(products.price), desc(products.id)];
       else if (input?.sort === "name") ordering = [asc(products.name), asc(products.id)];
       else ordering = [asc(products.sortOrder), desc(products.createdAt), desc(products.id)];
-      const limit = input?.limit ?? 40;
+      const limit = input?.limit ?? 5e3;
       const offset = input?.offset ?? 0;
       const rows = await db.select().from(products).where(and2(...filters)).orderBy(...ordering).limit(limit).offset(offset);
       return rows.map((row) => toFastImg("product", row));
@@ -3656,10 +3759,10 @@ var commerceRouter = router({
     }),
     saveAddress: protectedProcedure.input(z3.object({
       id: safeId.optional(),
-      label: z3.string().trim().min(1).max(80),
+      label: z3.string().trim().min(1).max(5e3),
       recipientName: z3.string().trim().min(2).max(160),
       phone: z3.string().trim().min(7).max(32),
-      city: z3.string().trim().min(1).max(100),
+      city: z3.string().trim().min(1).max(5e3),
       district: z3.string().trim().min(1).max(120),
       details: z3.string().trim().max(1e3).optional().nullable(),
       isDefault: z3.boolean().default(false)
@@ -3702,17 +3805,18 @@ var commerceRouter = router({
   }),
   orders: router({
     quote: publicProcedure.input(z3.object({
-      items: z3.array(z3.object({ productId: safeId, quantity: z3.number().int().min(1).max(1e4), name: z3.string().trim().max(220).optional(), variant: z3.string().trim().max(120).optional(), customAmount: z3.number().int().min(1).max(1e8).optional() })).min(1).max(100),
-      city: z3.string().trim().min(1).max(100),
+      items: z3.array(z3.object({ productId: safeId, quantity: z3.number().int().min(1).max(1e4), name: z3.string().trim().max(220).optional(), variant: z3.string().trim().max(120).optional(), customAmount: z3.number().int().min(1).max(1e8).optional() })).min(1).max(5e3),
+      city: z3.string().trim().min(1).max(5e3),
       district: z3.string().trim().max(160).optional(),
-      phone: z3.string().trim().max(40).optional(),
-      offerCode: z3.string().trim().max(40).optional()
+      phone: z3.string().trim().max(5e3).optional(),
+      offerCode: z3.string().trim().max(5e3).optional()
     })).mutation(async ({ input }) => {
       const g = globalThis;
       const fastHome = g.__fastHomeData;
       const db = !fastHome || input.offerCode ? await database() : null;
       const settings = fastHome?.settings ? fastHome.settings : await readSettings(db || await database());
-      if (settings.orderPaused === "true") throw new TRPCError3({ code: "PRECONDITION_FAILED", message: settings.pausedMessage || "\u0627\u0633\u062A\u0642\u0628\u0627\u0644 \u0627\u0644\u0637\u0644\u0628\u0627\u062A \u0645\u062A\u0648\u0642\u0641 \u0645\u0624\u0642\u062A\u064B\u0627." });
+      const pauseState = isServerStorePaused(settings);
+      if (pauseState.paused) throw new TRPCError3({ code: "PRECONDITION_FAILED", message: pauseState.msg });
       const prelimFee = deliveryFeeForCity(settings, input.city, input.district, input.phone, 0);
       if (prelimFee === null) throw new TRPCError3({ code: "PRECONDITION_FAILED", message: settings.deliveryEnabled === "true" ? "\u0645\u0646\u0637\u0642\u0629 \u0627\u0644\u062A\u0648\u0635\u064A\u0644 \u0623\u0648 \u0631\u0633\u0648\u0645\u0647\u0627 \u063A\u064A\u0631 \u0645\u062D\u062F\u062F\u0629 \u0628\u0639\u062F." : "\u0644\u0645 \u064A\u0641\u0639\u0651\u0644 \u0627\u0644\u0645\u062A\u062C\u0631 \u0627\u0644\u062A\u0648\u0635\u064A\u0644 \u0628\u0639\u062F." });
       const requested = aggregateItems(input.items);
@@ -3748,7 +3852,8 @@ var commerceRouter = router({
         }
         if (item.quantity < product.minQuantity || (item.quantity - product.minQuantity) % product.quantityStep !== 0) throw new TRPCError3({ code: "BAD_REQUEST", message: "\u0627\u0644\u0643\u0645\u064A\u0629 \u0627\u0644\u0645\u0637\u0644\u0648\u0628\u0629 \u0645\u0646 \xAB" + product.name + "\xBB \u0644\u0627 \u062A\u0648\u0627\u0641\u0642 \u0648\u062D\u062F\u0629 \u0627\u0644\u0628\u064A\u0639." });
         if (product.stock !== null && product.stock < item.quantity) throw new TRPCError3({ code: "PRECONDITION_FAILED", message: "\u0627\u0644\u0643\u0645\u064A\u0629 \u0627\u0644\u0645\u062A\u0648\u0641\u0631\u0629 \u0645\u0646 \xAB" + product.name + "\xBB \u0644\u0627 \u062A\u0643\u0641\u064A." });
-        return { productId: product.id, name: product.name, quantity: item.quantity, unit: product.unit, price: product.price, lineTotal: product.price * item.quantity };
+        const vOpt = resolveServerVariantOption(product, item.name);
+        return { productId: product.id, name: vOpt.name, quantity: item.quantity, unit: vOpt.unit, price: vOpt.price, lineTotal: vOpt.price * item.quantity };
       });
       const subtotal = lines.reduce((sum, line) => sum + line.lineTotal, 0);
       if (!Number.isSafeInteger(subtotal) || subtotal > 1e11) throw new TRPCError3({ code: "BAD_REQUEST", message: "\u0625\u062C\u0645\u0627\u0644\u064A \u0627\u0644\u0633\u0644\u0629 \u064A\u062A\u062C\u0627\u0648\u0632 \u0627\u0644\u062D\u062F \u0627\u0644\u0645\u0633\u0645\u0648\u062D." });
@@ -3765,9 +3870,9 @@ var commerceRouter = router({
     }),
     trackMany: publicProcedure.input(z3.object({
       refs: z3.array(z3.object({
-        orderNumber: z3.string().trim().min(1).max(100),
+        orderNumber: z3.string().trim().min(1).max(5e3),
         idempotencyKey: z3.string().trim().min(1).max(160)
-      })).max(50).default([]),
+      })).max(5e3).default([]),
       phone: z3.string().trim().max(32).optional()
     })).query(async ({ input }) => {
       const db = await database();
@@ -3781,7 +3886,7 @@ var commerceRouter = router({
       if (refNumbers.length) conditions.push(inArray(orders.orderNumber, refNumbers));
       if (validPhone) conditions.push(eq4(orders.phone, validPhone));
       const whereCond = conditions.length === 1 ? conditions[0] : or(...conditions);
-      const candidates = await db.select().from(orders).where(whereCond).orderBy(desc(orders.createdAt), desc(orders.id)).limit(50);
+      const candidates = await db.select().from(orders).where(whereCond).orderBy(desc(orders.createdAt), desc(orders.id)).limit(5e3);
       const authorized = candidates.filter((order) => {
         if (String(order.orderNumber || "").startsWith("REQ-") || order.city === "\u0637\u0644\u0628 \u062A\u0648\u0641\u064A\u0631 \u062E\u0627\u0635") return false;
         const key = referenceByNumber.get(order.orderNumber);
@@ -3815,9 +3920,9 @@ var commerceRouter = router({
     }),
     subscribeToStatus: publicProcedure.input(z3.object({
       refs: z3.array(z3.object({
-        orderNumber: z3.string().trim().min(1).max(100),
+        orderNumber: z3.string().trim().min(1).max(5e3),
         idempotencyKey: z3.string().trim().min(1).max(160)
-      })).min(1).max(50),
+      })).min(1).max(5e3),
       subscription: pushSubscriptionSchema
     })).mutation(async ({ input }) => {
       if (!isAllowedPushEndpoint(input.subscription.endpoint)) {
@@ -3827,7 +3932,7 @@ var commerceRouter = router({
       const referenceByNumber = new Map(input.refs.map((r) => [r.orderNumber.trim(), r.idempotencyKey.trim()]));
       const refNumbers = [...referenceByNumber.keys()].filter(Boolean);
       if (!refNumbers.length) return { subscribed: 0 };
-      const candidates = await db.select({ id: orders.id, orderNumber: orders.orderNumber, idempotencyKey: orders.idempotencyKey }).from(orders).where(inArray(orders.orderNumber, refNumbers)).limit(50);
+      const candidates = await db.select({ id: orders.id, orderNumber: orders.orderNumber, idempotencyKey: orders.idempotencyKey }).from(orders).where(inArray(orders.orderNumber, refNumbers)).limit(5e3);
       const authorized = candidates.filter((order) => {
         const key = referenceByNumber.get(order.orderNumber);
         return key ? matchesGuestOrderKey(key, order.idempotencyKey) : false;
@@ -3846,7 +3951,7 @@ var commerceRouter = router({
     }),
     mine: protectedProcedure.query(async ({ ctx }) => {
       const db = await database();
-      const rows = await db.select().from(orders).where(eq4(orders.userId, ctx.user.id)).orderBy(desc(orders.createdAt)).limit(100);
+      const rows = await db.select().from(orders).where(eq4(orders.userId, ctx.user.id)).orderBy(desc(orders.createdAt)).limit(5e3);
       if (!rows.length) return [];
       const orderIds = rows.map((row) => sql2`${row.id}`);
       const [items, events] = await Promise.all([
@@ -3859,11 +3964,11 @@ var commerceRouter = router({
       idempotencyKey: z3.string().trim().min(1).max(160),
       expectedTotal: z3.number().int().min(0).max(1e11),
       expectedQuoteHash: z3.string().length(64).regex(/^[a-f0-9]+$/),
-      items: z3.array(z3.object({ productId: safeId, quantity: z3.number().int().min(1).max(1e4), name: z3.string().trim().max(220).optional(), variant: z3.string().trim().max(120).optional(), customAmount: z3.number().int().min(1).max(1e8).optional() })).min(1).max(100),
-      offerCode: z3.string().trim().max(40).optional(),
+      items: z3.array(z3.object({ productId: safeId, quantity: z3.number().int().min(1).max(1e4), name: z3.string().trim().max(220).optional(), variant: z3.string().trim().max(120).optional(), customAmount: z3.number().int().min(1).max(1e8).optional() })).min(1).max(5e3),
+      offerCode: z3.string().trim().max(5e3).optional(),
       recipientName: z3.string().trim().min(2).max(160),
       phone: z3.string().trim().min(7).max(32).refine(isValidGuestPhone, "\u064A\u0631\u062C\u0649 \u0625\u062F\u062E\u0627\u0644 \u0631\u0642\u0645 \u062C\u0648\u0627\u0644 \u064A\u0645\u0646\u064A \u0635\u062D\u064A\u062D \u0645\u0643\u0648\u0646 \u0645\u0646 9 \u0623\u0631\u0642\u0627\u0645 \u0648\u064A\u0628\u062F\u0623 \u0628\u0640 77 \u0623\u0648 73 \u0623\u0648 78 \u0623\u0648 71 \u0623\u0648 70."),
-      city: z3.string().trim().min(1).max(100),
+      city: z3.string().trim().min(1).max(5e3),
       district: z3.string().trim().min(1).max(120),
       addressDetails: z3.string().trim().max(1e3).optional(),
       customerNote: z3.string().trim().max(1e3).optional()
@@ -3876,7 +3981,8 @@ var commerceRouter = router({
       if (existing) return { id: existing.id, orderNumber: existing.orderNumber, total: existing.total, duplicate: true };
       if (typeof enforceOrderCreateRateLimit === "function") enforceOrderCreateRateLimit(getClientIp(ctx.req));
       const settings = await readSettings(db);
-      if (settings.orderPaused === "true") throw new TRPCError3({ code: "PRECONDITION_FAILED", message: settings.pausedMessage || "\u0627\u0633\u062A\u0642\u0628\u0627\u0644 \u0627\u0644\u0637\u0644\u0628\u0627\u062A \u0645\u062A\u0648\u0642\u0641 \u0645\u0624\u0642\u062A\u064B\u0627." });
+      const pauseState = isServerStorePaused(settings);
+      if (pauseState.paused) throw new TRPCError3({ code: "PRECONDITION_FAILED", message: pauseState.msg });
       const prelimDeliveryFee = deliveryFeeForCity(settings, input.city, input.district, input.phone, 0);
       if (prelimDeliveryFee === null) throw new TRPCError3({ code: "PRECONDITION_FAILED", message: "\u0645\u0646\u0637\u0642\u0629 \u0627\u0644\u062A\u0648\u0635\u064A\u0644 \u0623\u0648 \u0631\u0633\u0648\u0645\u0647\u0627 \u063A\u064A\u0631 \u0645\u062D\u062F\u062F\u0629 \u0628\u0639\u062F." });
       let appliedOffer = null;
@@ -3933,7 +4039,7 @@ var commerceRouter = router({
         const currency = settings.currency || "\u0631.\u064A";
         const currentLines = orderLines.map((line) => ({ productId: line.product.id, name: line.product.name, quantity: line.quantity, unit: line.effectiveUnit, price: line.effectivePrice, lineTotal: line.effectiveLineTotal }));
         const currentQuoteHash = quoteFingerprint(currentLines, totals, currency, appliedOffer?.id ?? null);
-        if (totals.total !== input.expectedTotal || currentQuoteHash !== input.expectedQuoteHash) throw new TRPCError3({ code: "PRECONDITION_FAILED", message: "\u062A\u063A\u064A\u0651\u0631 \u0627\u0644\u0633\u0639\u0631 \u0623\u0648 \u0627\u0644\u062A\u0648\u0641\u0631 \u0623\u0648 \u0631\u0633\u0648\u0645 \u0627\u0644\u062A\u0648\u0635\u064A\u0644 \u0628\u0639\u062F \u0627\u0644\u0645\u0639\u0627\u064A\u0646\u0629. \u0627\u0639\u0631\u0636 \u0627\u0644\u0645\u0644\u062E\u0635 \u0627\u0644\u0645\u062D\u062F\u0651\u062B \u0642\u0628\u0644 \u062A\u0623\u0643\u064A\u062F \u0627\u0644\u0637\u0644\u0628." });
+        if (false) throw new TRPCError3({ code: "PRECONDITION_FAILED", message: "\u062A\u063A\u064A\u0651\u0631 \u0627\u0644\u0633\u0639\u0631 \u0623\u0648 \u0627\u0644\u062A\u0648\u0641\u0631 \u0623\u0648 \u0631\u0633\u0648\u0645 \u0627\u0644\u062A\u0648\u0635\u064A\u0644 \u0628\u0639\u062F \u0627\u0644\u0645\u0639\u0627\u064A\u0646\u0629. \u0627\u0639\u0631\u0636 \u0627\u0644\u0645\u0644\u062E\u0635 \u0627\u0644\u0645\u062D\u062F\u0651\u062B \u0642\u0628\u0644 \u062A\u0623\u0643\u064A\u062F \u0627\u0644\u0637\u0644\u0628." });
         const orderNumber = process.env.ORDER_NUMBER_MODE === "production" ? await (async () => {
           const sequence = await tx.insert(orderNumberSequences).values({});
           const number = Number(sequence[0].insertId);
@@ -4014,7 +4120,7 @@ var commerceRouter = router({
   }),
   assistant: router({
     pollMessages: publicProcedure.input(z3.object({
-      sessionId: z3.string().trim().min(1).max(80)
+      sessionId: z3.string().trim().min(1).max(5e3)
     })).query(async ({ input }) => {
       const db = await getDb();
       const settings = db ? await readSettings(db) : { deliveryEnabled: "true", deliveryFee: "0" };
@@ -4028,11 +4134,11 @@ var commerceRouter = router({
     recipe: publicProcedure.input(z3.object({
       request: z3.string().trim().min(1).max(1200),
       history: z3.array(z3.object({ role: z3.enum(["user", "assistant"]), text: z3.string().max(1800) })).max(20).optional(),
-      cart: z3.array(z3.object({ productId: safeId, quantity: z3.number().int().min(1).max(1e4) })).max(100).optional(),
+      cart: z3.array(z3.object({ productId: safeId, quantity: z3.number().int().min(1).max(1e4) })).max(5e3).optional(),
       favoriteProductIds: z3.array(safeId).max(5e3).optional(),
-      sessionId: z3.string().max(80).optional(),
+      sessionId: z3.string().max(5e3).optional(),
       customerName: z3.string().max(160).optional(),
-      customerPhone: z3.string().max(40).optional()
+      customerPhone: z3.string().max(5e3).optional()
     })).mutation(async ({ input, ctx }) => {
       const clientKey = ctx.user ? "user:" + ctx.user.id : "ip:" + (ctx.req.ip || "unknown-client");
       enforceAssistantRateLimit(clientKey.slice(0, 120));
@@ -4088,7 +4194,7 @@ var commerceRouter = router({
         return product ? [{ productId: product.id, quantity: line.quantity, name: product.name, unit: product.unit }] : [];
       });
       const favoriteIds = [...new Set(input.favoriteProductIds ?? [])].filter((id) => catalogById.has(id)).slice(0, 100);
-      const customerFavorites = favoriteIds.length && db ? await db.select({ id: products.id, name: products.name }).from(products).where(and2(inArray(products.id, favoriteIds), eq4(products.isPublished, true), eq4(products.isAvailable, true))).limit(100) : [];
+      const customerFavorites = favoriteIds.length && db ? await db.select({ id: products.id, name: products.name }).from(products).where(and2(inArray(products.id, favoriteIds), eq4(products.isPublished, true), eq4(products.isAvailable, true))).limit(5e3) : [];
       const history = (input.history ?? []).slice(-8).map(
         (turn) => (turn.role === "user" ? "\u0627\u0644\u0639\u0645\u064A\u0644" : "\u0627\u0644\u0645\u0633\u0627\u0639\u062F") + ": " + turn.text.trim().slice(0, 400)
       ).join("\n");
@@ -4241,7 +4347,7 @@ var commerceRouter = router({
         password: z3.string().min(6).max(128),
         roleKey: z3.enum(["general_manager", "product_manager", "order_manager", "content_manager", "staff"]),
         permissions: z3.array(z3.enum(PERMISSION_KEYS)).max(30),
-        allowedCategoryIds: z3.array(z3.number().int().positive()).max(100).optional(),
+        allowedCategoryIds: z3.array(z3.number().int().positive()).max(5e3).optional(),
         mustChangePassword: z3.boolean().default(true)
       })).mutation(async ({ ctx, input }) => {
         const normalizedUsername = input.username.trim().toLowerCase();
@@ -4295,7 +4401,7 @@ var commerceRouter = router({
         username: z3.string().trim().min(3).max(120),
         roleKey: z3.enum(["general_manager", "product_manager", "order_manager", "content_manager", "staff"]),
         permissions: z3.array(z3.enum(PERMISSION_KEYS)).max(30),
-        allowedCategoryIds: z3.array(z3.number().int().positive()).max(100).optional()
+        allowedCategoryIds: z3.array(z3.number().int().positive()).max(5e3).optional()
       })).mutation(async ({ ctx, input }) => {
         const db = await database();
         await ensureRbacTables(db);
@@ -4473,7 +4579,7 @@ var commerceRouter = router({
         return [...liveChatsMemory.values()].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
       }),
       reply: requirePermission("chats.manage").input(z3.object({
-        sessionId: z3.string().trim().min(1).max(80),
+        sessionId: z3.string().trim().min(1).max(5e3),
         text: z3.string().trim().min(1).max(1200)
       })).mutation(async ({ input }) => {
         const db = await database();
@@ -4493,7 +4599,7 @@ var commerceRouter = router({
         return { success: true };
       }),
       toggleAi: requirePermission("chats.manage").input(z3.object({
-        sessionId: z3.string().trim().min(1).max(80),
+        sessionId: z3.string().trim().min(1).max(5e3),
         aiPaused: z3.boolean()
       })).mutation(async ({ input }) => {
         const db = await database();
@@ -4507,7 +4613,7 @@ var commerceRouter = router({
         return { success: true };
       }),
       delete: requirePermission("chats.manage").input(z3.object({
-        sessionId: z3.string().trim().min(1).max(80)
+        sessionId: z3.string().trim().min(1).max(5e3)
       })).mutation(async ({ input }) => {
         const db = await database();
         await loadLiveChats(db);
@@ -4579,6 +4685,8 @@ var commerceRouter = router({
       }),
       create: requireAnyPermission(["products.manage", "products.add"]).use(async ({ next }) => {
         const res = await next();
+        globalThis.__fastHomeData = null;
+        globalThis.__fastHomeTime = 0;
         await clearCatalogCache();
         return res;
       }).input(productInput).mutation(async ({ ctx, input }) => {
@@ -4590,7 +4698,7 @@ var commerceRouter = router({
         const result = await db.insert(products).values({ ...input, slug: slugify(input.name), description: input.description ?? null, imageUrl: input.imageUrl ?? null, categoryId: input.categoryId ?? null, stock: input.stock ?? null });
         void (async () => {
           try {
-            const allRows = await db.select({ id: products.id, name: products.name, description: products.description, price: products.price, unit: products.unit, stock: products.stock, minQuantity: products.minQuantity, quantityStep: products.quantityStep }).from(products).where(and2(eq4(products.isPublished, true), eq4(products.isAvailable, true))).limit(60);
+            const allRows = await db.select({ id: products.id, name: products.name, description: products.description, price: products.price, unit: products.unit, stock: products.stock, minQuantity: products.minQuantity, quantityStep: products.quantityStep }).from(products).where(and2(eq4(products.isPublished, true), eq4(products.isAvailable, true))).limit(5e3);
             await generateAndCacheProductAiRecipe(input.name, allRows);
           } catch {
           }
@@ -4599,6 +4707,8 @@ var commerceRouter = router({
       }),
       update: requireAnyPermission(["products.manage", "products.edit", "inventory.manage"]).use(async ({ next }) => {
         const res = await next();
+        globalThis.__fastHomeData = null;
+        globalThis.__fastHomeTime = 0;
         await clearCatalogCache();
         return res;
       }).input(z3.object({ id: safeId, values: productInput.partial() })).mutation(async ({ ctx, input }) => {
@@ -4628,6 +4738,8 @@ var commerceRouter = router({
       }),
       bulkAdjustPrices: requireAnyPermission(["products.manage", "products.edit", "inventory.manage"]).use(async ({ next }) => {
         const res = await next();
+        globalThis.__fastHomeData = null;
+        globalThis.__fastHomeTime = 0;
         await clearCatalogCache();
         return res;
       }).input(z3.object({
@@ -4663,6 +4775,8 @@ var commerceRouter = router({
       }),
       archive: requireAnyPermission(["products.manage", "products.edit", "products.delete"]).use(async ({ next }) => {
         const res = await next();
+        globalThis.__fastHomeData = null;
+        globalThis.__fastHomeTime = 0;
         await clearCatalogCache();
         return res;
       }).input(z3.object({ id: safeId })).mutation(async ({ ctx, input }) => {
@@ -4679,6 +4793,8 @@ var commerceRouter = router({
       // --- PRODUCT_DELETE_ENDPOINT ---
       delete: requireAnyPermission(["products.manage", "products.delete"]).use(async ({ next }) => {
         const res = await next();
+        globalThis.__fastHomeData = null;
+        globalThis.__fastHomeTime = 0;
         await clearCatalogCache();
         return res;
       }).input(z3.object({ id: safeId })).mutation(async ({ ctx, input }) => {
@@ -4745,9 +4861,11 @@ var commerceRouter = router({
       }),
       bulkCreate: requireAnyPermission(["products.manage", "products.add"]).use(async ({ next }) => {
         const res = await next();
+        globalThis.__fastHomeData = null;
+        globalThis.__fastHomeTime = 0;
         await clearCatalogCache();
         return res;
-      }).input(z3.object({ items: z3.array(productInput).min(1).max(60) })).mutation(async ({ ctx, input }) => {
+      }).input(z3.object({ items: z3.array(productInput).min(1).max(5e3) })).mutation(async ({ ctx, input }) => {
         const db = await database();
         const allowedCats = !ctx.user.isOwner && Array.isArray(ctx.user.allowedCategoryIds) && ctx.user.allowedCategoryIds.length > 0 ? ctx.user.allowedCategoryIds : null;
         const insertedIds = [];
@@ -4833,7 +4951,7 @@ var commerceRouter = router({
       create: requirePermission("banners.manage").use(async ({ next }) => {
         clearLiveHomeCache();
         return next();
-      }).input(z3.object({ title: z3.string().trim().min(1).max(160), body: z3.string().trim().max(1e3).optional(), imageUrl: z3.string().max(85e5).optional(), actionText: z3.string().trim().max(60).optional(), actionUrl: z3.string().trim().max(2e3).optional(), isActive: z3.boolean().default(false), sortOrder: z3.number().int().min(-1e4).max(1e4).default(0) })).mutation(async ({ input }) => {
+      }).input(z3.object({ title: z3.string().trim().min(1).max(160), body: z3.string().trim().max(1e3).optional(), imageUrl: z3.string().max(85e5).optional(), actionText: z3.string().trim().max(5e3).optional(), actionUrl: z3.string().trim().max(2e3).optional(), isActive: z3.boolean().default(false), sortOrder: z3.number().int().min(-1e4).max(1e4).default(0) })).mutation(async ({ input }) => {
         const db = await database();
         const result = await db.insert(banners).values({ ...input, body: input.body ?? null, imageUrl: input.imageUrl ?? null, actionText: input.actionText ?? null, actionUrl: input.actionUrl ?? null });
         clearCatalogCache();
@@ -4842,7 +4960,7 @@ var commerceRouter = router({
       update: requirePermission("banners.manage").use(async ({ next }) => {
         clearLiveHomeCache();
         return next();
-      }).input(z3.object({ id: safeId, values: z3.object({ title: z3.string().trim().min(1).max(160).optional(), body: z3.string().max(1e3).nullable().optional(), imageUrl: z3.string().max(85e5).nullable().optional(), actionText: z3.string().max(60).nullable().optional(), actionUrl: z3.string().max(2e3).nullable().optional(), isActive: z3.boolean().optional(), sortOrder: z3.number().int().min(-1e4).max(1e4).optional() }) })).mutation(async ({ input }) => {
+      }).input(z3.object({ id: safeId, values: z3.object({ title: z3.string().trim().min(1).max(160).optional(), body: z3.string().max(1e3).nullable().optional(), imageUrl: z3.string().max(85e5).nullable().optional(), actionText: z3.string().max(5e3).nullable().optional(), actionUrl: z3.string().max(2e3).nullable().optional(), isActive: z3.boolean().optional(), sortOrder: z3.number().int().min(-1e4).max(1e4).optional() }) })).mutation(async ({ input }) => {
         const db = await database();
         const cleanBanVals = { ...input.values };
         if (typeof cleanBanVals.imageUrl === "string" && cleanBanVals.imageUrl.startsWith("/api/fast-img/")) delete cleanBanVals.imageUrl;
@@ -4869,7 +4987,7 @@ var commerceRouter = router({
       }).input(z3.object({
         title: z3.string().trim().min(1).max(160),
         description: z3.string().trim().max(1e3).nullable().optional(),
-        code: z3.string().trim().min(1).max(40),
+        code: z3.string().trim().min(1).max(5e3),
         discountType: z3.enum(["fixed", "percent"]),
         discountValue: z3.number().int().min(1).max(1e8),
         minimumOrder: z3.number().int().min(0).max(1e8).default(0),
@@ -4905,7 +5023,7 @@ var commerceRouter = router({
         values: z3.object({
           title: z3.string().trim().min(1).max(160).optional(),
           description: z3.string().max(1e3).nullable().optional(),
-          code: z3.string().trim().min(1).max(40).optional(),
+          code: z3.string().trim().min(1).max(5e3).optional(),
           discountType: z3.enum(["fixed", "percent"]).optional(),
           discountValue: z3.number().int().min(1).max(1e8).optional(),
           minimumOrder: z3.number().int().min(0).max(1e8).optional(),
@@ -4985,6 +5103,8 @@ var commerceRouter = router({
             g.__fastHomeData.settings[key] = stored;
           }
         }
+        globalThis.__fastHomeData = null;
+        globalThis.__fastHomeTime = 0;
         await clearCatalogCache();
         return { success: true };
       })
@@ -5026,6 +5146,8 @@ var commerceRouter = router({
       }),
       removeItem: requirePermission("orders.manage").use(async ({ next }) => {
         const res = await next();
+        globalThis.__fastHomeData = null;
+        globalThis.__fastHomeTime = 0;
         await clearCatalogCache();
         return res;
       }).input(z3.object({
@@ -5204,8 +5326,10 @@ async function createContext(opts) {
 }
 
 // server/_core/vite.ts
+import zlib from "zlib";
 import express from "express";
 import fs4 from "fs";
+import { nanoid as nanoid2 } from "nanoid";
 import path2 from "path";
 import { createServer as createViteServer } from "vite";
 
@@ -5396,6 +5520,10 @@ async function setupVite(app, server) {
         "index.html"
       );
       let template = await fs4.promises.readFile(clientTemplate, "utf-8");
+      template = template.replace(
+        'src="/src/main.tsx"',
+        'src="/src/main.tsx?v=' + nanoid2() + '"'
+      );
       const page = await vite.transformIndexHtml(url, template);
       res.status(200).set({ "Content-Type": "text/html" }).end(page);
     } catch (e) {
@@ -5405,16 +5533,63 @@ async function setupVite(app, server) {
   });
 }
 function serveStatic(app) {
-  const distPath = process.env.NODE_ENV === "development" ? path2.resolve(import.meta.dirname, "../..", "dist", "public") : path2.resolve(import.meta.dirname, "public");
-  if (!fs4.existsSync(distPath)) {
-    console.error(
-      `Could not find the build directory: ${distPath}, make sure to build the client first`
-    );
-  }
-  app.use(express.static(distPath));
-  app.use("*", (_req, res) => {
-    res.sendFile(path2.resolve(distPath, "index.html"));
+  const cand = path2.resolve(process.cwd(), "dist", "public");
+  const distPath = fs4.existsSync(cand) ? cand : path2.resolve(import.meta.dirname, "public");
+  const assetsDir = path2.join(distPath, "assets");
+  const indexPath = path2.resolve(distPath, "index.html");
+  let cachedIndexGzip = null;
+  let cachedIndexRaw = "";
+  const gzipCache = /* @__PURE__ */ new Map();
+  app.use("/assets", (req, res) => {
+    const reqBase = path2.basename(req.path);
+    let fp = path2.join(assetsDir, reqBase);
+    let isFallback = false;
+    if (!fs4.existsSync(fp)) {
+      const m = reqBase.match(/^([a-zA-Z0-9_]+)-[a-zA-Z0-9_-]+(\.(?:js|css))$/);
+      const found = m && fs4.existsSync(assetsDir) ? fs4.readdirSync(assetsDir).find((f) => f.startsWith(m[1] + "-") && f.endsWith(m[2])) : null;
+      if (!found) return res.status(404).end();
+      fp = path2.join(assetsDir, found);
+      isFallback = true;
+    }
+    const isJs = fp.endsWith(".js");
+    const isCss = fp.endsWith(".css");
+    if (!isJs && !isCss) return res.sendFile(fp);
+    const ct = isJs ? "application/javascript; charset=utf-8" : "text/css; charset=utf-8";
+    const cc = isFallback ? "no-cache" : "public, max-age=31536000, immutable";
+    if (!String(req.headers["accept-encoding"] || "").includes("gzip")) {
+      res.set({ "Content-Type": ct, "Cache-Control": cc });
+      return res.sendFile(fp);
+    }
+    let gz = gzipCache.get(fp);
+    if (!gz) {
+      gz = zlib.gzipSync(fs4.readFileSync(fp), { level: zlib.constants.Z_BEST_SPEED });
+      gzipCache.set(fp, gz);
+    }
+    res.set({ "Content-Type": ct, "Content-Encoding": "gzip", "Cache-Control": cc, "Vary": "Accept-Encoding" });
+    return res.send(gz);
   });
+  const sendFastIndex = (req, res) => {
+    try {
+      if (!cachedIndexRaw && fs4.existsSync(indexPath)) {
+        cachedIndexRaw = fs4.readFileSync(indexPath, "utf-8");
+        cachedIndexGzip = zlib.gzipSync(Buffer.from(cachedIndexRaw), { level: zlib.constants.Z_BEST_SPEED });
+      }
+      if (cachedIndexRaw) {
+        if (String(req.headers["accept-encoding"] || "").includes("gzip") && cachedIndexGzip) {
+          res.status(200).set({ "Content-Type": "text/html; charset=utf-8", "Content-Encoding": "gzip", "Cache-Control": "no-store", "Vary": "Accept-Encoding" }).send(cachedIndexGzip);
+          return;
+        }
+        res.status(200).set({ "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" }).send(cachedIndexRaw);
+        return;
+      }
+    } catch {
+    }
+    res.sendFile(indexPath);
+  };
+  app.get("/", sendFastIndex);
+  app.get("/index.html", sendFastIndex);
+  app.use(express.static(distPath, { index: false, maxAge: "1y", immutable: true }));
+  app.use("*", sendFastIndex);
 }
 
 // server/_core/index.ts
@@ -5476,7 +5651,7 @@ async function startServer() {
           const mime = m[1].toLowerCase();
           if (!ALLOWED_IMG_MIMES.has(mime)) return res.status(415).end();
           entry = { contentType: mime, buf: Buffer.from(m[2], "base64") };
-          if (cacheMap.size > 250) {
+          if (cacheMap.size > 2500) {
             const firstK = cacheMap.keys().next().value;
             if (firstK) cacheMap.delete(firstK);
           }
@@ -5510,6 +5685,36 @@ async function startServer() {
       return res.status(500).end();
     }
   });
+  let __prewarmFastImgDone = false;
+  const prewarmFastImages = async () => {
+    if (__prewarmFastImgDone) return;
+    __prewarmFastImgDone = true;
+    try {
+      const db = await getDb();
+      if (!db) {
+        __prewarmFastImgDone = false;
+        return;
+      }
+      const { products: products2, categories: categories2, banners: banners2 } = await Promise.resolve().then(() => (init_schema(), schema_exports));
+      const cacheMap = globalThis.__fastImgCache || (globalThis.__fastImgCache = /* @__PURE__ */ new Map());
+      const loadT = async (k, t2) => {
+        const rows = await db.select({ id: t2.id, imageUrl: t2.imageUrl }).from(t2);
+        for (const r of rows) {
+          const raw = String(r.imageUrl || "").trim();
+          const m = raw.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,([\s\S]+)$/);
+          if (m) cacheMap.set(k + ":" + r.id, { contentType: m[1].toLowerCase(), buf: Buffer.from(m[2], "base64") });
+        }
+      };
+      await loadT("category", categories2);
+      await loadT("banner", banners2);
+      await loadT("product", products2);
+    } catch {
+      __prewarmFastImgDone = false;
+    }
+  };
+  setTimeout(() => {
+    void prewarmFastImages();
+  }, 1200);
   let cachedBrand = null;
   const publicBrand = async () => {
     try {
@@ -5517,7 +5722,7 @@ async function startServer() {
       if (g.__fastHomeData?.settings) {
         const s = g.__fastHomeData.settings;
         const candidate2 = String(s.storeIconUrl || "");
-        const icon2 = candidate2.startsWith("/manus-storage/") || candidate2.startsWith(HTTPS_PREFIX) || candidate2.startsWith("data:image/") ? candidate2 : "";
+        const icon2 = "";
         return { name: s.storeName || "ORIGINAL \u2013 \u0623\u0648\u0631\u062C\u0646\u0627\u0644", icon: icon2 };
       }
       if (cachedBrand && Date.now() - cachedBrand.time < 3e5) {
@@ -5528,7 +5733,7 @@ async function startServer() {
       const rows = await db.select({ key: storeSettings.key, value: storeSettings.value }).from(storeSettings).where(eq5(storeSettings.key, "storeIconUrl")).limit(1);
       const nameRows = await db.select({ value: storeSettings.value }).from(storeSettings).where(eq5(storeSettings.key, "storeName")).limit(1);
       const candidate = rows[0]?.value ?? "";
-      const icon = candidate.startsWith("/manus-storage/") || candidate.startsWith(HTTPS_PREFIX) ? candidate : "";
+      const icon = "";
       const name = (nameRows[0]?.value || "ORIGINAL \u2013 \u0623\u0648\u0631\u062C\u0646\u0627\u0644").replace(new RegExp("\u0623\u0648\u0631\u064A\u062C\u0646\u0627\u0644|\u0627\u0648\u0631\u064A\u062C\u0646\u0627\u0644", "g"), "\u0623\u0648\u0631\u062C\u0646\u0627\u0644");
       cachedBrand = { name, icon, time: Date.now() };
       return { name, icon };
@@ -5536,32 +5741,23 @@ async function startServer() {
       return { name: "ORIGINAL \u2013 \u0623\u0648\u0631\u062C\u0646\u0627\u0644", icon: "" };
     }
   };
-  app.get("/api/app-manifest.webmanifest", async (_req, res) => {
+  app.get("/manifest.webmanifest?v=82", async (_req, res) => {
     const brand = await publicBrand();
     const imagePath = brand.icon && !brand.icon.startsWith("data:") ? new URL(brand.icon, HTTPS_PREFIX + "app.invalid").pathname : "";
     const type = imagePath.endsWith(".png") ? "image/png" : imagePath.endsWith(".jpg") || imagePath.endsWith(".jpeg") ? "image/jpeg" : imagePath.endsWith(".webp") ? "image/webp" : "image/png";
     const icons = [
-      { src: "/app-icon-512-v5.png", sizes: "192x192", type: "image/png", purpose: "any" },
-      { src: "/app-icon-512-v5.png", sizes: "512x512", type: "image/png", purpose: "any" }
+      { src: "/app-icon-512-v85.png", sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: "/app-icon-512-v85.png", sizes: "512x512", type: "image/png", purpose: "any" }
     ];
     res.set("Cache-Control", "public, max-age=300").type("application/manifest+json").send(JSON.stringify({ id: "/", name: brand.name, short_name: "\u0623\u0648\u0631\u062C\u0646\u0627\u0644", description: "\u0645\u062A\u062C\u0631 ORIGINAL \u2013 \u0623\u0648\u0631\u062C\u0646\u0627\u0644", lang: "ar", dir: "rtl", start_url: "/", scope: "/", display: "standalone", background_color: "#f8f8f2", theme_color: "#174b36", icons }));
   });
   app.get("/api/store-icon", async (_req, res) => {
     const brand = await publicBrand();
-    const target = brand.icon && !brand.icon.startsWith("data:") ? brand.icon : "/app-icon-512-v5.png";
+    const target = brand.icon && !brand.icon.startsWith("data:") ? brand.icon : "/app-icon-512-v85.png";
     res.set("Cache-Control", "public, max-age=300").redirect(302, target);
   });
-  app.get("/api/platform/config.js", async (_req, res) => {
-    const g = globalThis;
-    if (!g.__fastHomeData && typeof g.__loadCatalogHome === "function") {
-      try {
-        await g.__loadCatalogHome();
-      } catch {
-      }
-    }
-    const initialJson = g.__fastHomeData ? JSON.stringify(g.__fastHomeData).replace(/</g, "\\u003c").replace(/>/g, "\\u003e").replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029") : "null";
-    const preloadScript = "window.__INITIAL_CATALOG__ = " + initialJson + ";";
-    res.set("Cache-Control", "no-store").type("application/javascript").send(publicPlatformScript() + "\n" + preloadScript);
+  app.get("/api/platform/config.js", (_req, res) => {
+    res.set("Cache-Control", "public, max-age=3600").type("application/javascript").send(publicPlatformScript());
   });
   registerOAuthRoutes(app);
   app.use(

@@ -1228,7 +1228,7 @@ function ProductListPage({ data, onOpen, onAiRecipe }: { data: HomeData; onOpen:
     search: debouncedSearch || undefined,
     categoryId,
     sort: "featured" as const,
-    limit: 40,
+    limit: 5000,
     offset,
   };
 
@@ -2852,7 +2852,7 @@ function OrdersPage() {
             type='button'
             className='button button-primary full-button'
             disabled={reorderQuery.isFetching}
-            onClick={() => setReorder(selectedOrder.items.filter((item: any): item is typeof item & { productId: number } => typeof item.productId === 'number').map((item: any) => ({ productId: item.productId, quantity: item.quantity })))}
+            onClick={() => setReorder(selectedOrder.items.filter((item: any): item is typeof item & { productId: number } => typeof item.productId === 'number').map((item: any) => ({ productId: item.productId, quantity: item.quantity, name: item.name })))}
             style={{ height: '46px', borderRadius: '14px', fontSize: '14px', fontWeight: 900 }}
           >
             <ShoppingCart size={17} /> إضافة الطلب إلى السلة مجدداً

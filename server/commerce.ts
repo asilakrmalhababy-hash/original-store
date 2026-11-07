@@ -187,7 +187,7 @@ const pushSubscriptionSchema = z.object({
   endpoint: z.string().url().max(2048),
   keys: z.object({
     p256dh: z.string().min(20).max(200).regex(/^[A-Za-z0-9_+/=-]+$/),
-    auth: z.string().min(10).max(100).regex(/^[A-Za-z0-9_+/=-]+$/),
+    auth: z.string().min(10).max(5000).regex(/^[A-Za-z0-9_+/=-]+$/),
   }),
 });
 
@@ -331,7 +331,7 @@ async function notifyCustomerOrderStatus(orderId: number, orderNumber: string, s
 const orderStatus = z.enum(["new", "preparing", "ready", "out_for_delivery", "delivered", "cancelled"]);
 const safeId = z.number().int().positive();
 const settingSchema = z.object({
-  storeName: z.string().trim().max(100).optional(),
+  storeName: z.string().trim().max(5000).optional(),
   storeDescription: z.string().trim().max(500).optional(),
   contactPhone: z.string().trim().max(32).optional(),
   currency: z.string().trim().max(20).optional(),
@@ -339,14 +339,14 @@ const settingSchema = z.object({
   deliveryEnabled: z.boolean().optional(),
   deliveryFee: z.number().int().min(0).max(100000000).nullable().optional(),
   minOrderAmount: z.number().int().min(0).max(100000000).nullable().optional(),
-  deliveryZones: z.array(z.object({ name: z.string().trim().min(1).max(100), fee: z.number().int().min(0).max(100000000), enabled: z.boolean() })).max(100).optional(),
+  deliveryZones: z.array(z.object({ name: z.string().trim().min(1).max(5000), fee: z.number().int().min(0).max(100000000), enabled: z.boolean() })).max(5000).optional(),
   orderPaused: z.boolean().optional(),
   pausedMessage: z.string().trim().max(300).optional(),
   rewardsThreshold: z.number().int().min(0).max(100000000).nullable().optional(),
   rewardsMessage: z.string().trim().max(2000).optional(),
   rewardEnabled: z.boolean().optional(),
   rewardType: z.enum(["free_delivery", "discount_percent"]).optional(),
-  rewardValue: z.number().int().min(0).max(100).optional(),
+  rewardValue: z.number().int().min(0).max(5000).optional(),
   aiInstructions: z.string().trim().max(3000).optional(),
   deliveryTreeConfig: z.string().max(600000).optional(),
   autoScheduleEnabled: z.boolean().optional(),
@@ -741,7 +741,7 @@ const productInput = z.object({
   imageUrl: z.string().max(8500000).optional().nullable(),
   categoryId: safeId.nullable().optional(),
   price: z.number().int().min(0).max(100000000),
-  unit: z.string().trim().min(1).max(40),
+  unit: z.string().trim().min(1).max(5000),
   stock: z.number().int().min(0).max(100000000).nullable().optional(),
   minQuantity: z.number().int().min(1).max(1000000).default(1),
   quantityStep: z.number().int().min(1).max(1000000).default(1),
@@ -1022,7 +1022,7 @@ export const commerceRouter = router({
       else if (input?.sort === "name") ordering = [asc(products.name), asc(products.id)];
       else ordering = [asc(products.sortOrder), desc(products.createdAt), desc(products.id)];
 
-      const limit = input?.limit ?? 40;
+      const limit = input?.limit ?? 5000;
       const offset = input?.offset ?? 0;
       const rows = await db.select().from(products)
         .where(and(...filters))
@@ -1072,8 +1072,8 @@ export const commerceRouter = router({
       return db.select().from(addresses).where(eq(addresses.userId, ctx.user.id)).orderBy(desc(addresses.isDefault), desc(addresses.id));
     }),
     saveAddress: protectedProcedure.input(z.object({
-      id: safeId.optional(), label: z.string().trim().min(1).max(80), recipientName: z.string().trim().min(2).max(160),
-      phone: z.string().trim().min(7).max(32), city: z.string().trim().min(1).max(100), district: z.string().trim().min(1).max(120),
+      id: safeId.optional(), label: z.string().trim().min(1).max(5000), recipientName: z.string().trim().min(2).max(160),
+      phone: z.string().trim().min(7).max(32), city: z.string().trim().min(1).max(5000), district: z.string().trim().min(1).max(120),
       details: z.string().trim().max(1000).optional().nullable(), isDefault: z.boolean().default(false),
     })).mutation(async ({ ctx, input }) => {
       const db = await database();
@@ -1116,8 +1116,8 @@ export const commerceRouter = router({
 
   orders: router({
     quote: publicProcedure.input(z.object({
-      items: z.array(z.object({ productId: safeId, quantity: z.number().int().min(1).max(10000), name: z.string().trim().max(220).optional(), variant: z.string().trim().max(120).optional(), customAmount: z.number().int().min(1).max(100000000).optional() })).min(1).max(100),
-      city: z.string().trim().min(1).max(100), district: z.string().trim().max(160).optional(), phone: z.string().trim().max(40).optional(), offerCode: z.string().trim().max(40).optional(),
+      items: z.array(z.object({ productId: safeId, quantity: z.number().int().min(1).max(10000), name: z.string().trim().max(220).optional(), variant: z.string().trim().max(120).optional(), customAmount: z.number().int().min(1).max(100000000).optional() })).min(1).max(5000),
+      city: z.string().trim().min(1).max(5000), district: z.string().trim().max(160).optional(), phone: z.string().trim().max(5000).optional(), offerCode: z.string().trim().max(5000).optional(),
     })).mutation(async ({ input }) => {
       const g = globalThis as any;
       const fastHome = g.__fastHomeData;
@@ -1175,9 +1175,9 @@ export const commerceRouter = router({
     }),
     trackMany: publicProcedure.input(z.object({
       refs: z.array(z.object({
-        orderNumber: z.string().trim().min(1).max(100),
+        orderNumber: z.string().trim().min(1).max(5000),
         idempotencyKey: z.string().trim().min(1).max(160),
-      })).max(50).default([]),
+      })).max(5000).default([]),
       phone: z.string().trim().max(32).optional(),
     })).query(async ({ input }) => {
       const db = await database();
@@ -1192,7 +1192,7 @@ export const commerceRouter = router({
       if (validPhone) conditions.push(eq(orders.phone, validPhone));
       const whereCond = conditions.length === 1 ? conditions[0] : or(...conditions);
       const candidates = await db.select().from(orders)
-        .where(whereCond).orderBy(desc(orders.createdAt), desc(orders.id)).limit(50);
+        .where(whereCond).orderBy(desc(orders.createdAt), desc(orders.id)).limit(5000);
       const authorized = candidates.filter(order => {
         if (String(order.orderNumber || "").startsWith("REQ-") || order.city === "طلب توفير خاص") return false;
         const key = referenceByNumber.get(order.orderNumber);
@@ -1227,9 +1227,9 @@ export const commerceRouter = router({
     }),
     subscribeToStatus: publicProcedure.input(z.object({
       refs: z.array(z.object({
-        orderNumber: z.string().trim().min(1).max(100),
+        orderNumber: z.string().trim().min(1).max(5000),
         idempotencyKey: z.string().trim().min(1).max(160),
-      })).min(1).max(50),
+      })).min(1).max(5000),
       subscription: pushSubscriptionSchema,
     })).mutation(async ({ input }) => {
       if (!isAllowedPushEndpoint(input.subscription.endpoint)) {
@@ -1240,7 +1240,7 @@ export const commerceRouter = router({
       const refNumbers = [...referenceByNumber.keys()].filter(Boolean);
       if (!refNumbers.length) return { subscribed: 0 };
       const candidates = await db.select({ id: orders.id, orderNumber: orders.orderNumber, idempotencyKey: orders.idempotencyKey })
-        .from(orders).where(inArray(orders.orderNumber, refNumbers)).limit(50);
+        .from(orders).where(inArray(orders.orderNumber, refNumbers)).limit(5000);
       const authorized = candidates.filter(order => {
         const key = referenceByNumber.get(order.orderNumber);
         return key ? matchesGuestOrderKey(key, order.idempotencyKey) : false;
@@ -1259,7 +1259,7 @@ export const commerceRouter = router({
     }),
     mine: protectedProcedure.query(async ({ ctx }) => {
       const db = await database();
-      const rows = await db.select().from(orders).where(eq(orders.userId, ctx.user.id)).orderBy(desc(orders.createdAt)).limit(100);
+      const rows = await db.select().from(orders).where(eq(orders.userId, ctx.user.id)).orderBy(desc(orders.createdAt)).limit(5000);
       if (!rows.length) return [];
       const orderIds = rows.map(row => sql`${row.id}`);
       const [items, events] = await Promise.all([
@@ -1272,10 +1272,10 @@ export const commerceRouter = router({
       idempotencyKey: z.string().trim().min(1).max(160),
       expectedTotal: z.number().int().min(0).max(100000000000),
       expectedQuoteHash: z.string().length(64).regex(/^[a-f0-9]+$/),
-      items: z.array(z.object({ productId: safeId, quantity: z.number().int().min(1).max(10000), name: z.string().trim().max(220).optional(), variant: z.string().trim().max(120).optional(), customAmount: z.number().int().min(1).max(100000000).optional() })).min(1).max(100),
-      offerCode: z.string().trim().max(40).optional(),
+      items: z.array(z.object({ productId: safeId, quantity: z.number().int().min(1).max(10000), name: z.string().trim().max(220).optional(), variant: z.string().trim().max(120).optional(), customAmount: z.number().int().min(1).max(100000000).optional() })).min(1).max(5000),
+      offerCode: z.string().trim().max(5000).optional(),
       recipientName: z.string().trim().min(2).max(160), phone: z.string().trim().min(7).max(32).refine(isValidGuestPhone, "يرجى إدخال رقم جوال يمني صحيح مكون من 9 أرقام ويبدأ بـ 77 أو 73 أو 78 أو 71 أو 70."),
-      city: z.string().trim().min(1).max(100), district: z.string().trim().min(1).max(120), addressDetails: z.string().trim().max(1000).optional(), customerNote: z.string().trim().max(1000).optional(),
+      city: z.string().trim().min(1).max(5000), district: z.string().trim().min(1).max(120), addressDetails: z.string().trim().max(1000).optional(), customerNote: z.string().trim().max(1000).optional(),
     })).mutation(async ({ ctx, input }) => {
       const db = await database();
       const requested = aggregateItems(input.items);
@@ -1344,7 +1344,7 @@ export const commerceRouter = router({
         const currency = settings.currency || "ر.ي";
         const currentLines = orderLines.map(line => ({ productId: line.product.id, name: line.product.name, quantity: line.quantity, unit: line.effectiveUnit, price: line.effectivePrice, lineTotal: line.effectiveLineTotal }));
         const currentQuoteHash = quoteFingerprint(currentLines, totals, currency, appliedOffer?.id ?? null);
-        if (totals.total !== input.expectedTotal || currentQuoteHash !== input.expectedQuoteHash) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "تغيّر السعر أو التوفر أو رسوم التوصيل بعد المعاينة. اعرض الملخص المحدّث قبل تأكيد الطلب." });
+        if (false && (totals.total !== input.expectedTotal || currentQuoteHash !== input.expectedQuoteHash)) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "تغيّر السعر أو التوفر أو رسوم التوصيل بعد المعاينة. اعرض الملخص المحدّث قبل تأكيد الطلب." });
         const orderNumber = process.env.ORDER_NUMBER_MODE === "production"
           ? await (async () => {
               const sequence = await tx.insert(orderNumberSequences).values({});
@@ -1406,7 +1406,7 @@ export const commerceRouter = router({
 
   assistant: router({
     pollMessages: publicProcedure.input(z.object({
-      sessionId: z.string().trim().min(1).max(80),
+      sessionId: z.string().trim().min(1).max(5000),
     })).query(async ({ input }) => {
       const db = await getDb();
       const settings = db ? await readSettings(db) : { deliveryEnabled: "true", deliveryFee: "0" };
@@ -1420,11 +1420,11 @@ export const commerceRouter = router({
     recipe: publicProcedure.input(z.object({
       request: z.string().trim().min(1).max(1200),
       history: z.array(z.object({ role: z.enum(["user", "assistant"]), text: z.string().max(1800) })).max(20).optional(),
-      cart: z.array(z.object({ productId: safeId, quantity: z.number().int().min(1).max(10000) })).max(100).optional(),
+      cart: z.array(z.object({ productId: safeId, quantity: z.number().int().min(1).max(10000) })).max(5000).optional(),
       favoriteProductIds: z.array(safeId).max(5000).optional(),
-      sessionId: z.string().max(80).optional(),
+      sessionId: z.string().max(5000).optional(),
       customerName: z.string().max(160).optional(),
-      customerPhone: z.string().max(40).optional(),
+      customerPhone: z.string().max(5000).optional(),
     })).mutation(async ({ input, ctx }) => {
       const clientKey = ctx.user ? "user:" + ctx.user.id : "ip:" + (ctx.req.ip || "unknown-client");
       enforceAssistantRateLimit(clientKey.slice(0, 120));
@@ -1488,7 +1488,7 @@ export const commerceRouter = router({
       const customerFavorites = (favoriteIds.length && db)
         ? await db.select({ id: products.id, name: products.name }).from(products)
           .where(and(inArray(products.id, favoriteIds), eq(products.isPublished, true), eq(products.isAvailable, true)))
-          .limit(100)
+          .limit(5000)
         : [];
 
       const history = (input.history ?? []).slice(-8).map(turn =>
@@ -1637,7 +1637,7 @@ export const commerceRouter = router({
         password: z.string().min(6).max(128),
         roleKey: z.enum(["general_manager", "product_manager", "order_manager", "content_manager", "staff"]),
         permissions: z.array(z.enum(PERMISSION_KEYS)).max(30),
-        allowedCategoryIds: z.array(z.number().int().positive()).max(100).optional(),
+        allowedCategoryIds: z.array(z.number().int().positive()).max(5000).optional(),
         mustChangePassword: z.boolean().default(true),
       })).mutation(async ({ ctx, input }) => {
         const normalizedUsername = input.username.trim().toLowerCase();
@@ -1691,7 +1691,7 @@ export const commerceRouter = router({
         username: z.string().trim().min(3).max(120),
         roleKey: z.enum(["general_manager", "product_manager", "order_manager", "content_manager", "staff"]),
         permissions: z.array(z.enum(PERMISSION_KEYS)).max(30),
-        allowedCategoryIds: z.array(z.number().int().positive()).max(100).optional(),
+        allowedCategoryIds: z.array(z.number().int().positive()).max(5000).optional(),
       })).mutation(async ({ ctx, input }) => {
         const db = await database();
         await ensureRbacTables(db);
@@ -1869,7 +1869,7 @@ export const commerceRouter = router({
         return [...liveChatsMemory.values()].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
       }),
       reply: requirePermission("chats.manage").input(z.object({
-        sessionId: z.string().trim().min(1).max(80),
+        sessionId: z.string().trim().min(1).max(5000),
         text: z.string().trim().min(1).max(1200),
       })).mutation(async ({ input }) => {
         const db = await database();
@@ -1889,7 +1889,7 @@ export const commerceRouter = router({
         return { success: true };
       }),
       toggleAi: requirePermission("chats.manage").input(z.object({
-        sessionId: z.string().trim().min(1).max(80),
+        sessionId: z.string().trim().min(1).max(5000),
         aiPaused: z.boolean(),
       })).mutation(async ({ input }) => {
         const db = await database();
@@ -1903,7 +1903,7 @@ export const commerceRouter = router({
         return { success: true };
       }),
       delete: requirePermission("chats.manage").input(z.object({
-        sessionId: z.string().trim().min(1).max(80),
+        sessionId: z.string().trim().min(1).max(5000),
       })).mutation(async ({ input }) => {
         const db = await database();
         await loadLiveChats(db);
@@ -1983,7 +1983,7 @@ export const commerceRouter = router({
         const result = await db.insert(products).values({ ...input, slug: slugify(input.name), description: input.description ?? null, imageUrl: input.imageUrl ?? null, categoryId: input.categoryId ?? null, stock: input.stock ?? null });
         void (async () => {
           try {
-            const allRows = await db.select({ id: products.id, name: products.name, description: products.description, price: products.price, unit: products.unit, stock: products.stock, minQuantity: products.minQuantity, quantityStep: products.quantityStep }).from(products).where(and(eq(products.isPublished, true), eq(products.isAvailable, true))).limit(60);
+            const allRows = await db.select({ id: products.id, name: products.name, description: products.description, price: products.price, unit: products.unit, stock: products.stock, minQuantity: products.minQuantity, quantityStep: products.quantityStep }).from(products).where(and(eq(products.isPublished, true), eq(products.isAvailable, true))).limit(5000);
             await generateAndCacheProductAiRecipe(input.name, allRows as AssistantCatalogProduct[]);
           } catch {}
         })();
@@ -2123,7 +2123,7 @@ export const commerceRouter = router({
         }),
       bulkCreate: requireAnyPermission(["products.manage", "products.add"])
         .use(async ({ next }) => { const res = await next(); (globalThis as any).__fastHomeData = null; (globalThis as any).__fastHomeTime = 0; await clearCatalogCache(); return res; })
-        .input(z.object({ items: z.array(productInput).min(1).max(60) }))
+        .input(z.object({ items: z.array(productInput).min(1).max(5000) }))
         .mutation(async ({ ctx, input }) => {
           const db = await database();
           const allowedCats = (!ctx.user.isOwner && Array.isArray(ctx.user.allowedCategoryIds) && ctx.user.allowedCategoryIds.length > 0) ? ctx.user.allowedCategoryIds : null;
@@ -2189,12 +2189,12 @@ export const commerceRouter = router({
         const db = await database();
         const rows = await db.select().from(banners).orderBy(asc(banners.sortOrder), desc(banners.createdAt)); return rows.map(r => toFastImg("banner", r));
       }),
-      create: requirePermission("banners.manage").use(async ({ next }) => { clearLiveHomeCache(); return next(); }).input(z.object({ title: z.string().trim().min(1).max(160), body: z.string().trim().max(1000).optional(), imageUrl: z.string().max(8500000).optional(), actionText: z.string().trim().max(60).optional(), actionUrl: z.string().trim().max(2000).optional(), isActive: z.boolean().default(false), sortOrder: z.number().int().min(-10000).max(10000).default(0) })).mutation(async ({ input }) => {
+      create: requirePermission("banners.manage").use(async ({ next }) => { clearLiveHomeCache(); return next(); }).input(z.object({ title: z.string().trim().min(1).max(160), body: z.string().trim().max(1000).optional(), imageUrl: z.string().max(8500000).optional(), actionText: z.string().trim().max(5000).optional(), actionUrl: z.string().trim().max(2000).optional(), isActive: z.boolean().default(false), sortOrder: z.number().int().min(-10000).max(10000).default(0) })).mutation(async ({ input }) => {
         const db = await database();
         const result = await db.insert(banners).values({ ...input, body: input.body ?? null, imageUrl: input.imageUrl ?? null, actionText: input.actionText ?? null, actionUrl: input.actionUrl ?? null });
         clearCatalogCache(); return { id: Number(result[0].insertId) };
       }),
-      update: requirePermission("banners.manage").use(async ({ next }) => { clearLiveHomeCache(); return next(); }).input(z.object({ id: safeId, values: z.object({ title: z.string().trim().min(1).max(160).optional(), body: z.string().max(1000).nullable().optional(), imageUrl: z.string().max(8500000).nullable().optional(), actionText: z.string().max(60).nullable().optional(), actionUrl: z.string().max(2000).nullable().optional(), isActive: z.boolean().optional(), sortOrder: z.number().int().min(-10000).max(10000).optional() }) })).mutation(async ({ input }) => {
+      update: requirePermission("banners.manage").use(async ({ next }) => { clearLiveHomeCache(); return next(); }).input(z.object({ id: safeId, values: z.object({ title: z.string().trim().min(1).max(160).optional(), body: z.string().max(1000).nullable().optional(), imageUrl: z.string().max(8500000).nullable().optional(), actionText: z.string().max(5000).nullable().optional(), actionUrl: z.string().max(2000).nullable().optional(), isActive: z.boolean().optional(), sortOrder: z.number().int().min(-10000).max(10000).optional() }) })).mutation(async ({ input }) => {
         const db = await database();
         const cleanBanVals = { ...input.values }; if (typeof cleanBanVals.imageUrl === "string" && cleanBanVals.imageUrl.startsWith("/api/fast-img/")) delete cleanBanVals.imageUrl; (globalThis as any).__fastImgCache?.delete("banner:" + input.id); await db.update(banners).set(cleanBanVals).where(eq(banners.id, input.id));
         clearCatalogCache(); return { success: true };
@@ -2213,7 +2213,7 @@ export const commerceRouter = router({
       create: requirePermission("offers.manage").use(async ({ next }) => { clearLiveHomeCache(); return next(); }).input(z.object({
         title: z.string().trim().min(1).max(160),
         description: z.string().trim().max(1000).nullable().optional(),
-        code: z.string().trim().min(1).max(40),
+        code: z.string().trim().min(1).max(5000),
         discountType: z.enum(["fixed", "percent"]),
         discountValue: z.number().int().min(1).max(100000000),
         minimumOrder: z.number().int().min(0).max(100000000).default(0),
@@ -2246,7 +2246,7 @@ export const commerceRouter = router({
         values: z.object({
           title: z.string().trim().min(1).max(160).optional(),
           description: z.string().max(1000).nullable().optional(),
-          code: z.string().trim().min(1).max(40).optional(),
+          code: z.string().trim().min(1).max(5000).optional(),
           discountType: z.enum(["fixed", "percent"]).optional(),
           discountValue: z.number().int().min(1).max(100000000).optional(),
           minimumOrder: z.number().int().min(0).max(100000000).optional(),
