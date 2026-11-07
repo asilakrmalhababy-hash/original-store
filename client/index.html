@@ -42,6 +42,9 @@
     </div>
     <script type="module" src="/src/main.tsx"></script>
   
+    
+
+  
     <script>
       (function() {
         function syncVariantModalPrice() {
@@ -51,18 +54,26 @@
               return b.textContent && b.textContent.indexOf("إضافة إلى السلة") !== -1;
             });
             if (!addBtn) return;
-            var modal = addBtn.closest("div[style*='border-radius'], .modal-card, .dialog, [role='dialog']") || addBtn.parentElement;
+
+            var modal = addBtn.parentElement;
+            while (modal && modal !== document.body && modal.querySelectorAll("button").length < 4) {
+              modal = modal.parentElement;
+            }
             if (!modal) return;
+
             var modalButtons = Array.from(modal.querySelectorAll("button"));
             var selectedOptBtn = modalButtons.find(function(b) {
               if (b === addBtn) return false;
               var txt = (b.textContent || "").trim();
               if (txt.indexOf(":") === -1) return false;
-              var bg = window.getComputedStyle(b).backgroundColor || "";
+              var style = window.getComputedStyle(b);
+              var rgb = (style.backgroundColor || "").match(/\d+/g);
+              var isDarkGreen = rgb && rgb.length >= 3 && Number(rgb[0]) < 100 && Number(rgb[1]) < 150 && Number(rgb[2]) < 120;
               var cls = b.className || "";
-              return cls.indexOf("selected") !== -1 || cls.indexOf("active") !== -1 || (bg && bg !== "rgb(255, 255, 255)" && bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent");
+              return isDarkGreen || cls.indexOf("selected") !== -1 || cls.indexOf("active") !== -1;
             });
             if (!selectedOptBtn) return;
+
             var rawTxt = (selectedOptBtn.textContent || "").trim();
             var m = rawTxt.match(/:\s*(\d+(?:\.\d+)?)/);
             if (!m || !m[1]) return;
@@ -70,10 +81,10 @@
             if (isNaN(unitPrice) || unitPrice <= 0) return;
 
             var qty = 1;
-            var spans = Array.from(modal.querySelectorAll("span, div, strong"));
-            for (var i = 0; i < spans.length; i++) {
-              var st = (spans[i].textContent || "").trim();
-              if (/^\d+$/.test(st) && spans[i].children.length === 0) {
+            var allEls = Array.from(modal.querySelectorAll("span, div, strong, b"));
+            for (var i = 0; i < allEls.length; i++) {
+              var st = (allEls[i].textContent || "").trim();
+              if (/^\d+$/.test(st) && allEls[i].children.length === 0) {
                 var val = parseInt(st, 10);
                 if (val >= 1 && val <= 999) {
                   qty = val;
@@ -83,30 +94,56 @@
             }
             var totalPrice = Math.round(unitPrice * qty);
 
-            spans.forEach(function(el) {
-              if (el.children.length === 0 && el.textContent && el.textContent.indexOf("ر.ي") !== -1 && el.textContent.indexOf("إضافة") === -1) {
-                var newLabel = el.textContent.replace(/\d[\d,.]*\s*(?=ر\.ي)/, unitPrice.toLocaleString("en-US") + " ");
-                if (el.textContent !== newLabel) el.textContent = newLabel;
+            allEls.forEach(function(el) {
+              if (el === addBtn || addBtn.contains(el)) return;
+              var fullTxt = (el.textContent || "").trim();
+              if (fullTxt.indexOf("ر.ي") !== -1 && fullTxt.indexOf("/") !== -1 && el.children.length <= 2) {
+                var expectedSub = fullTxt.replace(/^\s*\d[\d,.]*/, unitPrice.toLocaleString("en-US"));
+                if (fullTxt !== expectedSub) {
+                  var tw = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null);
+                  var tn;
+                  var replacedNode = false;
+                  while ((tn = tw.nextNode())) {
+                    if (tn.nodeValue && /\d/.test(tn.nodeValue)) {
+                      tn.nodeValue = tn.nodeValue.replace(/\d[\d,.]*/, unitPrice.toLocaleString("en-US"));
+                      replacedNode = true;
+                      break;
+                    }
+                  }
+                  if (!replacedNode) el.textContent = expectedSub;
+                }
               }
             });
 
-            var walker = document.createTreeWalker(addBtn, NodeFilter.SHOW_TEXT, null);
-            var node;
-            while ((node = walker.nextNode())) {
-              if (node.nodeValue && node.nodeValue.indexOf("إضافة إلى السلة") !== -1) {
-                var updated = "إضافة إلى السلة (" + totalPrice.toLocaleString("en-US") + " ر.ي)";
-                if (node.nodeValue.trim() !== updated) {
-                  node.nodeValue = " " + updated + " ";
+            var btnFullTxt = (addBtn.textContent || "").trim();
+            var targetPriceStr = totalPrice.toLocaleString("en-US");
+            if (btnFullTxt.indexOf("(" + targetPriceStr + " ر.ي)") === -1) {
+              var twBtn = document.createTreeWalker(addBtn, NodeFilter.SHOW_TEXT, null);
+              var textNodes = [];
+              var n;
+              while ((n = twBtn.nextNode())) {
+                textNodes.push(n);
+              }
+              if (textNodes.length > 1) {
+                for (var j = 0; j < textNodes.length; j++) {
+                  if (/^\s*\d[\d,.]*\s*$/.test(textNodes[j].nodeValue || "")) {
+                    textNodes[j].nodeValue = targetPriceStr;
+                  } else if ((textNodes[j].nodeValue || "").indexOf("ر.ي") !== -1 && /\d/.test(textNodes[j].nodeValue || "")) {
+                    textNodes[j].nodeValue = (textNodes[j].nodeValue || "").replace(/\d[\d,.]*/, targetPriceStr);
+                  }
                 }
+              } else if (textNodes.length === 1) {
+                textNodes[0].nodeValue = " إضافة إلى السلة (" + targetPriceStr + " ر.ي) ";
               }
             }
           } catch (e) {}
         }
         document.addEventListener("click", function() {
-          setTimeout(syncVariantModalPrice, 10);
-          setTimeout(syncVariantModalPrice, 60);
+          setTimeout(syncVariantModalPrice, 5);
+          setTimeout(syncVariantModalPrice, 40);
+          setTimeout(syncVariantModalPrice, 120);
         }, true);
-        setInterval(syncVariantModalPrice, 250);
+        setInterval(syncVariantModalPrice, 150);
       })();
     </script>
 
