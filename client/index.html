@@ -45,105 +45,354 @@
     
 
   
+    
+
+  
     <script>
       (function() {
+        // Safely update text inside a DOM element WITHOUT removing/replacing React's child Text nodes!
+        function setElementTextSafe(el, newText) {
+          if (!el) return;
+          var tw = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null);
+          var nodes = [];
+          var n;
+          while ((n = tw.nextNode())) nodes.push(n);
+          if (nodes.length === 0) {
+            el.textContent = newText;
+          } else if (nodes.length === 1) {
+            if (nodes[0].nodeValue !== newText) nodes[0].nodeValue = newText;
+          } else {
+            var currentJoined = nodes.map(function(x) { return x.nodeValue || ""; }).join("");
+            if (currentJoined.trim() === newText.trim()) return;
+            nodes[0].nodeValue = newText;
+            for (var i = 1; i < nodes.length; i++) {
+              if (nodes[i].nodeValue !== "") nodes[i].nodeValue = "";
+            }
+          }
+        }
+
+        // Normalize cart items in localStorage so any item with (كبير:250) has price=250 and unitPrice=250 in storage
+        function normalizeCartArray(arr) {
+          if (!Array.isArray(arr)) return arr;
+          for (var i = 0; i < arr.length; i++) {
+            var it = arr[i];
+            if (it && typeof it === "object") {
+              var nm = [it.name, it.productName, it.variant, it.selectedVariant, it.option, it.unit].filter(Boolean).join(" ");
+              var m = nm.match(/:\s*(\d+(?:\.\d+)?)/);
+              if (m && m[1]) {
+                var p = parseFloat(m[1]);
+                if (!isNaN(p) && p > 0) {
+                  it.price = p;
+                  if (it.unitPrice !== undefined) it.unitPrice = p;
+                }
+              }
+            }
+          }
+          return arr;
+        }
+
+        var origSetItem = Storage.prototype.setItem;
+        Storage.prototype.setItem = function(key, val) {
+          try {
+            if (val && typeof val === "string" && val.charAt(0) === "[") {
+              var parsed = JSON.parse(val);
+              if (Array.isArray(parsed) && parsed.length > 0 && (parsed[0].productId !== undefined || parsed[0].quantity !== undefined)) {
+                normalizeCartArray(parsed);
+                val = JSON.stringify(parsed);
+              }
+            }
+          } catch (e) {}
+          return origSetItem.call(this, key, val);
+        };
+
+        var origGetItem = Storage.prototype.getItem;
+        Storage.prototype.getItem = function(key) {
+          var val = origGetItem.call(this, key);
+          try {
+            if (val && typeof val === "string" && val.charAt(0) === "[") {
+              var parsed = JSON.parse(val);
+              if (Array.isArray(parsed) && parsed.length > 0 && (parsed[0].productId !== undefined || parsed[0].quantity !== undefined)) {
+                normalizeCartArray(parsed);
+                return JSON.stringify(parsed);
+              }
+            }
+          } catch (e) {}
+          return val;
+        };
+
+        // Immediately normalize any existing cart in localStorage on boot
+        try {
+          for (var k = 0; k < localStorage.length; k++) {
+            var keyName = localStorage.key(k);
+            if (keyName) {
+              var rawV = origGetItem.call(localStorage, keyName);
+              if (rawV && rawV.charAt(0) === "[") {
+                var arrV = JSON.parse(rawV);
+                if (Array.isArray(arrV) && arrV.length > 0 && (arrV[0].productId !== undefined || arrV[0].quantity !== undefined)) {
+                  normalizeCartArray(arrV);
+                  origSetItem.call(localStorage, keyName, JSON.stringify(arrV));
+                }
+              }
+            }
+          }
+        } catch (e) {}
+
         function syncVariantModalPrice() {
           try {
             var buttons = Array.from(document.querySelectorAll("button"));
             var addBtn = buttons.find(function(b) {
-              return b.textContent && b.textContent.indexOf("إضافة إلى السلة") !== -1;
+              return b.offsetParent !== null && b.textContent && b.textContent.indexOf("إضافة إلى السلة") !== -1;
             });
-            if (!addBtn) return;
-
-            var modal = addBtn.parentElement;
-            while (modal && modal !== document.body && modal.querySelectorAll("button").length < 4) {
-              modal = modal.parentElement;
-            }
-            if (!modal) return;
-
-            var modalButtons = Array.from(modal.querySelectorAll("button"));
-            var selectedOptBtn = modalButtons.find(function(b) {
-              if (b === addBtn) return false;
-              var txt = (b.textContent || "").trim();
-              if (txt.indexOf(":") === -1) return false;
-              var style = window.getComputedStyle(b);
-              var rgb = (style.backgroundColor || "").match(/\d+/g);
-              var isDarkGreen = rgb && rgb.length >= 3 && Number(rgb[0]) < 100 && Number(rgb[1]) < 150 && Number(rgb[2]) < 120;
-              var cls = b.className || "";
-              return isDarkGreen || cls.indexOf("selected") !== -1 || cls.indexOf("active") !== -1;
-            });
-            if (!selectedOptBtn) return;
-
-            var rawTxt = (selectedOptBtn.textContent || "").trim();
-            var m = rawTxt.match(/:\s*(\d+(?:\.\d+)?)/);
-            if (!m || !m[1]) return;
-            var unitPrice = parseFloat(m[1]);
-            if (isNaN(unitPrice) || unitPrice <= 0) return;
-
-            var qty = 1;
-            var allEls = Array.from(modal.querySelectorAll("span, div, strong, b"));
-            for (var i = 0; i < allEls.length; i++) {
-              var st = (allEls[i].textContent || "").trim();
-              if (/^\d+$/.test(st) && allEls[i].children.length === 0) {
-                var val = parseInt(st, 10);
-                if (val >= 1 && val <= 999) {
-                  qty = val;
-                  break;
-                }
+            if (addBtn) {
+              var modal = addBtn.parentElement;
+              while (modal && modal !== document.body && modal.querySelectorAll("button").length < 4) {
+                modal = modal.parentElement;
               }
-            }
-            var totalPrice = Math.round(unitPrice * qty);
+              if (modal) {
+                var modalButtons = Array.from(modal.querySelectorAll("button"));
+                var optBtns = modalButtons.filter(function(b) {
+                  if (b === addBtn) return false;
+                  var txt = (b.textContent || "").trim();
+                  return txt.indexOf(":") !== -1 || b.hasAttribute("data-raw-opt");
+                });
 
-            allEls.forEach(function(el) {
-              if (el === addBtn || addBtn.contains(el)) return;
-              var fullTxt = (el.textContent || "").trim();
-              if (fullTxt.indexOf("ر.ي") !== -1 && fullTxt.indexOf("/") !== -1 && el.children.length <= 2) {
-                var expectedSub = fullTxt.replace(/^\s*\d[\d,.]*/, unitPrice.toLocaleString("en-US"));
-                if (fullTxt !== expectedSub) {
-                  var tw = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null);
-                  var tn;
-                  var replacedNode = false;
-                  while ((tn = tw.nextNode())) {
-                    if (tn.nodeValue && /\d/.test(tn.nodeValue)) {
-                      tn.nodeValue = tn.nodeValue.replace(/\d[\d,.]*/, unitPrice.toLocaleString("en-US"));
-                      replacedNode = true;
-                      break;
+                var detailsParts = [];
+                optBtns.forEach(function(b) {
+                  var raw = b.getAttribute("data-raw-opt") || (b.textContent || "").trim();
+                  if (!b.hasAttribute("data-raw-opt") && raw.indexOf(":") !== -1) {
+                    b.setAttribute("data-raw-opt", raw);
+                  }
+                  var mm = raw.match(/^([^:]+):\s*(\d+(?:\.\d+)?)/);
+                  if (mm) {
+                    detailsParts.push(mm[1].trim() + ": " + Number(mm[2]).toLocaleString("en-US") + " ر.ي");
+                  }
+                });
+
+                var selectedOptBtn = optBtns.find(function(b) {
+                  var style = window.getComputedStyle(b);
+                  var rgb = (style.backgroundColor || "").match(/\d+/g);
+                  var isDarkGreen = rgb && rgb.length >= 3 && Number(rgb[0]) < 100 && Number(rgb[1]) < 150 && Number(rgb[2]) < 120;
+                  var cls = b.className || "";
+                  return isDarkGreen || cls.indexOf("selected") !== -1 || cls.indexOf("active") !== -1;
+                });
+
+                if (selectedOptBtn) {
+                  var rawTxt = selectedOptBtn.getAttribute("data-raw-opt") || (selectedOptBtn.textContent || "").trim();
+                  var m = rawTxt.match(/:\s*(\d+(?:\.\d+)?)/);
+                  if (m && m[1]) {
+                    var unitPrice = parseFloat(m[1]);
+                    if (!isNaN(unitPrice) && unitPrice > 0) {
+                      var qty = 1;
+                      var allEls = Array.from(modal.querySelectorAll("p, small, span, div, strong, b"));
+                      for (var i = 0; i < allEls.length; i++) {
+                        var st = (allEls[i].textContent || "").trim();
+                        if (/^\d+$/.test(st) && allEls[i].children.length === 0) {
+                          var val = parseInt(st, 10);
+                          if (val >= 1 && val <= 999) {
+                            qty = val;
+                            break;
+                          }
+                        }
+                      }
+                      var totalPrice = Math.round(unitPrice * qty);
+
+                      // 1. Update top price subtitle under product title (showing selected price + detailed option breakdown)
+                      allEls.forEach(function(el) {
+                        if (el === addBtn || addBtn.contains(el)) return;
+                        if ( optBtns.some(function(ob) { return ob === el || ob.contains(el); }) ) return;
+                        var fullTxt = (el.textContent || "").trim();
+                        if (fullTxt.indexOf("ر.ي") !== -1 && (fullTxt.indexOf("/") !== -1 || fullTxt.indexOf("·") !== -1 || el.tagName === "P" || el.tagName === "SMALL") && el.children.length <= 2) {
+                          var detailSuffix = detailsParts.length > 0 ? " (" + detailsParts.join(" · ") + ")" : "";
+                          var targetTop = unitPrice.toLocaleString("en-US") + " ر.ي" + detailSuffix;
+                          setElementTextSafe(el, targetTop);
+                        }
+                      });
+
+                      // 2. Update bottom "إضافة إلى السلة (... ر.ي)" button safely
+                      var btnFullTxt = (addBtn.textContent || "").trim();
+                      var targetPriceStr = totalPrice.toLocaleString("en-US");
+                      if (btnFullTxt.indexOf("(" + targetPriceStr + " ر.ي)") === -1) {
+                        var twBtn = document.createTreeWalker(addBtn, NodeFilter.SHOW_TEXT, null);
+                        var textNodes = [];
+                        var n;
+                        while ((n = twBtn.nextNode())) textNodes.push(n);
+                        if (textNodes.length > 1) {
+                          for (var j = 0; j < textNodes.length; j++) {
+                            if (/^\s*\d[\d,.]*\s*$/.test(textNodes[j].nodeValue || "")) {
+                              textNodes[j].nodeValue = targetPriceStr;
+                            } else if ((textNodes[j].nodeValue || "").indexOf("ر.ي") !== -1 && /\d/.test(textNodes[j].nodeValue || "")) {
+                              textNodes[j].nodeValue = (textNodes[j].nodeValue || "").replace(/\d[\d,.]*/, targetPriceStr);
+                            }
+                          }
+                        } else if (textNodes.length === 1) {
+                          textNodes[0].nodeValue = " إضافة إلى السلة (" + targetPriceStr + " ر.ي) ";
+                        }
+                      }
                     }
                   }
-                  if (!replacedNode) el.textContent = expectedSub;
                 }
               }
-            });
+            }
 
-            var btnFullTxt = (addBtn.textContent || "").trim();
-            var targetPriceStr = totalPrice.toLocaleString("en-US");
-            if (btnFullTxt.indexOf("(" + targetPriceStr + " ر.ي)") === -1) {
-              var twBtn = document.createTreeWalker(addBtn, NodeFilter.SHOW_TEXT, null);
-              var textNodes = [];
-              var n;
-              while ((n = twBtn.nextNode())) {
-                textNodes.push(n);
-              }
-              if (textNodes.length > 1) {
-                for (var j = 0; j < textNodes.length; j++) {
-                  if (/^\s*\d[\d,.]*\s*$/.test(textNodes[j].nodeValue || "")) {
-                    textNodes[j].nodeValue = targetPriceStr;
-                  } else if ((textNodes[j].nodeValue || "").indexOf("ر.ي") !== -1 && /\d/.test(textNodes[j].nodeValue || "")) {
-                    textNodes[j].nodeValue = (textNodes[j].nodeValue || "").replace(/\d[\d,.]*/, targetPriceStr);
+            // 3. Sync prices inside the Shopping Cart screen ("سلة التسوق") safely via TextNodes
+            var headings = Array.from(document.querySelectorAll("h1, h2, h3, h4, strong, div, span"));
+            var isCartScreen = headings.some(function(h) { return (h.textContent || "").trim() === "سلة التسوق"; });
+            if (isCartScreen) {
+              var removeBtns = Array.from(document.querySelectorAll("button")).filter(function(b) {
+                return (b.textContent || "").indexOf("إزالة") !== -1;
+              });
+              var computedCartSubtotal = 0;
+              var foundAnyRow = false;
+
+              removeBtns.forEach(function(remBtn, rowIdx) {
+                var rowCard = remBtn.parentElement;
+                while (rowCard && rowCard !== document.body && (rowCard.textContent || "").indexOf("ر.ي") === -1) {
+                  rowCard = rowCard.parentElement;
+                }
+                if (rowCard && rowCard.parentElement && rowCard.querySelectorAll("img").length === 0 && rowCard.parentElement.querySelectorAll("img").length === 1) {
+                  rowCard = rowCard.parentElement;
+                }
+                if (!rowCard) return;
+                rowCard.setAttribute("data-cart-row-idx", String(rowIdx));
+
+                var rowTxt = rowCard.textContent || "";
+                var rowQty = 1;
+                var rowEls = Array.from(rowCard.querySelectorAll("span, div, strong, p, small"));
+                for (var k = 0; k < rowEls.length; k++) {
+                  var t = (rowEls[k].textContent || "").trim();
+                  if (/^\d+$/.test(t) && rowEls[k].children.length === 0) {
+                    var qv = parseInt(t, 10);
+                    if (qv >= 1 && qv <= 999) { rowQty = qv; break; }
                   }
                 }
-              } else if (textNodes.length === 1) {
-                textNodes[0].nodeValue = " إضافة إلى السلة (" + targetPriceStr + " ر.ي) ";
+
+                var pm = rowTxt.match(/:\s*(\d+(?:\.\d+)?)/);
+                var itemUnitP = 0;
+                if (pm && pm[1]) {
+                  itemUnitP = parseFloat(pm[1]);
+                } else {
+                  var unitM = rowTxt.match(/(\d[\d,.]*)\s*ر\.ي\s*\//);
+                  if (unitM && unitM[1]) itemUnitP = parseFloat(unitM[1].replace(/,/g, ""));
+                }
+
+                if (itemUnitP > 0) {
+                  foundAnyRow = true;
+                  var lineTotal = Math.round(itemUnitP * rowQty);
+                  computedCartSubtotal += lineTotal;
+
+                  rowEls.forEach(function(el) {
+                    if (el.children.length <= 1 && el.tagName !== "BUTTON") {
+                      var et = (el.textContent || "").trim();
+                      if (et.indexOf("ر.ي") !== -1 && et.indexOf("/") !== -1) {
+                        var newUnitTxt = et.replace(/^\s*\d[\d,.]*/, itemUnitP.toLocaleString("en-US"));
+                        setElementTextSafe(el, newUnitTxt);
+                      } else if (/^\d[\d,.]*\s*ر\.ي$/.test(et)) {
+                        var newLineTxt = lineTotal.toLocaleString("en-US") + " ر.ي";
+                        setElementTextSafe(el, newLineTxt);
+                      }
+                    }
+                  });
+                }
+              });
+
+              if (foundAnyRow && computedCartSubtotal > 0) {
+                var allDivs = Array.from(document.querySelectorAll("div, section, article"));
+                allDivs.forEach(function(d) {
+                  if (d.children.length === 2) {
+                    var c0 = (d.children[0].textContent || "").trim();
+                    var c1 = (d.children[1].textContent || "").trim();
+                    var subStr = computedCartSubtotal.toLocaleString("en-US") + " ر.ي";
+                    if (c0 === "المجموع الفرعي" || c0 === "الإجمالي الحالي") {
+                      setElementTextSafe(d.children[1], subStr);
+                    } else if (c1 === "المجموع الفرعي" || c1 === "الإجمالي الحالي") {
+                      setElementTextSafe(d.children[0], subStr);
+                    }
+                  }
+                });
               }
             }
           } catch (e) {}
         }
-        document.addEventListener("click", function() {
-          setTimeout(syncVariantModalPrice, 5);
-          setTimeout(syncVariantModalPrice, 40);
-          setTimeout(syncVariantModalPrice, 120);
+
+        // 4. Fallback rescue for Cart +, -, and إزالة buttons if a tap ever fails to update React state!
+        document.addEventListener("click", function(ev) {
+          setTimeout(syncVariantModalPrice, 10);
+          setTimeout(syncVariantModalPrice, 60);
+          setTimeout(syncVariantModalPrice, 150);
+
+          try {
+            var btn = ev.target && ev.target.closest ? ev.target.closest("button") : null;
+            if (!btn) return;
+            var headings = Array.from(document.querySelectorAll("h1, h2, h3, h4, strong, div, span"));
+            var isCartScreen = headings.some(function(h) { return (h.textContent || "").trim() === "سلة التسوق"; });
+            if (!isCartScreen) return;
+
+            var rowCard = btn.closest("[data-cart-row-idx]");
+            if (!rowCard) return;
+            var rowIdx = parseInt(rowCard.getAttribute("data-cart-row-idx") || "-1", 10);
+            if (rowIdx < 0) return;
+
+            var bTxt = (btn.textContent || "").trim();
+            var isRemove = bTxt.indexOf("إزالة") !== -1;
+            var isPlus = bTxt === "+" || bTxt === "＋" || btn.innerHTML.indexOf("lucide-plus") !== -1 || btn.innerHTML.indexOf("M5 12h14") !== -1 && btn.innerHTML.indexOf("M12 5v14") !== -1;
+            var isMinus = bTxt === "-" || bTxt === "−" || bTxt === "–" || btn.innerHTML.indexOf("lucide-minus") !== -1 || (btn.innerHTML.indexOf("M5 12h14") !== -1 && btn.innerHTML.indexOf("M12 5v14") === -1);
+
+            if (!isRemove && !isPlus && !isMinus) return;
+
+            // Capture current quantity and row count BEFORE waiting 70ms for React
+            var getRowQty = function(rc) {
+              var els = Array.from(rc.querySelectorAll("span, div, strong, p"));
+              for (var i = 0; i < els.length; i++) {
+                var t = (els[i].textContent || "").trim();
+                if (/^\d+$/.test(t) && els[i].children.length === 0) {
+                  return parseInt(t, 10);
+                }
+              }
+              return 1;
+            };
+            var beforeQty = getRowQty(rowCard);
+            var beforeCount = document.querySelectorAll("[data-cart-row-idx]").length;
+
+            setTimeout(function() {
+              var afterCount = document.querySelectorAll("[data-cart-row-idx]").length;
+              var stillInDom = document.body.contains(rowCard);
+              var afterQty = stillInDom ? getRowQty(rowCard) : 0;
+
+              // If React already updated the DOM, just sync prices!
+              if (isRemove && (!stillInDom || afterCount < beforeCount)) { syncVariantModalPrice(); return; }
+              if (isPlus && afterQty > beforeQty) { syncVariantModalPrice(); return; }
+              if (isMinus && (!stillInDom || afterCount < beforeCount || afterQty < beforeQty)) { syncVariantModalPrice(); return; }
+
+              // Otherwise, React's button handler was stuck on this item — update localStorage cart directly and refresh state!
+              for (var k = 0; k < localStorage.length; k++) {
+                var keyName = localStorage.key(k);
+                if (!keyName) continue;
+                var rawV = origGetItem.call(localStorage, keyName);
+                if (rawV && rawV.charAt(0) === "[") {
+                  var arrV = JSON.parse(rawV);
+                  if (Array.isArray(arrV) && arrV.length > rowIdx && (arrV[0].productId !== undefined || arrV[0].quantity !== undefined)) {
+                    if (isRemove) {
+                      arrV.splice(rowIdx, 1);
+                    } else if (isPlus) {
+                      arrV[rowIdx].quantity = (Number(arrV[rowIdx].quantity) || 1) + 1;
+                    } else if (isMinus) {
+                      var nq = (Number(arrV[rowIdx].quantity) || 1) - 1;
+                      if (nq <= 0) arrV.splice(rowIdx, 1);
+                      else arrV[rowIdx].quantity = nq;
+                    }
+                    normalizeCartArray(arrV);
+                    origSetItem.call(localStorage, keyName, JSON.stringify(arrV));
+                    window.dispatchEvent(new Event("storage"));
+                    window.location.reload();
+                    break;
+                  }
+                }
+              }
+            }, 80);
+          } catch (e) {}
         }, true);
-        setInterval(syncVariantModalPrice, 150);
+
+        setInterval(syncVariantModalPrice, 250);
       })();
     </script>
 

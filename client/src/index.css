@@ -2351,3 +2351,18 @@ html, body { overscroll-behavior-y: contain; -webkit-overflow-scrolling: touch; 
 .v104-admin-orders-list.v104-single-order-mode > .v104-admin-order-card:not(.v104-order-open) {
   display: none !important;
 }
+
+
+/* v106: Ensure cart buttons (-, +, إزالة) always receive clicks cleanly */
+.rolling-whatsapp-wrapper, [class*="whatsapp"] {
+  pointer-events: none;
+}
+.rolling-whatsapp-wrapper a, .rolling-whatsapp-wrapper button, [class*="whatsapp"] a, [class*="whatsapp"] button {
+  pointer-events: auto;
+}
+[data-cart-row-idx] button {
+  position: relative;
+  z-index: 25;
+  pointer-events: auto !important;
+  touch-action: manipulation;
+}

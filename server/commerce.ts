@@ -939,7 +939,52 @@ async function refreshHomeCatalogCache() {
 (globalThis as any).__loadCatalogHome = refreshHomeCatalogCache;
 setTimeout(() => { void refreshHomeCatalogCache().catch(() => {}); }, 80);
 // --- FAST_IMG_HELPER_END ---
-function resolveServerVariantOption(product: any, itemName?: string): { price: number; unit: string; name: string } {
+function resolveServerVariantOption(product: any, itemName?: string) {
+  const fallbackUnit = String(product?.unit || "حبة").trim() || "حبة";
+  const fallbackPrice = Math.max(0, Math.round(Number(product?.price || 0)));
+  const rawItemName = String(itemName || "").trim();
+  if (!product?.description || !rawItemName) {
+    return { unit: fallbackUnit, price: fallbackPrice };
+  }
+
+  // Extract the option label chosen by the customer (e.g. from "بسكويت ماري (كبير:250)" -> "كبير")
+  let chosenLabel = rawItemName;
+  const parenMatches = Array.from(rawItemName.matchAll(/\(([^()]+)\)/g));
+  if (parenMatches.length > 0) {
+    chosenLabel = parenMatches[parenMatches.length - 1][1].trim();
+  } else if (rawItemName.includes(" - ")) {
+    chosenLabel = rawItemName.split(" - ").pop()!.trim();
+  }
+  const cleanChosenName = chosenLabel.split(":")[0].replace(/—.*$/, "").trim();
+
+  // Parse official variants from the database product.description
+  const desc = String(product.description || "");
+  const vMatch = desc.match(/\[\[variants:(\[[\s\S]*?\])\]\]/);
+  if (vMatch && vMatch[1]) {
+    try {
+      const dbVariants: string[] = JSON.parse(vMatch[1]);
+      for (const rawVar of dbVariants) {
+        const entry = String(rawVar || "").trim();
+        const colonIdx = entry.indexOf(":");
+        const optName = (colonIdx !== -1 ? entry.slice(0, colonIdx) : entry).trim();
+        const optPriceRaw = colonIdx !== -1 ? Number(entry.slice(colonIdx + 1).trim()) : fallbackPrice;
+        const officialPrice = (!isNaN(optPriceRaw) && optPriceRaw > 0) ? Math.round(optPriceRaw) : fallbackPrice;
+
+        if (optName && (
+          cleanChosenName === optName ||
+          chosenLabel === optName ||
+          rawItemName.includes("(" + optName + ":") ||
+          rawItemName.includes("(" + optName + ")") ||
+          rawItemName.endsWith(" " + optName)
+        )) {
+          return { unit: optName, price: officialPrice };
+        }
+      }
+    } catch {}
+  }
+
+  return { unit: cleanChosenName || fallbackUnit, price: fallbackPrice };
+} {
   const rawDesc = String(product?.description || "");
   const vm = rawDesc.match(/\[\[variants:([\s\S]*?)\]\]/);
   const reqName = String(itemName || "").trim();

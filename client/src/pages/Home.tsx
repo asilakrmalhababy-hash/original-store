@@ -27,16 +27,35 @@ import PWAInstall from "@/components/PWAInstall";
 import { buildMissingIngredientNote } from "@/lib/assistant-note";
 import { ensureBrowserPushSubscription, getExistingBrowserPushSubscription, getPushPermissionState, requestPushPermission } from "@/lib/pushNotifications";
 
-function extractVariantPriceV104(rawText: any, fallbackPrice: any): number {
-  const base = Number(fallbackPrice || 0);
-  if (!rawText) return base;
-  const str = typeof rawText === "object"
-    ? String(rawText?.name || rawText?.variant || rawText?.unit || "")
-    : String(rawText).trim();
-  const m = str.match(/:\s*(\d+(?:\.\d+)?)/);
+function extractVariantPriceV104(rawText: any, fallbackPrice: any, productObj?: any): number {
+  const base = Number(fallbackPrice ?? productObj?.price ?? 0);
+  let combined = "";
+  if (typeof rawText === "object" && rawText !== null) {
+    combined = [rawText.name, rawText.productName, rawText.variant, rawText.selectedVariant, rawText.option, rawText.unit, rawText.label].filter(Boolean).join(" ");
+  } else if (rawText) {
+    combined = String(rawText).trim();
+  }
+  const m = combined.match(/:\s*(\d+(?:\.\d+)?)/);
   if (m && m[1]) {
     const p = parseFloat(m[1]);
     if (!isNaN(p) && p > 0) return p;
+  }
+  const desc = String(productObj?.description || (typeof rawText === "object" ? rawText?.description : "") || "");
+  const vMatch = desc.match(/\[\[variants:(\[[\s\S]*?\])\]\]/);
+  if (vMatch && vMatch[1] && combined) {
+    try {
+      const arr: string[] = JSON.parse(vMatch[1]);
+      for (const entry of arr) {
+        const parts = String(entry).split(":");
+        if (parts.length > 1) {
+          const optName = parts[0].trim();
+          const optPrice = parseFloat(parts.slice(1).join(":").trim());
+          if (optName && combined.includes(optName) && !isNaN(optPrice) && optPrice > 0) {
+            return optPrice;
+          }
+        }
+      }
+    } catch {}
   }
   return base;
 }
@@ -1693,7 +1712,7 @@ function ProductDetail({ id, allProducts = [], onSelectProduct, onBack, onAiReci
 function CartPage({ minOrder = 0 }: { minOrder?: number }) {
   const { cart, setQuantity, remove, clear } = useStore();
   const [checkout, setCheckout] = useState(false);
-  const subtotal = cart.reduce((sum, line) => sum + line.price * line.quantity, 0);
+  const subtotal = cart.reduce((sum, line) => sum + extractVariantPriceV104(line, line?.price ?? line?.unitPrice) * line.quantity, 0);
   const belowMin = minOrder > 0 && subtotal < minOrder;
   return (
     <main className="page-shell inner-page">
@@ -2266,7 +2285,7 @@ function Checkout({ onClose, onSuccess, cart }: { onClose: () => void; onSuccess
   const customer = useCustomer();
   const homeCatalog = trpc.commerce.catalog.home.useQuery(undefined, { staleTime: 0, refetchOnMount: 'always' });
   const deliveryTree = useMemo(() => readPublicDeliveryTree((homeCatalog.data?.settings as any)?.deliveryTreeConfig), [homeCatalog.data?.settings]);
-  const subtotal = useMemo(() => cart.reduce((s, l) => s + l.price * l.quantity, 0), [cart]);
+  const subtotal = useMemo(() => cart.reduce((s, l) => s + extractVariantPriceV104(l, l?.price ?? l?.unitPrice) * l.quantity, 0), [cart]);
 
   const defaultAddress = customer.addresses.find(address => address.isDefault) ?? customer.addresses[0];
   const [selectedAddressId, setSelectedAddressId] = useState(defaultAddress?.id ?? "new");
@@ -2836,7 +2855,7 @@ function OrdersPage() {
                 <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', padding: '8px 10px', borderRadius: '11px', background: '#f8fbf9', fontSize: '12.5px' }}>
                   <strong style={{ color: '#143a28', fontWeight: 800 }}>{item.productName}</strong>
                   <span style={{ color: '#174b36', fontWeight: 900, whiteSpace: 'nowrap' }}>
-                    {item.quantity} × {formatPrice(item.unitPrice || Math.round((item.lineTotal || 0) / Math.max(1, item.quantity)))}
+                    {item.quantity} × {formatPrice(extractVariantPriceV104(item, item?.unitPrice ?? item?.price) || Math.round((item.lineTotal || 0) / Math.max(1, item.quantity)))}
                   </span>
                 </div>
               ))}
@@ -3888,7 +3907,7 @@ function AssistantPage() {
         </div>
         <div className="chat-messages" ref={messagesRef}>
           {displayedMessages.map((message, index) => {
-            const totalActionPrice = message.cartAction?.items.reduce((s, it) => s + it.price * it.quantity, 0) ?? 0;
+            const totalActionPrice = message.cartAction?.items.reduce((s, it) => s + extractVariantPriceV104(it, it?.unitPrice ?? it?.price) * it.quantity, 0) ?? 0;
             return (
               <div key={index + "-" + message.role + "-" + (message.ownerMsgId || "")} className={"chat-message " + (message.role === "user" ? "from-user" : "from-assistant")} style={message.ownerMsgId ? { border: "1.5px solid #e0a800", background: "#fffdf5" } : undefined}>
                 {message.ownerMsgId && (
@@ -4106,7 +4125,7 @@ function GamifiedRewardBar({ settings, location }: { settings: Record<string, st
     cfg.placement === "home_and_cart" ? (isHome || isCart) :
     isCart;
 
-  const subtotal = cart.reduce((sum, line) => sum + line.price * line.quantity, 0);
+  const subtotal = cart.reduce((sum, line) => sum + extractVariantPriceV104(line, line?.price ?? line?.unitPrice) * line.quantity, 0);
   const remaining = Math.max(0, threshold - subtotal);
   const pct = Math.min(100, Math.max(0, Math.round((subtotal / threshold) * 100)));
   const unlocked = subtotal >= threshold;
