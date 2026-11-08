@@ -939,12 +939,12 @@ async function refreshHomeCatalogCache() {
 (globalThis as any).__loadCatalogHome = refreshHomeCatalogCache;
 setTimeout(() => { void refreshHomeCatalogCache().catch(() => {}); }, 80);
 // --- FAST_IMG_HELPER_END ---
-function resolveServerVariantOption(product: any, itemName?: string) {
+function resolveServerVariantOption(product: any, itemName?: string): { price: number; unit: string; name: string } {
   const fallbackUnit = String(product?.unit || "حبة").trim() || "حبة";
   const fallbackPrice = Math.max(0, Math.round(Number(product?.price || 0)));
-  const rawItemName = String(itemName || "").trim();
+  const rawItemName = String(itemName || product?.name || "").trim();
   if (!product?.description || !rawItemName) {
-    return { unit: fallbackUnit, price: fallbackPrice };
+    return { price: fallbackPrice, unit: fallbackUnit, name: rawItemName || String(product?.name || "") };
   }
 
   // Extract the option label chosen by the customer (e.g. from "بسكويت ماري (كبير:250)" -> "كبير")
@@ -975,36 +975,19 @@ function resolveServerVariantOption(product: any, itemName?: string) {
           chosenLabel === optName ||
           rawItemName.includes("(" + optName + ":") ||
           rawItemName.includes("(" + optName + ")") ||
-          rawItemName.endsWith(" " + optName)
+          rawItemName.includes(optName)
         )) {
-          return { unit: optName, price: officialPrice };
+          return {
+            price: officialPrice,
+            unit: optName,
+            name: rawItemName.includes(optName) ? rawItemName : String(product?.name || "") + " (" + optName + ")"
+          };
         }
       }
     } catch {}
   }
 
-  return { unit: cleanChosenName || fallbackUnit, price: fallbackPrice };
-} {
-  const rawDesc = String(product?.description || "");
-  const vm = rawDesc.match(/\[\[variants:([\s\S]*?)\]\]/);
-  const reqName = String(itemName || "").trim();
-  if (vm && reqName) {
-    try {
-      const arr = JSON.parse(vm[1]);
-      if (Array.isArray(arr)) {
-        for (const v of arr) {
-          const s = String(v || "").trim();
-          const m = s.match(/^(.+?)\s*[:=]\s*(\d+(?:\.\d+)?)\s*$/);
-          const vLabel = m ? m[1].trim() : s;
-          const vPrice = m && Number(m[2]) > 0 ? Math.round(Number(m[2])) : Number(product.price);
-          if (vLabel && (reqName.includes("(" + vLabel + ")") || reqName === vLabel || reqName.endsWith(vLabel))) {
-            return { price: vPrice, unit: m ? vLabel : product.unit, name: product.name + " (" + vLabel + ")" };
-          }
-        }
-      }
-    } catch {}
-  }
-  return { price: Number(product.price), unit: product.unit, name: reqName || product.name };
+  return { price: fallbackPrice, unit: fallbackUnit, name: rawItemName || String(product?.name || "") };
 }
 
 export const commerceRouter = router({

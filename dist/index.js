@@ -3285,27 +3285,43 @@ setTimeout(() => {
   });
 }, 80);
 function resolveServerVariantOption(product, itemName) {
-  const rawDesc = String(product?.description || "");
-  const vm = rawDesc.match(/\[\[variants:([\s\S]*?)\]\]/);
-  const reqName = String(itemName || "").trim();
-  if (vm && reqName) {
+  const fallbackUnit = String(product?.unit || "\u062D\u0628\u0629").trim() || "\u062D\u0628\u0629";
+  const fallbackPrice = Math.max(0, Math.round(Number(product?.price || 0)));
+  const rawItemName = String(itemName || product?.name || "").trim();
+  if (!product?.description || !rawItemName) {
+    return { price: fallbackPrice, unit: fallbackUnit, name: rawItemName || String(product?.name || "") };
+  }
+  let chosenLabel = rawItemName;
+  const parenMatches = Array.from(rawItemName.matchAll(/\(([^()]+)\)/g));
+  if (parenMatches.length > 0) {
+    chosenLabel = parenMatches[parenMatches.length - 1][1].trim();
+  } else if (rawItemName.includes(" - ")) {
+    chosenLabel = rawItemName.split(" - ").pop().trim();
+  }
+  const cleanChosenName = chosenLabel.split(":")[0].replace(/—.*$/, "").trim();
+  const desc2 = String(product.description || "");
+  const vMatch = desc2.match(/\[\[variants:(\[[\s\S]*?\])\]\]/);
+  if (vMatch && vMatch[1]) {
     try {
-      const arr = JSON.parse(vm[1]);
-      if (Array.isArray(arr)) {
-        for (const v of arr) {
-          const s = String(v || "").trim();
-          const m = s.match(/^(.+?)\s*[:=]\s*(\d+(?:\.\d+)?)\s*$/);
-          const vLabel = m ? m[1].trim() : s;
-          const vPrice = m && Number(m[2]) > 0 ? Math.round(Number(m[2])) : Number(product.price);
-          if (vLabel && (reqName.includes("(" + vLabel + ")") || reqName === vLabel || reqName.endsWith(vLabel))) {
-            return { price: vPrice, unit: m ? vLabel : product.unit, name: product.name + " (" + vLabel + ")" };
-          }
+      const dbVariants = JSON.parse(vMatch[1]);
+      for (const rawVar of dbVariants) {
+        const entry = String(rawVar || "").trim();
+        const colonIdx = entry.indexOf(":");
+        const optName = (colonIdx !== -1 ? entry.slice(0, colonIdx) : entry).trim();
+        const optPriceRaw = colonIdx !== -1 ? Number(entry.slice(colonIdx + 1).trim()) : fallbackPrice;
+        const officialPrice = !isNaN(optPriceRaw) && optPriceRaw > 0 ? Math.round(optPriceRaw) : fallbackPrice;
+        if (optName && (cleanChosenName === optName || chosenLabel === optName || rawItemName.includes("(" + optName + ":") || rawItemName.includes("(" + optName + ")") || rawItemName.includes(optName))) {
+          return {
+            price: officialPrice,
+            unit: optName,
+            name: rawItemName.includes(optName) ? rawItemName : String(product?.name || "") + " (" + optName + ")"
+          };
         }
       }
     } catch {
     }
   }
-  return { price: Number(product.price), unit: product.unit, name: reqName || product.name };
+  return { price: fallbackPrice, unit: fallbackUnit, name: rawItemName || String(product?.name || "") };
 }
 var commerceRouter = router({
   access: publicProcedure.query(({ ctx }) => {

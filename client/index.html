@@ -48,6 +48,9 @@
     
 
   
+    
+
+  
     <script>
       (function() {
         // Safely update text inside a DOM element WITHOUT removing/replacing React's child Text nodes!
@@ -334,12 +337,11 @@
 
             var bTxt = (btn.textContent || "").trim();
             var isRemove = bTxt.indexOf("إزالة") !== -1;
-            var isPlus = bTxt === "+" || bTxt === "＋" || btn.innerHTML.indexOf("lucide-plus") !== -1 || btn.innerHTML.indexOf("M5 12h14") !== -1 && btn.innerHTML.indexOf("M12 5v14") !== -1;
+            var isPlus = bTxt === "+" || bTxt === "＋" || btn.innerHTML.indexOf("lucide-plus") !== -1 || (btn.innerHTML.indexOf("M5 12h14") !== -1 && btn.innerHTML.indexOf("M12 5v14") !== -1);
             var isMinus = bTxt === "-" || bTxt === "−" || bTxt === "–" || btn.innerHTML.indexOf("lucide-minus") !== -1 || (btn.innerHTML.indexOf("M5 12h14") !== -1 && btn.innerHTML.indexOf("M12 5v14") === -1);
 
             if (!isRemove && !isPlus && !isMinus) return;
 
-            // Capture current quantity and row count BEFORE waiting 70ms for React
             var getRowQty = function(rc) {
               var els = Array.from(rc.querySelectorAll("span, div, strong, p"));
               for (var i = 0; i < els.length; i++) {
@@ -358,12 +360,10 @@
               var stillInDom = document.body.contains(rowCard);
               var afterQty = stillInDom ? getRowQty(rowCard) : 0;
 
-              // If React already updated the DOM, just sync prices!
               if (isRemove && (!stillInDom || afterCount < beforeCount)) { syncVariantModalPrice(); return; }
               if (isPlus && afterQty > beforeQty) { syncVariantModalPrice(); return; }
               if (isMinus && (!stillInDom || afterCount < beforeCount || afterQty < beforeQty)) { syncVariantModalPrice(); return; }
 
-              // Otherwise, React's button handler was stuck on this item — update localStorage cart directly and refresh state!
               for (var k = 0; k < localStorage.length; k++) {
                 var keyName = localStorage.key(k);
                 if (!keyName) continue;

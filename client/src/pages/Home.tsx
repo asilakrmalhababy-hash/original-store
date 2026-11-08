@@ -3729,7 +3729,7 @@ function AssistantPage() {
       toast.error("الكمية المطلوبة غير متوفرة حالياً في المخزون.");
       return;
     }
-    add({ id: item.productId, name: item.name, price: extractVariantPriceV104(item, item?.price), unit: item.unit, stock: item.stock, minQuantity: item.minQuantity, quantityStep: item.quantityStep }, qty);
+    add({ id: item.productId, name: item.name, price: extractVariantPriceV104(item, item?.price), unit: (item.name && String(item.name).includes("(") ? item.name : item.unit), stock: item.stock, minQuantity: item.minQuantity, quantityStep: item.quantityStep }, qty);
     toast.success("تمت إضافة «" + item.name + "» إلى السلة بنجاح 🛒");
   };
 
@@ -3743,7 +3743,7 @@ function AssistantPage() {
       if (type === "add") {
         const total = (current?.quantity ?? 0) + item.quantity;
         if (item.stock !== null && total > item.stock) { skipped += 1; continue; }
-        add({ id: item.productId, name: item.name, price: extractVariantPriceV104(item, item?.price), unit: item.unit, stock: item.stock, minQuantity: item.minQuantity, quantityStep: item.quantityStep }, item.quantity);
+        add({ id: item.productId, name: item.name, price: extractVariantPriceV104(item, item?.price), unit: (item.name && String(item.name).includes("(") ? item.name : item.unit), stock: item.stock, minQuantity: item.minQuantity, quantityStep: item.quantityStep }, item.quantity);
         changed += 1;
       } else {
         if (!current) { skipped += 1; continue; }

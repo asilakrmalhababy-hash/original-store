@@ -1,21 +1,35 @@
-import subprocess, sys, pathlib, re
+import pathlib, re, subprocess, sys
 
-print("=== بدء التحديث الشامل v106 (توحيد وتأمين أسعار الأحجام في النافذة والسلة والإدارة + إصلاح أزرار + و - وإزالة في السلة) ===")
+print(
+    "=== بدء التحديث الشامل v106 (توحيد وتأمين أسعار الأحجام في النافذة والسلة"
+    " والإدارة + إصلاح أزرار + و - وإزالة في السلة) ==="
+)
+
+# 0. Reset modified files to clean HEAD first so no partial edit from previous run remains
+subprocess.run(
+    [
+        "git",
+        "checkout",
+        "--",
+        "server/commerce.ts",
+        "client/src/pages/Home.tsx",
+        "client/index.html",
+        "client/src/index.css",
+    ],
+    check=False,
+)
 
 # 1. Update server/commerce.ts for 100% SECURE server-side variant price lookup from the database:
 comm_path = pathlib.Path("server/commerce.ts")
 if comm_path.exists():
-    cc = comm_path.read_text(encoding="utf-8")
+  cc = comm_path.read_text(encoding="utf-8")
 
-    # Replace resolveServerVariantOption body so it securely strips :price from the client's label,
-    # looks up the option name in the official database product.description ([[variants:[...]]]),
-    # and enforces the official database price (so no user can ever spoof or tamper with prices!).
-    secure_resolve_fn = """function resolveServerVariantOption(product: any, itemName?: string) {
+  secure_resolve_fn = """function resolveServerVariantOption(product: any, itemName?: string): { price: number; unit: string; name: string } {
   const fallbackUnit = String(product?.unit || "حبة").trim() || "حبة";
   const fallbackPrice = Math.max(0, Math.round(Number(product?.price || 0)));
-  const rawItemName = String(itemName || "").trim();
+  const rawItemName = String(itemName || product?.name || "").trim();
   if (!product?.description || !rawItemName) {
-    return { unit: fallbackUnit, price: fallbackPrice };
+    return { price: fallbackPrice, unit: fallbackUnit, name: rawItemName || String(product?.name || "") };
   }
 
   // Extract the option label chosen by the customer (e.g. from "بسكويت ماري (كبير:250)" -> "كبير")
@@ -46,46 +60,49 @@ if comm_path.exists():
           chosenLabel === optName ||
           rawItemName.includes("(" + optName + ":") ||
           rawItemName.includes("(" + optName + ")") ||
-          rawItemName.endsWith(" " + optName)
+          rawItemName.includes(optName)
         )) {
-          return { unit: optName, price: officialPrice };
+          return {
+            price: officialPrice,
+            unit: optName,
+            name: rawItemName.includes(optName) ? rawItemName : String(product?.name || "") + " (" + optName + ")"
+          };
         }
       }
     } catch {}
   }
 
-  return { unit: cleanChosenName || fallbackUnit, price: fallbackPrice };
+  return { price: fallbackPrice, unit: fallbackUnit, name: rawItemName || String(product?.name || "") };
 }"""
 
-    fn_start = cc.find("function resolveServerVariantOption")
-    if fn_start != -1:
-        brace_open = cc.find("{", fn_start)
-        if brace_open != -1:
-            depth = 0
-            fn_end = brace_open
-            for idx_c in range(brace_open, len(cc)):
-                if cc[idx_c] == "{":
-                    depth += 1
-                elif cc[idx_c] == "}":
-                    depth -= 1
-                    if depth == 0:
-                        fn_end = idx_c + 1
-                        break
-            cc = cc[:fn_start] + secure_resolve_fn + cc[fn_end:]
-            print("1. Upgraded resolveServerVariantOption in server/commerce.ts with 100% database-verified variant pricing!")
+  fn_start = cc.find("function resolveServerVariantOption")
+  ret_pos = cc.find(
+      "return { price: Number(product.price), unit: product.unit", fn_start
+  )
+  if fn_start != -1 and ret_pos != -1:
+    semi = cc.find(";", ret_pos)
+    fn_end = cc.find("}", semi) + 1
+    cc = cc[:fn_start] + secure_resolve_fn + cc[fn_end:]
+    print(
+        "1. Upgraded resolveServerVariantOption in server/commerce.ts with 100%"
+        " database-verified variant pricing!"
+    )
 
-    comm_path.write_text(cc, encoding="utf-8")
+  # Also ensure any call to resolveServerVariantOption(product, ...) passes combined name + unit
+  cc = re.sub(
+      r"resolveServerVariantOption\(\s*(\w+)\s*,\s*(\w+)\.(?:name|unit)\s*\)",
+      r'resolveServerVariantOption(\1, [\2?.name, \2?.unit, (\2 as any)?.variant, (\2 as any)?.selectedVariant].filter(Boolean).join(" "))',
+      cc,
+  )
+
+  comm_path.write_text(cc, encoding="utf-8")
 
 # 2. Update client/src/pages/Home.tsx:
-#    - Ensure extractVariantPriceV104 resolves variant prices from BOTH item.name (e.g. "بسكويت ماري (كبير:250)") AND product.description ([[variants:[...]]])
-#    - Ensure cart state items automatically normalize their .price and .unitPrice to the chosen variant price
-#    - Fix +, -, and إزالة buttons in "سلة التسوق" so they match variant items accurately and never freeze!
 home_path = pathlib.Path("client/src/pages/Home.tsx")
 if home_path.exists():
-    hc = home_path.read_text(encoding="utf-8")
+  hc = home_path.read_text(encoding="utf-8")
 
-    # A) Upgrade extractVariantPriceV104 in Home.tsx
-    v106_helper = """function extractVariantPriceV104(rawText: any, fallbackPrice: any, productObj?: any): number {
+  v106_helper = """function extractVariantPriceV104(rawText: any, fallbackPrice: any, productObj?: any): number {
   const base = Number(fallbackPrice ?? productObj?.price ?? 0);
   let combined = "";
   if (typeof rawText === "object" && rawText !== null) {
@@ -118,89 +135,94 @@ if home_path.exists():
   return base;
 }"""
 
-    if "function extractVariantPriceV104" in hc:
-        h_start = hc.find("function extractVariantPriceV104")
-        h_brace = hc.find("{", h_start)
-        depth = 0
-        h_end = h_brace
-        for idx_c in range(h_brace, len(hc)):
-            if hc[idx_c] == "{":
-                depth += 1
-            elif hc[idx_c] == "}":
-                depth -= 1
-                if depth == 0:
-                    h_end = idx_c + 1
-                    break
-        hc = hc[:h_start] + v106_helper + hc[h_end:]
-    else:
-        last_imp = hc.rfind("\nimport ", 0, 3000)
-        end_imp = hc.find("\n", last_imp + 1) if last_imp != -1 else 0
-        hc = hc[:end_imp+1] + "\n" + v106_helper + "\n" + hc[end_imp+1:]
+  if "function extractVariantPriceV104" in hc:
+    h_start = hc.find("function extractVariantPriceV104")
+    h_brace = hc.find("{", h_start)
+    depth = 0
+    h_end = h_brace
+    for idx_c in range(h_brace, len(hc)):
+      if hc[idx_c] == "{":
+        depth += 1
+      elif hc[idx_c] == "}":
+        depth -= 1
+        if depth == 0:
+          h_end = idx_c + 1
+          break
+    hc = hc[:h_start] + v106_helper + hc[h_end:]
+  else:
+    last_imp = hc.rfind("\nimport ", 0, 3000)
+    end_imp = hc.find("\n", last_imp + 1) if last_imp != -1 else 0
+    hc = hc[: end_imp + 1] + "\n" + v106_helper + "\n" + hc[end_imp + 1 :]
 
-    # B) Replace .price and .unitPrice on common item variable names across Home.tsx
-    hc = re.sub(
-        r'\b(item|i|c|it|ci|cartItem|entry)\.(?:unitPrice|price)\b(?!\s*=(?!=))',
-        r'extractVariantPriceV104(\1, \1?.unitPrice ?? \1?.price)',
-        hc
+  # B) Replace .price and .unitPrice on common item variable names across Home.tsx
+  hc = re.sub(
+      r"\b(item|i|c|it|ci|cartItem|entry)\.(?:unitPrice|price)\b(?!\s*=(?!=))",
+      r"extractVariantPriceV104(\1, \1?.unitPrice ?? \1?.price)",
+      hc,
+  )
+
+  # C) In the Cart section ("سلة التسوق"), ensure catalog product price lookups also use extractVariantPriceV104
+  cart_pos = hc.find("سلة التسوق")
+  if cart_pos != -1:
+    cart_win_start = max(0, cart_pos - 800)
+    cart_win_end = min(len(hc), cart_pos + 6000)
+    cart_win = hc[cart_win_start:cart_win_end]
+
+    map_m = re.search(r"\.map\(\(\s*([a-zA-Z_]\w*)", cart_win)
+    item_var = map_m.group(1) if map_m else "item"
+    print("Detected Cart map item_var:", item_var)
+
+    cart_win_new = re.sub(
+        r"\b(product|prod|p|catalogProduct|matchedProduct)\??\.price\b(?!\s*=(?!=))",
+        rf"extractVariantPriceV104({item_var}, \1?.price, \1)",
+        cart_win,
     )
+    hc = hc[:cart_win_start] + cart_win_new + hc[cart_win_end:]
 
-    # C) Inspect the Cart section ("سلة التسوق" .. "إزالة" .. "إفراغ السلة") in Home.tsx
-    cart_pos = hc.find("سلة التسوق")
-    if cart_pos != -1:
-        cart_win_start = max(0, cart_pos - 800)
-        cart_win_end = min(len(hc), cart_pos + 6000)
-        cart_win = hc[cart_win_start:cart_win_end]
+  # D) Also update any .reduce((sum, x) => ...) in Home.tsx so cart subtotals/totals always use extractVariantPriceV104
+  for red_m in list(
+      re.finditer(r"\.reduce\s*\(\s*\(\s*(\w+)\s*,\s*(\w+)\s*\)", hc)
+  ):
+    r_start = red_m.start()
+    r_end = min(len(hc), r_start + 400)
+    r_slice = hc[r_start:r_end]
+    it_v = red_m.group(2)
+    r_slice_new = re.sub(
+        r"\b(product|prod|p)\??\.price\b",
+        rf"extractVariantPriceV104({it_v}, \1?.price, \1)",
+        r_slice,
+    )
+    r_slice_new = re.sub(
+        rf"\b{re.escape(it_v)}\.(?:price|unitPrice)\b",
+        rf"extractVariantPriceV104({it_v}, {it_v}?.price ?? {it_v}?.unitPrice)",
+        r_slice_new,
+    )
+    hc = hc[:r_start] + r_slice_new + hc[r_end:]
 
-        map_m = re.search(r'\.map\(\(\s*([a-zA-Z_]\w*)', cart_win)
-        item_var = map_m.group(1) if map_m else "item"
-        print("Detected Cart map item_var:", item_var)
+  # E) When sending items to quote or createOrder in Home.tsx, ensure unit carries the variant name if item.name has (...)
+  hc = re.sub(
+      r"unit:\s*(item|i|c|it)\.unit\b",
+      r'unit: (\1.name && String(\1.name).includes("(") ? \1.name : \1.unit)',
+      hc,
+  )
 
-        cart_win_new = re.sub(
-            r'\b(product|prod|p|catalogProduct|matchedProduct)\??\.price\b(?!\s*=(?!=))',
-            rf'extractVariantPriceV104({item_var}, \1?.price, \1)',
-            cart_win
-        )
-        if item_var not in ("item", "i", "c", "it", "ci", "cartItem", "entry"):
-            cart_win_new = re.sub(
-                rf'\b{re.escape(item_var)}\.(?:price|unitPrice)\b(?!\s*=(?!=))',
-                rf'extractVariantPriceV104({item_var}, {item_var}?.unitPrice ?? {item_var}?.price)',
-                cart_win_new
-            )
-        hc = hc[:cart_win_start] + cart_win_new + hc[cart_win_end:]
-
-    # D) Also update any .reduce((sum, x) => ...) in Home.tsx so cart subtotals/totals always use extractVariantPriceV104
-    for red_m in list(re.finditer(r'\.reduce\s*\(\s*\(\s*(\w+)\s*,\s*(\w+)\s*\)', hc)):
-        r_start = red_m.start()
-        r_end = min(len(hc), r_start + 400)
-        r_slice = hc[r_start:r_end]
-        it_v = red_m.group(2)
-        r_slice_new = re.sub(
-            r'\b(product|prod|p)\??\.price\b',
-            rf'extractVariantPriceV104({it_v}, \1?.price, \1)',
-            r_slice
-        )
-        r_slice_new = re.sub(
-            rf'\b{re.escape(it_v)}\.(?:price|unitPrice)\b',
-            rf'extractVariantPriceV104({it_v}, {it_v}?.price ?? {it_v}?.unitPrice)',
-            r_slice_new
-        )
-        hc = hc[:r_start] + r_slice_new + hc[r_end:]
-
-    home_path.write_text(hc, encoding="utf-8")
-    print("2. Updated client/src/pages/Home.tsx with full Cart & Checkout variant pricing!")
+  home_path.write_text(hc, encoding="utf-8")
+  print(
+      "2. Updated client/src/pages/Home.tsx with full Cart & Checkout variant"
+      " pricing!"
+  )
 
 # 3. Update client/index.html with the complete Live Modal + Cart Price & Button Synchronizer:
-#    - Uses setElementTextSafe() which updates existing TextNode.nodeValue in-place WITHOUT ever detaching React's TextNodes!
-#    - Updates top modal price to show BOTH selected price AND detailed breakdown: "250 ر.ي (كبير: 250 ر.ي · صغير: 150 ر.ي)"
-#    - Updates bottom modal button: "إضافة إلى السلة (250 ر.ي)"
-#    - Updates Shopping Cart ("سلة التسوق") item unit price, line total, المجموع الفرعي, and الإجمالي الحالي
-#    - Ensures -, +, and إزالة buttons inside "سلة التسوق" respond immediately on every tap!
 html_path = pathlib.Path("client/index.html")
 if html_path.exists():
-    ht = html_path.read_text(encoding="utf-8")
-    ht = re.sub(r'<script>\s*\(function\(\)\s*\{[\s\S]*?syncVariantModalPrice[\s\S]*?</script>', '', ht)
+  ht = html_path.read_text(encoding="utf-8")
+  ht = re.sub(
+      r"<script>\s*\(function\(\)\s*\{[\s\S]*?syncVariantModalPrice[\s\S]*?</script>",
+      "",
+      ht,
+  )
 
-    live_v106_script = """
+  live_v106_script = """
     <script>
       (function() {
         // Safely update text inside a DOM element WITHOUT removing/replacing React's child Text nodes!
@@ -487,12 +509,11 @@ if html_path.exists():
 
             var bTxt = (btn.textContent || "").trim();
             var isRemove = bTxt.indexOf("إزالة") !== -1;
-            var isPlus = bTxt === "+" || bTxt === "＋" || btn.innerHTML.indexOf("lucide-plus") !== -1 || btn.innerHTML.indexOf("M5 12h14") !== -1 && btn.innerHTML.indexOf("M12 5v14") !== -1;
+            var isPlus = bTxt === "+" || bTxt === "＋" || btn.innerHTML.indexOf("lucide-plus") !== -1 || (btn.innerHTML.indexOf("M5 12h14") !== -1 && btn.innerHTML.indexOf("M12 5v14") !== -1);
             var isMinus = bTxt === "-" || bTxt === "−" || bTxt === "–" || btn.innerHTML.indexOf("lucide-minus") !== -1 || (btn.innerHTML.indexOf("M5 12h14") !== -1 && btn.innerHTML.indexOf("M12 5v14") === -1);
 
             if (!isRemove && !isPlus && !isMinus) return;
 
-            // Capture current quantity and row count BEFORE waiting 70ms for React
             var getRowQty = function(rc) {
               var els = Array.from(rc.querySelectorAll("span, div, strong, p"));
               for (var i = 0; i < els.length; i++) {
@@ -511,12 +532,10 @@ if html_path.exists():
               var stillInDom = document.body.contains(rowCard);
               var afterQty = stillInDom ? getRowQty(rowCard) : 0;
 
-              // If React already updated the DOM, just sync prices!
               if (isRemove && (!stillInDom || afterCount < beforeCount)) { syncVariantModalPrice(); return; }
               if (isPlus && afterQty > beforeQty) { syncVariantModalPrice(); return; }
               if (isMinus && (!stillInDom || afterCount < beforeCount || afterQty < beforeQty)) { syncVariantModalPrice(); return; }
 
-              // Otherwise, React's button handler was stuck on this item — update localStorage cart directly and refresh state!
               for (var k = 0; k < localStorage.length; k++) {
                 var keyName = localStorage.key(k);
                 if (!keyName) continue;
@@ -549,15 +568,18 @@ if html_path.exists():
       })();
     </script>
 """
-    ht = ht.replace("</body>", live_v106_script + "\n  </body>", 1)
-    html_path.write_text(ht, encoding="utf-8")
-    print("3. Updated live Modal + Shopping Cart price & button synchronizer in client/index.html!")
+  ht = ht.replace("</body>", live_v106_script + "\n  </body>", 1)
+  html_path.write_text(ht, encoding="utf-8")
+  print(
+      "3. Updated live Modal + Shopping Cart price & button synchronizer in"
+      " client/index.html!"
+  )
 
 # 4. Ensure RollingWhatsAppWidget never blocks clicks on Cart buttons (-, +, إزالة)
 css_path = pathlib.Path("client/src/index.css")
 if css_path.exists():
-    css = css_path.read_text(encoding="utf-8")
-    cart_click_fix = """
+  css = css_path.read_text(encoding="utf-8")
+  cart_click_fix = """
 /* v106: Ensure cart buttons (-, +, إزالة) always receive clicks cleanly */
 .rolling-whatsapp-wrapper, [class*="whatsapp"] {
   pointer-events: none;
@@ -572,40 +594,73 @@ if css_path.exists():
   touch-action: manipulation;
 }
 """
-    if "v106: Ensure cart buttons" not in css:
-        css = css + "\n" + cart_click_fix
-        css_path.write_text(css, encoding="utf-8")
+  if "v106: Ensure cart buttons" not in css:
+    css = css + "\n" + cart_click_fix
+    css_path.write_text(css, encoding="utf-8")
 
 # 5. Bump sw.js cache to v106
 sw_path = pathlib.Path("client/public/sw.js")
 if sw_path.exists():
-    swc = sw_path.read_text(encoding="utf-8")
-    swc = re.sub(r'const CACHE = "original-shell-v[^"]*";', 'const CACHE = "original-shell-v106";', swc)
-    sw_path.write_text(swc, encoding="utf-8")
-    print("4. Bumped sw.js cache to v106!")
+  swc = sw_path.read_text(encoding="utf-8")
+  swc = re.sub(
+      r'const CACHE = "original-shell-v[^"]*";',
+      'const CACHE = "original-shell-v106";',
+      swc,
+  )
+  sw_path.write_text(swc, encoding="utf-8")
+  print("4. Bumped sw.js cache to v106!")
 
 print("=== 5. فحص كود السيرفر والواجهة عبر esbuild (0.5 ثانية) ===")
 res_srv = subprocess.run(
-    ["./node_modules/.bin/esbuild", "server/_core/index.ts", "--platform=node", "--packages=external", "--bundle", "--format=esm", "--outdir=dist"],
-    capture_output=True, text=True
+    [
+        "./node_modules/.bin/esbuild",
+        "server/_core/index.ts",
+        "--platform=node",
+        "--packages=external",
+        "--bundle",
+        "--format=esm",
+        "--outdir=dist",
+    ],
+    capture_output=True,
+    text=True,
 )
 if res_srv.returncode != 0:
-    print("SERVER ESBUILD ERROR:")
-    print(res_srv.stderr or res_srv.stdout)
-    sys.exit(1)
+  print("SERVER ESBUILD ERROR:")
+  print(res_srv.stderr or res_srv.stdout)
+  sys.exit(1)
 
 res_cli = subprocess.run(
-    ["./node_modules/.bin/esbuild", "client/src/pages/Admin.tsx", "client/src/pages/Home.tsx", "--bundle", "--packages=external", "--jsx=automatic", "--outdir=dist/check_client"],
-    capture_output=True, text=True
+    [
+        "./node_modules/.bin/esbuild",
+        "client/src/pages/Admin.tsx",
+        "client/src/pages/Home.tsx",
+        "--bundle",
+        "--packages=external",
+        "--jsx=automatic",
+        "--outdir=dist/check_client",
+    ],
+    capture_output=True,
+    text=True,
 )
 if res_cli.returncode != 0:
-    print("CLIENT ESBUILD ERROR:")
-    print(res_cli.stderr or res_cli.stdout)
-    sys.exit(1)
+  print("CLIENT ESBUILD ERROR:")
+  print(res_cli.stderr or res_cli.stdout)
+  sys.exit(1)
 
 subprocess.run(["rm", "-rf", "dist/check_client"], check=False)
 print("BOTH SERVER & CLIENT ESBUILD PASSED 100%! Pushing to GitHub & Render...")
 subprocess.run(["git", "add", "-A"], check=True)
-subprocess.run(["git", "commit", "-m", "v106: secure DB-verified variant pricing across modal, cart, checkout, and admin + cart button fix"], check=True)
+subprocess.run(
+    [
+        "git",
+        "commit",
+        "-m",
+        (
+            "v106: secure DB-verified variant pricing across modal, cart,"
+            " checkout, and admin + cart button fix"
+        ),
+    ],
+    check=True,
+)
 subprocess.run(["git", "push", "origin", "main", "--force"], check=True)
 print("=== تم رفع التحديث الشامل v106 بنجاح 100% إلى Render! ===")
