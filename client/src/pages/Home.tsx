@@ -80,14 +80,9 @@ function extractVariantPriceV104(rawText: any, fallbackPrice: any, productObj?: 
   if (typeof rawText === "object" && rawText !== null) {
     pid = rawText.productId ?? rawText.product?.id ?? rawText.id ?? pid;
     pname = rawText.product?.name ?? rawText.productName ?? rawText.name ?? pname;
+    const allStrVals = Object.values(rawText).filter(v => typeof v === "string").join(" ");
     combined = [
-      rawText.name,
-      rawText.productName,
-      rawText.variant,
-      rawText.selectedVariant,
-      rawText.option,
-      rawText.unit,
-      rawText.label,
+      allStrVals,
       getStoredVariantTextV107(pid, pname)
     ].filter(Boolean).join(" ");
   } else if (rawText) {
@@ -152,7 +147,7 @@ function extractVariantPriceV104(rawText: any, fallbackPrice: any, productObj?: 
       }
     }
     if (totalQ > 0 && totalW > 0) {
-      return Math.round(totalW / totalQ);
+      return totalW / totalQ;
     }
   }
 
@@ -171,6 +166,9 @@ function extractVariantLineTotalV107(item: any): number {
 }
 
 function extractCartSubtotalV107(cartOrOrder: any, fallbackSubtotal?: any): number {
+  if (typeof window !== "undefined" && !cartOrOrder?.orderNumber && !cartOrOrder?.status && Number((window as any).__v108ComputedCartSubtotal) > 0) {
+    return Number((window as any).__v108ComputedCartSubtotal);
+  }
   const items = cartOrOrder?.items;
   if (Array.isArray(items) && items.length > 0) {
     const calcSub = items.reduce((sum: number, it: any) => sum + extractVariantLineTotalV107(it), 0);
@@ -1849,7 +1847,7 @@ function ProductDetail({ id, allProducts = [], onSelectProduct, onBack, onAiReci
 function CartPage({ minOrder = 0 }: { minOrder?: number }) {
   const { cart, setQuantity, remove, clear } = useStore();
   const [checkout, setCheckout] = useState(false);
-  const subtotal = cart.reduce((sum, line) => sum + line.price * line.quantity, 0);
+  const subtotal = cart.reduce((sum, line) => sum + Math.round(extractVariantPriceV104(line, line?.unitPrice ?? line?.price ?? line?.product?.price, line?.product)) * line.quantity, 0);
   const belowMin = minOrder > 0 && subtotal < minOrder;
   return (
     <main className="page-shell inner-page">
@@ -1944,7 +1942,7 @@ function CartPage({ minOrder = 0 }: { minOrder?: number }) {
 }
 
 function CartRow({ line, onQuantity, onRemove }: { line: CartLine; onQuantity: (n: number) => void; onRemove: () => void }) {
-  return <article className="cart-row"><div className="cart-thumb">{line.imageUrl ? <img src={line.imageUrl} alt="" loading="lazy" decoding="async" /> : <Leaf size={22} />}</div><div className="cart-row-info"><strong>{line.name}</strong><small>{formatPrice(line.price)} / {line.unit}</small><div className="cart-row-tools"><div className="quantity-compact"><button aria-label="تقليل" onClick={() => onQuantity(line.quantity - (line.quantityStep || 1))}><Minus size={14} /></button><b>{line.quantity}</b><button aria-label="زيادة" disabled={line.stock !== null && line.stock !== undefined && line.quantity + (line.quantityStep || 1) > line.stock} onClick={() => onQuantity(line.quantity + (line.quantityStep || 1))}><Plus size={14} /></button></div><button className="remove-line" onClick={onRemove}><Trash2 size={14} /> إزالة</button></div></div><strong className="cart-line-total">{formatPrice(line.price * line.quantity)}</strong></article>;
+  return <article className="cart-row"><div className="cart-thumb">{line.imageUrl ? <img src={line.imageUrl} alt="" loading="lazy" decoding="async" /> : <Leaf size={22} />}</div><div className="cart-row-info"><strong>{line.name}</strong><small>{formatPrice(Math.round(extractVariantPriceV104(line, line?.unitPrice ?? line?.price ?? line?.product?.price, line?.product)))} / {line.unit}</small><div className="cart-row-tools"><div className="quantity-compact"><button aria-label="تقليل" onClick={() => onQuantity(line.quantity - (line.quantityStep || 1))}><Minus size={14} /></button><b>{line.quantity}</b><button aria-label="زيادة" disabled={line.stock !== null && line.stock !== undefined && line.quantity + (line.quantityStep || 1) > line.stock} onClick={() => onQuantity(line.quantity + (line.quantityStep || 1))}><Plus size={14} /></button></div><button className="remove-line" onClick={onRemove}><Trash2 size={14} /> إزالة</button></div></div><strong className="cart-line-total">{formatPrice(Math.round(extractVariantPriceV104(line, line?.unitPrice ?? line?.price ?? line?.product?.price, line?.product)) * line.quantity)}</strong></article>;
 }
 
 function getYemenCarrierName(phone: string): string {
@@ -2992,7 +2990,7 @@ function OrdersPage() {
                 <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', padding: '8px 10px', borderRadius: '11px', background: '#f8fbf9', fontSize: '12.5px' }}>
                   <strong style={{ color: '#143a28', fontWeight: 800 }}>{item.productName}</strong>
                   <span style={{ color: '#174b36', fontWeight: 900, whiteSpace: 'nowrap' }}>
-                    {item.quantity} × {formatPrice(extractVariantPriceV104(item, item?.unitPrice ?? item?.price ?? item?.product?.price, item?.product) || Math.round((extractVariantLineTotalV107(item) || 0) / Math.max(1, item.quantity)))}
+                    {item.quantity} × {formatPrice(Math.round(extractVariantPriceV104(item, item?.unitPrice ?? item?.price ?? item?.product?.price, item?.product)) || Math.round((extractVariantLineTotalV107(item) || 0) / Math.max(1, item.quantity)))}
                   </span>
                 </div>
               ))}
@@ -3866,7 +3864,7 @@ function AssistantPage() {
       toast.error("الكمية المطلوبة غير متوفرة حالياً في المخزون.");
       return;
     }
-    add({ id: item.productId, name: item.name, price: extractVariantPriceV104(item, item?.unitPrice ?? item?.price ?? item?.product?.price, item?.product), unit: item.unit, stock: item.stock, minQuantity: item.minQuantity, quantityStep: item.quantityStep }, qty);
+    add({ id: item.productId, name: item.name, price: Math.round(extractVariantPriceV104(item, item?.unitPrice ?? item?.price ?? item?.product?.price, item?.product)), unit: item.unit, stock: item.stock, minQuantity: item.minQuantity, quantityStep: item.quantityStep }, qty);
     toast.success("تمت إضافة «" + item.name + "» إلى السلة بنجاح 🛒");
   };
 
@@ -3880,7 +3878,7 @@ function AssistantPage() {
       if (type === "add") {
         const total = (current?.quantity ?? 0) + item.quantity;
         if (item.stock !== null && total > item.stock) { skipped += 1; continue; }
-        add({ id: item.productId, name: item.name, price: extractVariantPriceV104(item, item?.unitPrice ?? item?.price ?? item?.product?.price, item?.product), unit: item.unit, stock: item.stock, minQuantity: item.minQuantity, quantityStep: item.quantityStep }, item.quantity);
+        add({ id: item.productId, name: item.name, price: Math.round(extractVariantPriceV104(item, item?.unitPrice ?? item?.price ?? item?.product?.price, item?.product)), unit: item.unit, stock: item.stock, minQuantity: item.minQuantity, quantityStep: item.quantityStep }, item.quantity);
         changed += 1;
       } else {
         if (!current) { skipped += 1; continue; }
@@ -4044,7 +4042,7 @@ function AssistantPage() {
         </div>
         <div className="chat-messages" ref={messagesRef}>
           {displayedMessages.map((message, index) => {
-            const totalActionPrice = message.cartAction?.items.reduce((s, it) => s + extractVariantPriceV104(it, it?.unitPrice ?? it?.price ?? it?.product?.price, it?.product) * it.quantity, 0) ?? 0;
+            const totalActionPrice = message.cartAction?.items.reduce((s, it) => s + Math.round(extractVariantPriceV104(it, it?.unitPrice ?? it?.price ?? it?.product?.price, it?.product)) * it.quantity, 0) ?? 0;
             return (
               <div key={index + "-" + message.role + "-" + (message.ownerMsgId || "")} className={"chat-message " + (message.role === "user" ? "from-user" : "from-assistant")} style={message.ownerMsgId ? { border: "1.5px solid #e0a800", background: "#fffdf5" } : undefined}>
                 {message.ownerMsgId && (
@@ -4064,7 +4062,7 @@ function AssistantPage() {
                         <div key={item.productId} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", padding: "6px 9px", borderRadius: "10px", background: "#ffffff", border: "1px solid #dfece4", fontSize: "11.5px", color: "#1e3f2f" }}>
                           <div>
                             <strong>{item.name}</strong>
-                            <small style={{ display: "block", color: "#5c7467", fontSize: "10.5px" }}>{item.quantity} × {formatPrice(extractVariantPriceV104(item, item?.unitPrice ?? item?.price ?? item?.product?.price, item?.product))} ({item.unit})</small>
+                            <small style={{ display: "block", color: "#5c7467", fontSize: "10.5px" }}>{item.quantity} × {formatPrice(Math.round(extractVariantPriceV104(item, item?.unitPrice ?? item?.price ?? item?.product?.price, item?.product)))} ({item.unit})</small>
                           </div>
                           <button
                             type="button"
@@ -4262,7 +4260,7 @@ function GamifiedRewardBar({ settings, location }: { settings: Record<string, st
     cfg.placement === "home_and_cart" ? (isHome || isCart) :
     isCart;
 
-  const subtotal = cart.reduce((sum, line) => sum + line.price * line.quantity, 0);
+  const subtotal = cart.reduce((sum, line) => sum + Math.round(extractVariantPriceV104(line, line?.unitPrice ?? line?.price ?? line?.product?.price, line?.product)) * line.quantity, 0);
   const remaining = Math.max(0, threshold - subtotal);
   const pct = Math.min(100, Math.max(0, Math.round((subtotal / threshold) * 100)));
   const unlocked = subtotal >= threshold;
