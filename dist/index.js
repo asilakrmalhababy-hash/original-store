@@ -3356,7 +3356,7 @@ function resolveServerVariantOption(product, itemName) {
       }
     }
     if (totalSegQty > 0 && totalWeightedPrice > 0) {
-      const effectiveUnitPrice = totalWeightedPrice / totalSegQty;
+      const effectiveUnitPrice = Math.round(totalWeightedPrice / totalSegQty);
       const unitLabel = matchedLabels.join("\u060C ") || fallbackUnit;
       return {
         price: effectiveUnitPrice,

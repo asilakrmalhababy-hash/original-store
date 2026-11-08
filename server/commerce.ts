@@ -971,7 +971,7 @@ function resolveServerVariantOption(product: any, itemName?: string): { price: n
     } catch {}
   }
 
-  // 2. Extract ALL parentheses groups (...) in rawItemName so multiple variant entries of the same product are all included!
+  // 2. Extract ALL parentheses groups (...) in rawItemName
   let innerParen = "";
   const parenMatches = Array.from(rawItemName.matchAll(/\(([^()]+)\)/g));
   if (parenMatches.length > 0) {
@@ -1019,7 +1019,7 @@ function resolveServerVariantOption(product: any, itemName?: string): { price: n
     }
 
     if (totalSegQty > 0 && totalWeightedPrice > 0) {
-      const effectiveUnitPrice = totalWeightedPrice / totalSegQty;
+      const effectiveUnitPrice = Math.round(totalWeightedPrice / totalSegQty);
       const unitLabel = matchedLabels.join("، ") || fallbackUnit;
       return {
         price: effectiveUnitPrice,
@@ -1029,7 +1029,6 @@ function resolveServerVariantOption(product: any, itemName?: string): { price: n
     }
   }
 
-  // 3. Fallback: check if any dbPriceMap option name appears in rawItemName
   for (const [optName, officialPrice] of Object.entries(dbPriceMap)) {
     if (optName && rawItemName.includes(optName)) {
       return {

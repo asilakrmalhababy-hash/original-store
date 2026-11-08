@@ -27,79 +27,118 @@ import PWAInstall from "@/components/PWAInstall";
 import { buildMissingIngredientNote } from "@/lib/assistant-note";
 import { ensureBrowserPushSubscription, getExistingBrowserPushSubscription, getPushPermissionState, requestPushPermission } from "@/lib/pushNotifications";
 
-function getStoredVariantTextV107(productId: any, productName?: any): string {
-  const partsFound: string[] = [];
-  try {
-    if (productId !== undefined && productId !== null) {
-      const pidStr = String(productId);
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i);
-        if (!k || k === "original_v107_by_name") continue;
-        const raw = localStorage.getItem(k);
-        if (!raw || (raw[0] !== "{" && raw[0] !== "[")) continue;
-        try {
-          const parsed = JSON.parse(raw);
-          if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && parsed[pidStr] !== undefined) {
-            const val = parsed[pidStr];
-            if (typeof val === "string" && val.includes(":")) {
-              partsFound.push(val);
-            } else if (Array.isArray(val)) {
-              const s = val.map((x: any) => typeof x === "string" ? x : (x?.label || x?.variant || x?.name || "")).filter(Boolean).join("، ");
-              if (s.includes(":")) partsFound.push(s);
-            } else if (val && typeof val === "object") {
-              const parts: string[] = [];
-              for (const [vk, vv] of Object.entries(val)) {
-                if (vk.includes(":") && Number(vv) > 0) {
-                  parts.push(Number(vv) > 1 ? vk + " × " + vv : vk);
-                }
-              }
-              if (parts.length > 0) partsFound.push(parts.join("، "));
+function expandOrderItemsV110(items: any): any[] {
+  if (!Array.isArray(items)) return [];
+  const result: any[] = [];
+  for (const it of items) {
+    if (!it || typeof it !== "object") {
+      result.push(it);
+      continue;
+    }
+    const rawName = String(it.productName || it.name || it.product?.name || "").trim();
+    const parenMatches = Array.from(rawName.matchAll(/\(([^()]+)\)/g));
+    if (parenMatches.length > 0) {
+      const inner = parenMatches.map(m => m[1].trim()).filter(s => s.includes(":")).join("، ");
+      const segments = inner.split(/[،,+]+/).map(s => s.trim()).filter(Boolean);
+      if (segments.length > 1) {
+        const baseTitle = rawName.replace(/\s*\([^()]*\)\s*$/g, "").trim() || rawName;
+        let expandedAny = false;
+        segments.forEach((seg, idx) => {
+          let sQty = 1;
+          const mm = seg.match(/[×xX*]\s*(\d+)/);
+          if (mm && mm[1]) sQty = Math.max(1, parseInt(mm[1], 10));
+          const cleanSeg = seg.replace(/[×xX*]\s*\d+.*$/, "").trim();
+          const cIdx = cleanSeg.indexOf(":");
+          if (cIdx !== -1) {
+            const oName = cleanSeg.slice(0, cIdx).trim();
+            const oPrice = parseFloat(cleanSeg.slice(cIdx + 1).trim());
+            if (oName && !isNaN(oPrice) && oPrice > 0) {
+              expandedAny = true;
+              const segFullTitle = baseTitle + " (" + oName + ":" + Math.round(oPrice) + ")";
+              result.push({
+                ...it,
+                id: String(it.id ?? "") + "_v" + idx,
+                name: segFullTitle,
+                productName: segFullTitle,
+                unit: oName,
+                quantity: sQty,
+                price: Math.round(oPrice),
+                unitPrice: Math.round(oPrice),
+                lineTotal: Math.round(oPrice * sQty),
+              });
             }
           }
-        } catch {}
+        });
+        if (expandedAny) continue;
       }
     }
-    if (productName && typeof window !== "undefined") {
-      const cleanPName = String(productName).replace(/\s*\([^()]*\)\s*$/, "").trim();
-      const byName = (window as any).__v107VariantByName;
-      if (byName && byName[cleanPName]) {
-        const bn = String(byName[cleanPName]);
-        if (bn.includes("،") || partsFound.length === 0) return bn;
-      }
-      const rawByName = localStorage.getItem("original_v107_by_name");
-      if (rawByName) {
-        const parsedByName = JSON.parse(rawByName);
-        if (parsedByName && parsedByName[cleanPName]) {
-          const bn = String(parsedByName[cleanPName]);
-          if (bn.includes("،") || partsFound.length === 0) return bn;
+    result.push(it);
+  }
+  return result;
+}
+
+function getStoredVariantTextV107(productId: any): string {
+  if (productId === undefined || productId === null) return "";
+  const pidStr = String(productId);
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k || k.indexOf("v107") !== -1 || k.indexOf("v109") !== -1) continue;
+      const raw = localStorage.getItem(k);
+      if (!raw || (raw[0] !== "{" && raw[0] !== "[")) continue;
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && parsed[pidStr] !== undefined) {
+          const val = parsed[pidStr];
+          if (typeof val === "string" && val.includes(":")) return val;
+          if (Array.isArray(val)) {
+            const s = val.map((x: any) => typeof x === "string" ? x : (x?.label || x?.variant || x?.name || "")).filter(Boolean).join("، ");
+            if (s.includes(":")) return s;
+          }
+          if (val && typeof val === "object") {
+            const parts: string[] = [];
+            for (const [vk, vv] of Object.entries(val)) {
+              if (vk.includes(":") && Number(vv) > 0) {
+                parts.push(Number(vv) > 1 ? vk + " × " + vv : vk);
+              }
+            }
+            if (parts.length > 0) return parts.join("، ");
+          }
         }
-      }
+      } catch {}
     }
   } catch {}
-  return partsFound.join("، ");
+  return "";
 }
 
 function extractVariantPriceV104(rawText: any, fallbackPrice: any, productObj?: any): number {
   const base = Number(fallbackPrice ?? productObj?.price ?? 0);
   let combined = "";
   let pid: any = productObj?.id ?? productObj?.productId;
-  let pname: any = productObj?.name;
   if (typeof rawText === "object" && rawText !== null) {
     pid = rawText.productId ?? rawText.product?.id ?? rawText.id ?? pid;
-    pname = rawText.product?.name ?? rawText.productName ?? rawText.name ?? pname;
-    const allStrVals = Object.values(rawText).filter(v => typeof v === "string").join(" ");
-    if (/\([^()]*:\s*\d/.test(allStrVals)) {
-      combined = allStrVals;
+    const explicitFields = [
+      rawText.name,
+      rawText.productName,
+      rawText.displayName,
+      rawText.customName,
+      rawText.variant,
+      rawText.selectedVariant,
+      rawText.variantLabel,
+      rawText.option,
+      rawText.unit,
+      rawText.label
+    ].filter(v => typeof v === "string" && v.trim().length > 0).join(" ");
+
+    if (/\([^()]*:\s*\d/.test(explicitFields) || explicitFields.includes(":")) {
+      combined = explicitFields;
     } else {
-      combined = [
-        allStrVals,
-        getStoredVariantTextV107(pid, pname)
-      ].filter(Boolean).join(" ");
+      combined = [explicitFields, getStoredVariantTextV107(pid)].filter(Boolean).join(" ");
     }
   } else if (rawText) {
     combined = String(rawText).trim();
   } else {
-    combined = getStoredVariantTextV107(pid, pname);
+    combined = getStoredVariantTextV107(pid);
   }
 
   if (!combined) return base;
@@ -130,14 +169,15 @@ function extractVariantPriceV104(rawText: any, fallbackPrice: any, productObj?: 
     } catch {}
   }
 
-  let targetStr = combined;
+  let targetStr = "";
   const parenMatches = Array.from(combined.matchAll(/\(([^()]+)\)/g));
   if (parenMatches.length > 0) {
     targetStr = parenMatches.map(m => m[1].trim()).filter(s => s.includes(":")).join("، ");
-    if (!targetStr) targetStr = parenMatches[parenMatches.length - 1][1].trim();
+  } else if (combined.includes(":")) {
+    targetStr = combined;
   }
 
-  if (targetStr.includes(":")) {
+  if (targetStr && targetStr.includes(":")) {
     const segments = targetStr.split(/[،,+]+/).map(s => s.trim()).filter(Boolean);
     let totalW = 0;
     let totalQ = 0;
@@ -177,24 +217,26 @@ function extractVariantLineTotalV107(item: any): number {
 }
 
 function extractCartSubtotalV107(cartOrOrder: any, fallbackSubtotal?: any): number {
-  if (typeof window !== "undefined" && !cartOrOrder?.orderNumber && !cartOrOrder?.status && Number((window as any).__v108ComputedCartSubtotal) > 0) {
+  const isOrderObj = Boolean(cartOrOrder?.orderNumber || cartOrOrder?.status);
+  if (!isOrderObj && typeof window !== "undefined" && Number((window as any).__v108ComputedCartSubtotal) > 0) {
     return Number((window as any).__v108ComputedCartSubtotal);
   }
-  const items = cartOrOrder?.items;
-  if (Array.isArray(items) && items.length > 0) {
+  const rawItems = cartOrOrder?.items;
+  if (Array.isArray(rawItems) && rawItems.length > 0) {
+    const items = expandOrderItemsV110(rawItems);
     const calcSub = Math.round(items.reduce((sum: number, it: any) => {
       const q = Math.max(1, Number(it?.quantity || 1));
       const up = extractVariantPriceV104(it, it?.unitPrice ?? it?.price ?? it?.product?.price, it?.product);
       return sum + up * q;
     }, 0));
-    if (typeof window !== "undefined" && !cartOrOrder?.orderNumber && !cartOrOrder?.status) {
+    if (!isOrderObj && typeof window !== "undefined") {
       (window as any).__v107LastCartSubtotal = calcSub;
       (window as any).__v107LastCartBaseSubtotal = Number(fallbackSubtotal ?? cartOrOrder?.subtotal ?? 0);
     }
     return calcSub;
   }
   const fb = Number(fallbackSubtotal ?? cartOrOrder?.subtotal ?? 0);
-  if (typeof window !== "undefined" && (window as any).__v107LastCartSubtotal && fb > 0 && fb === (window as any).__v107LastCartBaseSubtotal) {
+  if (!isOrderObj && typeof window !== "undefined" && (window as any).__v107LastCartSubtotal && fb > 0) {
     return Number((window as any).__v107LastCartSubtotal);
   }
   return fb;
@@ -2598,7 +2640,7 @@ function Checkout({ onClose, onSuccess, cart }: { onClose: () => void; onSuccess
         ...form,
         phone: cleanYemeniPhone(form.phone),
         idempotencyKey: keyRef.current.key,
-        expectedTotal: activeQuote.total,
+        expectedTotal: extractOrderTotalV107(activeQuote, activeQuote?.total),
         expectedQuoteHash: activeQuote.quoteHash,
         offerCode: form.offerCode || undefined,
         items,
@@ -2997,11 +3039,11 @@ function OrdersPage() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '8px', borderBottom: '1px solid #eef3f0' }}>
               <strong style={{ fontSize: '13px', color: '#143a28', fontWeight: 900 }}>الأصناف المطلوبة</strong>
               <span style={{ fontSize: '11px', fontWeight: 800, padding: '2px 9px', borderRadius: '99px', background: '#eef5f0', color: '#174b36' }}>
-                {selectedOrder.items.length} صنف
+                {expandOrderItemsV110(selectedOrder.items).length} صنف
               </span>
             </div>
             <div style={{ display: 'grid', gap: '8px' }}>
-              {selectedOrder.items.map((item: any, idx: number) => (
+              {expandOrderItemsV110(selectedOrder.items).map((item: any, idx: number) => (
                 <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', padding: '8px 10px', borderRadius: '11px', background: '#f8fbf9', fontSize: '12.5px' }}>
                   <strong style={{ color: '#143a28', fontWeight: 800 }}>{item.productName}</strong>
                   <span style={{ color: '#174b36', fontWeight: 900, whiteSpace: 'nowrap' }}>
@@ -3013,10 +3055,10 @@ function OrdersPage() {
           </div>
 
           <div style={{ background: '#f4f8f5', border: '1px solid #dce8df', borderRadius: '16px', padding: '13px 15px', display: 'grid', gap: '6px' }}>
-            {typeof ordAny.subtotal === 'number' && ordAny.subtotal > 0 && (
+            {typeof extractCartSubtotalV107(ordAny, ordAny?.subtotal) === 'number' && extractCartSubtotalV107(ordAny, ordAny?.subtotal) > 0 && (
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#5c6f63' }}>
                 <span>قيمة المنتجات</span>
-                <strong>{formatPrice(ordAny.subtotal)}</strong>
+                <strong>{formatPrice(extractCartSubtotalV107(ordAny, ordAny?.subtotal))}</strong>
               </div>
             )}
             {typeof ordAny.deliveryFee === 'number' && (
@@ -3113,7 +3155,7 @@ function OrdersPage() {
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '10px', borderTop: '1px solid #edf2ee' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontSize: '12px', color: '#5c6f63', fontWeight: 700 }}>{order.items.length} أصناف</span>
+                    <span style={{ fontSize: '12px', color: '#5c6f63', fontWeight: 700 }}>{expandOrderItemsV110(order.items).length} أصناف</span>
                     <strong style={{ fontSize: '16px', color: '#174b36', fontWeight: 900 }}>{formatPrice(extractOrderTotalV107(order, order?.total))}</strong>
                   </div>
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '12px', fontWeight: 800, color: '#174b36', background: '#f0f7f3', padding: '6px 12px', borderRadius: '10px' }}>
@@ -4005,7 +4047,7 @@ function AssistantPage() {
         retryRef.current = null;
         void pollQuery.refetch();
         let pendingAction: AssistantCartAction | undefined = undefined;
-        if (result.cartAction && (result.cartAction.type === "add" || result.cartAction.type === "remove") && Array.isArray(result.cartAction.items) && result.cartAction.items.length > 0) {
+        if (result.cartAction && (result.cartAction.type === "add" || result.cartAction.type === "remove") && Array.isArray(result.cartAction.items) && expandOrderItemsV110(result.cartAction.items).length > 0) {
           pendingAction = {
             id: "act-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6),
             type: result.cartAction.type,
@@ -4066,14 +4108,14 @@ function AssistantPage() {
                   </div>
                 )}
                 <p style={{ whiteSpace: "pre-line", margin: 0, lineHeight: 1.65 }}>{message.text}</p>
-                {message.cartAction && message.cartAction.items.length > 0 && (
+                {message.cartAction && expandOrderItemsV110(message.cartAction.items).length > 0 && (
                   <div style={{ marginTop: "10px", padding: "11px 12px", borderRadius: "14px", background: "#f3faf6", border: "1.5px solid #b8dec8", boxShadow: "0 4px 12px rgba(15, 60, 40, 0.06)" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "12px", fontWeight: 800, color: "#123b2a", marginBottom: "8px" }}>
-                      <span>{message.cartAction.items.length > 1 ? "🛒 الأصناف والمقادير المقترحة للسلة:" : "🛒 تأكيد إضافة الصنف للسلة:"}</span>
+                      <span>{expandOrderItemsV110(message.cartAction.items).length > 1 ? "🛒 الأصناف والمقادير المقترحة للسلة:" : "🛒 تأكيد إضافة الصنف للسلة:"}</span>
                       <span style={{ color: "#174b36", background: "#e2f2e9", padding: "2px 8px", borderRadius: "99px", fontSize: "11px" }}>الإجمالي: {formatPrice(totalActionPrice)}</span>
                     </div>
                     <div style={{ display: "grid", gap: "6px", marginBottom: "10px" }}>
-                      {message.cartAction.items.map(item => (
+                      {expandOrderItemsV110(message.cartAction.items).map(item => (
                         <div key={item.productId} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", padding: "6px 9px", borderRadius: "10px", background: "#ffffff", border: "1px solid #dfece4", fontSize: "11.5px", color: "#1e3f2f" }}>
                           <div>
                             <strong>{item.name}</strong>
@@ -4096,7 +4138,7 @@ function AssistantPage() {
                           onClick={() => applyConfirmedChange(message.cartAction!.id, message.cartAction!.type, message.cartAction!.items)}
                           style={{ flex: 1, padding: "8px 12px", borderRadius: "10px", border: "none", background: "#174b36", color: "#ffffff", fontSize: "12px", fontWeight: 800, cursor: "pointer", boxShadow: "0 3px 10px rgba(23, 75, 54, 0.2)" }}
                         >
-                          {message.cartAction.items.length > 1 ? ("✅ اعتمد وإضافة الكل للسلة (" + formatPrice(totalActionPrice) + ")") : ("✅ نعم، اعتمد الإضافة للسلة (" + formatPrice(totalActionPrice) + ")")}
+                          {expandOrderItemsV110(message.cartAction.items).length > 1 ? ("✅ اعتمد وإضافة الكل للسلة (" + formatPrice(totalActionPrice) + ")") : ("✅ نعم، اعتمد الإضافة للسلة (" + formatPrice(totalActionPrice) + ")")}
                         </button>
                         <button
                           type="button"

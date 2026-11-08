@@ -13,6 +13,56 @@ import { PERMISSION_KEYS, PERMISSION_LABELS, ROLE_DEFINITIONS, type AdminRoleKey
 import ImageEditor from "@/components/ImageEditor";
 import { ensureBrowserPushSubscription, getExistingBrowserPushSubscription, getPushPermissionState, requestPushPermission } from "@/lib/pushNotifications";
 
+function expandOrderItemsV110(items: any): any[] {
+  if (!Array.isArray(items)) return [];
+  const result: any[] = [];
+  for (const it of items) {
+    if (!it || typeof it !== "object") {
+      result.push(it);
+      continue;
+    }
+    const rawName = String(it.productName || it.name || it.product?.name || "").trim();
+    const parenMatches = Array.from(rawName.matchAll(/\(([^()]+)\)/g));
+    if (parenMatches.length > 0) {
+      const inner = parenMatches.map(m => m[1].trim()).filter(s => s.includes(":")).join("، ");
+      const segments = inner.split(/[،,+]+/).map(s => s.trim()).filter(Boolean);
+      if (segments.length > 1) {
+        const baseTitle = rawName.replace(/\s*\([^()]*\)\s*$/g, "").trim() || rawName;
+        let expandedAny = false;
+        segments.forEach((seg, idx) => {
+          let sQty = 1;
+          const mm = seg.match(/[×xX*]\s*(\d+)/);
+          if (mm && mm[1]) sQty = Math.max(1, parseInt(mm[1], 10));
+          const cleanSeg = seg.replace(/[×xX*]\s*\d+.*$/, "").trim();
+          const cIdx = cleanSeg.indexOf(":");
+          if (cIdx !== -1) {
+            const oName = cleanSeg.slice(0, cIdx).trim();
+            const oPrice = parseFloat(cleanSeg.slice(cIdx + 1).trim());
+            if (oName && !isNaN(oPrice) && oPrice > 0) {
+              expandedAny = true;
+              const segFullTitle = baseTitle + " (" + oName + ":" + Math.round(oPrice) + ")";
+              result.push({
+                ...it,
+                id: String(it.id ?? "") + "_v" + idx,
+                name: segFullTitle,
+                productName: segFullTitle,
+                unit: oName,
+                quantity: sQty,
+                price: Math.round(oPrice),
+                unitPrice: Math.round(oPrice),
+                lineTotal: Math.round(oPrice * sQty),
+              });
+            }
+          }
+        });
+        if (expandedAny) continue;
+      }
+    }
+    result.push(it);
+  }
+  return result;
+}
+
 const money = (value: number) => `${Number(value || 0).toLocaleString("en-US")} ر.ي`;
 const labels: Record<string, string> = { new: "جديد", preparing: "قيد التجهيز", ready: "جاهز للتوصيل", out_for_delivery: "خرج للتوصيل", delivered: "تم التسليم", cancelled: "ملغي" };
 type Section = "overview" | "products" | "categories" | "delivery" | "banners" | "offers" | "orders" | "chats" | "users" | "staff" | "settings";
@@ -3650,7 +3700,7 @@ function OrdersPanel() {
         order.discount,
         order.total,
         "نقدًا عند الاستلام",
-        order.items.map(item => item.productName + " × " + item.quantity).join("; "),
+        expandOrderItemsV110(order.items).map(item => item.productName + " × " + item.quantity).join("; "),
         order.events.filter(e => String(e.note || "").startsWith("❌")).map(e => e.note).join(" | "),
       ]),
     ];
@@ -3711,7 +3761,7 @@ function OrdersPanel() {
               order.customerNote ? ("ملاحظة العميل: " + order.customerNote) : "",
               "------------------",
               "📦 *الأصناف المطلوبة:*",
-              ...order.items.map(it => "• " + it.productName + " × " + it.quantity + " (" + money(it.lineTotal) + ")"),
+              ...expandOrderItemsV110(order.items).map(it => "• " + it.productName + " × " + it.quantity + " (" + money(it.lineTotal) + ")"),
               "------------------",
               "💰 *المبلغ المطلوب تحصيله نقداً:* " + money(order.total),
             ].filter(Boolean).join("\n");
@@ -3719,7 +3769,7 @@ function OrdersPanel() {
             const customerWhatsAppText = [
               "مرحباً " + order.recipientName + " 🌿",
               "تفاصيل فاتورة طلبك رقم *" + order.orderNumber + "* من متجر أورجنال:",
-              ...order.items.map(it => "• " + it.productName + " × " + it.quantity + ": " + money(it.lineTotal)),
+              ...expandOrderItemsV110(order.items).map(it => "• " + it.productName + " × " + it.quantity + ": " + money(it.lineTotal)),
               ...(cancelledEvents.length ? ["", "🚫 *تعديلات وإلغاءات الفاتورة:*", ...cancelledEvents.map(c => "• " + c.note)] : []),
               "------------------",
               "المجموع الفرعي: " + money(order.subtotal),
@@ -3895,7 +3945,7 @@ function OrdersPanel() {
                       </button>
                     </div>
                   </div>
-                  {order.items.map(item => {
+                  {expandOrderItemsV110(order.items).map(item => {
                     const isEditingThisItem = cancellingItem?.orderId === order.id && cancellingItem?.itemId === item.id;
                     return (
                       <div key={item.id} style={{ padding: "7px 10px", borderRadius: "10px", background: "#0d3825", border: "1px solid #e2ece5", display: "grid", gap: "6px" }}>

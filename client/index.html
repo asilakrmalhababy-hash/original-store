@@ -43,14 +43,13 @@
   
     <script>
       (function() {
-        window.__v107VariantByName = {};
-        window.__v108ComputedCartSubtotal = 0;
+        // Clear any stale v107-v109 cached averages (which caused 850 / 2,550!)
         try {
-          var savedMap = localStorage.getItem("original_v107_by_name");
-          if (savedMap) window.__v107VariantByName = JSON.parse(savedMap) || {};
-          var savedSub = sessionStorage.getItem("original_v109_cart_subtotal");
-          if (savedSub && Number(savedSub) > 0) window.__v108ComputedCartSubtotal = Number(savedSub);
+          localStorage.removeItem("original_v107_by_name");
+          sessionStorage.removeItem("original_v109_cart_subtotal");
         } catch (e) {}
+
+        window.__v108ComputedCartSubtotal = 0;
 
         function setLeafTextSafe(el, newText) {
           if (!el) return;
@@ -116,6 +115,25 @@
             };
           }
           return null;
+        }
+
+        function backupVariantLocalStorage() {
+          try {
+            var backup = {};
+            var hasAny = false;
+            for (var i = 0; i < localStorage.length; i++) {
+              var k = localStorage.key(i);
+              if (!k || k.indexOf("v107") !== -1 || k.indexOf("v109") !== -1) continue;
+              var v = localStorage.getItem(k);
+              if (v && (v.charAt(0) === "{" || v.charAt(0) === "[") && v.indexOf(":") !== -1) {
+                backup[k] = v;
+                hasAny = true;
+              }
+            }
+            if (hasAny) {
+              sessionStorage.setItem("original_v110_variant_backup", JSON.stringify(backup));
+            }
+          } catch (e) {}
         }
 
         function syncVariantModalPrice() {
@@ -223,9 +241,9 @@
               return b.offsetParent !== null && (b.textContent || "").indexOf("إزالة") !== -1;
             });
             if (removeBtns.length > 0) {
+              backupVariantLocalStorage();
               var cartSubtotalSum = 0;
               var anyVariantFound = false;
-              var aggregatedByProduct = {};
 
               removeBtns.forEach(function(remBtn) {
                 var rowCard = remBtn.parentElement;
@@ -263,30 +281,15 @@
                 var rowUnitPrice = 0;
                 var rowLineTotal = 0;
                 var rowOptName = "";
-                var rawParenContent = "";
 
                 if (parenMatches.length > 0) {
-                  rawParenContent = parenMatches[parenMatches.length - 1][1].trim();
+                  var rawParenContent = parenMatches[parenMatches.length - 1][1].trim();
                   var parsedObj = parseParenVariantTotal(rawParenContent, rowQty);
                   if (parsedObj) {
                     rowUnitPrice = parsedObj.unitPrice;
                     rowLineTotal = parsedObj.lineTotal;
                     rowOptName = parsedObj.optName;
                     anyVariantFound = true;
-                  }
-                }
-
-                if (rowUnitPrice > 0 && rowOptName) {
-                  var titleCandidates = Array.from(rowCard.querySelectorAll("h2, h3, h4, strong, p, div, span")).filter(function(el) {
-                    return el.children.length === 0 && (el.textContent || "").indexOf("(" + rawParenContent + ")") !== -1;
-                  });
-                  if (titleCandidates.length > 0) {
-                    var fullTitle = (titleCandidates[0].textContent || "").trim();
-                    var baseTitle = fullTitle.replace(/\s*\([^()]*\)\s*$/, "").trim();
-                    if (baseTitle) {
-                      if (!aggregatedByProduct[baseTitle]) aggregatedByProduct[baseTitle] = [];
-                      aggregatedByProduct[baseTitle].push(rowOptName + ":" + rowUnitPrice + " × " + rowQty);
-                    }
                   }
                 }
 
@@ -311,40 +314,23 @@
                 if (rowUnitPrice > 0) {
                   cartSubtotalSum += rowLineTotal;
 
-                  if (anyVariantFound && rowOptName) {
-                    priceEls.forEach(function(pel) {
-                      var lt = (pel.textContent || "").trim();
-                      if (lt.indexOf("/") !== -1) {
-                        var newUnitStr = rowUnitPrice.toLocaleString("en-US") + " ر.ي / " + rowOptName;
-                        setLeafTextSafe(pel, newUnitStr);
-                      } else if (/^\d[\d,.]*\s*ر\.ي$/.test(lt)) {
-                        var newTotalStr = rowLineTotal.toLocaleString("en-US") + " ر.ي";
-                        setLeafTextSafe(pel, newTotalStr);
-                      }
-                    });
-                  }
+                  priceEls.forEach(function(pel) {
+                    var lt = (pel.textContent || "").trim();
+                    if (lt.indexOf("/") !== -1 && rowOptName) {
+                      var newUnitStr = rowUnitPrice.toLocaleString("en-US") + " ر.ي / " + rowOptName;
+                      setLeafTextSafe(pel, newUnitStr);
+                    } else if (/^\d[\d,.]*\s*ر\.ي$/.test(lt)) {
+                      var newTotalStr = rowLineTotal.toLocaleString("en-US") + " ر.ي";
+                      setLeafTextSafe(pel, newTotalStr);
+                    }
+                  });
                 }
               });
 
-              var prodKeys = Object.keys(aggregatedByProduct);
-              if (prodKeys.length > 0) {
-                prodKeys.forEach(function(pk) {
-                  window.__v107VariantByName[pk] = aggregatedByProduct[pk].join("، ");
-                });
-                try {
-                  localStorage.setItem("original_v107_by_name", JSON.stringify(window.__v107VariantByName));
-                } catch (e) {}
-              }
-
-              if (cartSubtotalSum > 0) {
-                window.__v108ComputedCartSubtotal = cartSubtotalSum;
-                try {
-                  sessionStorage.setItem("original_v109_cart_subtotal", String(cartSubtotalSum));
-                } catch (e) {}
-              }
+              window.__v108ComputedCartSubtotal = cartSubtotalSum;
             }
 
-            // PART C: Update Summary Totals in BOTH Shopping Cart ("ملخص الطلب") AND Checkout Modal ("إتمام الطلب")
+            // PART C: Update Summary Totals in Shopping Cart ("ملخص الطلب") AND Checkout Modal ("إتمام الطلب")
             var activeCartSub = window.__v108ComputedCartSubtotal || 0;
             var allContainers = Array.from(document.querySelectorAll("div, section, li"));
             if (activeCartSub > 0) {
@@ -396,84 +382,100 @@
               }
             }
 
-            // PART D: Order Details Screen ("الأصناف المطلوبة" -> "قيمة المنتجات" & "الإجمالي النهائي")
-            if (document.body.textContent.indexOf("الأصناف المطلوبة") !== -1 && document.body.textContent.indexOf("قيمة المنتجات") !== -1) {
-              var orderItemsSum = 0;
-              var foundOrderItems = false;
-
+            // PART D: Order Details Screen ("الأصناف المطلوبة"):
+            // If any order row still has multiple variants in one line like "test (كبير:250, شده كامله:1500, صغير:150)" with "3 × 633 ر.ي",
+            // automatically split that DOM row into separate clean rows ("1 × 250 ر.ي", "1 × 1,500 ر.ي", "1 × 150 ر.ي")!
+            if (document.body.textContent.indexOf("الأصناف المطلوبة") !== -1) {
               allContainers.forEach(function(box) {
-                if (box.children.length === 2) {
+                if (box.children.length === 2 && !box.hasAttribute("data-v110-expanded")) {
                   var c0 = (box.children[0].textContent || "").trim();
                   var c1 = (box.children[1].textContent || "").trim();
                   var nameSide = null;
                   var priceSide = null;
+                  var priceIsFirst = false;
                   if (/^\d+\s*[×xX*]\s*\d[\d,.]*\s*ر\.ي$/.test(c0)) {
                     priceSide = box.children[0];
                     nameSide = box.children[1];
+                    priceIsFirst = true;
                   } else if (/^\d+\s*[×xX*]\s*\d[\d,.]*\s*ر\.ي$/.test(c1)) {
                     priceSide = box.children[1];
                     nameSide = box.children[0];
+                    priceIsFirst = false;
                   }
-                  if (nameSide && priceSide) {
-                    var pTxt = (priceSide.textContent || "").trim();
-                    var qm = pTxt.match(/^(\d+)\s*[×xX*]\s*(\d[\d,.]*)/);
-                    var itemQty = qm ? parseInt(qm[1], 10) : 1;
-                    var shownUnitP = qm ? parseFloat(qm[2].replace(/,/g, "")) : 0;
+                  if (nameSide && priceSide && box.parentElement) {
                     var nTxt = (nameSide.textContent || "").trim();
                     var pm = Array.from(nTxt.matchAll(/\(([^()]*:\s*\d+(?:\.\d+)?[^()]*)\)/g));
                     if (pm.length > 0) {
-                      var joinedP = pm.map(function(x) { return x[1].trim(); }).join("، ");
-                      var parsed = parseParenVariantTotal(joinedP, itemQty);
-                      if (parsed && parsed.lineTotal > 0) {
-                        orderItemsSum += parsed.lineTotal;
-                        foundOrderItems = true;
-                        return;
+                      var inner = pm.map(function(x) { return x[1].trim(); }).join("، ");
+                      var segs = inner.split(/[،,+]+/).map(function(s) { return s.trim(); }).filter(Boolean);
+                      if (segs.length > 1) {
+                        var baseTitle = nTxt.replace(/\s*\([^()]*\)\s*$/g, "").trim() || nTxt;
+                        var parsedRows = [];
+                        segs.forEach(function(seg) {
+                          var sQty = 1;
+                          var mm = seg.match(/[×xX*]\s*(\d+)/);
+                          if (mm && mm[1]) sQty = Math.max(1, parseInt(mm[1], 10));
+                          var cleanSeg = seg.replace(/[×xX*]\s*\d+.*$/, "").trim();
+                          var cIdx = cleanSeg.indexOf(":");
+                          if (cIdx !== -1) {
+                            var oName = cleanSeg.slice(0, cIdx).trim();
+                            var oPrice = parseFloat(cleanSeg.slice(cIdx + 1).trim());
+                            if (oName && !isNaN(oPrice) && oPrice > 0) {
+                              parsedRows.push({
+                                title: baseTitle + " (" + oName + ":" + Math.round(oPrice) + ")",
+                                priceTxt: sQty + " × " + Math.round(oPrice).toLocaleString("en-US") + " ر.ي"
+                              });
+                            }
+                          }
+                        });
+                        if (parsedRows.length > 1) {
+                          box.setAttribute("data-v110-expanded", "1");
+                          var parentList = box.parentElement;
+                          for (var rIdx = 0; rIdx < parsedRows.length; rIdx++) {
+                            var targetRow = rIdx === 0 ? box : box.cloneNode(true);
+                            targetRow.setAttribute("data-v110-expanded", "1");
+                            var ch0 = targetRow.children[0];
+                            var ch1 = targetRow.children[1];
+                            if (priceIsFirst) {
+                              setLeafTextSafe(ch0, parsedRows[rIdx].priceTxt);
+                              setLeafTextSafe(ch1, parsedRows[rIdx].title);
+                            } else {
+                              setLeafTextSafe(ch0, parsedRows[rIdx].title);
+                              setLeafTextSafe(ch1, parsedRows[rIdx].priceTxt);
+                            }
+                            if (rIdx > 0) {
+                              parentList.insertBefore(targetRow, box.nextSibling);
+                            }
+                          }
+                        }
                       }
-                    }
-                    if (shownUnitP > 0) {
-                      orderItemsSum += Math.round(shownUnitP * itemQty);
-                      foundOrderItems = true;
                     }
                   }
                 }
               });
-
-              if (foundOrderItems && orderItemsSum > 0) {
-                var orderDeliv = 0;
-                allContainers.forEach(function(box) {
-                  if (box.children.length === 2) {
-                    var t0 = (box.children[0].textContent || "").trim();
-                    var t1 = (box.children[1].textContent || "").trim();
-                    var fTxt = (t0 === "رسوم التوصيل") ? t1 : (t1 === "رسوم التوصيل" ? t0 : "");
-                    if (fTxt && fTxt.indexOf("مجاني") === -1) {
-                      var fm = fTxt.match(/(\d[\d,.]*)/);
-                      if (fm && fm[1]) orderDeliv = parseFloat(fm[1].replace(/,/g, "")) || 0;
-                    }
-                  }
-                });
-                var oSubStr = orderItemsSum.toLocaleString("en-US") + " ر.ي";
-                var oTotStr = Math.round(orderItemsSum + orderDeliv).toLocaleString("en-US") + " ر.ي";
-                allContainers.forEach(function(box) {
-                  if (box.children.length === 2) {
-                    var t0 = (box.children[0].textContent || "").trim();
-                    var t1 = (box.children[1].textContent || "").trim();
-                    if (t0 === "قيمة المنتجات") setLeafTextSafe(box.children[1], oSubStr);
-                    else if (t1 === "قيمة المنتجات") setLeafTextSafe(box.children[0], oSubStr);
-                    else if (t0 === "الإجمالي النهائي") setLeafTextSafe(box.children[1], oTotStr);
-                    else if (t1 === "الإجمالي النهائي") setLeafTextSafe(box.children[0], oTotStr);
-                  }
-                });
-              }
             }
           } catch (e) {}
         }
 
-        document.addEventListener("click", function() {
-          setTimeout(syncVariantModalPrice, 15);
-          setTimeout(syncVariantModalPrice, 80);
-          setTimeout(syncVariantModalPrice, 220);
+        // Restore variant breakdown when clicking "إضافة الطلب إلى السلة مجدداً"
+        document.addEventListener("click", function(ev) {
+          try {
+            var btn = ev.target && ev.target.closest ? ev.target.closest("button") : null;
+            if (btn && (btn.textContent || "").indexOf("إضافة الطلب إلى السلة مجدداً") !== -1) {
+              var bRaw = sessionStorage.getItem("original_v110_variant_backup");
+              if (bRaw) {
+                var bObj = JSON.parse(bRaw);
+                Object.keys(bObj).forEach(function(k) {
+                  localStorage.setItem(k, bObj[k]);
+                });
+              }
+            }
+          } catch (e) {}
+          setTimeout(syncVariantModalPrice, 5);
+          setTimeout(syncVariantModalPrice, 50);
+          setTimeout(syncVariantModalPrice, 180);
         }, true);
-        setInterval(syncVariantModalPrice, 300);
+        setInterval(syncVariantModalPrice, 250);
       })();
     </script>
 
