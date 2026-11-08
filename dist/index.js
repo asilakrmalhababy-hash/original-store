@@ -3288,37 +3288,89 @@ function resolveServerVariantOption(product, itemName) {
   const fallbackUnit = String(product?.unit || "\u062D\u0628\u0629").trim() || "\u062D\u0628\u0629";
   const fallbackPrice = Math.max(0, Math.round(Number(product?.price || 0)));
   const rawItemName = String(itemName || product?.name || "").trim();
-  if (!product?.description || !rawItemName) {
-    return { price: fallbackPrice, unit: fallbackUnit, name: rawItemName || String(product?.name || "") };
+  if (!rawItemName) {
+    return { price: fallbackPrice, unit: fallbackUnit, name: String(product?.name || "") };
   }
-  let chosenLabel = rawItemName;
-  const parenMatches = Array.from(rawItemName.matchAll(/\(([^()]+)\)/g));
-  if (parenMatches.length > 0) {
-    chosenLabel = parenMatches[parenMatches.length - 1][1].trim();
-  } else if (rawItemName.includes(" - ")) {
-    chosenLabel = rawItemName.split(" - ").pop().trim();
-  }
-  const cleanChosenName = chosenLabel.split(":")[0].replace(/—.*$/, "").trim();
-  const desc2 = String(product.description || "");
+  const dbPriceMap = {};
+  const desc2 = String(product?.description || "");
   const vMatch = desc2.match(/\[\[variants:(\[[\s\S]*?\])\]\]/);
   if (vMatch && vMatch[1]) {
     try {
       const dbVariants = JSON.parse(vMatch[1]);
       for (const rawVar of dbVariants) {
-        const entry = String(rawVar || "").trim();
-        const colonIdx = entry.indexOf(":");
-        const optName = (colonIdx !== -1 ? entry.slice(0, colonIdx) : entry).trim();
-        const optPriceRaw = colonIdx !== -1 ? Number(entry.slice(colonIdx + 1).trim()) : fallbackPrice;
-        const officialPrice = !isNaN(optPriceRaw) && optPriceRaw > 0 ? Math.round(optPriceRaw) : fallbackPrice;
-        if (optName && (cleanChosenName === optName || chosenLabel === optName || rawItemName.includes("(" + optName + ":") || rawItemName.includes("(" + optName + ")") || rawItemName.includes(optName))) {
-          return {
-            price: officialPrice,
-            unit: optName,
-            name: rawItemName.includes(optName) ? rawItemName : String(product?.name || "") + " (" + optName + ")"
-          };
+        const subVars = String(rawVar || "").split(/[،,]+/);
+        for (const sv of subVars) {
+          const entry = sv.trim();
+          const colonIdx = entry.indexOf(":");
+          if (colonIdx !== -1) {
+            const oName = entry.slice(0, colonIdx).trim();
+            const oPrice = Number(entry.slice(colonIdx + 1).trim());
+            if (oName && !isNaN(oPrice) && oPrice > 0) {
+              dbPriceMap[oName] = Math.round(oPrice);
+            }
+          }
         }
       }
     } catch {
+    }
+  }
+  let innerParen = "";
+  const parenMatches = Array.from(rawItemName.matchAll(/\(([^()]+)\)/g));
+  if (parenMatches.length > 0) {
+    innerParen = parenMatches[parenMatches.length - 1][1].trim();
+  } else if (rawItemName.includes(":")) {
+    innerParen = rawItemName;
+  }
+  if (innerParen) {
+    const segments = innerParen.split(/[،,]+/).map((s) => s.trim()).filter(Boolean);
+    let totalWeightedPrice = 0;
+    let totalSegQty = 0;
+    const matchedLabels = [];
+    for (const seg of segments) {
+      let segQty = 1;
+      const multMatch = seg.match(/[×xX*]\s*(\d+)/);
+      if (multMatch && multMatch[1]) {
+        segQty = Math.max(1, parseInt(multMatch[1], 10));
+      }
+      const cleanSeg = seg.replace(/[×xX*]\s*\d+.*$/, "").trim();
+      const colonIdx = cleanSeg.indexOf(":");
+      const optName = (colonIdx !== -1 ? cleanSeg.slice(0, colonIdx) : cleanSeg).replace(/—.*$/, "").trim();
+      const labelPriceRaw = colonIdx !== -1 ? Number(cleanSeg.slice(colonIdx + 1).trim()) : NaN;
+      let resolvedSegPrice = dbPriceMap[optName];
+      if (resolvedSegPrice === void 0) {
+        for (const [k, v] of Object.entries(dbPriceMap)) {
+          if (optName && k && (optName.includes(k) || k.includes(optName))) {
+            resolvedSegPrice = v;
+            break;
+          }
+        }
+      }
+      if (resolvedSegPrice === void 0 && !isNaN(labelPriceRaw) && labelPriceRaw > 0) {
+        resolvedSegPrice = Math.round(labelPriceRaw);
+      }
+      if (resolvedSegPrice !== void 0 && resolvedSegPrice > 0) {
+        totalWeightedPrice += resolvedSegPrice * segQty;
+        totalSegQty += segQty;
+        matchedLabels.push(optName);
+      }
+    }
+    if (totalSegQty > 0 && totalWeightedPrice > 0) {
+      const effectiveUnitPrice = Math.round(totalWeightedPrice / totalSegQty);
+      const unitLabel = matchedLabels.join("\u060C ") || fallbackUnit;
+      return {
+        price: effectiveUnitPrice,
+        unit: unitLabel,
+        name: rawItemName
+      };
+    }
+  }
+  for (const [optName, officialPrice] of Object.entries(dbPriceMap)) {
+    if (optName && rawItemName.includes(optName)) {
+      return {
+        price: officialPrice,
+        unit: optName,
+        name: rawItemName
+      };
     }
   }
   return { price: fallbackPrice, unit: fallbackUnit, name: rawItemName || String(product?.name || "") };
