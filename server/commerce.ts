@@ -971,17 +971,18 @@ function resolveServerVariantOption(product: any, itemName?: string): { price: n
     } catch {}
   }
 
-  // 2. Extract chosen variant content inside parentheses (...) if present
+  // 2. Extract ALL parentheses groups (...) in rawItemName so multiple variant entries of the same product are all included!
   let innerParen = "";
   const parenMatches = Array.from(rawItemName.matchAll(/\(([^()]+)\)/g));
   if (parenMatches.length > 0) {
-    innerParen = parenMatches[parenMatches.length - 1][1].trim();
+    innerParen = parenMatches.map(m => m[1].trim()).filter(s => s.includes(":")).join("، ");
+    if (!innerParen) innerParen = parenMatches[parenMatches.length - 1][1].trim();
   } else if (rawItemName.includes(":")) {
     innerParen = rawItemName;
   }
 
   if (innerParen) {
-    const segments = innerParen.split(/[،,]+/).map(s => s.trim()).filter(Boolean);
+    const segments = innerParen.split(/[،,+]+/).map(s => s.trim()).filter(Boolean);
     let totalWeightedPrice = 0;
     let totalSegQty = 0;
     const matchedLabels: string[] = [];
@@ -997,7 +998,6 @@ function resolveServerVariantOption(product: any, itemName?: string): { price: n
       const optName = (colonIdx !== -1 ? cleanSeg.slice(0, colonIdx) : cleanSeg).replace(/—.*$/, "").trim();
       const labelPriceRaw = colonIdx !== -1 ? Number(cleanSeg.slice(colonIdx + 1).trim()) : NaN;
 
-      // Always prefer official DB price from dbPriceMap if available
       let resolvedSegPrice = dbPriceMap[optName];
       if (resolvedSegPrice === undefined) {
         for (const [k, v] of Object.entries(dbPriceMap)) {
@@ -1019,7 +1019,7 @@ function resolveServerVariantOption(product: any, itemName?: string): { price: n
     }
 
     if (totalSegQty > 0 && totalWeightedPrice > 0) {
-      const effectiveUnitPrice = Math.round(totalWeightedPrice / totalSegQty);
+      const effectiveUnitPrice = totalWeightedPrice / totalSegQty;
       const unitLabel = matchedLabels.join("، ") || fallbackUnit;
       return {
         price: effectiveUnitPrice,

@@ -28,17 +28,8 @@ import { buildMissingIngredientNote } from "@/lib/assistant-note";
 import { ensureBrowserPushSubscription, getExistingBrowserPushSubscription, getPushPermissionState, requestPushPermission } from "@/lib/pushNotifications";
 
 function getStoredVariantTextV107(productId: any, productName?: any): string {
+  const partsFound: string[] = [];
   try {
-    if (productName && typeof window !== "undefined") {
-      const cleanPName = String(productName).replace(/\s*\([^()]*\)\s*$/, "").trim();
-      const byName = (window as any).__v107VariantByName;
-      if (byName && byName[cleanPName]) return String(byName[cleanPName]);
-      const rawByName = localStorage.getItem("original_v107_by_name");
-      if (rawByName) {
-        const parsedByName = JSON.parse(rawByName);
-        if (parsedByName && parsedByName[cleanPName]) return String(parsedByName[cleanPName]);
-      }
-    }
     if (productId !== undefined && productId !== null) {
       const pidStr = String(productId);
       for (let i = 0; i < localStorage.length; i++) {
@@ -50,26 +41,42 @@ function getStoredVariantTextV107(productId: any, productName?: any): string {
           const parsed = JSON.parse(raw);
           if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && parsed[pidStr] !== undefined) {
             const val = parsed[pidStr];
-            if (typeof val === "string" && val.includes(":")) return val;
-            if (Array.isArray(val)) {
+            if (typeof val === "string" && val.includes(":")) {
+              partsFound.push(val);
+            } else if (Array.isArray(val)) {
               const s = val.map((x: any) => typeof x === "string" ? x : (x?.label || x?.variant || x?.name || "")).filter(Boolean).join("، ");
-              if (s.includes(":")) return s;
-            }
-            if (val && typeof val === "object") {
+              if (s.includes(":")) partsFound.push(s);
+            } else if (val && typeof val === "object") {
               const parts: string[] = [];
               for (const [vk, vv] of Object.entries(val)) {
                 if (vk.includes(":") && Number(vv) > 0) {
                   parts.push(Number(vv) > 1 ? vk + " × " + vv : vk);
                 }
               }
-              if (parts.length > 0) return parts.join("، ");
+              if (parts.length > 0) partsFound.push(parts.join("، "));
             }
           }
         } catch {}
       }
     }
+    if (productName && typeof window !== "undefined") {
+      const cleanPName = String(productName).replace(/\s*\([^()]*\)\s*$/, "").trim();
+      const byName = (window as any).__v107VariantByName;
+      if (byName && byName[cleanPName]) {
+        const bn = String(byName[cleanPName]);
+        if (bn.includes("،") || partsFound.length === 0) return bn;
+      }
+      const rawByName = localStorage.getItem("original_v107_by_name");
+      if (rawByName) {
+        const parsedByName = JSON.parse(rawByName);
+        if (parsedByName && parsedByName[cleanPName]) {
+          const bn = String(parsedByName[cleanPName]);
+          if (bn.includes("،") || partsFound.length === 0) return bn;
+        }
+      }
+    }
   } catch {}
-  return "";
+  return partsFound.join("، ");
 }
 
 function extractVariantPriceV104(rawText: any, fallbackPrice: any, productObj?: any): number {
@@ -81,10 +88,14 @@ function extractVariantPriceV104(rawText: any, fallbackPrice: any, productObj?: 
     pid = rawText.productId ?? rawText.product?.id ?? rawText.id ?? pid;
     pname = rawText.product?.name ?? rawText.productName ?? rawText.name ?? pname;
     const allStrVals = Object.values(rawText).filter(v => typeof v === "string").join(" ");
-    combined = [
-      allStrVals,
-      getStoredVariantTextV107(pid, pname)
-    ].filter(Boolean).join(" ");
+    if (/\([^()]*:\s*\d/.test(allStrVals)) {
+      combined = allStrVals;
+    } else {
+      combined = [
+        allStrVals,
+        getStoredVariantTextV107(pid, pname)
+      ].filter(Boolean).join(" ");
+    }
   } else if (rawText) {
     combined = String(rawText).trim();
   } else {
@@ -93,7 +104,6 @@ function extractVariantPriceV104(rawText: any, fallbackPrice: any, productObj?: 
 
   if (!combined) return base;
 
-  // Build official DB price map from product description if available
   const dbPriceMap: Record<string, number> = {};
   const desc = String(
     productObj?.description ||
@@ -123,11 +133,12 @@ function extractVariantPriceV104(rawText: any, fallbackPrice: any, productObj?: 
   let targetStr = combined;
   const parenMatches = Array.from(combined.matchAll(/\(([^()]+)\)/g));
   if (parenMatches.length > 0) {
-    targetStr = parenMatches[parenMatches.length - 1][1].trim();
+    targetStr = parenMatches.map(m => m[1].trim()).filter(s => s.includes(":")).join("، ");
+    if (!targetStr) targetStr = parenMatches[parenMatches.length - 1][1].trim();
   }
 
   if (targetStr.includes(":")) {
-    const segments = targetStr.split(/[،,]+/).map(s => s.trim()).filter(Boolean);
+    const segments = targetStr.split(/[،,+]+/).map(s => s.trim()).filter(Boolean);
     let totalW = 0;
     let totalQ = 0;
     for (const seg of segments) {
@@ -171,7 +182,11 @@ function extractCartSubtotalV107(cartOrOrder: any, fallbackSubtotal?: any): numb
   }
   const items = cartOrOrder?.items;
   if (Array.isArray(items) && items.length > 0) {
-    const calcSub = items.reduce((sum: number, it: any) => sum + extractVariantLineTotalV107(it), 0);
+    const calcSub = Math.round(items.reduce((sum: number, it: any) => {
+      const q = Math.max(1, Number(it?.quantity || 1));
+      const up = extractVariantPriceV104(it, it?.unitPrice ?? it?.price ?? it?.product?.price, it?.product);
+      return sum + up * q;
+    }, 0));
     if (typeof window !== "undefined" && !cartOrOrder?.orderNumber && !cartOrOrder?.status) {
       (window as any).__v107LastCartSubtotal = calcSub;
       (window as any).__v107LastCartBaseSubtotal = Number(fallbackSubtotal ?? cartOrOrder?.subtotal ?? 0);
@@ -1847,7 +1862,7 @@ function ProductDetail({ id, allProducts = [], onSelectProduct, onBack, onAiReci
 function CartPage({ minOrder = 0 }: { minOrder?: number }) {
   const { cart, setQuantity, remove, clear } = useStore();
   const [checkout, setCheckout] = useState(false);
-  const subtotal = cart.reduce((sum, line) => sum + Math.round(extractVariantPriceV104(line, line?.unitPrice ?? line?.price ?? line?.product?.price, line?.product)) * line.quantity, 0);
+  const subtotal = cart.reduce((sum, line) => sum + extractVariantLineTotalV107(line), 0);
   const belowMin = minOrder > 0 && subtotal < minOrder;
   return (
     <main className="page-shell inner-page">
@@ -1942,7 +1957,7 @@ function CartPage({ minOrder = 0 }: { minOrder?: number }) {
 }
 
 function CartRow({ line, onQuantity, onRemove }: { line: CartLine; onQuantity: (n: number) => void; onRemove: () => void }) {
-  return <article className="cart-row"><div className="cart-thumb">{line.imageUrl ? <img src={line.imageUrl} alt="" loading="lazy" decoding="async" /> : <Leaf size={22} />}</div><div className="cart-row-info"><strong>{line.name}</strong><small>{formatPrice(Math.round(extractVariantPriceV104(line, line?.unitPrice ?? line?.price ?? line?.product?.price, line?.product)))} / {line.unit}</small><div className="cart-row-tools"><div className="quantity-compact"><button aria-label="تقليل" onClick={() => onQuantity(line.quantity - (line.quantityStep || 1))}><Minus size={14} /></button><b>{line.quantity}</b><button aria-label="زيادة" disabled={line.stock !== null && line.stock !== undefined && line.quantity + (line.quantityStep || 1) > line.stock} onClick={() => onQuantity(line.quantity + (line.quantityStep || 1))}><Plus size={14} /></button></div><button className="remove-line" onClick={onRemove}><Trash2 size={14} /> إزالة</button></div></div><strong className="cart-line-total">{formatPrice(Math.round(extractVariantPriceV104(line, line?.unitPrice ?? line?.price ?? line?.product?.price, line?.product)) * line.quantity)}</strong></article>;
+  return <article className="cart-row"><div className="cart-thumb">{line.imageUrl ? <img src={line.imageUrl} alt="" loading="lazy" decoding="async" /> : <Leaf size={22} />}</div><div className="cart-row-info"><strong>{line.name}</strong><small>{formatPrice(Math.round(extractVariantPriceV104(line, line?.unitPrice ?? line?.price ?? line?.product?.price, line?.product)))} / {line.unit}</small><div className="cart-row-tools"><div className="quantity-compact"><button aria-label="تقليل" onClick={() => onQuantity(line.quantity - (line.quantityStep || 1))}><Minus size={14} /></button><b>{line.quantity}</b><button aria-label="زيادة" disabled={line.stock !== null && line.stock !== undefined && line.quantity + (line.quantityStep || 1) > line.stock} onClick={() => onQuantity(line.quantity + (line.quantityStep || 1))}><Plus size={14} /></button></div><button className="remove-line" onClick={onRemove}><Trash2 size={14} /> إزالة</button></div></div><strong className="cart-line-total">{formatPrice(extractVariantLineTotalV107(line))}</strong></article>;
 }
 
 function getYemenCarrierName(phone: string): string {
@@ -4042,7 +4057,7 @@ function AssistantPage() {
         </div>
         <div className="chat-messages" ref={messagesRef}>
           {displayedMessages.map((message, index) => {
-            const totalActionPrice = message.cartAction?.items.reduce((s, it) => s + Math.round(extractVariantPriceV104(it, it?.unitPrice ?? it?.price ?? it?.product?.price, it?.product)) * it.quantity, 0) ?? 0;
+            const totalActionPrice = message.cartAction?.items.reduce((s, it) => s + extractVariantLineTotalV107(it), 0) ?? 0;
             return (
               <div key={index + "-" + message.role + "-" + (message.ownerMsgId || "")} className={"chat-message " + (message.role === "user" ? "from-user" : "from-assistant")} style={message.ownerMsgId ? { border: "1.5px solid #e0a800", background: "#fffdf5" } : undefined}>
                 {message.ownerMsgId && (
@@ -4260,7 +4275,7 @@ function GamifiedRewardBar({ settings, location }: { settings: Record<string, st
     cfg.placement === "home_and_cart" ? (isHome || isCart) :
     isCart;
 
-  const subtotal = cart.reduce((sum, line) => sum + Math.round(extractVariantPriceV104(line, line?.unitPrice ?? line?.price ?? line?.product?.price, line?.product)) * line.quantity, 0);
+  const subtotal = cart.reduce((sum, line) => sum + extractVariantLineTotalV107(line), 0);
   const remaining = Math.max(0, threshold - subtotal);
   const pct = Math.min(100, Math.max(0, Math.round((subtotal / threshold) * 100)));
   const unlocked = subtotal >= threshold;

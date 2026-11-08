@@ -3317,12 +3317,13 @@ function resolveServerVariantOption(product, itemName) {
   let innerParen = "";
   const parenMatches = Array.from(rawItemName.matchAll(/\(([^()]+)\)/g));
   if (parenMatches.length > 0) {
-    innerParen = parenMatches[parenMatches.length - 1][1].trim();
+    innerParen = parenMatches.map((m) => m[1].trim()).filter((s) => s.includes(":")).join("\u060C ");
+    if (!innerParen) innerParen = parenMatches[parenMatches.length - 1][1].trim();
   } else if (rawItemName.includes(":")) {
     innerParen = rawItemName;
   }
   if (innerParen) {
-    const segments = innerParen.split(/[،,]+/).map((s) => s.trim()).filter(Boolean);
+    const segments = innerParen.split(/[،,+]+/).map((s) => s.trim()).filter(Boolean);
     let totalWeightedPrice = 0;
     let totalSegQty = 0;
     const matchedLabels = [];
@@ -3355,7 +3356,7 @@ function resolveServerVariantOption(product, itemName) {
       }
     }
     if (totalSegQty > 0 && totalWeightedPrice > 0) {
-      const effectiveUnitPrice = Math.round(totalWeightedPrice / totalSegQty);
+      const effectiveUnitPrice = totalWeightedPrice / totalSegQty;
       const unitLabel = matchedLabels.join("\u060C ") || fallbackUnit;
       return {
         price: effectiveUnitPrice,
