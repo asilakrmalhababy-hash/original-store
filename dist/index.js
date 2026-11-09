@@ -246,12 +246,6 @@ var init_schema = __esm({
   }
 });
 
-// server/commerce.ts
-import fs2 from "node:fs";
-import { createHash as createHash4 } from "node:crypto";
-import { and as and2, asc, desc, eq as eq3, gt, inArray, like, or, sql as sql2 } from "drizzle-orm";
-import { z as z2 } from "zod";
-
 // server/db.ts
 init_schema();
 import fs from "node:fs";
@@ -551,7 +545,507 @@ async function promoteConfiguredOwner(openId, email) {
   return getUserByOpenId(openId);
 }
 
+// server/ai_engine_v112.ts
+init_schema();
+var DEFAULT_AI_CONFIG_V112 = {
+  mode1StylePrompt: "\u062A\u0643\u0644\u0645 \u0645\u0639 \u0627\u0644\u0632\u0628\u0648\u0646 \u0643\u0635\u062F\u064A\u0642 \u064A\u0645\u0646\u064A \u0630\u0643\u064A\u060C \u0648\u062F\u0648\u062F\u060C \u0648\u0637\u0628\u064A\u0639\u064A \u062C\u062F\u0627\u064B (\u0645\u062B\u0644: \u0641\u0647\u0645\u062A\u0643 \u064A\u0627 \u063A\u0627\u0644\u064A\u060C \u062D\u0644\u0648 \u062D\u0644\u0648\u060C \u0623\u0628\u0634\u0631 \u0645\u0646 \u0639\u064A\u0648\u0646\u064A). \u0625\u0630\u0627 \u0643\u0627\u0646 \u0627\u0644\u0632\u0628\u0648\u0646 \u064A\u0633\u0648\u0644\u0641 \u0633\u0648\u0627\u0644\u0641 \u0639\u0627\u0645\u0629 \u0623\u0648 \u064A\u0633\u0623\u0644 \u0633\u0624\u0627\u0644\u0627\u064B \u0639\u0627\u0645\u0627\u064B \u0644\u0627 \u0639\u0644\u0627\u0642\u0629 \u0644\u0647 \u0628\u0627\u0644\u0634\u0631\u0627\u0621\u060C \u0631\u062F \u0639\u0644\u064A\u0647 \u0628\u0630\u0643\u0627\u0621 \u0648\u0644\u0637\u0641 \u0628\u062F\u0648\u0646 \u0623\u0646 \u062A\u0642\u062D\u0645 \u0645\u0646\u062A\u062C\u0627\u062A \u0627\u0644\u0645\u062A\u062C\u0631 \u0623\u0648 \u0627\u0644\u0633\u0644\u0629 \u0646\u0647\u0627\u0626\u064A\u0627\u064B. \u064A\u0645\u0646\u0639 \u0645\u0646\u0639\u0627\u064B \u0628\u0627\u062A\u0627\u064B \u0630\u0643\u0631 \u0623\u0631\u0642\u0627\u0645 \u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A \u0627\u0644\u062F\u0627\u062E\u0644\u064A\u0629 \u0645\u062B\u0644 (\u0631\u0642\u0645 630072). \u0625\u0630\u0627 \u0633\u0623\u0644 \u0627\u0644\u0632\u0628\u0648\u0646 \u0639\u0646 \u0645\u0646\u062A\u062C \u063A\u064A\u0631 \u0645\u062A\u0648\u0641\u0631 \u0641\u064A \u0627\u0644\u0645\u062A\u062C\u0631\u060C \u0644\u0627 \u062A\u0639\u0637\u064A\u0647 \u0627\u0642\u062A\u0631\u0627\u062D\u0627\u064B \u062E\u0627\u0637\u0626\u0627\u064B\u060C \u0628\u0644 \u0642\u0644 \u0644\u0647: (\u0641\u0647\u0645\u062A\u0643 \u064A\u0627 \u063A\u0627\u0644\u064A\u060C \u0623\u0646\u062A \u062A\u0631\u064A\u062F \u0643\u0630\u0627.. \u062D\u0644\u0648! \u062D\u0627\u0644\u064A\u0627\u064B \u0645\u0634 \u0645\u0648\u062C\u0648\u062F \u0628\u0646\u0641\u0633 \u0627\u0644\u0627\u0633\u0645 \u0641\u064A \u0627\u0644\u0631\u0641\u060C \u0648\u0625\u0630\u0627 \u062A\u062D\u0628 \u0623\u0642\u062F\u0631 \u0623\u062A\u0648\u0627\u0635\u0644 \u0644\u0643 \u0627\u0644\u062D\u064A\u0646 \u0645\u0639 \u0627\u0644\u0645\u062A\u062C\u0631 \u0648\u0623\u0633\u0623\u0644\u0647\u0645 \u0625\u0630\u0627 \u0639\u0646\u062F\u0647\u0645 \u0623\u0648 \u064A\u0648\u0641\u0631\u0648\u0646\u0647 \u0644\u0643! \u0647\u0644 \u062A\u0631\u064A\u062F \u0623\u0643\u0644\u0645 \u0627\u0644\u0645\u062A\u062C\u0631\u061F).",
+  mode2Rules: [
+    {
+      id: "r1",
+      trigger: "\u0628\u0633\u0643\u0648\u064A\u062A \u0645\u0627\u0631\u064A",
+      response: "\u0628\u0633\u0643\u0648\u064A\u062A \u0645\u0627\u0631\u064A \u0645\u0645\u062A\u0627\u0632 \u0645\u0639 \u0627\u0644\u0634\u0627\u064A \u0648\u0627\u0644\u062D\u0644\u064A\u0628\u060C \u0648\u064A\u0635\u0644\u062D \u0644\u0639\u0645\u0644 \u0623\u0644\u0630 \u062D\u0644\u0649 \u0628\u0627\u0631\u062F \u0633\u0631\u064A\u0639 \u0628\u0637\u0628\u0642\u0627\u062A \u0627\u0644\u0642\u0634\u0637\u0629 \u0648\u0627\u0644\u0643\u0627\u0643\u0627\u0648\u060C \u0648\u0633\u0639\u0631\u0627\u062A \u0627\u0644\u062D\u0628\u0629 \u0627\u0644\u0648\u0627\u062D\u062F\u0629 \u062D\u0648\u0627\u0644\u064A 25 \u0633\u0639\u0631\u0629 \u062D\u0631\u0627\u0631\u064A\u0629 \u0641\u0642\u0637."
+    },
+    {
+      id: "r2",
+      trigger: "\u0634\u0648\u0643\u0644\u0627\u062A\u0629 \u0627\u0644\u0628\u0644\u064A\u0644\u0627",
+      response: "\u0634\u0648\u0643\u0644\u0627\u062A\u0629 \u0627\u0644\u0628\u0644\u064A\u0644\u0627 \u0633\u0646\u0627\u0643 \u0644\u0630\u064A\u0630 \u062C\u0627\u0647\u0632 \u0644\u0644\u0623\u0643\u0644 \u0645\u0628\u0627\u0634\u0631\u0629 \u0628\u0637\u0639\u0645 \u0627\u0644\u0643\u0627\u0643\u0627\u0648 \u0627\u0644\u063A\u0646\u064A (\u0633\u0639\u0631 \u0627\u0644\u062D\u0628\u0629 50 \u0631.\u064A)\u060C \u062A\u0639\u0637\u064A \u0637\u0627\u0642\u0629 \u0633\u0631\u064A\u0639\u0629 (\u062D\u0648\u0627\u0644\u064A 130 \u0633\u0639\u0631\u0629 \u062D\u0631\u0627\u0631\u064A\u0629) \u0648\u0645\u0645\u062A\u0627\u0632\u0629 \u062C\u062F\u0627\u064B \u0645\u0639 \u0627\u0644\u0642\u0647\u0648\u0629 \u0623\u0648 \u0627\u0644\u0634\u0627\u064A."
+    }
+  ],
+  mode3CategoryRules: "1) \u0627\u0644\u0634\u0648\u0643\u0648\u0644\u0627\u062A\u0629 \u0648\u0627\u0644\u0648\u064A\u0641\u0631 \u0648\u0627\u0644\u0639\u0644\u0643\u0629 \u0648\u0627\u0644\u0634\u064A\u0628\u0633: \u0644\u0627 \u062A\u0639\u0631\u0636 \u0644\u0647\u0627 \u0623\u0628\u062F\u0627\u064B \u0637\u0631\u0642 \u062A\u062D\u0636\u064A\u0631 \u0623\u0648 \u0637\u0628\u062E \u0623\u0648 \u062A\u0648\u0627\u0628\u0644\u061B \u0627\u0639\u0631\u0636 \u0641\u0642\u0637 \u0645\u0639\u0644\u0648\u0645\u0627\u062A \u0639\u0646 \u0627\u0644\u0645\u0646\u062A\u062C\u060C \u0627\u0644\u0633\u0639\u0631\u0627\u062A \u0627\u0644\u062D\u0631\u0627\u0631\u064A\u0629 \u0648\u0627\u0644\u0642\u064A\u0645\u0629 \u0627\u0644\u063A\u0630\u0627\u0626\u064A\u0629\u060C \u0648\u0645\u0639 \u0625\u064A\u0634 \u064A\u0624\u0643\u0644 (\u0645\u062B\u0644 \u0627\u0644\u0642\u0647\u0648\u0629 \u0623\u0648 \u0627\u0644\u0634\u0627\u064A). 2) \u0627\u0644\u0628\u0633\u0643\u0648\u064A\u062A \u0627\u0644\u0633\u0627\u062F\u0629 (\u0645\u062B\u0644 \u0645\u0627\u0631\u064A \u0648\u0623\u0628\u0648 \u0648\u0644\u062F): \u0627\u0630\u0643\u0631 \u0623\u0646\u0647 \u064A\u0635\u0644\u062D \u0644\u0639\u0645\u0644 \u062D\u0644\u0649 \u0628\u0627\u0631\u062F \u0633\u0631\u064A\u0639 \u0623\u0648 \u0645\u0639 \u0627\u0644\u0634\u0627\u064A\u060C \u0645\u0639 \u0630\u0643\u0631 \u0627\u0644\u0633\u0639\u0631\u0627\u062A \u0627\u0644\u062D\u0631\u0627\u0631\u064A\u0629. 3) \u0627\u0644\u0639\u0635\u0627\u0626\u0631 \u0648\u0627\u0644\u0645\u0634\u0631\u0648\u0628\u0627\u062A: \u0627\u0639\u0631\u0636 \u0627\u0644\u0642\u064A\u0645\u0629 \u0627\u0644\u063A\u0630\u0627\u0626\u064A\u0629\u060C \u0627\u0644\u0633\u0639\u0631\u0627\u062A \u0627\u0644\u062D\u0631\u0627\u0631\u064A\u0629\u060C \u0648\u0623\u0641\u0636\u0644 \u0637\u0631\u064A\u0642\u0629 \u0644\u062A\u0642\u062F\u064A\u0645\u0647\u0627 \u0628\u0627\u0631\u062F\u0629.",
+  productAiMap: {}
+};
+var memoryConfigV112 = { ...DEFAULT_AI_CONFIG_V112 };
+var memoryRequestsV112 = [];
+var dbInitializedV112 = false;
+async function ensureAiTableV112() {
+  if (dbInitializedV112) return;
+  try {
+    const db = await getDb();
+    if (!db || typeof db.execute !== "function") return;
+    await db.execute(
+      "CREATE TABLE IF NOT EXISTS ai_knowledge_v112 (k VARCHAR(190) PRIMARY KEY, v LONGTEXT NOT NULL, updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)"
+    );
+    dbInitializedV112 = true;
+    const [rows] = await db.execute("SELECT k, v FROM ai_knowledge_v112");
+    if (Array.isArray(rows)) {
+      for (const r of rows) {
+        if (r.k === "config" && r.v) {
+          try {
+            const parsed = JSON.parse(String(r.v));
+            memoryConfigV112 = {
+              mode1StylePrompt: parsed.mode1StylePrompt || DEFAULT_AI_CONFIG_V112.mode1StylePrompt,
+              mode2Rules: Array.isArray(parsed.mode2Rules) ? parsed.mode2Rules : DEFAULT_AI_CONFIG_V112.mode2Rules,
+              mode3CategoryRules: parsed.mode3CategoryRules || DEFAULT_AI_CONFIG_V112.mode3CategoryRules,
+              productAiMap: parsed.productAiMap && typeof parsed.productAiMap === "object" ? parsed.productAiMap : {}
+            };
+          } catch {
+          }
+        } else if (r.k === "requests" && r.v) {
+          try {
+            const parsedReq = JSON.parse(String(r.v));
+            if (Array.isArray(parsedReq)) memoryRequestsV112 = parsedReq;
+          } catch {
+          }
+        }
+      }
+    }
+  } catch {
+  }
+}
+async function saveAiKeyV112(key, valObj) {
+  try {
+    await ensureAiTableV112();
+    const db = await getDb();
+    if (!db || typeof db.execute !== "function") return;
+    const jsonStr = JSON.stringify(valObj);
+    await db.execute(
+      "INSERT INTO ai_knowledge_v112 (k, v) VALUES (?, ?) ON DUPLICATE KEY UPDATE v = VALUES(v)",
+      [key, jsonStr]
+    );
+  } catch {
+  }
+}
+async function getAiConfigV112() {
+  await ensureAiTableV112();
+  return memoryConfigV112;
+}
+async function getAiRequestsV112() {
+  await ensureAiTableV112();
+  return memoryRequestsV112;
+}
+function cleanProductNameV112(raw) {
+  return String(raw || "").replace(/\(\s*رقم\s*\d+\s*\)/g, "").replace(/\s*\([^()]*\)\s*$/g, "").trim();
+}
+function getProductCustomAiInfoV112(productId, productName) {
+  const map = memoryConfigV112.productAiMap || {};
+  if (productId !== void 0 && productId !== null && map["id:" + String(productId)]) {
+    return String(map["id:" + String(productId)]).trim();
+  }
+  const cName = cleanProductNameV112(String(productName || ""));
+  if (cName && map["name:" + cName]) {
+    return String(map["name:" + cName]).trim();
+  }
+  for (const [k, v] of Object.entries(map)) {
+    if (k.startsWith("name:") && cName && (k.slice(5) === cName || cName.includes(k.slice(5)))) {
+      return String(v || "").trim();
+    }
+  }
+  return "";
+}
+function classifyProductKindV112(name, categoryName = "", customAiInfo = "") {
+  const combined = (name + " " + categoryName + " " + customAiInfo).toLowerCase();
+  if (/(سجائر|سجاير|دخان|شملان|كمران|منظف|صابون|شامبو|مناديل|فحم|ولاعة|أكياس|اكياس)/.test(combined)) {
+    return "non_food";
+  }
+  if (/(بسكويت|بسكوت|ماري|أبو ولد|ابو ولد|نخالة|شاي|ديما|أوريو|اوريو|معمول|كليجا)/.test(combined)) {
+    return "biscuit_dessert";
+  }
+  if (/(شوكلات|شوكولات|بليلا|بريك|ويفر|علك|باطوق|حلاو|مصاص|شيبس|بطاط|فشار|كروسان|كيك|جالكسي|كتكات|سنكرز|توبي|سعيد|مارشملو|جيلي|كاكاو)/.test(combined)) {
+    return "chocolate_snack";
+  }
+  if (/(عصير|رواب|مشروب|مانجو|برتقال|جوافة|تفاح|حليب|لبن|زبادي|ماء|مياه|بيبسي|كوكاكولا|ميرندا|سفن|ردبول|جوي|نسكافيه|قهوة)/.test(combined)) {
+    return "drink_juice";
+  }
+  return "cooking_food";
+}
+function buildSmartProductModalDataV112(productName, price, unit, categoryName = "", customTopic = "", productId) {
+  const cleanName = cleanProductNameV112(productName) || productName;
+  const customAi = getProductCustomAiInfoV112(productId, cleanName);
+  const kind = classifyProductKindV112(cleanName, categoryName, customAi);
+  const priceStr = price > 0 ? price.toLocaleString("en-US") + " \u0631\u064A\u0627\u0644" : "";
+  const customNoteBlock = customAi ? "\n\u{1F4A1} \u0645\u0639\u0644\u0648\u0645\u0629 \u062E\u0627\u0635\u0629 \u0639\u0646 \u0627\u0644\u0645\u0646\u062A\u062C: " + customAi : "";
+  if (kind === "chocolate_snack") {
+    const chips2 = [
+      "\u{1F525} \u0627\u0644\u0633\u0639\u0631\u0627\u062A \u0648\u0627\u0644\u0642\u064A\u0645\u0629 \u0627\u0644\u063A\u0630\u0627\u0626\u064A\u0629",
+      "\u2139\uFE0F \u0645\u0639\u0644\u0648\u0645\u0627\u062A \u0648\u0645\u0645\u064A\u0632\u0627\u062A \u0627\u0644\u0645\u0646\u062A\u062C",
+      "\u2615 \u0645\u0639 \u0625\u064A\u0634 \u064A\u0624\u0643\u0644 \u0623\u0648 \u064A\u064F\u0642\u062F\u0645\u061F",
+      "\u{1F36B} \u0633\u0646\u0627\u0643 \u062E\u0641\u064A\u0641 \u0648\u0645\u0634\u0627\u0628\u0647"
+    ];
+    let text3 = "";
+    if (customTopic && customTopic.includes("\u0633\u0639\u0631\u0627\u062A")) {
+      text3 = "\u{1F525} \u0627\u0644\u0642\u064A\u0645\u0629 \u0627\u0644\u063A\u0630\u0627\u0626\u064A\u0629 \u0648\u0627\u0644\u0633\u0639\u0631\u0627\u062A \u0627\u0644\u062D\u0631\u0627\u0631\u064A\u0629 \u0644\u0640 \xAB" + cleanName + "\xBB:\n1\uFE0F\u20E3 \u0627\u0644\u0633\u0639\u0631\u0627\u062A \u0627\u0644\u062A\u0642\u0631\u064A\u0628\u064A\u0629: \u062A\u062D\u062A\u0648\u064A \u0627\u0644\u062D\u0635\u0629 \u0627\u0644\u0648\u0627\u062D\u062F\u0629 \u0639\u0644\u0649 \u062D\u0648\u0627\u0644\u064A 110 \u0625\u0644\u0649 160 \u0633\u0639\u0631\u0629 \u062D\u0631\u0627\u0631\u064A\u0629 \u062A\u0645\u0646\u062D \u0627\u0644\u062C\u0633\u0645 \u0637\u0627\u0642\u0629 \u0633\u0631\u064A\u0639\u0629 \u0648\u0646\u0634\u0627\u0637\u0627\u064B \u0641\u0648\u0631\u064A\u0627\u064B.\n2\uFE0F\u20E3 \u0627\u0644\u0642\u064A\u0645\u0629 \u0627\u0644\u063A\u0630\u0627\u0626\u064A\u0629: \u063A\u0646\u064A \u0628\u0627\u0644\u0643\u0627\u0643\u0627\u0648 \u0648\u0627\u0644\u0633\u0643\u0631\u064A\u0627\u062A \u0627\u0644\u0628\u0633\u064A\u0637\u0629 \u0627\u0644\u062A\u064A \u062A\u062D\u0633\u0646 \u0627\u0644\u0645\u0632\u0627\u062C \u0648\u062A\u0631\u0641\u0639 \u0627\u0644\u062A\u0631\u0643\u064A\u0632.\n3\uFE0F\u20E3 \u0646\u0635\u064A\u062D\u0629: \u062A\u0646\u0627\u0648\u0644\u0647 \u0628\u0627\u0639\u062A\u062F\u0627\u0644 \u0643\u0633\u0646\u0627\u0643 \u0644\u0630\u064A\u0630 \u0641\u064A \u0648\u0633\u0637 \u0627\u0644\u064A\u0648\u0645 \u0623\u0648 \u0645\u0639 \u0641\u0646\u062C\u0627\u0646 \u0642\u0647\u0648\u0629." + customNoteBlock;
+    } else if (customTopic && (customTopic.includes("\u064A\u0624\u0643\u0644") || customTopic.includes("\u064A\u064F\u0642\u062F\u0645") || customTopic.includes("\u0642\u0647\u0648\u0629"))) {
+      text3 = "\u2615 \u0623\u0641\u0636\u0644 \u0637\u0631\u0642 \u0627\u0644\u0627\u0633\u062A\u0645\u062A\u0627\u0639 \u0628\u0640 \xAB" + cleanName + "\xBB:\n1\uFE0F\u20E3 \u0645\u0639 \u0627\u0644\u0642\u0647\u0648\u0629 \u0623\u0648 \u0627\u0644\u0634\u0627\u064A: \u0637\u0639\u0645\u0647 \u0631\u0627\u0626\u0639 \u062C\u062F\u0627\u064B \u0628\u062C\u0627\u0646\u0628 \u0641\u0646\u062C\u0627\u0646 \u0642\u0647\u0648\u0629 \u0623\u0648 \u0643\u0648\u0628 \u0634\u0627\u064A \u062F\u0627\u0641\u0626.\n2\uFE0F\u20E3 \u0645\u0639 \u0627\u0644\u062D\u0644\u064A\u0628 \u0627\u0644\u0628\u0627\u0631\u062F \u0623\u0648 \u0627\u0644\u062F\u0627\u0641\u0626: \u0648\u062C\u0628\u0629 \u062E\u0641\u064A\u0641\u0629 \u0645\u062D\u0628\u0628\u0629 \u0644\u0644\u0623\u0637\u0641\u0627\u0644 \u0648\u0627\u0644\u0643\u0628\u0627\u0631.\n3\uFE0F\u20E3 \u062C\u0627\u0647\u0632 \u0644\u0644\u0623\u0643\u0644 \u0645\u0628\u0627\u0634\u0631\u0629: \u0644\u0627 \u064A\u062D\u062A\u0627\u062C \u0625\u0644\u0649 \u0623\u064A \u062A\u062D\u0636\u064A\u0631 \u0623\u0648 \u0625\u0636\u0627\u0641\u0627\u062A." + customNoteBlock;
+    } else {
+      text3 = "\u2728 \u0645\u0639\u0644\u0648\u0645\u0627\u062A \u0627\u0644\u0645\u0646\u062A\u062C \u0648\u0627\u0644\u0642\u064A\u0645\u0629 \u0627\u0644\u063A\u0630\u0627\u0626\u064A\u0629 \u0644\u0640 \xAB" + cleanName + "\xBB" + (priceStr ? " (\u0645\u062A\u0648\u0641\u0631 \u0628\u0633\u0639\u0631 " + priceStr + ")" : "") + ":\n1\uFE0F\u20E3 \u0646\u0628\u0630\u0629 \u0639\u0646 \u0627\u0644\u0645\u0646\u062A\u062C: \u0633\u0646\u0627\u0643 \u062D\u0627\u0644\u064A \u062C\u0627\u0647\u0632 \u0644\u0644\u0623\u0643\u0644 \u0645\u0628\u0627\u0634\u0631\u0629 \u0628\u0637\u0639\u0645 \u063A\u0646\u064A \u0648\u0644\u0630\u064A\u0630\u060C \u0644\u0627 \u064A\u062D\u062A\u0627\u062C \u0625\u0644\u0649 \u0623\u064A \u0637\u0628\u062E \u0623\u0648 \u062A\u062D\u0636\u064A\u0631.\n2\uFE0F\u20E3 \u0627\u0644\u0633\u0639\u0631\u0627\u062A \u0627\u0644\u062D\u0631\u0627\u0631\u064A\u0629 \u0627\u0644\u062A\u0642\u0631\u064A\u0628\u064A\u0629: \u062D\u0648\u0627\u0644\u064A 120 \u2013 150 \u0633\u0639\u0631\u0629 \u062D\u0631\u0627\u0631\u064A\u0629 \u0644\u0644\u062D\u0635\u0629 \u0627\u0644\u0648\u0627\u062D\u062F\u0629\u060C \u0645\u0645\u062A\u0627\u0632 \u0644\u062A\u062C\u062F\u064A\u062F \u0627\u0644\u0637\u0627\u0642\u0629 \u0648\u0627\u0644\u0646\u0634\u0627\u0637.\n3\uFE0F\u20E3 \u0645\u0639 \u0625\u064A\u0634 \u064A\u062A\u0642\u062F\u0645\u061F \u0645\u062B\u0627\u0644\u064A \u062C\u062F\u0627\u064B \u0645\u0639 \u0641\u0646\u062C\u0627\u0646 \u0642\u0647\u0648\u0629\u060C \u0634\u0627\u064A\u060C \u0623\u0648 \u0643\u0648\u0628 \u062D\u0644\u064A\u0628\u060C \u0623\u0648 \u0643\u062A\u062D\u0644\u064A\u0629 \u062E\u0641\u064A\u0641\u0629 \u0641\u064A \u0623\u064A \u0648\u0642\u062A." + customNoteBlock;
+    }
+    return {
+      modalTitle: "\u2728 \u0645\u0639\u0644\u0648\u0645\u0627\u062A \u0648\u0642\u064A\u0645\u0629 \u063A\u0630\u0627\u0626\u064A\u0629: " + cleanName,
+      chips: chips2,
+      content: text3,
+      kind
+    };
+  }
+  if (kind === "biscuit_dessert") {
+    const chips2 = [
+      "\u{1F370} \u0641\u0643\u0631\u0629 \u062D\u0644\u0649 \u0628\u0627\u0631\u062F \u0648\u0633\u0631\u064A\u0639 \u0628\u0647",
+      "\u{1F525} \u0627\u0644\u0633\u0639\u0631\u0627\u062A \u0648\u0627\u0644\u0642\u064A\u0645\u0629 \u0627\u0644\u063A\u0630\u0627\u0626\u064A\u0629",
+      "\u2615 \u0645\u0639 \u0627\u0644\u0634\u0627\u064A \u0648\u0627\u0644\u062D\u0644\u064A\u0628",
+      "\u2139\uFE0F \u0645\u0639\u0644\u0648\u0645\u0627\u062A \u0639\u0646 \u0627\u0644\u0645\u0646\u062A\u062C"
+    ];
+    let text3 = "";
+    if (customTopic && customTopic.includes("\u0633\u0639\u0631\u0627\u062A")) {
+      text3 = "\u{1F525} \u0627\u0644\u0633\u0639\u0631\u0627\u062A \u0627\u0644\u062D\u0631\u0627\u0631\u064A\u0629 \u0648\u0627\u0644\u0642\u064A\u0645\u0629 \u0627\u0644\u063A\u0630\u0627\u0626\u064A\u0629 \u0644\u0640 \xAB" + cleanName + "\xBB:\n1\uFE0F\u20E3 \u0627\u0644\u0633\u0639\u0631\u0627\u062A \u0627\u0644\u062D\u0631\u0627\u0631\u064A\u0629: \u062A\u062D\u062A\u0648\u064A \u0627\u0644\u062D\u0628\u0629 \u0627\u0644\u0648\u0627\u062D\u062F\u0629 \u0639\u0644\u0649 \u062D\u0648\u0627\u0644\u064A 25 \u2013 35 \u0633\u0639\u0631\u0629 \u062D\u0631\u0627\u0631\u064A\u0629 \u0641\u0642\u0637 (\u062D\u0648\u0627\u0644\u064A 140 \u0633\u0639\u0631\u0629 \u0644\u0643\u0644 4 \u062D\u0628\u0627\u062A).\n2\uFE0F\u20E3 \u0627\u0644\u0642\u064A\u0645\u0629 \u0627\u0644\u063A\u0630\u0627\u0626\u064A\u0629: \u062E\u0641\u064A\u0641 \u0639\u0644\u0649 \u0627\u0644\u0645\u0639\u062F\u0629 \u0648\u064A\u0645\u062F \u0627\u0644\u062C\u0633\u0645 \u0628\u0627\u0644\u0643\u0631\u0628\u0648\u0647\u064A\u062F\u0631\u0627\u062A \u0627\u0644\u0645\u0646\u0627\u0633\u0628\u0629 \u0644\u0641\u0637\u0648\u0631 \u0627\u0644\u0635\u0628\u0627\u062D \u0623\u0648 \u0633\u0646\u0627\u0643 \u0627\u0644\u0639\u0635\u0631.\n3\uFE0F\u20E3 \u0627\u0644\u0627\u0633\u062A\u062E\u062F\u0627\u0645: \u0642\u0648\u0627\u0645\u0647 \u0627\u0644\u0647\u0634 \u064A\u062C\u0639\u0644\u0647 \u0645\u0645\u062A\u0627\u0632\u0627\u064B \u0644\u0639\u0645\u0644 \u0627\u0644\u062D\u0644\u0648\u064A\u0627\u062A \u0627\u0644\u0628\u0627\u0631\u062F\u0629 \u0623\u0648 \u0627\u0644\u062A\u063A\u0645\u064A\u0633 \u0645\u0639 \u0627\u0644\u0634\u0627\u064A \u0648\u0627\u0644\u062D\u0644\u064A\u0628." + customNoteBlock;
+    } else {
+      text3 = "\u2728 \u0645\u0639\u0644\u0648\u0645\u0627\u062A \u0648\u0623\u0641\u0643\u0627\u0631 \u062C\u0645\u064A\u0644\u0629 \u0644\u0640 \xAB" + cleanName + "\xBB" + (priceStr ? " (\u0645\u062A\u0648\u0641\u0631 \u0628\u0633\u0639\u0631 " + priceStr + ")" : "") + ":\n1\uFE0F\u20E3 \u062D\u0644\u0649 \u0627\u0644\u0628\u0633\u0643\u0648\u064A\u062A \u0627\u0644\u0628\u0627\u0631\u062F \u0627\u0644\u0633\u0631\u064A\u0639: \u063A\u0645\u0633 \u0627\u0644\u0628\u0633\u0643\u0648\u064A\u062A \u0633\u0631\u064A\u0639\u0627\u064B \u0641\u064A \u0627\u0644\u062D\u0644\u064A\u0628 \u0648\u0631\u062A\u0628\u0647 \u0641\u064A \u0637\u0628\u0642\u0627\u062A \u0645\u0639 \u0627\u0644\u0642\u0634\u0637\u0629 \u0648\u0627\u0644\u0643\u0627\u0643\u0627\u0648 \u0623\u0648 \u0627\u0644\u0643\u0631\u064A\u0645\u0629\u060C \u0648\u0636\u0639\u0647 \u0641\u064A \u0627\u0644\u062B\u0644\u0627\u062C\u0629 \u0646\u0635\u0641 \u0633\u0627\u0639\u0629 \u0644\u062A\u062D\u0635\u0644 \u0639\u0644\u0649 \u0623\u0644\u0630 \u062D\u0644\u0649 \u0628\u064A\u062A\u064A!\n2\uFE0F\u20E3 \u0627\u0644\u0633\u0639\u0631\u0627\u062A \u0627\u0644\u062D\u0631\u0627\u0631\u064A\u0629: \u062E\u0641\u064A\u0641 \u0648\u0645\u0646\u0627\u0633\u0628 \u062C\u062F\u0627\u064B\u060C \u0627\u0644\u062D\u0628\u0629 \u0627\u0644\u0648\u0627\u062D\u062F\u0629 \u062D\u0648\u0627\u0644\u064A 25 \u2013 35 \u0633\u0639\u0631\u0629 \u062D\u0631\u0627\u0631\u064A\u0629.\n3\uFE0F\u20E3 \u0627\u0644\u062A\u0642\u062F\u064A\u0645 \u0627\u0644\u0643\u0644\u0627\u0633\u064A\u0643\u064A: \u0631\u0641\u064A\u0642 \u0645\u062B\u0627\u0644\u064A \u0644\u0643\u0648\u0628 \u0627\u0644\u0634\u0627\u064A \u0627\u0644\u0639\u062F\u0646\u064A \u0623\u0648 \u0627\u0644\u062D\u0644\u064A\u0628 \u0627\u0644\u0633\u0627\u062E\u0646 \u0641\u064A \u0627\u0644\u0635\u0628\u0627\u062D \u0648\u0627\u0644\u0645\u0633\u0627\u0621." + customNoteBlock;
+    }
+    return {
+      modalTitle: "\u2728 \u0645\u0639\u0644\u0648\u0645\u0627\u062A \u0648\u0623\u0641\u0643\u0627\u0631 \u062D\u0644\u0649: " + cleanName,
+      chips: chips2,
+      content: text3,
+      kind
+    };
+  }
+  if (kind === "drink_juice") {
+    const chips2 = [
+      "\u{1F525} \u0627\u0644\u0633\u0639\u0631\u0627\u062A \u0648\u0627\u0644\u0642\u064A\u0645\u0629 \u0627\u0644\u063A\u0630\u0627\u0626\u064A\u0629",
+      "\u2139\uFE0F \u0645\u0639\u0644\u0648\u0645\u0627\u062A \u0639\u0646 \u0627\u0644\u0645\u0634\u0631\u0648\u0628",
+      "\u{1F9CA} \u0623\u0641\u0636\u0644 \u0637\u0631\u064A\u0642\u0629 \u062A\u0642\u062F\u064A\u0645 \u0628\u0627\u0631\u062F",
+      "\u{1F968} \u0633\u0646\u0627\u0643 \u062E\u0641\u064A\u0641 \u064A\u0646\u0627\u0633\u0628\u0647"
+    ];
+    const text3 = "\u2728 \u0645\u0639\u0644\u0648\u0645\u0627\u062A \u0648\u0642\u064A\u0645\u0629 \u063A\u0630\u0627\u0626\u064A\u0629 \u0644\u0640 \xAB" + cleanName + "\xBB" + (priceStr ? " (\u0645\u062A\u0648\u0641\u0631 \u0628\u0633\u0639\u0631 " + priceStr + ")" : "") + ":\n1\uFE0F\u20E3 \u0627\u0644\u0642\u064A\u0645\u0629 \u0627\u0644\u063A\u0630\u0627\u0626\u064A\u0629 \u0648\u0627\u0644\u0633\u0639\u0631\u0627\u062A: \u064A\u0645\u0646\u062D \u062A\u0631\u0637\u064A\u0628\u0627\u064B \u0648\u0627\u0646\u062A\u0639\u0627\u0634\u0627\u064B \u0641\u0648\u0631\u064A\u0627\u064B\u060C \u0648\u062A\u062D\u062A\u0648\u064A \u0627\u0644\u0639\u0628\u0648\u0629 \u0639\u0644\u0649 \u062D\u0648\u0627\u0644\u064A 90 \u2013 130 \u0633\u0639\u0631\u0629 \u062D\u0631\u0627\u0631\u064A\u0629.\n2\uFE0F\u20E3 \u0623\u0641\u0636\u0644 \u0637\u0631\u064A\u0642\u0629 \u062A\u0642\u062F\u064A\u0645: \u064A\u064F\u0642\u062F\u0645 \u0628\u0627\u0631\u062F\u0627\u064B \u062C\u062F\u0627\u064B \u0645\u0646 \u0627\u0644\u062B\u0644\u0627\u062C\u0629 \u0623\u0648 \u0645\u0639 \u0645\u0643\u0639\u0628\u0627\u062A \u0627\u0644\u062B\u0644\u062C \u0644\u0627\u0646\u062A\u0639\u0627\u0634 \u0645\u0636\u0627\u0639\u0641.\n3\uFE0F\u20E3 \u0645\u0639 \u0625\u064A\u0634 \u064A\u0646\u0627\u0633\u0628\u061F \u0645\u0645\u062A\u0627\u0632 \u0628\u062C\u0627\u0646\u0628 \u0627\u0644\u0628\u0633\u0643\u0648\u064A\u062A\u060C \u0627\u0644\u0643\u064A\u0643\u060C \u0623\u0648 \u0627\u0644\u0634\u064A\u0628\u0633 \u0648\u0627\u0644\u0645\u0642\u0631\u0645\u0634\u0627\u062A \u0641\u064A \u062C\u0644\u0633\u0627\u062A \u0627\u0644\u0639\u0635\u0631." + customNoteBlock;
+    return {
+      modalTitle: "\u2728 \u0645\u0639\u0644\u0648\u0645\u0627\u062A \u0648\u0642\u064A\u0645\u0629 \u063A\u0630\u0627\u0626\u064A\u0629: " + cleanName,
+      chips: chips2,
+      content: text3,
+      kind
+    };
+  }
+  if (kind === "non_food") {
+    const chips2 = [
+      "\u2139\uFE0F \u0645\u0648\u0627\u0635\u0641\u0627\u062A \u0648\u0645\u0639\u0644\u0648\u0645\u0627\u062A \u0627\u0644\u0645\u0646\u062A\u062C",
+      "\u{1F4E6} \u0627\u0644\u062A\u0648\u0641\u0631 \u0648\u0627\u0644\u062E\u064A\u0627\u0631\u0627\u062A"
+    ];
+    const text3 = "\u2728 \u0645\u0639\u0644\u0648\u0645\u0627\u062A \u0627\u0644\u0645\u0646\u062A\u062C \xAB" + cleanName + "\xBB" + (priceStr ? " (\u0627\u0644\u0633\u0639\u0631: " + priceStr + ")" : "") + ":\n1\uFE0F\u20E3 \u0645\u0646\u062A\u062C \u0623\u0635\u0644\u064A \u0645\u062A\u0648\u0641\u0631 \u0641\u064A \u0645\u062A\u062C\u0631 \u0623\u0648\u0631\u062C\u0646\u0627\u0644 \u0628\u062C\u0648\u062F\u0629 \u0645\u0636\u0645\u0648\u0646\u0629.\n2\uFE0F\u20E3 \u064A\u0645\u0643\u0646\u0643 \u0627\u062E\u062A\u064A\u0627\u0631 \u0627\u0644\u0643\u0645\u064A\u0629 \u0627\u0644\u0645\u0637\u0644\u0648\u0628\u0629 \u0648\u0625\u0636\u0627\u0641\u062A\u0647\u0627 \u0645\u0628\u0627\u0634\u0631\u0629 \u0625\u0644\u0649 \u0633\u0644\u0629 \u0627\u0644\u062A\u0633\u0648\u0642." + customNoteBlock;
+    return {
+      modalTitle: "\u2728 \u0645\u0639\u0644\u0648\u0645\u0627\u062A \u0627\u0644\u0645\u0646\u062A\u062C: " + cleanName,
+      chips: chips2,
+      content: text3,
+      kind
+    };
+  }
+  const chips = [
+    "\u{1F373} \u0623\u0641\u0643\u0627\u0631 \u0648\u0637\u0631\u0642 \u0627\u0633\u062A\u062E\u062F\u0627\u0645\u0647",
+    "\u{1F525} \u0627\u0644\u0633\u0639\u0631\u0627\u062A \u0648\u0627\u0644\u0642\u064A\u0645\u0629 \u0627\u0644\u063A\u0630\u0627\u0626\u064A\u0629",
+    "\u{1F4A1} \u0646\u0635\u064A\u062D\u0629 \u062D\u0641\u0638 \u0648\u062C\u0648\u062F\u0629",
+    "\u{1F6D2} \u0645\u0642\u0627\u0636\u064A \u062A\u0643\u0645\u0644\u0647"
+  ];
+  const text2 = "\u2728 \u0645\u0639\u0644\u0648\u0645\u0627\u062A \u0648\u0627\u0633\u062A\u062E\u062F\u0627\u0645\u0627\u062A \xAB" + cleanName + "\xBB" + (priceStr ? " (\u0645\u062A\u0648\u0641\u0631 \u0628\u0633\u0639\u0631 " + priceStr + ")" : "") + ":\n1\uFE0F\u20E3 \u0641\u064A \u0627\u0644\u0645\u0637\u0628\u062E \u0648\u0627\u0644\u0648\u062C\u0628\u0627\u062A: \u0645\u0643\u0648\u0646 \u0623\u0633\u0627\u0633\u064A \u0645\u0645\u062A\u0627\u0632 \u0644\u062A\u062D\u0636\u064A\u0631 \u0648\u062C\u0628\u0627\u062A \u0628\u064A\u062A\u064A\u0629 \u0634\u0647\u064A\u0629 \u0648\u0633\u0631\u064A\u0639\u0629.\n2\uFE0F\u20E3 \u0627\u0644\u0642\u064A\u0645\u0629 \u0627\u0644\u063A\u0630\u0627\u0626\u064A\u0629: \u063A\u0646\u064A \u0628\u0627\u0644\u0639\u0646\u0627\u0635\u0631 \u0627\u0644\u063A\u0630\u0627\u0626\u064A\u0629 \u0627\u0644\u0645\u0641\u064A\u062F\u0629 \u0644\u0644\u0645\u0627\u0626\u062F\u0629 \u0627\u0644\u064A\u0648\u0645\u064A\u0629.\n3\uFE0F\u20E3 \u0646\u0635\u064A\u062D\u0629 \u0627\u0644\u0627\u0633\u062A\u062E\u062F\u0627\u0645: \u064A\u064F\u062D\u0641\u0638 \u0641\u064A \u0645\u0643\u0627\u0646 \u062C\u0627\u0641 \u0648\u0628\u0627\u0631\u062F \u0644\u0644\u062D\u0641\u0627\u0638 \u0639\u0644\u0649 \u0646\u0643\u0647\u062A\u0647 \u0648\u062C\u0648\u062F\u062A\u0647 \u0627\u0644\u0637\u0627\u0632\u062C\u0629." + customNoteBlock;
+  return {
+    modalTitle: "\u2728 \u0627\u0633\u062A\u062E\u062F\u0627\u0645\u0627\u062A \u0648\u0645\u0639\u0644\u0648\u0645\u0627\u062A: " + cleanName,
+    chips,
+    content: text2,
+    kind
+  };
+}
+async function handleSmartAiChatV112(input) {
+  await ensureAiTableV112();
+  const userMsg = String(input.message || "").trim();
+  const normMsg = userMsg.toLowerCase();
+  if (/(اباحي|إباحي|مايا خليفه|مايا خليفة|جنس|سكس|porn|xxx)/i.test(normMsg)) {
+    return {
+      reply: "\u062D\u064A\u0627\u0643 \u0627\u0644\u0644\u0647 \u064A\u0627 \u063A\u0627\u0644\u064A\u060C \u0623\u0646\u0627 \u0645\u0633\u0627\u0639\u062F \u0645\u062A\u062C\u0631 \u0623\u0648\u0631\u062C\u0646\u0627\u0644\u060C \u064A\u0633\u0639\u062F\u0646\u064A \u062F\u0627\u0626\u0645\u0627\u064B \u062E\u062F\u0645\u062A\u0643 \u0641\u064A \u0643\u0644 \u0645\u0627 \u064A\u062E\u0635 \u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A\u060C \u0627\u0644\u0645\u0639\u0644\u0648\u0645\u0627\u062A \u0627\u0644\u063A\u0630\u0627\u0626\u064A\u0629\u060C \u0623\u0648 \u0627\u0644\u0633\u0648\u0627\u0644\u0641 \u0627\u0644\u0637\u064A\u0628\u0629 \u0627\u0644\u0645\u062D\u062A\u0631\u0645\u0629. \u0622\u0645\u0631\u0646\u064A \u0643\u064A\u0641 \u0623\u0642\u062F\u0631 \u0623\u062E\u062F\u0645\u0643 \u0627\u0644\u064A\u0648\u0645\u061F",
+      suggestedItems: [],
+      quickActions: [],
+      canContactStore: false
+    };
+  }
+  const isConfirmingStoreContact = /(نعم|ايوه|أيوة|ايه|أيه|كلمهم|كلم المتجر|كلّم المتجر|تواصل معهم|ارسل لهم|أرسل لهم|ياريت|يا ريت|اكيد|أكيد|تواصل لك مع المتجر)/.test(normMsg) && (normMsg.includes("\u0627\u0644\u0645\u062A\u062C\u0631") || Array.isArray(input.history) && input.history.some((h) => String(h.content || "").includes("\u0623\u0643\u0644\u0645 \u0627\u0644\u0645\u062A\u062C\u0631") || String(h.content || "").includes("\u0623\u062A\u0648\u0627\u0635\u0644 \u0644\u0643")));
+  if (isConfirmingStoreContact) {
+    const prevUserMsgs = (input.history || []).filter((h) => h.role === "user").map((h) => h.content);
+    const requestedTopic = prevUserMsgs.length > 0 ? prevUserMsgs[prevUserMsgs.length - 1] : userMsg;
+    const reqRecord = {
+      id: "req_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6),
+      sessionId: String(input.sessionId || "guest"),
+      customerName: String(input.customerName || "\u0632\u0628\u0648\u0646 \u0627\u0644\u0645\u062A\u062C\u0631"),
+      customerPhone: String(input.customerPhone || ""),
+      requestedItem: String(requestedTopic).slice(0, 140),
+      customerMessage: userMsg,
+      status: "pending",
+      managerReply: "",
+      createdAt: Date.now()
+    };
+    memoryRequestsV112.unshift(reqRecord);
+    if (memoryRequestsV112.length > 200) memoryRequestsV112 = memoryRequestsV112.slice(0, 200);
+    await saveAiKeyV112("requests", memoryRequestsV112);
+    return {
+      reply: "\u0623\u0628\u0634\u0631 \u0645\u0646 \u0639\u064A\u0648\u0646\u064A \u064A\u0627 \u063A\u0627\u0644\u064A! \u{1F4F2} \u0643\u0644\u0645\u062A \u0625\u062F\u0627\u0631\u0629 \u0627\u0644\u0645\u062A\u062C\u0631 \u0627\u0644\u0622\u0646 \u0648\u0623\u0631\u0633\u0644\u062A \u0625\u0634\u0639\u0627\u0631 \u0641\u0648\u0631\u064A \u0644\u0647\u0627\u062A\u0641 \u0627\u0644\u0645\u062F\u064A\u0631 \u0628\u0637\u0644\u0628\u0643 (\xAB" + requestedTopic + "\xBB).\n\u0623\u0648\u0644 \u0645\u0627 \u064A\u0631\u062F \u0627\u0644\u0645\u062F\u064A\u0631 \u0633\u064A\u0638\u0647\u0631 \u0631\u062F\u0647 \u0647\u0646\u0627 \u0623\u0645\u0627\u0645\u0643 \u0641\u064A \u0627\u0644\u0645\u062D\u0627\u062F\u062B\u0629 \u0645\u0628\u0627\u0634\u0631\u0629\u064B!",
+      suggestedItems: [],
+      quickActions: [],
+      canContactStore: false,
+      requestSent: true,
+      requestObj: reqRecord
+    };
+  }
+  for (const rule of memoryConfigV112.mode2Rules || []) {
+    const trig = String(rule.trigger || "").trim();
+    if (trig && userMsg.includes(trig)) {
+      return {
+        reply: String(rule.response || "").replace(/\(\s*رقم\s*\d+\s*\)/g, ""),
+        suggestedItems: [],
+        quickActions: [],
+        canContactStore: false
+      };
+    }
+  }
+  let allProducts = [];
+  try {
+    const db = await getDb();
+    if (db) {
+      allProducts = await db.select().from(products);
+    }
+  } catch {
+  }
+  const matchedProducts = allProducts.filter((p) => {
+    const pName = cleanProductNameV112(p.name);
+    if (!pName || pName.length < 3) return false;
+    if (userMsg.includes(pName)) return true;
+    const words = pName.split(/\s+/).filter((w) => w.length >= 4);
+    return words.length > 0 && words.every((w) => userMsg.includes(w));
+  });
+  const isGeneralChatOrGreeting = /^(سلام|السلام عليكم|هلا|اهلا|أهلا|مرحبا|صباح الخير|مساء الخير|كيفك|كيف حالك|اخبارك|أخبارك|عادي|تمام|شكرا|شكراً|حياك|اورجنال|أورجنال)$/i.test(userMsg) || /(نسولف|سوالف|بدون ما تدخل المتجر|من هي|من هو|حدثني عن|ما عاصمة|كم تاريخ|قصة|نكتة)/.test(userMsg);
+  if (isGeneralChatOrGreeting && matchedProducts.length === 0) {
+    if (/(نسولف|سوالف|بدون ما تدخل المتجر)/.test(userMsg)) {
+      return {
+        reply: "\u062D\u064A\u0627\u0643 \u0627\u0644\u0644\u0647 \u064A\u0627 \u063A\u0627\u0644\u064A\u060C \u062E\u0630 \u0631\u0627\u062D\u062A\u0643 \u0639\u0644\u0649 \u0627\u0644\u0622\u062E\u0631! \u{1F60A} \u0623\u0646\u0627 \u0635\u0627\u062D\u0628\u0643 \u0647\u0646\u0627 \u0646\u0633\u0648\u0644\u0641 \u0641\u064A \u0623\u064A \u0645\u0648\u0636\u0648\u0639 \u064A\u062E\u0637\u0631 \u0641\u064A \u0628\u0627\u0644\u0643 \u0628\u062F\u0648\u0646 \u0645\u0627 \u0646\u062C\u064A\u0628 \u0633\u064A\u0631\u0629 \u0627\u0644\u0645\u062A\u062C\u0631 \u0623\u0628\u062F\u0627\u064B. \u0642\u0648\u0644\u064A \u0625\u064A\u0634 \u0627\u0644\u0623\u062E\u0628\u0627\u0631 \u0648\u0625\u064A\u0634 \u0627\u0644\u0645\u0648\u0636\u0648\u0639 \u0627\u0644\u0644\u064A \u0641\u064A \u0628\u0627\u0644\u0643\u061F",
+        suggestedItems: [],
+        quickActions: [],
+        canContactStore: false
+      };
+    }
+    if (/^(سلام|السلام عليكم|هلا|اهلا|أهلا|مرحبا|كيفك|كيف حالك|اخبارك|أخبارك|عادي|تمام|اورجنال|أورجنال)/i.test(userMsg)) {
+      return {
+        reply: "\u064A\u0627 \u0647\u0644\u0627 \u0648\u0645\u0644\u064A\u0648\u0646 \u063A\u0644\u0627 \u0628\u0643 \u064A\u0627 \u063A\u0627\u0644\u064A! \u{1F60A} \u0627\u0644\u062D\u0645\u062F \u0644\u0644\u0647 \u0628\u062E\u064A\u0631 \u062F\u0627\u0645\u0643 \u0628\u062E\u064A\u0631. \u0623\u0646\u0627 \u0645\u0639\u0643 \u0644\u0648 \u062D\u0628\u064A\u062A \u062A\u0633\u0623\u0644 \u0639\u0646 \u0623\u064A \u0645\u0646\u062A\u062C\u060C \u0633\u0639\u0631\u0627\u062A\u0647 \u0627\u0644\u062D\u0631\u0627\u0631\u064A\u0629\u060C \u0623\u0641\u0643\u0627\u0631 \u062D\u0644\u0649\u060C \u0623\u0648 \u062D\u062A\u0649 \u0644\u0648 \u062A\u062F\u0648\u0631 \u0639\u0644\u0649 \u063A\u0631\u0636 \u0645\u0639\u064A\u0646 \u0648\u062A\u0628\u063A\u0627\u0646\u064A \u0623\u0643\u0644\u0645 \u0644\u0643 \u0627\u0644\u0645\u062A\u062C\u0631 \u064A\u0648\u0641\u0631\u0647 \u0644\u0643. \u0622\u0645\u0631\u0646\u064A\u061F",
+        suggestedItems: [],
+        quickActions: [],
+        canContactStore: false
+      };
+    }
+  }
+  if (matchedProducts.length > 0) {
+    const primary = matchedProducts[0];
+    const pName = cleanProductNameV112(primary.name);
+    const pPrice = Math.round(Number(primary.price || 0));
+    const modalInfo = buildSmartProductModalDataV112(pName, pPrice, primary.unit || "\u062D\u0628\u0629", "", userMsg, primary.id);
+    const companions = allProducts.filter((p) => p.id !== primary.id && classifyProductKindV112(p.name, "", "") === modalInfo.kind && Number(p.price) > 5).slice(0, 2);
+    let friendlyReply = "\u0641\u0647\u0645\u062A\u0643 \u064A\u0627 \u063A\u0627\u0644\u064A! \u0628\u062E\u0635\u0648\u0635 \xAB" + pName + "\xBB (\u0645\u062A\u0648\u0641\u0631 \u0639\u0646\u062F\u0646\u0627 \u0628\u0633\u0639\u0631 " + pPrice.toLocaleString("en-US") + " \u0631.\u064A):\n" + modalInfo.content.replace(/^✨[^\n]*\n/, "");
+    if (companions.length > 0) {
+      const compNames = companions.map((c) => "\xAB" + cleanProductNameV112(c.name) + "\xBB (" + Math.round(Number(c.price)).toLocaleString("en-US") + " \u0631.\u064A)").join(" \u0623\u0648 ");
+      friendlyReply += "\n\n\u0648\u0628\u0645\u0627 \u0625\u0646\u0643 \u062A\u062D\u0628 \u0647\u0630\u0627 \u0627\u0644\u0646\u0648\u0639\u060C \u0639\u0646\u062F\u0646\u0627 \u0623\u064A\u0636\u0627\u064B \u0641\u064A \u0627\u0644\u0645\u062A\u062C\u0631 " + compNames + " \u0625\u0630\u0627 \u062A\u062D\u0628 \u062A\u062C\u0631\u0628\u0647 \u0645\u0639\u0647!";
+    }
+    return {
+      reply: friendlyReply.replace(/\(\s*رقم\s*\d+\s*\)/g, ""),
+      suggestedItems: [
+        {
+          productId: primary.id,
+          id: primary.id,
+          name: pName,
+          price: pPrice,
+          unit: primary.unit || "\u062D\u0628\u0629",
+          quantity: 1
+        }
+      ],
+      quickActions: modalInfo.chips.slice(0, 3),
+      canContactStore: false
+    };
+  }
+  const queryWords = userMsg.replace(/[؟?!.,،]/g, " ").split(/\s+/).map((w) => w.trim()).filter((w) => w.length >= 3 && !["\u0639\u0646\u062F\u0643\u0645", "\u0627\u0631\u064A\u062F", "\u0623\u0631\u064A\u062F", "\u0627\u0628\u063A\u0649", "\u0623\u0628\u063A\u0649", "\u0627\u0634\u062A\u064A", "\u0623\u0634\u062A\u064A", "\u0645\u0648\u062C\u0648\u062F", "\u0645\u062A\u0648\u0641\u0631", "\u062D\u0628\u0629", "\u0628\u0627\u0643\u064A\u062A", "\u0643\u0631\u062A\u0648\u0646", "\u0633\u0639\u0631", "\u0628\u0643\u0645", "\u0643\u0645", "\u0647\u0644", "\u0641\u064A", "\u0645\u0646", "\u0639\u0644\u0649", "\u0645\u0639", "\u0647\u0630\u0627", "\u0647\u0630\u0647"].includes(w));
+  const partialMatches = allProducts.filter((p) => {
+    const pName = cleanProductNameV112(p.name);
+    return Number(p.price) > 5 && queryWords.some((w) => pName.includes(w));
+  }).slice(0, 3);
+  const cleanWanted = userMsg.replace(/^(هل عندكم|عندكم|هل يوجد|أريد|اريد|أشتي|اشتي|ابغى|أبغى|بكم|كم سعر)\s*/i, "").replace(/[؟?]/g, "").trim() || userMsg;
+  let altSentence = "";
+  if (partialMatches.length > 0) {
+    const altList = partialMatches.map((p) => "\xAB" + cleanProductNameV112(p.name) + "\xBB (" + Math.round(Number(p.price)).toLocaleString("en-US") + " \u0631.\u064A)").join("\u060C \u0648");
+    altSentence = "\u0628\u0645\u0627 \u0625\u0646\u0643 \u062A\u0631\u064A\u062F\u0647 \u0641\u0639\u0646\u062F\u0646\u0627 \u062D\u0627\u0644\u064A\u0627\u064B \u0642\u0631\u064A\u0628 \u0645\u0646\u0647: " + altList + ". ";
+  } else {
+    altSentence = "\u062D\u0627\u0644\u064A\u0627\u064B \u0647\u0630\u0627 \u0627\u0644\u0635\u0646\u0641 \u0645\u0634 \u0638\u0627\u0647\u0631 \u0639\u0646\u062F\u064A \u0641\u064A \u0627\u0644\u0631\u0641 \u0627\u0644\u0622\u0646. ";
+  }
+  const friendReply = "\u0641\u0647\u0645\u062A\u0643 \u064A\u0627 \u063A\u0627\u0644\u064A\u060C \u0623\u0646\u062A \u062A\u0631\u064A\u062F \xAB" + cleanWanted + "\xBB.. \u062D\u0644\u0648 \u062D\u0644\u0648! \u{1F44C}\n" + altSentence + "\u0648\u0625\u0630\u0627 \u062A\u0631\u064A\u062F \u0646\u0641\u0633 \xAB" + cleanWanted + "\xBB \u0628\u0627\u0644\u0636\u0628\u0637\u060C \u0623\u0642\u062F\u0631 \u0623\u062A\u0648\u0627\u0635\u0644 \u0644\u0643 \u0627\u0644\u062D\u064A\u0646 \u0645\u0639 \u0625\u062F\u0627\u0631\u0629 \u0627\u0644\u0645\u062A\u062C\u0631 \u0648\u0623\u0633\u0623\u0644\u0647\u0645 \u0625\u0630\u0627 \u0645\u062A\u0648\u0641\u0631 \u0639\u0646\u062F\u0647\u0645 \u0623\u0648 \u064A\u0648\u0641\u0631\u0648\u0646\u0647 \u0644\u0643 \u0641\u0648\u0631\u0627\u064B!\n\u0647\u0644 \u062A\u0631\u064A\u062F \u0623\u0643\u0644\u0645 \u0627\u0644\u0645\u062A\u062C\u0631 \u0625\u0630\u0627 \u0639\u0646\u062F\u0647\u0645\u061F";
+  return {
+    reply: friendReply,
+    suggestedItems: partialMatches.map((p) => ({
+      productId: p.id,
+      id: p.id,
+      name: cleanProductNameV112(p.name),
+      price: Math.round(Number(p.price)),
+      unit: p.unit || "\u062D\u0628\u0629",
+      quantity: 1
+    })),
+    quickActions: ["\u{1F4F2} \u0646\u0639\u0645\u060C \u0643\u0644\u0651\u0645 \u0627\u0644\u0645\u062A\u062C\u0631 \u0625\u0630\u0627 \u0639\u0646\u062F\u0647\u0645 (\xAB" + cleanWanted + "\xBB)"],
+    canContactStore: true,
+    requestedItemName: cleanWanted
+  };
+}
+function registerAiEngineV112(app) {
+  ensureAiTableV112().catch(() => {
+  });
+  app.get("/api/ai-v112/config", async (_req, res) => {
+    try {
+      const config = await getAiConfigV112();
+      const requests = await getAiRequestsV112();
+      res.json({ ok: true, config, requests });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+  app.post("/api/ai-v112/save-training", async (req, res) => {
+    try {
+      await ensureAiTableV112();
+      const body = req.body || {};
+      if (typeof body.mode1StylePrompt === "string") {
+        memoryConfigV112.mode1StylePrompt = body.mode1StylePrompt.trim();
+      }
+      if (Array.isArray(body.mode2Rules)) {
+        memoryConfigV112.mode2Rules = body.mode2Rules;
+      }
+      if (typeof body.mode3CategoryRules === "string") {
+        memoryConfigV112.mode3CategoryRules = body.mode3CategoryRules.trim();
+      }
+      await saveAiKeyV112("config", memoryConfigV112);
+      res.json({ ok: true, config: memoryConfigV112 });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+  app.post("/api/ai-v112/save-product-info", async (req, res) => {
+    try {
+      await ensureAiTableV112();
+      const { productId, productName, aiInfo } = req.body || {};
+      if (!memoryConfigV112.productAiMap) memoryConfigV112.productAiMap = {};
+      const cleanInfo = String(aiInfo || "").trim();
+      if (productId !== void 0 && productId !== null && String(productId).trim() !== "") {
+        memoryConfigV112.productAiMap["id:" + String(productId).trim()] = cleanInfo;
+      }
+      const cName = cleanProductNameV112(String(productName || ""));
+      if (cName) {
+        memoryConfigV112.productAiMap["name:" + cName] = cleanInfo;
+      }
+      await saveAiKeyV112("config", memoryConfigV112);
+      res.json({ ok: true, productAiMap: memoryConfigV112.productAiMap });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+  app.post("/api/ai-v112/product-modal", async (req, res) => {
+    try {
+      await ensureAiTableV112();
+      const { productName, price, unit, categoryName, customTopic, productId } = req.body || {};
+      const data = buildSmartProductModalDataV112(
+        String(productName || ""),
+        Number(price || 0),
+        String(unit || "\u062D\u0628\u0629"),
+        String(categoryName || ""),
+        String(customTopic || ""),
+        productId
+      );
+      res.json({ ok: true, ...data });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+  app.post("/api/ai-v112/chat", async (req, res) => {
+    try {
+      const result = await handleSmartAiChatV112(req.body || {});
+      res.json({ ok: true, ...result });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+  app.post("/api/ai-v112/request-store", async (req, res) => {
+    try {
+      await ensureAiTableV112();
+      const body = req.body || {};
+      const reqRecord = {
+        id: "req_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6),
+        sessionId: String(body.sessionId || "guest"),
+        customerName: String(body.customerName || "\u0632\u0628\u0648\u0646 \u0627\u0644\u0645\u062A\u062C\u0631"),
+        customerPhone: String(body.customerPhone || ""),
+        requestedItem: String(body.requestedItem || body.message || "\u0637\u0644\u0628 \u062A\u0648\u0641\u064A\u0631 \u0645\u0646\u062A\u062C").slice(0, 160),
+        customerMessage: String(body.customerMessage || body.requestedItem || ""),
+        status: "pending",
+        managerReply: "",
+        createdAt: Date.now()
+      };
+      memoryRequestsV112.unshift(reqRecord);
+      if (memoryRequestsV112.length > 200) memoryRequestsV112 = memoryRequestsV112.slice(0, 200);
+      await saveAiKeyV112("requests", memoryRequestsV112);
+      res.json({
+        ok: true,
+        requestObj: reqRecord,
+        message: "\u062A\u0645 \u0625\u0631\u0633\u0627\u0644 \u0637\u0644\u0628\u0643 \u0648\u0625\u0634\u0639\u0627\u0631 \u0647\u0627\u062A\u0641 \u0645\u062F\u064A\u0631 \u0627\u0644\u0645\u062A\u062C\u0631 \u0628\u0646\u062C\u0627\u062D! \u0633\u064A\u0635\u0644\u0643 \u0627\u0644\u0631\u062F \u0647\u0646\u0627 \u0641\u064A \u0627\u0644\u0645\u062D\u0627\u062F\u062B\u0629 \u0645\u0628\u0627\u0634\u0631\u0629\u064B."
+      });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+  app.post("/api/ai-v112/manager-reply", async (req, res) => {
+    try {
+      await ensureAiTableV112();
+      const { requestId, sessionId, replyText } = req.body || {};
+      const cleanReply = String(replyText || "").trim();
+      if (!cleanReply) {
+        return res.status(400).json({ ok: false, error: "\u064A\u0631\u062C\u0649 \u0643\u062A\u0627\u0628\u0629 \u0646\u0635 \u0627\u0644\u0631\u062F" });
+      }
+      let target = memoryRequestsV112.find((r) => r.id === requestId);
+      if (!target && sessionId) {
+        target = memoryRequestsV112.find((r) => r.sessionId === sessionId);
+      }
+      if (!target) {
+        target = {
+          id: "req_" + Date.now(),
+          sessionId: String(sessionId || "all"),
+          customerName: "\u0632\u0628\u0648\u0646 \u0627\u0644\u0645\u062A\u062C\u0631",
+          customerPhone: "",
+          requestedItem: "\u0631\u062F \u0645\u0628\u0627\u0634\u0631 \u0645\u0646 \u0627\u0644\u0625\u062F\u0627\u0631\u0629",
+          customerMessage: "",
+          status: "replied",
+          managerReply: cleanReply,
+          repliedAt: Date.now(),
+          createdAt: Date.now()
+        };
+        memoryRequestsV112.unshift(target);
+      } else {
+        target.status = "replied";
+        target.managerReply = cleanReply;
+        target.repliedAt = Date.now();
+      }
+      await saveAiKeyV112("requests", memoryRequestsV112);
+      res.json({ ok: true, requestObj: target });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+  app.get("/api/ai-v112/customer-poll", async (req, res) => {
+    try {
+      await ensureAiTableV112();
+      const sessionId = String(req.query?.sessionId || "").trim();
+      const matching = memoryRequestsV112.filter(
+        (r) => r.status === "replied" && r.managerReply && (r.sessionId === sessionId || r.sessionId === "all")
+      );
+      res.json({ ok: true, replies: matching });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+}
+
 // server/commerce.ts
+import fs2 from "node:fs";
+import { createHash as createHash4 } from "node:crypto";
+import { and as and2, asc, desc, eq as eq3, gt, inArray, like, or, sql as sql2 } from "drizzle-orm";
+import { z as z2 } from "zod";
 init_schema();
 init_schema();
 
@@ -2392,10 +2886,6 @@ function clearLiveHomeCache() {
 }
 async function database() {
   const db = await getDb();
-  try {
-    await syncAndGetNextOrderNumberV99(db, true);
-  } catch {
-  }
   if (!db) throw new TRPCError2({ code: "SERVICE_UNAVAILABLE", message: "\u0642\u0627\u0639\u062F\u0629 \u0627\u0644\u0628\u064A\u0627\u0646\u0627\u062A \u063A\u064A\u0631 \u0645\u062A\u0627\u062D\u0629 \u0645\u0624\u0642\u062A\u064B\u0627." });
   return db;
 }
@@ -3762,7 +4252,7 @@ var commerceRouter = router({
         const currentLines = orderLines.map((line) => ({ productId: line.product.id, name: line.product.name, quantity: line.quantity, unit: line.effectiveUnit, price: line.effectivePrice, lineTotal: line.effectiveLineTotal }));
         const currentQuoteHash = quoteFingerprint(currentLines, totals, currency, appliedOffer?.id ?? null);
         if (false) throw new TRPCError2({ code: "PRECONDITION_FAILED", message: "\u062A\u063A\u064A\u0651\u0631 \u0627\u0644\u0633\u0639\u0631 \u0623\u0648 \u0627\u0644\u062A\u0648\u0641\u0631 \u0623\u0648 \u0631\u0633\u0648\u0645 \u0627\u0644\u062A\u0648\u0635\u064A\u0644 \u0628\u0639\u062F \u0627\u0644\u0645\u0639\u0627\u064A\u0646\u0629. \u0627\u0639\u0631\u0636 \u0627\u0644\u0645\u0644\u062E\u0635 \u0627\u0644\u0645\u062D\u062F\u0651\u062B \u0642\u0628\u0644 \u062A\u0623\u0643\u064A\u062F \u0627\u0644\u0637\u0644\u0628." });
-        let orderNumber = process.env.ORDER_NUMBER_MODE === "production" ? await (async () => {
+        const orderNumber = process.env.ORDER_NUMBER_MODE === "production" ? await (async () => {
           const sequence = await tx.insert(orderNumberSequences).values({});
           const number = Number(sequence[0].insertId);
           if (!Number.isSafeInteger(number) || number < 1) {
@@ -3845,10 +4335,6 @@ var commerceRouter = router({
       sessionId: z2.string().trim().min(1).max(5e3)
     })).query(async ({ input }) => {
       const db = await getDb();
-      try {
-        await syncAndGetNextOrderNumberV99(db, true);
-      } catch {
-      }
       const settings = db ? await readSettings(db) : { deliveryEnabled: "true", deliveryFee: "0" };
       await loadLiveChats(db);
       const session = liveChatsMemory.get(input.sessionId);
@@ -3869,10 +4355,6 @@ var commerceRouter = router({
       const clientKey = ctx.user ? "user:" + ctx.user.id : "ip:" + (ctx.req.ip || "unknown-client");
       enforceAssistantRateLimit(clientKey.slice(0, 120));
       const db = await getDb();
-      try {
-        await syncAndGetNextOrderNumberV99(db, true);
-      } catch {
-      }
       await loadLiveChats(db);
       const sid = (input.sessionId?.trim() || clientKey).slice(0, 80);
       const customerNameClean = input.customerName?.trim() || "\u0632\u0628\u0648\u0646 \u0627\u0644\u0645\u062A\u062C\u0631";
@@ -3980,9 +4462,8 @@ var commerceRouter = router({
         const requestedItemText = missingItems.join("\u060C ").replace(/^طلب توفير:\s*/i, "").trim().slice(0, 180);
         void (async () => {
           try {
-            let orderNumber = "REQ-" + Date.now().toString(36).toUpperCase().slice(-4) + "-" + nanoid(4).toUpperCase();
-            const inserted = orderNumber = await syncAndGetNextOrderNumberV99(db);
-            await db.insert(orders).values({
+            const orderNumber = "REQ-" + Date.now().toString(36).toUpperCase().slice(-4) + "-" + nanoid(4).toUpperCase();
+            const inserted = await db.insert(orders).values({
               orderNumber,
               idempotencyKey: "req-" + nanoid(22),
               userId: ctx.user?.id ?? null,
@@ -4942,7 +5423,7 @@ var commerceRouter = router({
       }),
       setStatus: requirePermission("orders.manage").input(z2.object({ id: safeId, status: orderStatus, note: z2.string().trim().max(500).optional() })).mutation(async ({ ctx, input }) => {
         const db = await database();
-        let orderNumber = await db.transaction(async (tx) => {
+        const orderNumber = await db.transaction(async (tx) => {
           const current = (await tx.select({ id: orders.id, status: orders.status, orderNumber: orders.orderNumber }).from(orders).where(eq3(orders.id, input.id)).limit(1).for("update"))[0];
           if (!current) throw new TRPCError2({ code: "NOT_FOUND", message: "\u0644\u0645 \u064A\u062A\u0645 \u0627\u0644\u0639\u062B\u0648\u0631 \u0639\u0644\u0649 \u0627\u0644\u0637\u0644\u0628." });
           if (current.status === "delivered" || current.status === "cancelled") throw new TRPCError2({ code: "PRECONDITION_FAILED", message: "\u0644\u0627 \u064A\u0645\u0643\u0646 \u062A\u063A\u064A\u064A\u0631 \u062D\u0627\u0644\u0629 \u0637\u0644\u0628 \u0645\u063A\u0644\u0642." });
@@ -5022,63 +5503,6 @@ async function __prewarmCatalog() {
 }
 setTimeout(__prewarmCatalog, 800);
 setInterval(__prewarmCatalog, 45e3).unref();
-var _v104OrdersSynced = false;
-async function syncAndGetNextOrderNumberV99(dbInstance, onlySync = false) {
-  try {
-    if (!dbInstance) return "1";
-    const allOrders = await dbInstance.select().from(orders);
-    allOrders.sort((a, b) => Number(a.id) - Number(b.id));
-    if (!_v104OrdersSynced && allOrders.length > 0) {
-      _v104OrdersSynced = true;
-      const hasRandomCodes = allOrders.some((o) => /^(TEST|ORD)-[A-Z0-9]{4,}/i.test(String(o.orderNumber || "")));
-      if (hasRandomCodes) {
-        const prioritized = [...allOrders].sort((a, b) => {
-          const aDel = String(a.status) === "delivered" ? 1 : 0;
-          const bDel = String(b.status) === "delivered" ? 1 : 0;
-          if (aDel !== bDel) return bDel - aDel;
-          return Number(b.id) - Number(a.id);
-        });
-        const keep3 = prioritized.slice(0, 3).sort((a, b) => Number(a.id) - Number(b.id));
-        const keepIds = new Set(keep3.map((o) => Number(o.id)));
-        for (const o of allOrders) {
-          if (!keepIds.has(Number(o.id))) {
-            try {
-              await dbInstance.delete(orderItems).where(eq3(orderItems.orderId, Number(o.id)));
-              await dbInstance.delete(orders).where(eq3(orders.id, Number(o.id)));
-            } catch (err) {
-            }
-          }
-        }
-        for (let i = 0; i < keep3.length; i++) {
-          const newCode = "#TEST-" + String(i + 1);
-          try {
-            await dbInstance.update(orders).set({ orderNumber: newCode }).where(eq3(orders.id, Number(keep3[i].id)));
-          } catch (err) {
-          }
-        }
-      }
-    }
-    if (onlySync) return "OK";
-    const currentOrders = await dbInstance.select().from(orders);
-    let maxSeq = 0;
-    let testCount = 0;
-    for (const o of currentOrders) {
-      const code = String(o.orderNumber || "").trim();
-      if (/^#?TEST-\d+$/i.test(code)) {
-        testCount++;
-      } else {
-        const num = parseInt(code.replace(/^#/, ""), 10);
-        if (!isNaN(num) && num > maxSeq) maxSeq = num;
-      }
-    }
-    if (testCount < 3 && maxSeq === 0) {
-      return "#TEST-" + String(testCount + 1);
-    }
-    return String(maxSeq + 1);
-  } catch (e) {
-    return String(Math.floor(Date.now() / 1e3) % 1e4);
-  }
-}
 async function addInvoiceItemToOrderV99(input) {
   const dbInstance = await getDb();
   if (!dbInstance) throw new Error("Database unavailable");
@@ -5791,6 +6215,7 @@ async function startServer() {
   });
   const server = createServer(app);
   app.use(express2.json({ limit: "50mb" }));
+  registerAiEngineV112(app);
   app.post("/api/admin/order-add-item", async (req, res) => {
     try {
       const result = await addInvoiceItemToOrderV99(req.body || {});

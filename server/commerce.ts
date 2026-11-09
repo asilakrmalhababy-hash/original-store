@@ -59,7 +59,6 @@ import {
 
 async function database() {
   const db = await getDb();
-    try { await syncAndGetNextOrderNumberV99(db, true); } catch {}
   if (!db) throw new TRPCError({ code: "SERVICE_UNAVAILABLE", message: "قاعدة البيانات غير متاحة مؤقتًا." });
   return db;
 }
@@ -947,7 +946,6 @@ function resolveServerVariantOption(product: any, itemName?: string): { price: n
     return { price: fallbackPrice, unit: fallbackUnit, name: String(product?.name || "") };
   }
 
-  // 1. Parse official variants from the database product.description ([[variants:["كبير:250","صغير:150"]]])
   const dbPriceMap: Record<string, number> = {};
   const desc = String(product?.description || "");
   const vMatch = desc.match(/\[\[variants:(\[[\s\S]*?\])\]\]/);
@@ -971,7 +969,6 @@ function resolveServerVariantOption(product: any, itemName?: string): { price: n
     } catch {}
   }
 
-  // 2. Extract ALL parentheses groups (...) in rawItemName
   let innerParen = "";
   const parenMatches = Array.from(rawItemName.matchAll(/\(([^()]+)\)/g));
   if (parenMatches.length > 0) {
@@ -1426,7 +1423,7 @@ export const commerceRouter = router({
         const currentLines = orderLines.map(line => ({ productId: line.product.id, name: line.product.name, quantity: line.quantity, unit: line.effectiveUnit, price: line.effectivePrice, lineTotal: line.effectiveLineTotal }));
         const currentQuoteHash = quoteFingerprint(currentLines, totals, currency, appliedOffer?.id ?? null);
         if (false && (totals.total !== input.expectedTotal || currentQuoteHash !== input.expectedQuoteHash)) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "تغيّر السعر أو التوفر أو رسوم التوصيل بعد المعاينة. اعرض الملخص المحدّث قبل تأكيد الطلب." });
-        let orderNumber = process.env.ORDER_NUMBER_MODE === "production"
+        const orderNumber = process.env.ORDER_NUMBER_MODE === "production"
           ? await (async () => {
               const sequence = await tx.insert(orderNumberSequences).values({});
               const number = Number(sequence[0].insertId);
@@ -1490,7 +1487,6 @@ export const commerceRouter = router({
       sessionId: z.string().trim().min(1).max(5000),
     })).query(async ({ input }) => {
       const db = await getDb();
-    try { await syncAndGetNextOrderNumberV99(db, true); } catch {}
       const settings = db ? await readSettings(db) : { deliveryEnabled: "true", deliveryFee: "0" };
       await loadLiveChats(db);
       const session = liveChatsMemory.get(input.sessionId);
@@ -1511,7 +1507,6 @@ export const commerceRouter = router({
       const clientKey = ctx.user ? "user:" + ctx.user.id : "ip:" + (ctx.req.ip || "unknown-client");
       enforceAssistantRateLimit(clientKey.slice(0, 120));
       const db = await getDb();
-    try { await syncAndGetNextOrderNumberV99(db, true); } catch {}
       await loadLiveChats(db);
 
       const sid = (input.sessionId?.trim() || clientKey).slice(0, 80);
@@ -1623,9 +1618,8 @@ export const commerceRouter = router({
         const requestedItemText = missingItems.join("، ").replace(/^طلب توفير:\s*/i, "").trim().slice(0, 180);
         void (async () => {
           try {
-            let orderNumber = "REQ-" + Date.now().toString(36).toUpperCase().slice(-4) + "-" + nanoid(4).toUpperCase();
-            const inserted = orderNumber = await syncAndGetNextOrderNumberV99(db);
-    await db.insert(orders).values({
+            const orderNumber = "REQ-" + Date.now().toString(36).toUpperCase().slice(-4) + "-" + nanoid(4).toUpperCase();
+            const inserted = await db.insert(orders).values({
               orderNumber,
               idempotencyKey: "req-" + nanoid(22),
               userId: ctx.user?.id ?? null,
@@ -2509,7 +2503,7 @@ export const commerceRouter = router({
       }),
       setStatus: requirePermission("orders.manage").input(z.object({ id: safeId, status: orderStatus, note: z.string().trim().max(500).optional() })).mutation(async ({ ctx, input }) => {
         const db = await database();
-        let orderNumber = await db.transaction(async tx => {
+        const orderNumber = await db.transaction(async tx => {
           const current = (await tx.select({ id: orders.id, status: orders.status, orderNumber: orders.orderNumber }).from(orders).where(eq(orders.id, input.id)).limit(1).for("update"))[0];
           if (!current) throw new TRPCError({ code: "NOT_FOUND", message: "لم يتم العثور على الطلب." });
           if (current.status === "delivered" || current.status === "cancelled") throw new TRPCError({ code: "PRECONDITION_FAILED", message: "لا يمكن تغيير حالة طلب مغلق." });
@@ -2591,66 +2585,6 @@ async function __prewarmCatalog() {
 setTimeout(__prewarmCatalog, 800);
 setInterval(__prewarmCatalog, 45000).unref();
 
-
-let _v104OrdersSynced = false;
-export async function syncAndGetNextOrderNumberV99(dbInstance: any, onlySync = false): Promise<string> {
-  try {
-    if (!dbInstance) return "1";
-    const allOrders = await dbInstance.select().from(orders);
-    allOrders.sort((a: any, b: any) => Number(a.id) - Number(b.id));
-
-    if (!_v104OrdersSynced && allOrders.length > 0) {
-      _v104OrdersSynced = true;
-      const hasRandomCodes = allOrders.some((o: any) => /^(TEST|ORD)-[A-Z0-9]{4,}/i.test(String(o.orderNumber || "")));
-      if (hasRandomCodes) {
-        const prioritized = [...allOrders].sort((a: any, b: any) => {
-          const aDel = String(a.status) === "delivered" ? 1 : 0;
-          const bDel = String(b.status) === "delivered" ? 1 : 0;
-          if (aDel !== bDel) return bDel - aDel;
-          return Number(b.id) - Number(a.id);
-        });
-        const keep3 = prioritized.slice(0, 3).sort((a: any, b: any) => Number(a.id) - Number(b.id));
-        const keepIds = new Set(keep3.map((o: any) => Number(o.id)));
-
-        for (const o of allOrders) {
-          if (!keepIds.has(Number(o.id))) {
-            try {
-              await dbInstance.delete(orderItems).where(eq(orderItems.orderId, Number(o.id)));
-              await dbInstance.delete(orders).where(eq(orders.id, Number(o.id)));
-            } catch (err) {}
-          }
-        }
-        for (let i = 0; i < keep3.length; i++) {
-          const newCode = "#TEST-" + String(i + 1);
-          try {
-            await dbInstance.update(orders).set({ orderNumber: newCode } as any).where(eq(orders.id, Number(keep3[i].id)));
-          } catch (err) {}
-        }
-      }
-    }
-
-    if (onlySync) return "OK";
-
-    const currentOrders = await dbInstance.select().from(orders);
-    let maxSeq = 0;
-    let testCount = 0;
-    for (const o of currentOrders) {
-      const code = String(o.orderNumber || "").trim();
-      if (/^#?TEST-\d+$/i.test(code)) {
-        testCount++;
-      } else {
-        const num = parseInt(code.replace(/^#/, ""), 10);
-        if (!isNaN(num) && num > maxSeq) maxSeq = num;
-      }
-    }
-    if (testCount < 3 && maxSeq === 0) {
-      return "#TEST-" + String(testCount + 1);
-    }
-    return String(maxSeq + 1);
-  } catch (e) {
-    return String(Math.floor(Date.now() / 1000) % 10000);
-  }
-}
 
 export async function addInvoiceItemToOrderV99(input: { orderId?: number; orderNumber?: string; name: string; unitPrice: number; quantity: number; productId?: number }) {
   const dbInstance = await getDb();

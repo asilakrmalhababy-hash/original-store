@@ -1,3 +1,4 @@
+import { registerAiEngineV112 } from "../ai_engine_v112";
 import { addInvoiceItemToOrderV99 } from "../commerce";
 import "dotenv/config";
 import express from "express";
@@ -29,6 +30,7 @@ async function startServer() {
   const server = createServer(app);
   app.use(express.json({ limit: "50mb" }));
 
+  registerAiEngineV112(app);
   app.post("/api/admin/order-add-item", async (req, res) => {
     try {
       const result = await addInvoiceItemToOrderV99(req.body || {});
