@@ -77,35 +77,43 @@ function expandOrderItemsV110(items: any): any[] {
   return result;
 }
 
-function getStoredVariantTextV107(productId: any): string {
-  if (productId === undefined || productId === null) return "";
-  const pidStr = String(productId);
+function getStoredVariantTextV107(productId: any, productName?: any): string {
   try {
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (!k || k.indexOf("v107") !== -1 || k.indexOf("v109") !== -1) continue;
-      const raw = localStorage.getItem(k);
-      if (!raw || (raw[0] !== "{" && raw[0] !== "[")) continue;
-      try {
-        const parsed = JSON.parse(raw);
-        if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && parsed[pidStr] !== undefined) {
-          const val = parsed[pidStr];
-          if (typeof val === "string" && val.includes(":")) return val;
-          if (Array.isArray(val)) {
-            const s = val.map((x: any) => typeof x === "string" ? x : (x?.label || x?.variant || x?.name || "")).filter(Boolean).join("، ");
-            if (s.includes(":")) return s;
-          }
-          if (val && typeof val === "object") {
-            const parts: string[] = [];
-            for (const [vk, vv] of Object.entries(val)) {
-              if (vk.includes(":") && Number(vv) > 0) {
-                parts.push(Number(vv) > 1 ? vk + " × " + vv : vk);
-              }
+    if (productName && typeof window !== "undefined") {
+      const cleanPName = String(productName).replace(/\s*\([^()]*\)\s*$/, "").trim();
+      const reord = (window as any).__v111ReorderedVariants;
+      if (reord && reord[cleanPName] && reord[cleanPName].raw) {
+        return String(reord[cleanPName].raw);
+      }
+    }
+    if (productId !== undefined && productId !== null) {
+      const pidStr = String(productId);
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (!k || k.indexOf("v107") !== -1 || k.indexOf("v109") !== -1) continue;
+        const raw = localStorage.getItem(k);
+        if (!raw || (raw[0] !== "{" && raw[0] !== "[")) continue;
+        try {
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && parsed[pidStr] !== undefined) {
+            const val = parsed[pidStr];
+            if (typeof val === "string" && val.includes(":")) return val;
+            if (Array.isArray(val)) {
+              const s = val.map((x: any) => typeof x === "string" ? x : (x?.label || x?.variant || x?.name || "")).filter(Boolean).join("، ");
+              if (s.includes(":")) return s;
             }
-            if (parts.length > 0) return parts.join("، ");
+            if (val && typeof val === "object") {
+              const parts: string[] = [];
+              for (const [vk, vv] of Object.entries(val)) {
+                if (vk.includes(":") && Number(vv) > 0) {
+                  parts.push(Number(vv) > 1 ? vk + " × " + vv : vk);
+                }
+              }
+              if (parts.length > 0) return parts.join("، ");
+            }
           }
-        }
-      } catch {}
+        } catch {}
+      }
     }
   } catch {}
   return "";
@@ -115,8 +123,10 @@ function extractVariantPriceV104(rawText: any, fallbackPrice: any, productObj?: 
   const base = Number(fallbackPrice ?? productObj?.price ?? 0);
   let combined = "";
   let pid: any = productObj?.id ?? productObj?.productId;
+  let pname: any = productObj?.name;
   if (typeof rawText === "object" && rawText !== null) {
     pid = rawText.productId ?? rawText.product?.id ?? rawText.id ?? pid;
+    pname = rawText.product?.name ?? rawText.productName ?? rawText.name ?? pname;
     const explicitFields = [
       rawText.name,
       rawText.productName,
@@ -133,12 +143,12 @@ function extractVariantPriceV104(rawText: any, fallbackPrice: any, productObj?: 
     if (/\([^()]*:\s*\d/.test(explicitFields) || explicitFields.includes(":")) {
       combined = explicitFields;
     } else {
-      combined = [explicitFields, getStoredVariantTextV107(pid)].filter(Boolean).join(" ");
+      combined = [explicitFields, getStoredVariantTextV107(pid, pname)].filter(Boolean).join(" ");
     }
   } else if (rawText) {
     combined = String(rawText).trim();
   } else {
-    combined = getStoredVariantTextV107(pid);
+    combined = getStoredVariantTextV107(pid, pname);
   }
 
   if (!combined) return base;

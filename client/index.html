@@ -43,13 +43,17 @@
   
     <script>
       (function() {
-        // Clear any stale v107-v109 cached averages (which caused 850 / 2,550!)
         try {
           localStorage.removeItem("original_v107_by_name");
           sessionStorage.removeItem("original_v109_cart_subtotal");
         } catch (e) {}
 
         window.__v108ComputedCartSubtotal = 0;
+        window.__v111ReorderedVariants = {};
+        try {
+          var savedReord = sessionStorage.getItem("original_v111_reordered_variants");
+          if (savedReord) window.__v111ReorderedVariants = JSON.parse(savedReord) || {};
+        } catch (e) {}
 
         function setLeafTextSafe(el, newText) {
           if (!el) return;
@@ -78,7 +82,7 @@
           return /^\d[\d,.]*\s*ر\.ي/.test(t);
         }
 
-        function parseParenVariantTotal(parenText, defaultQty) {
+        function parseParenVariantTotal(parenText, rowQty) {
           var segments = String(parenText || "").split(/[،,+]+/).map(function(s) { return s.trim(); }).filter(Boolean);
           var totalW = 0;
           var totalQ = 0;
@@ -98,8 +102,11 @@
               var oName = cleanSeg.slice(0, cIdx).trim();
               var lPrice = parseFloat(cleanSeg.slice(cIdx + 1).trim());
               if (!isNaN(lPrice) && lPrice > 0) {
-                if (segments.length === 1 && !hasExplicitQty && defaultQty > 1) {
-                  sQty = defaultQty;
+                if (segments.length === 1) {
+                  // For a single-variant row in the cart, ALWAYS multiply by the actual rowQty (e.g. 4 or 5)!
+                  sQty = Math.max(1, rowQty || sQty);
+                } else if (!hasExplicitQty && rowQty > 1) {
+                  sQty = 1;
                 }
                 totalW += lPrice * sQty;
                 totalQ += sQty;
@@ -243,7 +250,6 @@
             if (removeBtns.length > 0) {
               backupVariantLocalStorage();
               var cartSubtotalSum = 0;
-              var anyVariantFound = false;
 
               removeBtns.forEach(function(remBtn) {
                 var rowCard = remBtn.parentElement;
@@ -258,29 +264,57 @@
                 }
                 if (!rowCard) return;
 
+                // 1. Read rowQty from the [ + qty - ] pill container (parentElement of the + or - button in rowCard!)
                 var rowQty = 1;
-                var ctrlBox = remBtn.parentElement;
-                if (ctrlBox) {
-                  var ctrlLeaves = Array.from(ctrlBox.querySelectorAll("span, div, strong, p")).filter(function(el) {
-                    return el.children.length === 0 && el !== remBtn && !remBtn.contains(el);
-                  });
-                  for (var qIdx = 0; qIdx < ctrlLeaves.length; qIdx++) {
-                    var qt = (ctrlLeaves[qIdx].textContent || "").trim();
-                    if (/^\d+$/.test(qt)) {
-                      var qVal = parseInt(qt, 10);
-                      if (qVal >= 1 && qVal <= 9999) {
-                        rowQty = qVal;
-                        break;
+                var rowBtns = Array.from(rowCard.querySelectorAll("button")).filter(function(b) {
+                  return b !== remBtn;
+                });
+                var foundQty = false;
+                for (var bIdx = 0; bIdx < rowBtns.length && !foundQty; bIdx++) {
+                  var pillBox = rowBtns[bIdx].parentElement;
+                  if (pillBox) {
+                    var pillLeaves = Array.from(pillBox.querySelectorAll("span, div, strong, p, b")).filter(function(el) {
+                      return el.children.length === 0 && el.tagName !== "BUTTON" && !remBtn.contains(el);
+                    });
+                    for (var qIdx = 0; qIdx < pillLeaves.length; qIdx++) {
+                      var qt = (pillLeaves[qIdx].textContent || "").trim();
+                      if (/^\d+$/.test(qt)) {
+                        var qVal = parseInt(qt, 10);
+                        if (qVal >= 1 && qVal <= 9999) {
+                          rowQty = qVal;
+                          foundQty = true;
+                          break;
+                        }
                       }
                     }
                   }
                 }
 
+                // 2. Check if this row was reordered via "إضافة الطلب إلى السلة مجدداً" and needs its variant restored
                 var rowFullText = rowCard.textContent || "";
                 var parenMatches = Array.from(rowFullText.matchAll(/\(([^()]*:\s*\d+(?:\.\d+)?[^()]*)\)/g));
                 var rowUnitPrice = 0;
                 var rowLineTotal = 0;
                 var rowOptName = "";
+
+                if (parenMatches.length === 0 && window.__v111ReorderedVariants) {
+                  // Check if any title leaf in rowCard matches a reordered product title
+                  var titleLeaves = Array.from(rowCard.querySelectorAll("h2, h3, h4, strong, p, div, span")).filter(function(el) {
+                    if (el.children.length !== 0 || el.tagName === "BUTTON" || remBtn.contains(el)) return false;
+                    var t = (el.textContent || "").trim();
+                    return t.length > 0 && t.indexOf("ر.ي") === -1 && !/^\d+$/.test(t) && t !== "+" && t !== "-" && t !== "−";
+                  });
+                  for (var tIdx = 0; tIdx < titleLeaves.length; tIdx++) {
+                    var baseT = (titleLeaves[tIdx].textContent || "").trim();
+                    var savedVar = window.__v111ReorderedVariants[baseT];
+                    if (savedVar && savedVar.raw) {
+                      setLeafTextSafe(titleLeaves[tIdx], baseT + " (" + savedVar.raw + ")");
+                      rowFullText = rowCard.textContent || "";
+                      parenMatches = Array.from(rowFullText.matchAll(/\(([^()]*:\s*\d+(?:\.\d+)?[^()]*)\)/g));
+                      break;
+                    }
+                  }
+                }
 
                 if (parenMatches.length > 0) {
                   var rawParenContent = parenMatches[parenMatches.length - 1][1].trim();
@@ -289,7 +323,6 @@
                     rowUnitPrice = parsedObj.unitPrice;
                     rowLineTotal = parsedObj.lineTotal;
                     rowOptName = parsedObj.optName;
-                    anyVariantFound = true;
                   }
                 }
 
@@ -383,8 +416,6 @@
             }
 
             // PART D: Order Details Screen ("الأصناف المطلوبة"):
-            // If any order row still has multiple variants in one line like "test (كبير:250, شده كامله:1500, صغير:150)" with "3 × 633 ر.ي",
-            // automatically split that DOM row into separate clean rows ("1 × 250 ر.ي", "1 × 1,500 ر.ي", "1 × 150 ر.ي")!
             if (document.body.textContent.indexOf("الأصناف المطلوبة") !== -1) {
               allContainers.forEach(function(box) {
                 if (box.children.length === 2 && !box.hasAttribute("data-v110-expanded")) {
@@ -457,17 +488,52 @@
           } catch (e) {}
         }
 
-        // Restore variant breakdown when clicking "إضافة الطلب إلى السلة مجدداً"
+        // Capture & restore variant breakdown when clicking "إضافة الطلب إلى السلة مجدداً"
         document.addEventListener("click", function(ev) {
           try {
             var btn = ev.target && ev.target.closest ? ev.target.closest("button") : null;
-            if (btn && (btn.textContent || "").indexOf("إضافة الطلب إلى السلة مجدداً") !== -1) {
-              var bRaw = sessionStorage.getItem("original_v110_variant_backup");
-              if (bRaw) {
-                var bObj = JSON.parse(bRaw);
-                Object.keys(bObj).forEach(function(k) {
-                  localStorage.setItem(k, bObj[k]);
+            if (btn) {
+              var bText = (btn.textContent || "").trim();
+              if (bText.indexOf("إفراغ السلة") !== -1) {
+                window.__v111ReorderedVariants = {};
+                window.__v108ComputedCartSubtotal = 0;
+                sessionStorage.removeItem("original_v111_reordered_variants");
+              } else if (bText.indexOf("إضافة الطلب إلى السلة مجدداً") !== -1) {
+                // 1. Restore any backed-up localStorage variant map
+                var bRaw = sessionStorage.getItem("original_v110_variant_backup");
+                if (bRaw) {
+                  var bObj = JSON.parse(bRaw);
+                  Object.keys(bObj).forEach(function(k) {
+                    localStorage.setItem(k, bObj[k]);
+                  });
+                }
+                // 2. Also scan all visible order items under "الأصناف المطلوبة" on the current page
+                //    so even orders from earlier sessions restore their exact variants!
+                var reordMap = {};
+                var allBoxes = Array.from(document.querySelectorAll("div, li"));
+                allBoxes.forEach(function(box) {
+                  if (box.children.length === 2) {
+                    var c0 = (box.children[0].textContent || "").trim();
+                    var c1 = (box.children[1].textContent || "").trim();
+                    var nTxt = "";
+                    if (/^\d+\s*[×xX*]\s*\d[\d,.]*\s*ر\.ي$/.test(c0)) nTxt = c1;
+                    else if (/^\d+\s*[×xX*]\s*\d[\d,.]*\s*ر\.ي$/.test(c1)) nTxt = c0;
+                    if (nTxt) {
+                      var pm = Array.from(nTxt.matchAll(/\(([^()]*:\s*\d+(?:\.\d+)?[^()]*)\)/g));
+                      if (pm.length > 0) {
+                        var rawInner = pm[pm.length - 1][1].trim().replace(/\s*[×xX*]\s*\d+.*$/, "").trim();
+                        var basePName = nTxt.replace(/\s*\([^()]*\)\s*$/g, "").trim();
+                        if (basePName && rawInner.indexOf(":") !== -1) {
+                          reordMap[basePName] = { raw: rawInner };
+                        }
+                      }
+                    }
+                  }
                 });
+                if (Object.keys(reordMap).length > 0) {
+                  window.__v111ReorderedVariants = reordMap;
+                  sessionStorage.setItem("original_v111_reordered_variants", JSON.stringify(reordMap));
+                }
               }
             }
           } catch (e) {}
