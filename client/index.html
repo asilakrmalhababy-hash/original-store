@@ -122,6 +122,8 @@
             .replace(/[أإآ]/g, "ا")
             .replace(/ة/g, "ه")
             .replace(/ى/g, "ي")
+            .replace(/\bحلا\b/g, "حلي")
+            .replace(/حلاوة/g, "حلاوه")
             .replace(/[؟?!.,،]/g, " ")
             .replace(/\s+/g, " ")
             .trim();
@@ -131,8 +133,8 @@
           var list = (window.__v114StudioConfig && window.__v114StudioConfig.recipes) || [];
           if (!Array.isArray(list) || list.length === 0) return null;
           var normUser = normalizeArabicClientV116(userText);
-          if (!normUser || normUser.length < 3) return null;
-          var stopWords = ["اريد", "ابغي", "اشتي", "هل", "عندكم", "ممكن", "كيف", "اسوي", "طريقه", "عمل", "وصفه", "حلو", "لذيذ", "سريع", "في", "من", "مع", "على", "عن"];
+          if (!normUser || normUser.length < 2) return null;
+          var stopWords = ["اريد", "ابغي", "اشتي", "هل", "عندكم", "ممكن", "كيف", "اسوي", "طريقه", "عمل", "سريع", "في", "من", "مع", "على", "عن"];
 
           for (var i = 0; i < list.length; i++) {
             var rec = list[i];
@@ -149,8 +151,7 @@
             var combinedTarget = normTitle + " " + normKw;
             var userWords = normUser.split(" ").filter(function(w) { return w.length >= 3 && stopWords.indexOf(w) === -1; });
             var matchedWords = userWords.filter(function(w) { return combinedTarget.indexOf(w) !== -1; });
-            if (matchedWords.length >= 2) return rec;
-            if (matchedWords.length >= 1 && (normUser.indexOf("حلي") !== -1 || normUser.indexOf("وصفه") !== -1)) return rec;
+            if (matchedWords.length >= 1) return rec;
           }
           return null;
         }
@@ -223,7 +224,6 @@
           }
         }
 
-        // Lightbox for full-screen recipe photo viewing
         window.__openRecipeImageLightboxV116 = function(src, title) {
           if (!src) return;
           var lb = document.createElement("div");
@@ -238,7 +238,7 @@
           document.body.appendChild(lb);
         };
 
-        // Mutate tRPC JSON response in-place so Home.tsx renders the recipe & linked items using its own native components!
+        // تعديل رد المساعد فقط في tRPC مع حماية رسائل المستخدم 100%
         function replaceTrpcAiPayloadInPlaceV117(trpcObj, smartData) {
           if (!trpcObj || typeof trpcObj !== "object") return;
           function walkPayload(node) {
@@ -247,9 +247,13 @@
               node.forEach(walkPayload);
               return;
             }
-            var textKeys = ["reply", "message", "answer", "content", "text", "response"];
+            if (node.role === "user" || node.sender === "user" || node.from === "user" || node.isUser === true) {
+              return;
+            }
+            var textKeys = ["reply", "answer", "response", "assistantMessage", "message", "content", "text"];
             textKeys.forEach(function(tk) {
-              if (typeof node[tk] === "string" && node[tk].length > 5 && smartData.reply) {
+              if (typeof node[tk] === "string" && node[tk].length > 8 && smartData.reply) {
+                if (window.__v119LastUserSentText && node[tk].trim() === window.__v119LastUserSentText.trim()) return;
                 node[tk] = smartData.reply;
               }
             });
@@ -284,50 +288,106 @@
           walkPayload(trpcObj);
         }
 
-        // 100% NON-DESTRUCTIVE Surgical Chat Enhancer:
-        // NEVER overwrites .innerHTML of any React container!
-        // Only locates the leaf <p> inside an assistant reply bubble, updates its text node via setLeafTextSafe,
-        // inserts a standalone photo card before that <p>, and updates the native item row text inside "الأصناف والمقادير المقترحة للسلة:"!
+        function isDarkGreenBgV119(el) {
+          if (!el || el === document.body) return false;
+          try {
+            var cs = window.getComputedStyle(el);
+            var bg = cs.backgroundColor || "";
+            var m = bg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+            if (m) {
+              var r = parseInt(m[1], 10);
+              var g = parseInt(m[2], 10);
+              var b = parseInt(m[3], 10);
+              if (r < 45 && g > 35 && g < 115 && b > 20 && b < 85) return true;
+            }
+          } catch (e) {}
+          return false;
+        }
+
+        function isInsideDarkGreenUserBubbleV119(el) {
+          var cur = el;
+          for (var i = 0; i < 4 && cur && cur !== document.body; i++) {
+            if (isDarkGreenBgV119(cur)) return true;
+            cur = cur.parentElement;
+          }
+          return false;
+        }
+
         function enhanceChatBubblesSafelyV117() {
           if (document.body.textContent.indexOf("مساعد وشيف أورجنال الذكي") === -1) return;
 
-          // إزالة أي بانر قديم من النسخة السابقة فوراً
-          Array.from(document.querySelectorAll(".v117-recipe-photo-banner")).forEach(function(oldB) {
-            oldB.remove();
+          // 1. إزالة أي صورة وُضعت بالخطأ داخل فقاعة المستخدم الخضراء فوراً!
+          Array.from(document.querySelectorAll(".v117-recipe-photo-banner, .v118-wa-photo-box")).forEach(function(box) {
+            if (box.classList.contains("v117-recipe-photo-banner") || isInsideDarkGreenUserBubbleV119(box)) {
+              box.remove();
+            }
           });
 
+          // 2. تحديد جميع فقاعات رسائل المستخدم الخضراء وحمايتها 100% من أي تعديل
+          var allUserBubbles = Array.from(document.querySelectorAll("div, p, span")).filter(function(el) {
+            if (!isDarkGreenBgV119(el)) return false;
+            if (el.tagName === "BUTTON" || el.querySelector("button, input, textarea")) return false;
+            var hasDarkGreenChild = Array.from(el.children).some(function(c) { return isDarkGreenBgV119(c); });
+            if (hasDarkGreenChild) return false;
+            var t = (el.textContent || "").trim();
+            if (t.indexOf("محادثة جديدة") !== -1 || t.indexOf("الأصناف والمقادير") !== -1) return false;
+            if (t.indexOf("🍰") !== -1 && el.getAttribute("data-v119-orig-user")) {
+              setLeafTextSafe(el, el.getAttribute("data-v119-orig-user"));
+            } else if (t.indexOf("🍰") === -1 && t.length >= 2 && t.length <= 160 && !el.getAttribute("data-v119-orig-user")) {
+              el.setAttribute("data-v119-orig-user", t);
+            }
+            return t.length >= 2;
+          });
+
+          // 3. اختيار فقاعة رد المساعد البيضاء فقط (ومنع لمس فقاعة المستخدم الخضراء نهائياً)
           var allLeaves = Array.from(document.querySelectorAll("p, div")).filter(function(el) {
             if (el.children.length !== 0) return false;
-            if (el.closest && (el.closest(".v118-wa-photo-box") || el.closest(".v117-recipe-photo-banner") || el.closest("button"))) return false;
-            var parentBubble = el.closest ? el.closest("[data-v118-bubble='1']") : null;
-            if (parentBubble && el.getAttribute("data-v118-reply") !== "1") return false;
+            if (el.closest && (el.closest(".v118-wa-photo-box") || el.closest("button"))) return false;
+            if (isInsideDarkGreenUserBubbleV119(el)) return false;
+
+            var parentCard = el.parentElement;
+            if (!parentCard) return false;
+            var cardTxt = parentCard.textContent || "";
+            if (cardTxt.indexOf("محادثة جديدة") !== -1 || parentCard.querySelector("input, textarea")) return false;
+
+            var isAssistantCard =
+              cardTxt.indexOf("الأصناف والمقادير") !== -1 ||
+              cardTxt.indexOf("تأكيد إضافة") !== -1 ||
+              cardTxt.indexOf("أضف بمفرده") !== -1 ||
+              cardTxt.indexOf("أفكار لتحضيره") !== -1 ||
+              cardTxt.indexOf("منتجات مشابهة") !== -1;
+            if (!isAssistantCard) return false;
+
+            var parentBubble = el.closest ? el.closest("[data-v119-bubble='1']") : null;
+            if (parentBubble && el.getAttribute("data-v119-reply") !== "1") return false;
+
             var t = (el.textContent || "").trim();
-            if (t.indexOf("الأصناف والمقادير") !== -1 || t.indexOf("الإجمالي:") !== -1 || t.indexOf("ر.ي (حبة)") !== -1) return false;
-            return t.length >= 18 && (t.indexOf("يا غالي") !== -1 || t.indexOf("حلى") !== -1 || t.indexOf("وصفة") !== -1 || t.indexOf("بسكويت") !== -1 || t.indexOf("🍰") !== -1);
+            if (
+              t.indexOf("الأصناف والمقادير") !== -1 ||
+              t.indexOf("تأكيد إضافة") !== -1 ||
+              t.indexOf("الإجمالي:") !== -1 ||
+              t.indexOf("ر.ي (حبة)") !== -1 ||
+              t.indexOf("أضف بمفرده") !== -1 ||
+              t.indexOf("اعتمد وإضافة") !== -1 ||
+              t.indexOf("إلغاء") !== -1
+            ) {
+              return false;
+            }
+            return t.length >= 12;
           });
 
           allLeaves.forEach(function(replyLeaf) {
             var assistantCard = replyLeaf.parentElement;
-            if (!assistantCard) return;
-            if (assistantCard.textContent.indexOf("محادثة جديدة") !== -1 || assistantCard.querySelector("input, textarea")) return;
+            if (!assistantCard || isInsideDarkGreenUserBubbleV119(assistantCard)) return;
 
+            var precedingUsers = allUserBubbles.filter(function(ub) {
+              return Boolean(ub.compareDocumentPosition(assistantCard) & Node.DOCUMENT_POSITION_FOLLOWING);
+            });
+            var lastUserBubble = precedingUsers.length > 0 ? precedingUsers[precedingUsers.length - 1] : null;
             var userQueryTxt = "";
-            var stepEl = assistantCard;
-            for (var up = 0; up < 4 && stepEl && stepEl.parentElement; up++) {
-              if (stepEl.parentElement.textContent.indexOf("محادثة جديدة") !== -1) break;
-              var prev = stepEl.previousElementSibling;
-              while (prev) {
-                var pt = (prev.textContent || "").trim();
-                if (pt.length >= 2 && pt.length <= 160 && pt.indexOf("الأصناف والمقادير") === -1 && pt.indexOf("الإجمالي:") === -1) {
-                  userQueryTxt = pt;
-                  break;
-                }
-                prev = prev.previousElementSibling;
-              }
-              if (userQueryTxt) break;
-              stepEl = stepEl.parentElement;
+            if (lastUserBubble) {
+              userQueryTxt = (lastUserBubble.getAttribute("data-v119-orig-user") || lastUserBubble.textContent || "").trim();
             }
-
             if (!userQueryTxt) return;
 
             var matchedRec = matchRecipeClientV116(userQueryTxt);
@@ -335,10 +395,10 @@
             var matchedPromo = (!matchedRec && !matchedRule) ? matchPromoClientV116(userQueryTxt) : null;
 
             if (matchedRec) {
-              assistantCard.setAttribute("data-v118-bubble", "1");
-              replyLeaf.setAttribute("data-v118-reply", "1");
+              assistantCard.setAttribute("data-v119-bubble", "1");
+              replyLeaf.setAttribute("data-v119-reply", "1");
 
-              // 1. صورة صافية في أعلى الفقاعة تماماً مثل واتساب (بدون أي كتابة أو مربعات فوق الصورة!)
+              // 1. إدراج صورة الوصفة كفقاعة واتساب في أعلى البطاقة البيضاء للمساعد فقط
               if (matchedRec.imageUrl && !assistantCard.querySelector(".v118-wa-photo-box")) {
                 var waBox = document.createElement("div");
                 waBox.className = "v118-wa-photo-box";
@@ -354,7 +414,7 @@
                 replyLeaf.parentNode.insertBefore(waBox, replyLeaf);
               }
 
-              // 2. نص الوصفة (Caption) تحت الصورة مباشرة مثل واتساب
+              // 2. نص الوصفة تحت الصورة داخل بطاقة المساعد البيضاء فقط
               var targetRecipeText =
                 "🍰 " + (matchedRec.title || "") + "\n\n" +
                 (matchedRec.steps || "");
@@ -362,7 +422,7 @@
               replyLeaf.style.lineHeight = "1.65";
               setLeafTextSafe(replyLeaf, targetRecipeText);
 
-              // 3. تحديث صندوق الأصناف المقترحة الأصلي تحت الوصفة
+              // 3. تحديث المنتجات المقترحة للسلة داخل بطاقة المساعد البيضاء
               var ings = Array.isArray(matchedRec.ingredients) ? matchedRec.ingredients : [];
               if (ings.length > 0) {
                 var singleAddBtns = Array.from(assistantCard.querySelectorAll("button")).filter(function(b) {
@@ -413,13 +473,13 @@
                 });
               }
             } else if (matchedRule) {
-              assistantCard.setAttribute("data-v118-bubble", "1");
-              replyLeaf.setAttribute("data-v118-reply", "1");
+              assistantCard.setAttribute("data-v119-bubble", "1");
+              replyLeaf.setAttribute("data-v119-reply", "1");
               replyLeaf.style.whiteSpace = "pre-line";
               setLeafTextSafe(replyLeaf, matchedRule.response || "");
             } else if (matchedPromo) {
-              assistantCard.setAttribute("data-v118-bubble", "1");
-              replyLeaf.setAttribute("data-v118-reply", "1");
+              assistantCard.setAttribute("data-v119-bubble", "1");
+              replyLeaf.setAttribute("data-v119-reply", "1");
               var promoTxt =
                 (matchedPromo.promoBadge ? matchedPromo.promoBadge + " — " : "⭐ ترشيح خاص لك: ") +
                 "«" + (matchedPromo.productName || "") + "»" +
@@ -440,6 +500,7 @@
             // Intercept tRPC POST requests that carry AI chat messages and upgrade response in-place
             if (urlStr.indexOf("/api/trpc/") !== -1 && init && init.method === "POST" && typeof init.body === "string") {
               var detectedMsg = extractAnyUserTextFromJsonBodyV116(init.body);
+              if (detectedMsg) window.__v119LastUserSentText = detectedMsg;
               var isAiCall = /ai|chat|assistant|chef|recipe|ask|suggest|message|prompt/i.test(urlStr) ||
                 Boolean(matchRecipeClientV116(detectedMsg) || matchRuleClientV116(detectedMsg) || matchPromoClientV116(detectedMsg));
 

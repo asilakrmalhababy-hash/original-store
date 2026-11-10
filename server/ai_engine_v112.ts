@@ -302,7 +302,7 @@ function normalizeArabicV112(str: string): string {
     .toLowerCase()
     .replace(/[أإآ]/g, "ا")
     .replace(/ة/g, "ه")
-    .replace(/ى/g, "ي")
+    .replace(/ى/g, "ي").replace(/\bحلا\b/g, "حلي")
     .replace(/[؟?!.,،]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -458,7 +458,7 @@ function findMatchingSavedRecipeV117(userMessage: string, recipes: CustomRecipeI
     const combinedTarget = normTitle + " " + normKw;
     const msgWords = normMsg.split(" ").filter(w => w.length >= 3 && !stopWords.has(w));
     const matchedWords = msgWords.filter(w => combinedTarget.includes(w));
-    if (matchedWords.length >= 2) return rec;
+    if (matchedWords.length >= 1) return rec;
     if (matchedWords.length >= 1 && (normMsg.includes("حلي") || normMsg.includes("وصفه"))) return rec;
   }
   return null;
