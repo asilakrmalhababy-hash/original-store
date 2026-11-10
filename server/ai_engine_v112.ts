@@ -1,4 +1,4 @@
-import type { Express } from "express";
+import express, { type Express } from "express";
 import fs from "fs";
 import path from "path";
 import { getDb } from "./db";
@@ -459,12 +459,14 @@ function findMatchingSavedRecipeV117(userMessage: string, recipes: CustomRecipeI
     const msgWords = normMsg.split(" ").filter(w => w.length >= 3 && !stopWords.has(w));
     const matchedWords = msgWords.filter(w => combinedTarget.includes(w));
     if (matchedWords.length >= 1) return rec;
-    if (matchedWords.length >= 1 && (normMsg.includes("حلي") || normMsg.includes("وصفه"))) return rec;
+    if (matchedWords.length >= 1) return rec;
   }
+  if (/(وصفه|حلي|حلا|حلوه|طبق|حلى)/.test(normMsg) && recipes.length > 0) return recipes[0];
   return null;
 }
 
 export function registerAiEngineV112(app: Express) {
+  app.use("/api/ai-studio", express.json({ limit: "50mb" }));
   app.get("/api/ai-studio/state", async (_req, res) => {
     try {
       await loadStateFromDbOnce();
@@ -612,7 +614,7 @@ export function registerAiEngineV112(app: Express) {
       const normMsg = normalizeArabicV112(userMessage);
 
       if (!userMessage) {
-        return res.json({ ok: true, zeroToken: true, reply: "يا هلا بك يا غالي! آمرني، ايش تبحث عنه اليوم؟" });
+        return res.json({ ok: true, passThrough: true });
       }
 
       const cacheKey = normMsg + "|" + normalizeArabicV112(productContextName);
@@ -644,6 +646,7 @@ export function registerAiEngineV112(app: Express) {
           const payload = {
             ok: true,
             zeroToken: true,
+            matchedOverride: true,
             reply: rule.response,
             suggestedItems: []
           };
@@ -695,6 +698,7 @@ export function registerAiEngineV112(app: Express) {
         const payload = {
           ok: true,
           zeroToken: true,
+          matchedOverride: true,
           reply: replyMsg,
           recipeTitle: matchedRecipe.title,
           recipeImage: matchedRecipe.imageUrl || "",
@@ -724,6 +728,7 @@ export function registerAiEngineV112(app: Express) {
               "«" + promo.productName + "»" +
               (promo.productPrice ? " (" + promo.productPrice + " ر.ي)" : "") +
               "\n" + (promo.promoPitch || ""),
+            matchedOverride: true,
             promotedProduct: promo,
             suggestedItems: foundProd
               ? [
@@ -762,116 +767,99 @@ export function registerAiEngineV112(app: Express) {
         const cleanName = cleanProductNameV112(targetProd.name);
         const pid = String(targetProd.id);
         const meta = memoryConfig.productAiMap[pid] || memoryConfig.productAiMap[cleanName];
-        const smart = classifyProductSmartV112(cleanName, meta);
+        const hasCustomMeta = Boolean(meta && (meta.customInfo || meta.calories || meta.pairings || meta.prepIdeas || (meta.usageType && meta.usageType !== "auto")));
+        if (productContextName || hasCustomMeta) {
+          const smart = classifyProductSmartV112(cleanName, meta);
+          zeroTokenCounter++;
+          let replyText = "";
+          if (meta && (meta.customInfo || meta.calories || meta.pairings || meta.prepIdeas)) {
+            const parts: string[] = [];
+            parts.push("يا غالي، بخصوص «" + cleanName + "» (سعره " + targetProd.price + " ر.ي):");
+            if (meta.customInfo) parts.push("✨ معلومات المنتج: " + meta.customInfo);
+            if (meta.calories) parts.push("🔥 السعرات والقيمة الغذائية: " + meta.calories);
+            if (meta.pairings) parts.push("☕ أفضل ما يؤكل أو يشرب معه: " + meta.pairings);
+            if (meta.prepIdeas) parts.push("🍰 أفكار ووصفات به: " + meta.prepIdeas);
+            replyText = parts.join("\n");
+          } else if (smart.mode === "snacks_and_drinks") {
+            replyText =
+              "يا غالي، «" + cleanName + "» متوفر بسعر " + targetProd.price + " ر.ي فقط! 😍\n" +
+              "💡 معلومات عنه: " + smart.defaultInfo + "\n" +
+              "✨ نصيحة سريعة: جربه مع قهوة ساخنة أو عصير بارد من المتجر واستمتع بالطعم الأصلي.";
+          } else if (smart.mode === "recipe") {
+            replyText =
+              "يا هلا بك يا غالي! «" + cleanName + "» (سعره " + targetProd.price + " ر.ي) ممتاز جداً للتحضير:\n" +
+              "🍰 فكرة سريعة ولذيذة: " + smart.defaultInfo;
+          } else {
+            replyText =
+              "حياك الله يا غالي! «" + cleanName + "» متوفر في المتجر بسعر " + targetProd.price + " ر.ي.\n" +
+              "💡 " + smart.defaultInfo;
+          }
 
-        zeroTokenCounter++;
-        let replyText = "";
-        if (meta && (meta.customInfo || meta.calories || meta.pairings || meta.prepIdeas)) {
-          const parts: string[] = [];
-          parts.push("يا غالي، بخصوص «" + cleanName + "» (سعره " + targetProd.price + " ر.ي):");
-          if (meta.customInfo) parts.push("✨ معلومات المنتج: " + meta.customInfo);
-          if (meta.calories) parts.push("🔥 السعرات والقيمة الغذائية: " + meta.calories);
-          if (meta.pairings) parts.push("☕ أفضل ما يؤكل أو يشرب معه: " + meta.pairings);
-          if (meta.prepIdeas) parts.push("🍰 أفكار ووصفات به: " + meta.prepIdeas);
-          replyText = parts.join("\n");
-        } else if (smart.mode === "snacks_and_drinks") {
-          replyText =
-            "يا غالي، «" + cleanName + "» متوفر بسعر " + targetProd.price + " ر.ي فقط! 😍\n" +
-            "💡 معلومات عنه: " + smart.defaultInfo + "\n" +
-            "✨ نصيحة سريعة: جربه مع قهوة ساخنة أو عصير بارد من المتجر واستمتع بالطعم الأصلي.";
-        } else if (smart.mode === "recipe") {
-          replyText =
-            "يا هلا بك يا غالي! «" + cleanName + "» (سعره " + targetProd.price + " ر.ي) ممتاز جداً للتحضير:\n" +
-            "🍰 فكرة سريعة ولذيذة: " + smart.defaultInfo;
-        } else {
-          replyText =
-            "حياك الله يا غالي! «" + cleanName + "» متوفر في المتجر بسعر " + targetProd.price + " ر.ي.\n" +
-            "💡 " + smart.defaultInfo;
+          const payload = {
+            ok: true,
+            zeroToken: true,
+            matchedOverride: true,
+            reply: replyText,
+            smartChips: smart.chips,
+            suggestedItems: [
+              {
+                id: targetProd.id,
+                productId: targetProd.id,
+                name: cleanName,
+                price: targetProd.price,
+                unit: targetProd.unit || "حبة",
+                url: "/products?search=" + encodeURIComponent(cleanName)
+              }
+            ]
+          };
+          responseCache.set(cacheKey, { data: payload, expiresAt: Date.now() + 10 * 60 * 1000 });
+          return res.json(payload);
         }
-
-        const payload = {
-          ok: true,
-          zeroToken: true,
-          reply: replyText,
-          smartChips: smart.chips,
-          suggestedItems: [
-            {
-              id: targetProd.id,
-              productId: targetProd.id,
-              name: cleanName,
-              price: targetProd.price,
-              unit: targetProd.unit || "حبة",
-              url: "/products?search=" + encodeURIComponent(cleanName)
-            }
-          ]
-        };
-        responseCache.set(cacheKey, { data: payload, expiresAt: Date.now() + 10 * 60 * 1000 });
-        return res.json(payload);
       }
 
-      // 5. Missing item friendly offer
-      const stopWords = new Set(["هل", "عندكم", "في", "متوفر", "اريد", "ابغي", "اشتي", "بكم", "سعر", "وين", "وش", "ايش", "كيف", "طريقه", "عمل", "وصفه", "معلومات", "سعرات"]);
+      // 5. الترحيب المخصص أو عرض توفير المنتج غير الموجود، وتمرير المحادثة الطبيعية للذكاء الأصلي
+      const isGreeting = /^(هلا|اهلا|مرحبا|السلام عليكم|صباح الخير|مساء الخير|كيف حالك|كيفك|شخبارك|وش اخبارك)(\s|$)/.test(normMsg);
+      if (isGreeting) {
+        const customWelcomeInst = (memoryConfig.instructions || []).find(i => i.active && i.category === "welcome");
+        if (customWelcomeInst?.text) {
+          return res.json({
+            ok: true,
+            zeroToken: true,
+            matchedOverride: true,
+            reply: customWelcomeInst.text,
+            suggestedItems: []
+          });
+        }
+        return res.json({ ok: true, passThrough: true });
+      }
+
+      const stopWords = new Set(["هل", "عندكم", "معاكم", "معكم", "في", "متوفر", "اريد", "ابغي", "اشتي", "بكم", "سعر", "وين", "وش", "ايش", "كيف", "طريقه", "عمل", "وصفه", "معلومات", "سعرات", "ابحث", "عن", "رد", "منك", "لو", "سمحت", "شي", "حاجه"]);
       const words = normMsg.split(" ").filter(w => w.length >= 3 && !stopWords.has(w));
       const matchedProds = allProds.filter(p => {
         const cn = normalizeArabicV112(cleanProductNameV112(p.name));
         return words.some(w => cn.includes(w));
       });
 
-      const asksAvailability = /(عندكم|متوفر|تبيعون|احصل|القي|اشتي|ابغي|اريد|موجود)/.test(normMsg);
-      if (asksAvailability && matchedProds.length === 0 && words.length > 0) {
+      const asksAvailability = /(عندكم|معاكم|معكم|متوفر|تبيعون|احصل|القي|اشتي|ابغي|اريد|موجود|قهوه|قهوة)/.test(normMsg);
+      if (asksAvailability && matchedProds.length === 0 && words.length > 0 && !/(وصفه|حلي|حلا|حلوه)/.test(normMsg)) {
         zeroTokenCounter++;
         const requestedName = words.join(" ");
         const customMissingInst = (memoryConfig.instructions || []).find(i => i.active && i.category === "missing_item");
         const friendlyReply = customMissingInst?.text
           ? customMissingInst.text.replace(/\{المنتج\}/g, requestedName)
-          : "فهمتك يا غالي! تقصد «" + requestedName + "».. حلو حلو 👌 حالياً هذا الصنف مو ظاهر قدامي على الرف، بس ولا يهمك! إذا تريده أقدر أتواصل لك مع إدارة المتجر فوراً وأرسل لهم إشعار لهاتفهم يسجلوه لك أو يشوفون لو متوفر بالمخزن. هل تريد أكلم المتجر يوفرونه لك؟ اضغط الزر بالأسفل ويوصلهم طلبك فوراً 👇";
-        const payload = {
+          : "فهمتك يا غالي! تقصد «" + requestedName + "».. حلو حلو 👌 حالياً هذا الصنف مو ظاهر قدامي بالمتجر، بس ولا يهمك! إذا تريده أقدر أتواصل لك مع إدارة المتجر فوراً وأرسل لهم إشعار لهاتفهم يوفرونه لك ويردون عليك هنا بالمحادثة. هل تريد أكلم المتجر لك؟";
+        return res.json({
           ok: true,
           zeroToken: true,
+          matchedOverride: true,
           missingItemOffer: true,
           requestedItemName: requestedName,
           reply: friendlyReply,
           suggestedItems: []
-        };
-        return res.json(payload);
+        });
       }
 
-      zeroTokenCounter++;
-      const topMatches = matchedProds.slice(0, 3).map(p => ({
-        id: p.id,
-        productId: p.id,
-        name: cleanProductNameV112(p.name),
-        price: p.price,
-        unit: p.unit || "حبة",
-        url: "/products?search=" + encodeURIComponent(cleanProductNameV112(p.name))
-      }));
-
-      if (topMatches.length > 0) {
-        const namesList = topMatches.map(m => "«" + m.name + "» (" + m.price + " ر.ي)").join("، و");
-        const payload = {
-          ok: true,
-          zeroToken: true,
-          reply: "أبشر يا غالي! فهمت طلبك، وهذي أفضل الأصناف المتوفرة عندنا وتناسبك تماماً: " + namesList + ". تقدر تضيفها للسلة بضغطة زر، وإذا كنت تقصد صنف ثاني غيرها تقدر تطلب مني أكلم المتجر يوفره لك فوراً! ❤️",
-          suggestedItems: topMatches,
-          canRequestCustomItem: true,
-          requestedItemName: userMessage
-        };
-        responseCache.set(cacheKey, { data: payload, expiresAt: Date.now() + 10 * 60 * 1000 });
-        return res.json(payload);
-      }
-
-      const customWelcomeInst = (memoryConfig.instructions || []).find(i => i.active && i.category === "welcome");
-      const fallbackPayload = {
-        ok: true,
-        zeroToken: true,
-        missingItemOffer: true,
-        requestedItemName: userMessage,
-        reply: customWelcomeInst?.text
-          ? customWelcomeInst.text
-          : "حياك الله يا غالي! فهمتك تماماً 👌 بخصوص «" + userMessage + "»، إذا كنت تبحث عن منتج معين غير ظاهر بالمتجر، أقدر أتواصل لك مع إدارة المتجر الآن وأرسل إشعار مباشر لهاتفهم عشان يوفرونه لك ويردون عليك هنا بالمحادثة! هل تريد أكلم المتجر لك؟ 👇",
-        suggestedItems: []
-      };
-      return res.json(fallbackPayload);
+      return res.json({ ok: true, passThrough: true });
     } catch (e: any) {
       res.status(500).json({ ok: false, error: String(e?.message || e) });
     }

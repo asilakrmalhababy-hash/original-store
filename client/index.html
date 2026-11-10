@@ -153,6 +153,7 @@
             var matchedWords = userWords.filter(function(w) { return combinedTarget.indexOf(w) !== -1; });
             if (matchedWords.length >= 1) return rec;
           }
+          if (/(وصفه|حلي|حلا|حلوه)/.test(normUser) && list.length > 0) return list[0];
           return null;
         }
 
@@ -513,7 +514,7 @@
                   })
                     .then(function(r) { return r.json(); })
                     .then(function(smartData) {
-                      if (!smartData || !smartData.ok) return trpcRes;
+                      if (!smartData || !smartData.ok || smartData.passThrough || !smartData.matchedOverride) return trpcRes;
                       return trpcRes.clone().json().then(function(trpcJson) {
                         replaceTrpcAiPayloadInPlaceV117(trpcJson, smartData);
                         setTimeout(enhanceChatBubblesSafelyV117, 120);
@@ -637,7 +638,7 @@
           })
             .then(function(r) { return r.json(); })
             .then(function(d) {
-              if (d && d.ok && d.config) {
+              if (d && d.ok && d.config && hasAnyStudioItemsV115(d.config)) {
                 window.__v114StudioConfig = d.config;
                 saveLocalBackupV115();
               }
@@ -880,25 +881,53 @@
         // DEDICATED AI CUSTOMIZATION SECTION IN ADMIN SIDEBAR (v115/v117)
         // ====================================================================
         function ensureDedicatedAiSidebarItemV114() {
-          if (window.location.pathname.indexOf("/admin") === -1) return;
+          if (window.location.pathname.indexOf("/admin") === -1) {
+            var oldFloat = document.getElementById("v120-floating-studio-btn");
+            if (oldFloat) oldFloat.remove();
+            return;
+          }
 
-          var allClickables = Array.from(document.querySelectorAll("button, a, div[role='button'], li"));
-          var aiAssistantTab = allClickables.find(function(el) {
+          var pendingCount = (window.__v114Requests || []).filter(function(r) { return r.status === "pending"; }).length;
+
+          // 1. زر عائم ثابت في لوحة الإدارة للوصول لقسم تخصيص الذكاء الاصطناعي بضغطة واحدة من أي مكان كقسم مستقل تماماً
+          var floatBtn = document.getElementById("v120-floating-studio-btn");
+          if (!floatBtn) {
+            floatBtn = document.createElement("button");
+            floatBtn.id = "v120-floating-studio-btn";
+            floatBtn.type = "button";
+            floatBtn.style.cssText = "position:fixed;bottom:18px;left:16px;z-index:99991;display:flex;align-items:center;gap:8px;padding:11px 16px;border-radius:99px;border:2px solid #d4af37;background:linear-gradient(135deg,#0d3825 0%,#165b3c 100%);color:#ffffff;font-weight:900;font-size:0.88rem;cursor:pointer;box-shadow:0 10px 26px rgba(13,56,37,0.38);direction:rtl;";
+            floatBtn.onclick = function(ev) {
+              ev.preventDefault();
+              ev.stopPropagation();
+              window.__v114StudioOpen = true;
+              refreshStudioDataV114(false);
+              renderAiStudioDedicatedPageV114();
+            };
+            document.body.appendChild(floatBtn);
+          }
+          floatBtn.innerHTML =
+            "<span>🤖 قسم تخصيص الذكاء الاصطناعي</span>" +
+            (pendingCount > 0
+              ? "<span style='background:#ef4444;color:#fff;border-radius:99px;padding:2px 8px;font-size:0.75rem;font-weight:900;'>" + pendingCount + "</span>"
+              : "<span style='background:#d4af37;color:#0d3825;border-radius:99px;padding:2px 8px;font-size:0.72rem;font-weight:900;'>مستقل</span>");
+
+          // 2. إضافة القسم في القائمة الرئيسية الجانبية بجانب (المنتجات / الطلبات) وليس داخل محادثات الزبائن
+          var allClickables = Array.from(document.querySelectorAll("aside button, nav button, aside a, nav a, button, a"));
+          var mainNavAnchor = allClickables.find(function(el) {
             var t = (el.textContent || "").trim();
-            return (t.indexOf("المساعد الذكي") !== -1 || t.indexOf("إعدادات الشيف") !== -1) && el.id !== "v114-dedicated-ai-nav-btn";
+            return (t === "الطلبات" || t === "المنتجات" || t === "الأقسام") && el.id !== "v114-dedicated-ai-nav-btn";
           });
 
-          if (aiAssistantTab && aiAssistantTab.parentElement && !document.getElementById("v114-dedicated-ai-nav-btn")) {
+          if (mainNavAnchor && mainNavAnchor.parentElement && !document.getElementById("v114-dedicated-ai-nav-btn")) {
             var navBtn = document.createElement("button");
             navBtn.id = "v114-dedicated-ai-nav-btn";
             navBtn.type = "button";
-            var pendingCount = (window.__v114Requests || []).filter(function(r) { return r.status === "pending"; }).length;
-            navBtn.style.cssText = "width:100%;display:flex;align-items:center;justify-content:space-between;padding:11px 14px;margin:6px 0;border-radius:12px;border:2px solid #d4af37;background:linear-gradient(135deg,#0d3825 0%,#165b3c 100%);color:#ffffff;font-weight:900;font-size:0.92rem;cursor:pointer;box-shadow:0 6px 16px rgba(13,56,37,0.22);direction:rtl;text-align:right;";
+            navBtn.style.cssText = "width:100%;display:flex;align-items:center;justify-content:space-between;padding:11px 14px;margin:6px 0;border-radius:12px;border:2px solid #d4af37;background:linear-gradient(135deg,#0d3825 0%,#165b3c 100%);color:#ffffff;font-weight:900;font-size:0.9rem;cursor:pointer;box-shadow:0 6px 16px rgba(13,56,37,0.22);direction:rtl;text-align:right;";
             navBtn.innerHTML =
               "<span style='display:flex;align-items:center;gap:8px;'><span>🤖</span><span>تخصيص الذكاء الاصطناعي</span></span>" +
               (pendingCount > 0
                 ? "<span style='background:#ef4444;color:#fff;border-radius:99px;padding:2px 8px;font-size:0.75rem;font-weight:900;'>" + pendingCount + "</span>"
-                : "<span style='background:#d4af37;color:#0d3825;border-radius:99px;padding:2px 8px;font-size:0.72rem;font-weight:900;'>جديد</span>");
+                : "<span style='background:#d4af37;color:#0d3825;border-radius:99px;padding:2px 8px;font-size:0.72rem;font-weight:900;'>قسم مستقل</span>");
 
             navBtn.onclick = function(ev) {
               ev.preventDefault();
@@ -908,29 +937,7 @@
               renderAiStudioDedicatedPageV114();
             };
 
-            aiAssistantTab.parentElement.insertBefore(navBtn, aiAssistantTab.nextSibling);
-
-            allClickables.forEach(function(otherEl) {
-              if (otherEl === navBtn || otherEl.getAttribute("data-v114-nav-bound") === "1") return;
-              var ot = (otherEl.textContent || "").trim();
-              if (
-                ot.indexOf("الرئيسية") !== -1 ||
-                ot.indexOf("المنتجات") !== -1 ||
-                ot.indexOf("الأقسام") !== -1 ||
-                ot.indexOf("الطلبات") !== -1 ||
-                ot.indexOf("الكوبونات") !== -1 ||
-                ot.indexOf("المساعد الذكي") !== -1
-              ) {
-                otherEl.setAttribute("data-v114-nav-bound", "1");
-                otherEl.addEventListener("click", function() {
-                  if (window.__v114StudioOpen) {
-                    window.__v114StudioOpen = false;
-                    var studioPage = document.getElementById("v114-dedicated-studio-page");
-                    if (studioPage) studioPage.style.display = "none";
-                  }
-                });
-              }
-            });
+            mainNavAnchor.parentElement.appendChild(navBtn);
           }
         }
 
@@ -966,16 +973,11 @@
             return;
           }
 
-          var mainContainer =
-            document.querySelector("main") ||
-            document.querySelector("[class*='content']") ||
-            document.body;
-
           if (!studioPage) {
             studioPage = document.createElement("div");
             studioPage.id = "v114-dedicated-studio-page";
-            studioPage.style.cssText = "position:relative;z-index:50;margin:14px;padding:18px;border:2.5px solid #0d3825;border-radius:20px;background:#ffffff;direction:rtl;text-align:right;box-shadow:0 14px 36px rgba(13,56,37,0.12);";
-            mainContainer.insertBefore(studioPage, mainContainer.firstChild);
+            studioPage.style.cssText = "position:fixed;inset:0;width:100vw;height:100vh;overflow-y:auto;z-index:99995;padding:18px;box-sizing:border-box;background:#f4fbf7;direction:rtl;text-align:right;";
+            document.body.appendChild(studioPage);
           }
           studioPage.style.display = "block";
 
