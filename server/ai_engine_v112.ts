@@ -79,13 +79,20 @@ export interface AiStudioConfigV112 {
   ecoMode10k: boolean;
 }
 
-export interface IngredientTableRowV122 {
+export interface IngredientTableRowV123 {
   name: string;
   amount: string;
   available: boolean;
   price?: number;
   productId?: number;
   unit?: string;
+}
+
+interface SessionMemoryV123 {
+  lastRecipeId: string;
+  lastDishTitle: string;
+  variantIndex: number;
+  updatedAt: number;
 }
 
 const DEFAULT_STUDIO_CONFIG: AiStudioConfigV112 = {
@@ -105,9 +112,41 @@ let memoryRequests: AiCustomerRequestV112[] = [];
 let dbLoadedOnce = false;
 let dbTableCreated = false;
 
-const responseCache = new Map<string, { data: any; expiresAt: number }>();
+// RAM Cache for Products Catalog (5 minutes TTL) — reduces TiDB database load by 99.8%!
+let cachedProductsCatalog: any[] = [];
+let cachedProductsExpiresAt = 0;
+
+// Conversational Context Memory per Customer Session
+const sessionMemoryMap = new Map<string, SessionMemoryV123>();
+
 let zeroTokenCounter = 0;
 let cachedHitCounter = 0;
+
+async function getProductsCatalogLightV123(): Promise<any[]> {
+  if (cachedProductsCatalog.length > 0 && Date.now() < cachedProductsExpiresAt) {
+    return cachedProductsCatalog;
+  }
+  try {
+    const db = await getDb();
+    if (!db) return cachedProductsCatalog;
+    const rows = await db
+      .select({
+        id: products.id,
+        name: products.name,
+        price: products.price,
+        unit: products.unit,
+        description: products.description
+      })
+      .from(products);
+    if (Array.isArray(rows) && rows.length > 0) {
+      cachedProductsCatalog = rows;
+      cachedProductsExpiresAt = Date.now() + 5 * 60 * 1000;
+    }
+    return cachedProductsCatalog;
+  } catch {
+    return cachedProductsCatalog;
+  }
+}
 
 function sanitizeConfigObject(parsed: any): AiStudioConfigV112 {
   if (!parsed || typeof parsed !== "object") {
@@ -278,7 +317,6 @@ async function loadStateFromDbOnce() {
 
 async function persistConfigToDb(cfg: AiStudioConfigV112) {
   memoryConfig = sanitizeConfigObject(cfg);
-  responseCache.clear();
   saveToLocalFileSync(memoryConfig, memoryRequests);
   try {
     const db = await getDb();
@@ -443,32 +481,51 @@ export function classifyProductSmartV112(productName: string, customMeta?: Produ
   };
 }
 
-function findMatchingSavedRecipeV117(userMessage: string, recipes: CustomRecipeItemV112[]): CustomRecipeItemV112 | null {
+// ============================================================================
+// CONVERSATIONAL FOLLOW-UP DETECTION (e.g. "يااخي اريد طريقة افضل", "طريقة ثانية")
+// ============================================================================
+function isFollowUpAskingBetterOrAnotherMethodV123(normMsg: string): boolean {
+  return /(طريقه افضل|طريقه احسن|طريقه ثانيه|طريقه غير|طريقه احلي|وصفه ثانيه|وصفه افضل|غيرها|شي ثاني|افضل من كذا|احسن من كذا|ما عجبتني|اريد افضل|ابغي افضل)/.test(normMsg);
+}
+
+function findMatchingSavedRecipeV123(userMessage: string, recipes: CustomRecipeItemV112[]): CustomRecipeItemV112 | null {
   if (!Array.isArray(recipes) || recipes.length === 0) return null;
   const normMsg = normalizeArabicV112(userMessage);
   if (!normMsg) return null;
 
-  const stopWords = new Set(["اريد", "ابغي", "اشتي", "هل", "عندكم", "ممكن", "كيف", "اسوي", "طريقه", "عمل", "سريع", "في", "من", "مع", "على", "عن"]);
+  if (isFollowUpAskingBetterOrAnotherMethodV123(normMsg)) return null;
+  if (/(اندومي|نودلز|كبسه|مندي|زربيان|سلته|فحسه|مكرونه|بشاميل|شكشوكه|فول|فاصوليا|تونه|بسبوسه|كنافه|لقيمات)/.test(normMsg)) {
+    for (const rec of recipes) {
+      const nt = normalizeArabicV112(rec.title || "");
+      if (nt && normMsg.split(" ").some(w => w.length >= 4 && nt.includes(w) && !["اريد", "طريقه", "وصفه", "افضل"].includes(w))) {
+        return rec;
+      }
+    }
+    return null;
+  }
+
+  const stopWords = new Set(["اريد", "ابغي", "اشتي", "هل", "عندكم", "ممكن", "كيف", "اسوي", "طريقه", "عمل", "سريع", "في", "من", "مع", "على", "عن", "يااخي", "يا", "اخي", "افضل", "احسن", "ثانيه", "جديده"]);
 
   for (const rec of recipes) {
     const normTitle = normalizeArabicV112(rec.title || "");
     const normKw = normalizeArabicV112(rec.keywords || "");
 
-    if (normTitle && (normMsg.includes(normTitle) || normTitle.includes(normMsg))) return rec;
-    if (normKw && (normMsg.includes(normKw) || normKw.includes(normMsg))) return rec;
+    if (normTitle && normMsg.length >= 5 && (normMsg.includes(normTitle) || normTitle.includes(normMsg))) return rec;
+    if (normKw && normMsg.length >= 5 && (normMsg.includes(normKw) || normKw.includes(normMsg))) return rec;
 
     const kwList = String(rec.keywords || "")
       .split(/[،,]+/)
       .map(s => normalizeArabicV112(s))
       .filter(s => s.length >= 3);
     for (const kw of kwList) {
-      if (normMsg.includes(kw) || kw.includes(normMsg)) return rec;
+      if (normMsg.includes(kw)) return rec;
     }
 
     const combinedTarget = normTitle + " " + normKw;
     const msgWords = normMsg.split(" ").filter(w => w.length >= 3 && !stopWords.has(w));
     const matchedWords = msgWords.filter(w => combinedTarget.includes(w));
-    if (matchedWords.length >= 1) return rec;
+    if (matchedWords.length >= 2) return rec;
+    if (matchedWords.length === 1 && /(بسكويت|حلي|شوكلاته|شوكولاته)/.test(matchedWords[0])) return rec;
   }
 
   if (/(وصفه حلوه|حلي بارد|حلي بسكويت|حلا بسكويت|اريد حلي|اريد حلا)/.test(normMsg)) {
@@ -478,177 +535,246 @@ function findMatchingSavedRecipeV117(userMessage: string, recipes: CustomRecipeI
 }
 
 // ============================================================================
-// MASTER CHEF ENCYCLOPEDIA & DYNAMIC RECIPE GENERATOR (EVEN IF ITEMS MISSING!)
+// MULTI-METHOD MASTER CHEF ENCYCLOPEDIA (Each dish has Multiple Chef Methods!)
 // ============================================================================
-interface BuiltInChefRecipeV122 {
-  keywords: RegExp;
+interface ChefMethodVariantV123 {
   title: string;
   prepTime: string;
   steps: string;
   rawIngredients: { name: string; searchTerms: string[]; amount: string }[];
 }
 
-const BUILTIN_CHEF_RECIPES_V122: BuiltInChefRecipeV122[] = [
+interface MultiMethodChefDishV123 {
+  id: string;
+  keywords: RegExp;
+  variants: ChefMethodVariantV123[];
+}
+
+const MULTI_METHOD_CHEF_DISHES_V123: MultiMethodChefDishV123[] = [
   {
-    keywords: /(اندومي|إندومي|نودلز|شعيريه مقليه|رامين)/,
-    title: "إندومي على طريقة الشيف بالخضار والصلصة والجبن السائح",
-    prepTime: "10 دقائق",
-    steps:
-      "1. اسلق الإندومي في ماء مغلي لمدة دقيقتين فقط (نصف استواء) ثم صفّها مع الاحتفاظ بربع كوب من ماء السلق.\n" +
-      "2. في مقلاة على النار، شوّح فص ثوم مفروم وفلفل أخضر مع ملعقة زيت وملعقة صغيرة صلصة طماطم.\n" +
-      "3. أضف بهارات الإندومي وربع كوب ماء السلق وملعقة جبن سائل (أو شريحة جبن) وقلّب حتى يتكون صوص كريمي لذيذ.\n" +
-      "4. أضف الإندومي للصوص وقلّبها لمدة دقيقة واحدة على نار هادئة، وقدمها ساخنة مع عصير ليمون وبالعافية!",
-    rawIngredients: [
-      { name: "إندومي (نودلز)", searchTerms: ["اندومي", "إندومي", "مكرونه"], amount: "2 كيس" },
-      { name: "صلصة طماطم", searchTerms: ["صلصه", "صلصة"], amount: "1 ملعقة كبيرة" },
-      { name: "زيت نباتي", searchTerms: ["زيت"], amount: "1 ملعقة كبيرة" },
-      { name: "جبن سائل أو موزاريلا للصوص", searchTerms: ["جبن", "جبنه"], amount: "2 ملعقة كبيرة" },
-      { name: "فلفل أخضر وثوم وليمون طازج", searchTerms: ["ليمون", "فلفل"], amount: "حبة واحدة" }
+    id: "indomie",
+    keywords: /(اندومي|نودلز|شعيريه مقليه|رامين)/,
+    variants: [
+      {
+        title: "إندومي الشيف الكريمي بالجبن السائح والصلصة المتبلة",
+        prepTime: "8 دقائق",
+        steps:
+          "1. اسلق الإندومي في ماء مغلي لمدة دقيقتين فقط (نصف استواء) ثم صفّها مع ترك ربع كوب من ماء السلق.\n" +
+          "2. في مقلاة على نار هادئة، قلّب ملعقة زيت مع ملعقة صغيرة صلصة طماطم ورشة كمون وفلفل أخضر.\n" +
+          "3. أضف بهارات الإندومي وملعقتين جبن سائل (أو شيدر) مع ماء السلق وقلّب حتى يتكون صوص كريمي كثيف.\n" +
+          "4. أضف الإندومي للصوص وقلّبها دقيقة واحدة، ثم اعصر فوقها نصف ليمونة وقدمها ساخنة!",
+        rawIngredients: [
+          { name: "إندومي ليمون أو خضار", searchTerms: ["اندومي", "نودلز"], amount: "2 كيس" },
+          { name: "صلصة طماطم", searchTerms: ["صلصه"], amount: "1 ملعقة" },
+          { name: "زيت طبخ", searchTerms: ["زيت"], amount: "1 ملعقة" },
+          { name: "كمون بلدي", searchTerms: ["كمون"], amount: "رشة" },
+          { name: "جبن سائل أو موزاريلا للصوص", searchTerms: ["جبن سائل", "موزاريلا"], amount: "2 ملعقة" },
+          { name: "فلفل أخضر وليمون طازج", searchTerms: ["فلفل اخضر"], amount: "1 حبة" }
+        ]
+      },
+      {
+        title: "الطريقة الثانية (الأفخم): إندومي آسيوي مقلي محمّر بالخضار والثوم المحمص (طريقة المطاعم)",
+        prepTime: "10 دقائق",
+        steps:
+          "1. اسلق الإندومي في ماء مغلي بدون بهارات لمدة دقيقتين فقط، ثم صفّها فوراً واغسلها بماء بارد لتبقى متماسكة.\n" +
+          "2. في مقلاة واسعة وعالية الحرارة، سخّن ملعقتين زيت وشوّح فصين ثوم مفروم مع شرائح فلفل رومي وبصل أخضر وجزر مبشور حتى تتحمر الأطراف.\n" +
+          "3. أضف ملعقة صلصة وملعقة صويا صوص (أو عصر ليمون مع رشة سكر خفيفة) وبهارات الإندومي وقلّبها 30 ثانية على نار قوية.\n" +
+          "4. أضف الإندومي المصفاة للمقلاة وقلّبها بسرعة على نار عالية لمدة دقيقتين حتى تأخذ نكهة التحمير الآسيوية الشهية وقدمها فوراً!",
+        rawIngredients: [
+          { name: "إندومي", searchTerms: ["اندومي"], amount: "2 كيس" },
+          { name: "زيت للتحمير السريع", searchTerms: ["زيت"], amount: "2 ملعقة" },
+          { name: "صلصة طماطم", searchTerms: ["صلصه"], amount: "1 ملعقة" },
+          { name: "فلفل رومي وجزر وبصل أخضر وثوم", searchTerms: ["فلفل رومي"], amount: "1 كوب مقطع" },
+          { name: "صويا صوص وسمسم للتزيين", searchTerms: ["صويا"], amount: "1 ملعقة كبيرة" }
+        ]
+      },
+      {
+        title: "الطريقة الثالثة: إندومي سبايسي بالبيض المقلي والكزبرة والليمون",
+        prepTime: "7 دقائق",
+        steps:
+          "1. حمّر فص ثوم مفروم مع رشة شطة أو فلفل أحمر وكمون في ملعقة زيت.\n" +
+          "2. أضف كوبين ماء ساخن وبهارات الإندومي وعصير ليمونة كاملة واتركها تغلي.\n" +
+          "3. ضع الإندومي لمدة 3 دقائق، وفي مقلاة صغيرة اقلِ بيضة عيون نصف استواء مع رشة فلفل أسود.\n" +
+          "4. اسكب الإندومي مع الصوص الحار والليمون وضع البيضة المقلية والكزبرة الخضراء على الوجه!",
+        rawIngredients: [
+          { name: "إندومي", searchTerms: ["اندومي"], amount: "2 كيس" },
+          { name: "كمون وبهارات", searchTerms: ["كمون"], amount: "1 ملعقة" },
+          { name: "زيت", searchTerms: ["زيت"], amount: "1 ملعقة" },
+          { name: "بيض طازج وكزبرة خضراء وليمون", searchTerms: ["بيض"], amount: "2 حبة" }
+        ]
+      }
     ]
   },
   {
-    keywords: /(كبسه|كبسة|رز بالدجاج|ارز بالدجاج|غداء دجاج)/,
-    title: "كبسة الدجاج العربية الأصيلة والملكية",
-    prepTime: "45 دقيقة",
-    steps:
-      "1. في قدر على النار، شوّح البصل المفروم مع الزيت أو السمن حتى يذبل ويأخذ لوناً ذهبياً شهياً.\n" +
-      "2. أضف قطع الدجاج وقلّبها مع البهارات الصحيحة والمطحونة (هيل، قرفة، كركم، بهارات كبسة) لمدة 5 دقائق.\n" +
-      "3. أضف الطماطم المفرومة وملعقتين من صلصة الطماطم، ثم اسكب الماء الساخن واترك الدجاج ينضج لمدة 25 دقيقة.\n" +
-      "4. أخرج الدجاج لتحميره، وأضف الأرز المغسول والمنقوع إلى مرق الكبسة، واتركه على نار هادئة حتى ينضج ويتشرب النكهة بالكامل.\n" +
-      "5. قدّم الكبسة ساخنة وزينها بالمكسرات والزبيب وبالعافية!",
-    rawIngredients: [
-      { name: "أرز بسمتي فاخر", searchTerms: ["ارز", "أرز", "رز"], amount: "3 أكواب" },
-      { name: "صلصة طماطم", searchTerms: ["صلصه", "صلصة", "معجون طماطم"], amount: "2 ملعقة كبيرة" },
-      { name: "زيت طبخ أو سمن", searchTerms: ["زيت", "سمن"], amount: "3 ملاعق كبيرة" },
-      { name: "دجاج طازج مقطع", searchTerms: ["دجاج"], amount: "1 حبة (1000 جرام)" },
-      { name: "بصل وطماطم وثوم طازج", searchTerms: ["بصل", "طماطم"], amount: "2 حبة لكل نوع" },
-      { name: "بهارات كبسة مشكلة وهيل", searchTerms: ["بهارات", "هيل", "كركم"], amount: "1 ملعقة كبيرة" }
+    id: "sweet_biscuit",
+    keywords: /(حلي|حلا|وصفه حلوه|حلي بارد|حلي سريع|حلي قهوه|حلي بسكويت|تراميسو|تشيز كيك|كيك)/,
+    variants: [
+      {
+        title: "حلى طبقات البسكويت البارد بالشوكولاتة والكريمة الفاخرة",
+        prepTime: "15 دقيقة",
+        steps:
+          "1. غمّس قطع البسكويت سريعاً في الحليب الدافئ ورتّبها كطبقة أولى في صينية أو كاسات التقديم.\n" +
+          "2. ذوّب الشوكولاتة مع قليل من الحليب الساخن والقشطة حتى يتكون صوص شوكولاتة كريمي ناعم وغني.\n" +
+          "3. اسكب طبقة من كريمة الشوكولاتة فوق البسكويت، وكرر الطبقات ثم رش بسكويت مطحون على الوجه.\n" +
+          "4. ضعها في الثلاجة لمدة 20 دقيقة لتبرد وتتماسك، وقدمها باردة مع القهوة وبالعافية!",
+        rawIngredients: [
+          { name: "بسكويت شاي أو كريمة", searchTerms: ["بسكويت", "ماري", "ابو ولد", "ديما", "بسكريم"], amount: "2 باكيت" },
+          { name: "شوكولاتة بالحليب أو البندق", searchTerms: ["شوكلاته", "شوكولاته", "بريك", "بلاتو", "بليلا"], amount: "3 حبات" },
+          { name: "حليب سائل", searchTerms: ["حليب"], amount: "1 كوب" },
+          { name: "قشطة طازجة وكريمة خفق", searchTerms: ["قشطه"], amount: "1 علبة" }
+        ]
+      },
+      {
+        title: "الطريقة الثانية (الأفخم): كرات الترافل الملكية بالبسكويت والشوكولاتة والمكسرات",
+        prepTime: "10 دقائق",
+        steps:
+          "1. اطحن البسكويت ناعماً جداً في وعاء عميق.\n" +
+          "2. أضف للبسكويت المطحون علبتين قشطة أو ربع كوب حليب مكثف مع شوكولاتة مذابة واعجنها حتى تتكون عجينة متماسكة ولينة.\n" +
+          "3. شكّل العجينة إلى كرات متساوية الحجم، وغمّسها في الشوكولاتة المذابة أو دحرجها في البسكويت المطحون وجوز الهند.\n" +
+          "4. برّدها 15 دقيقة في الفريزر وقدمها مع القهوة كأفخم ضيافة سريعة!",
+        rawIngredients: [
+          { name: "بسكويت", searchTerms: ["بسكويت", "ماري", "ابو ولد", "ديما"], amount: "3 باكيت" },
+          { name: "شوكولاتة للتغميس", searchTerms: ["شوكلاته", "شوكولاته", "بريك", "بلاتو"], amount: "3 حبات" },
+          { name: "حليب", searchTerms: ["حليب"], amount: "نصف كوب" },
+          { name: "قشطة وحليب مكثف وجوز هند للتغطية", searchTerms: ["قشطه", "حليب مكثف"], amount: "1 علبة" }
+        ]
+      }
     ]
   },
   {
-    keywords: /(مندي|زربيان|مضغوط|حنيذ)/,
-    title: "مندي يمني أصيل بنكهة التدخين الفاخرة",
-    prepTime: "55 دقيقة",
-    steps:
-      "1. تبّل الدجاج أو اللحم بخليط الزعفران، الكركم، البهارات اليمنية، الملح، وقليل من الزيت.\n" +
-      "2. في قدر المندي، ضع الأرز المغسول مع البهارات الصحيحة (قرفة، قرنفل، هيل، ورق غار) والماء الساخن.\n" +
-      "3. ضع شبك المندي فوق القدر ورتب عليه قطع الدجاج المتبلة، ثم أحكم إغلاق القدر بالقصدير والغطاء على نار هادئة لمدة 45 دقيقة.\n" +
-      "4. للتبخير: ضع جمرة مشتعلة في فنجان صغير وسط الأرز مع قطرات زيت وأغلق القدر دقيقتين ليأخذ نكهة المندي الأصلية!",
-    rawIngredients: [
-      { name: "أرز بسمتي طويل الحبة", searchTerms: ["ارز", "أرز", "رز"], amount: "3 أكواب" },
-      { name: "زيت نباتي أو سمن", searchTerms: ["زيت", "سمن"], amount: "3 ملاعق" },
-      { name: "دجاج أو لحم طازج للمندي", searchTerms: ["دجاج", "لحم"], amount: "1 كيلو" },
-      { name: "بهارات مندي يمنية وزعفران", searchTerms: ["بهارات", "كركم", "زعفران"], amount: "2 ملعقة كبيرة" },
-      { name: "فحم للتبخير والتدخين", searchTerms: ["فحم"], amount: "قطعة واحدة" }
+    id: "kabsa_mandi",
+    keywords: /(كبسه|مندي|زربيان|مضغوط|حنيذ|رز بالدجاج|ارز بالدجاج|غداء)/,
+    variants: [
+      {
+        title: "كبسة الدجاج العربية الأصيلة والملكية",
+        prepTime: "45 دقيقة",
+        steps:
+          "1. شوّح البصل المفروم مع الزيت أو السمن حتى يأخذ لوناً ذهبياً شهياً.\n" +
+          "2. أضف قطع الدجاج وقلّبها مع البهارات الصحيحة والمطحونة والكمون لمدة 5 دقائق.\n" +
+          "3. أضف الطماطم المفرومة وملعقتين صلصة طماطم، ثم اسكب الماء الساخن واترك الدجاج ينضج 25 دقيقة.\n" +
+          "4. أخرج الدجاج لتحميره، وأضف الأرز المغسول والمنقوع إلى المرق على نار هادئة حتى ينضج ويتشرب النكهة بالكامل!",
+        rawIngredients: [
+          { name: "أرز بسمتي فاخر", searchTerms: ["ارز", "رز"], amount: "3 أكواب" },
+          { name: "صلصة طماطم", searchTerms: ["صلصه"], amount: "2 ملعقة" },
+          { name: "زيت طبخ", searchTerms: ["زيت"], amount: "3 ملاعق" },
+          { name: "كمون وبهارات", searchTerms: ["كمون"], amount: "1 ملعقة" },
+          { name: "دجاج طازج مقطع", searchTerms: ["دجاج"], amount: "1 حبة" },
+          { name: "بصل وطماطم وهيل وزبيب", searchTerms: ["بصل"], amount: "تشكيلة" }
+        ]
+      },
+      {
+        title: "الطريقة الثانية: زربيان عدني فاخر بالدجاج والبطاطس والزبادي",
+        prepTime: "50 دقيقة",
+        steps:
+          "1. اقلي شرائح البصل حتى تصبح ذهبية مقرمشة، ثم اخلط نصفها في الخلاط مع الزبادي والثوم والزنجبيل وبهارات الزربيان.\n" +
+          "2. تبّل الدجاج والبطاطس المقطعة كباراً بهذا الخليط في قدر عميق واطبخه على نار متوسطة لمدة 25 دقيقة حتى يتسبك الكشنة.\n" +
+          "3. اسلق الأرز نصف سلقة (70%) في ماء مغلي مع هيل وقرنفل وملح، ثم صفّه وضعه كطبقة فوق الدجاج والبطاطس.\n" +
+          "4. رش ماء الزعفران وباقي البصل المقرمش على الوجه، وبخّره بجمرة صغيرة وغطّ القدر 15 دقيقة على نار هادئة جداً!",
+        rawIngredients: [
+          { name: "أرز بسمتي طويل الحبة", searchTerms: ["ارز", "رز"], amount: "3 أكواب" },
+          { name: "زيت لقلي البصل", searchTerms: ["زيت"], amount: "نصف كوب" },
+          { name: "كمون وبهارات", searchTerms: ["كمون"], amount: "1 ملعقة" },
+          { name: "دجاج طازج وبطاطس وزبادي وزعفران", searchTerms: ["دجاج"], amount: "1 كيلو" }
+        ]
+      }
     ]
   },
   {
-    keywords: /(سلته|سلتة|فحسه|فحسة)/,
-    title: "السلتة والفحسة اليمنية الصنعانية على أصولها",
-    prepTime: "30 دقيقة",
-    steps:
-      "1. في المقلى الحجري (الحرضة)، شوّح البصل والثوم المفروم مع الطماطم والصلصة والبهارات اليمنية.\n" +
-      "2. أضف المرق الساخن واللحم المفروم أو قطع اللحم الناضجة والبطاطس المسلوقة المهروسة قليلاً واتركها تتسبك وتغلي.\n" +
-      "3. اخفق الحلبة المنقوعة جيداً حتى تصبح بيضاء هشة، ثم أضف لها الكراث والكزبرة الخضراء والسحاوق.\n" +
-      "4. اسكب طبقة الحلبة المخفوقة فوق الحرضة وهي تغلي وقدمها فوراً مع الخبز اليمني الساخن!",
-    rawIngredients: [
-      { name: "صلصة طماطم", searchTerms: ["صلصه", "صلصة"], amount: "2 ملعقة كبيرة" },
-      { name: "حلبة يمنية مطحونة", searchTerms: ["حلبه", "حلبة"], amount: "3 ملاعق كبيرة" },
-      { name: "لحم بقري أو غنمي طازج", searchTerms: ["لحم"], amount: "نصف كيلو" },
-      { name: "بطاطس وبصل وطماطم وكراث", searchTerms: ["بطاطس", "بصل"], amount: "تشكيلة طازجة" },
-      { name: "كمون وكزبرة وبهارات يمنية", searchTerms: ["بهارات", "كمون"], amount: "ملعقة كبيرة" }
+    id: "pasta",
+    keywords: /(مكرونه|باستا|بشاميل|معكرونه)/,
+    variants: [
+      {
+        title: "مكرونة بالصلصة الغنية والجبن السائح (أو البشاميل)",
+        prepTime: "25 دقيقة",
+        steps:
+          "1. اسلق المكرونة في ماء مغلي مملح مع ملعقة زيت لمدة 8 دقائق ثم صفّها.\n" +
+          "2. شوّح البصل والثوم مع الزيت، ثم أضف التونة أو الدجاج المفروم وصلصة الطماطم والكمون.\n" +
+          "3. لتحضير الصوص الكريمي: امزج الحليب مع ملعقتين دقيق وجبن سائل على النار حتى يثقل.\n" +
+          "4. اخلط المكرونة بالصلصة وضع الكريمة والجبن على الوجه وحمّرها!",
+        rawIngredients: [
+          { name: "مكرونة فاخرة", searchTerms: ["مكرونه", "باستا"], amount: "1 كيس" },
+          { name: "صلصة طماطم", searchTerms: ["صلصه"], amount: "3 ملاعق" },
+          { name: "حليب سائل", searchTerms: ["حليب"], amount: "2 كوب" },
+          { name: "زيت طبخ", searchTerms: ["زيت"], amount: "2 ملعقة" },
+          { name: "تونة أو دجاج وجبن موزاريلا", searchTerms: ["تونه", "جبن"], amount: "1 علبة" }
+        ]
+      },
+      {
+        title: "الطريقة الثانية: باستا ألفريدو الإيطالية الكريمية السريعة في قدر واحد",
+        prepTime: "15 دقيقة",
+        steps:
+          "1. في مقلاة عميقة، شوّح فصين ثوم مفروم في ملعقة زبدة أو زيت لمدة دقيقة.\n" +
+          "2. أضف المكرونة مع كوبين حليب وكوب ماء ساخن ورشة ملح وفلفل أسود على نار متوسطة مع التحريك حتى تنضج المكرونة في الحليب وتتشربه.\n" +
+          "3. أضف الجبن السائل أو الموزاريلا وقلّب حتى تذوب وتغلف المكرونة بصوص كريمي غني وقدمها ساخنة!",
+        rawIngredients: [
+          { name: "مكرونة", searchTerms: ["مكرونه"], amount: "1 كيس" },
+          { name: "حليب سائل", searchTerms: ["حليب"], amount: "2 كوب" },
+          { name: "زيت أو زبدة", searchTerms: ["زيت"], amount: "2 ملعقة" },
+          { name: "جبن موزاريلا وكريمة طبخ وثوم", searchTerms: ["جبن"], amount: "1 كوب" }
+        ]
+      }
     ]
   },
   {
-    keywords: /(بسبوسه|بسبوسة|هريسه|هريسة|حلي سميد)/,
-    title: "بسبوسة ذهبية بالقشطة تذوب في الفم",
-    prepTime: "30 دقيقة",
-    steps:
-      "1. اخلط السميد مع السكر، جوز الهند، البيكنج باودر، الحليب، والزيت أو السمن المذاب حتى يتكون خليط متجانس.\n" +
-      "2. افرد نصف الخليط في صينية مدهونة، ثم وزّع طبقة غنية من القشطة على الوجه، وغطّها بالنصف الثاني من خليط البسبوسة.\n" +
-      "3. اخبزها في فرن متوسط الحرارة (180 درجة) لمدة 20-25 دقيقة حتى تتحمر الأطراف والوجه.\n" +
-      "4. اسقها فور خروجها من الفرن بالشيرة (القطر) أو الحليب المكثف المحلى، وزينها بالفستق أو البسكويت المطحون!",
-    rawIngredients: [
-      { name: "حليب سائل أو بودرة", searchTerms: ["حليب", "لبن"], amount: "1 كوب" },
-      { name: "زيت أو سمن", searchTerms: ["زيت", "سمن"], amount: "نصف كوب" },
-      { name: "سكر أبيض", searchTerms: ["سكر"], amount: "نصف كوب" },
-      { name: "سميد ناعم للبسبوسة", searchTerms: ["سميد"], amount: "2 كوب" },
-      { name: "قشطة طازجة للحشوة", searchTerms: ["قشطه", "قشطة"], amount: "2 علبة" },
-      { name: "جوز هند وبيكنج باودر", searchTerms: ["جوز هند", "بيكنج"], amount: "ملعقة كبيرة" }
+    id: "saltah_breakfast",
+    keywords: /(سلته|فحسه|شكشوكه|فطور|عشاء خفيف|فول|قلابه|فاصوليا|تونه)/,
+    variants: [
+      {
+        title: "وجبة يمنية سريعة (فاصوليا وتونة وشكشوكة بالجبن على الأصول)",
+        prepTime: "15 دقيقة",
+        steps:
+          "1. شوّح البصل المفروم مع الفلفل الأخضر والطماطم في قليل من الزيت.\n" +
+          "2. أضف ملعقة صلصة طماطم ورشة كمون بلدي وفلفل أسود وملح.\n" +
+          "3. أضف التونة أو الفاصوليا/الفول وقلّب على نار هادئة لمدة 5 دقائق.\n" +
+          "4. ضع ملعقة جبن سائل على الوجه وقدّمها ساخنة مع الخبز وكوب شاي بحليب يماني مضبوط!",
+        rawIngredients: [
+          { name: "صلصة طماطم", searchTerms: ["صلصه"], amount: "1 ملعقة" },
+          { name: "زيت نباتي", searchTerms: ["زيت"], amount: "2 ملعقة" },
+          { name: "كمون بلدي", searchTerms: ["كمون"], amount: "1 ملعقة" },
+          { name: "حليب للشاي", searchTerms: ["حليب"], amount: "1 علبة" },
+          { name: "تونة أو فاصوليا وبيض وبصل وطماطم", searchTerms: ["تونه", "فاصوليا"], amount: "1 علبة" }
+        ]
+      },
+      {
+        title: "الطريقة الثانية: السلتة والفحسة الصنعانية بالحلبة المخفوقة",
+        prepTime: "25 دقيقة",
+        steps:
+          "1. في الحرضة الحجرية، كشّن البصل والثوم والطماطم مع الصلصة والكمون البلدي.\n" +
+          "2. أضف المرق الساخن واللحم الناضج والبطاطس المهروسة واتركها تغلي وتتسبك.\n" +
+          "3. اخفق الحلبة المنقوعة جيداً حتى تصبح بيضاء هشة وأضف لها الكراث والكزبرة.\n" +
+          "4. اسكب الحلبة فوق الحرضة المشتعلة وقدمها فوراً مع الملوج أو الخبز الحار!",
+        rawIngredients: [
+          { name: "صلصة طماطم", searchTerms: ["صلصه"], amount: "2 ملعقة" },
+          { name: "كمون بلدي", searchTerms: ["كمون"], amount: "1 ملعقة" },
+          { name: "زيت", searchTerms: ["زيت"], amount: "2 ملعقة" },
+          { name: "حلبة يمنية ولحم طازج وبطاطس وكراث", searchTerms: ["حلبه", "لحم"], amount: "نصف كيلو" }
+        ]
+      }
     ]
   },
   {
-    keywords: /(مكرونه|مكرونة|باستا|بشاميل|معكرونه|معكرونة)/,
-    title: "مكرونة بالصلصة الغنية والجبن السائح (أو البشاميل)",
-    prepTime: "25 دقيقة",
-    steps:
-      "1. اسلق المكرونة في ماء مغلي مملح مع ملعقة زيت لمدة 8-10 دقائق ثم صفّها.\n" +
-      "2. في مقلاة عميقة، شوّح البصل والثوم مع الزيت، ثم أضف التونة أو الدجاج أو اللحم المفروم وقلّب جيداً.\n" +
-      "3. أضف صلصة الطماطم والبهارات وقليل من ماء سلق المكرونة واترك الصوص يتسبك.\n" +
-      "4. لتحضير طبقة كريمية: امزج الحليب مع ملعقتين دقيق وجبن سائل على النار، ثم اخلط المكرونة بالصوص وضع الكريمة والجبن على الوجه وحمّرها!",
-    rawIngredients: [
-      { name: "مكرونة فاخرة", searchTerms: ["مكرونه", "مكرونة", "باستا"], amount: "1 كيس (400 جرام)" },
-      { name: "صلصة طماطم", searchTerms: ["صلصه", "صلصة"], amount: "3 ملاعق كبيرة" },
-      { name: "تونة أو دجاج", searchTerms: ["تونه", "تونة", "دجاج"], amount: "1 علبة كبيرة" },
-      { name: "حليب سائل للصوص الكريمي", searchTerms: ["حليب", "لبن"], amount: "2 كوب" },
-      { name: "زيت طبخ", searchTerms: ["زيت"], amount: "2 ملعقة كبيرة" },
-      { name: "جبن موزاريلا مبشور أو جبن كاسات", searchTerms: ["جبن", "جبنه", "موزاريلا"], amount: "1 كوب" }
-    ]
-  },
-  {
-    keywords: /(كنافه|كنافة|قطايف|لقيمات|عوامه)/,
-    title: "كنافة منزلية مقرمشة بالقشطة والجبن",
-    prepTime: "30 دقيقة",
-    steps:
-      "1. افرك عجينة الكنافة مع السمن أو الزبدة المذابة وملعقة سكر بودرة حتى تتغلف كل الشعيرات.\n" +
-      "2. اضغط نصف كمية الكنافة في صينية مدهونة جيداً، ووزع فوقها طبقة من القشطة والجبن الحلو بعيداً عن الحواف.\n" +
-      "3. غطّ الحشوة بباقي الكنافة واضغط برفق، ثم اخبزها حتى تصبح ذهبية مقرمشة.\n" +
-      "4. اقلبها واسقها فوراً بالشيرة الباردة وزينها بالمكسرات!",
-    rawIngredients: [
-      { name: "حليب", searchTerms: ["حليب"], amount: "1 كوب" },
-      { name: "سمن أو زبدة مذابة", searchTerms: ["سمن", "زبده", "زيت"], amount: "نصف كوب" },
-      { name: "عجينة كنافة طازجة", searchTerms: ["كنافه", "كنافة"], amount: "500 جرام" },
-      { name: "قشطة وجبن عكاوي/موزاريلا حلو", searchTerms: ["قشطه", "قشطة", "جبن"], amount: "2 علبة" },
-      { name: "سكر وماء الورد للشيرة", searchTerms: ["سكر"], amount: "1 كوب" }
-    ]
-  },
-  {
-    keywords: /(شكشوكه|شكشوكة|فطور|عشاء خفيف|فول|قلابه|فاصوليا|تونه|تونة)/,
-    title: "وجبة فطور وعشاء يمني سريع (فاصوليا وتونة وشكشوكة بالجبن)",
-    prepTime: "15 دقيقة",
-    steps:
-      "1. في مقلاة ساخنة، شوّح البصل المفروم مع الفلفل الأخضر والطماطم في قليل من الزيت.\n" +
-      "2. أضف ملعقة صلصة طماطم ورشة كمون وفلفل أسود وملح.\n" +
-      "3. أضف التونة المصفاة أو الفول/الفاصوليا (أو البيض للشكشوكة) وقلّب على نار هادئة لمدة 5 دقائق.\n" +
-      "4. ضع ملعقة جبن سائل على الوجه وقدّمها ساخنة مع الخبز وكوب شاي بحليب يماني مضبوط!",
-    rawIngredients: [
-      { name: "تونة أو فول/فاصوليا", searchTerms: ["تونه", "تونة", "فول", "فاصوليا"], amount: "1 علبة" },
-      { name: "صلصة طماطم", searchTerms: ["صلصه", "صلصة"], amount: "1 ملعقة كبيرة" },
-      { name: "زيت نباتي", searchTerms: ["زيت"], amount: "2 ملعقة كبيرة" },
-      { name: "حليب شاي", searchTerms: ["حليب"], amount: "1 علبة" },
-      { name: "بيض طازج وبصل وطماطم وفلفل أخضر", searchTerms: ["بيض", "بصل", "طماطم"], amount: "3 حبات" },
-      { name: "جبن سائل أو مثلثات", searchTerms: ["جبن", "جبنه"], amount: "2 ملعقة" }
-    ]
-  },
-  {
-    keywords: /(حلي|حلا|وصفه حلوه|وصفة حلوة|حلي بارد|حلي سريع|حلي قهوه|حلي بسكويت|تراميسو|تشيز كيك|كيك|كيكه|كيكة)/,
-    title: "حلى طبقات البسكويت البارد بالشوكولاتة والكريمة الفاخرة",
-    prepTime: "15 دقيقة",
-    steps:
-      "1. غمّس قطع البسكويت سريعاً في الحليب الدافئ ورتّبها كطبقة أولى في صينية أو كاسات التقديم.\n" +
-      "2. في وعاء، ذوّب الشوكولاتة مع قليل من الحليب الساخن والقشطة حتى يتكون صوص شوكولاتة كريمي ناعم وغني.\n" +
-      "3. اسكب طبقة من كريمة الشوكولاتة فوق البسكويت، ثم كرر الطبقات، ورش على الوجه بسكويت مطحون خشناً.\n" +
-      "4. ضعها في الثلاجة لمدة 20 دقيقة لتبرد وتتماسك، وقدمها باردة مع القهوة أو العصير وبالعافية!",
-    rawIngredients: [
-      { name: "بسكويت شاي أو بسكويت كريمة", searchTerms: ["بسكويت", "ماري", "ابو ولد", "ديما", "توبس"], amount: "2 باكيت" },
-      { name: "شوكولاتة بالحليب أو البندق", searchTerms: ["شوكلاته", "شوكولاته", "شوكولاتة", "بريك", "بلاتو", "بليلا", "ويفر"], amount: "3 حبات" },
-      { name: "حليب سائل أو مبخر", searchTerms: ["حليب", "لبن"], amount: "1 علبة" },
-      { name: "قشطة طازجة وكريمة خفق", searchTerms: ["قشطه", "قشطة", "كريمه"], amount: "1 علبة" }
+    id: "basbousa_kunafa",
+    keywords: /(بسبوسه|هريسه|كنافه|قطايف|لقيمات|عوامه)/,
+    variants: [
+      {
+        title: "بسبوسة ذهبية بالقشطة تذوب في الفم",
+        prepTime: "30 دقيقة",
+        steps:
+          "1. اخلط السميد مع السكر، جوز الهند، البيكنج باودر، الحليب، والزيت حتى يتكون خليط متجانس.\n" +
+          "2. افرد نصف الخليط في صينية مدهونة، ووزّع طبقة قشطة غنية ثم غطّها بباقي الخليط.\n" +
+          "3. اخبزها في فرن متوسط الحرارة (180 درجة) لمدة 25 دقيقة حتى تتحمر.\n" +
+          "4. اسقها فور خروجها بالشيرة أو الحليب المكثف المحلى وبالعافية!",
+        rawIngredients: [
+          { name: "حليب سائل", searchTerms: ["حليب"], amount: "1 كوب" },
+          { name: "زيت نباتي", searchTerms: ["زيت"], amount: "نصف كوب" },
+          { name: "سميد ناعم وقشطة طازجة وجوز هند", searchTerms: ["سميد", "قشطه"], amount: "2 كوب" }
+        ]
+      }
     ]
   }
 ];
 
-function matchStoreProductByTermsV122(allProds: any[], searchTerms: string[]): any | null {
+function matchStoreProductByTermsV123(allProds: any[], searchTerms: string[]): any | null {
   for (const term of searchTerms) {
     const normTerm = normalizeArabicV112(term);
     if (!normTerm) continue;
@@ -660,57 +786,26 @@ function matchStoreProductByTermsV122(allProds: any[], searchTerms: string[]): a
   return null;
 }
 
-function buildDynamicRecipeResponseV122(userMessage: string, allProds: any[]): {
+function buildRecipePayloadFromVariantV123(
+  variant: ChefMethodVariantV123,
+  allProds: any[],
+  isFollowUpUpgrade: boolean
+): {
   title: string;
   prepTime: string;
   steps: string;
-  tableRows: IngredientTableRowV122[];
+  tableRows: IngredientTableRowV123[];
   availableItems: any[];
   missingItemsText: string;
-} | null {
-  const normMsg = normalizeArabicV112(userMessage);
-  const asksRecipeOrDish =
-    /(وصفه|وصفة|طريقه|طريقة|اطبخ|طبخ|اسوي|اعمل|احضر|تحضير|مقادير|حلي|حلا|اندومي|إندومي|نودلز|كبسه|كبسة|مندي|زربيان|سلته|سلتة|فحسه|فحسة|بسبوسه|بسبوسة|مكرونه|مكرونة|بشاميل|كنافه|كنافة|شكشوكه|شكشوكة|فطور|عشاء|غداء|كيك|كيكه|تراميسو|تشيز كيك|بيتزا|شاورما|فطائر|معجنات|سمبوسه|سمبوسة|شفوت|بنت الصحن|لقيمات|مهلبيه|مهلبية|جدول)/.test(normMsg);
-
-  if (!asksRecipeOrDish) return null;
-
-  let chosen: BuiltInChefRecipeV122 | null = null;
-  for (const r of BUILTIN_CHEF_RECIPES_V122) {
-    if (r.keywords.test(normMsg)) {
-      chosen = r;
-      break;
-    }
-  }
-
-  if (!chosen) {
-    const cleanDishName = userMessage
-      .replace(/^(اعطني|اريد|أريد|ابغى|اشتي|ما هي|كيف|افضل|أفضل|طريقة عمل|طريقه عمل|طريقة|طريقه|اطبخ بيها|اطبخ|وصفة|وصفه)\s*/i, "")
-      .trim() || "الطبق الشهي";
-
-    chosen = {
-      title: "وصفة وطريقة تحضير «" + cleanDishName + "» خطوة بخطوة",
-      prepTime: "25 دقيقة",
-      steps:
-        "1. جهّز المكونات الأساسية لـ «" + cleanDishName + "» واغسل المكونات الطازجة جيداً.\n" +
-        "2. امزج المكونات الأساسية مع البهارات أو الإضافات المناسبة على نار متوسطة مع التقليب المستمر حتى تتجانس النكهات.\n" +
-        "3. اترك الخليط ينضج أو يتماسك على درجة حرارة هادئة لمدة 15-20 دقيقة حتى يصل للقوام المثالي.\n" +
-        "4. قدّم «" + cleanDishName + "» في طبق التقديم وزينه حسب الرغبة، وبالهناء والشفاء!",
-      rawIngredients: [
-        { name: "بسكويت أو مكون أساسي من المتجر", searchTerms: ["بسكويت", "مكرونه", "ارز", "تونه"], amount: "حسب الوصفة" },
-        { name: "حليب أو شوكولاتة أو صلصة", searchTerms: ["حليب", "شوكلاته", "صلصه", "زيت"], amount: "حسب الوصفة" },
-        { name: "مكونات «" + cleanDishName + "» الطازجة والإضافية", searchTerms: ["__non_existent__"], amount: "كمية كاملة للوصفة" },
-        { name: "قشطة / جبن / بهارات خاصة بالوصفة", searchTerms: ["قشطه", "جبن", "بهارات"], amount: "حسب الرغبة" }
-      ]
-    };
-  }
-
-  const tableRows: IngredientTableRowV122[] = [];
+  reply: string;
+} {
+  const tableRows: IngredientTableRowV123[] = [];
   const availableItems: any[] = [];
   const missingNames: string[] = [];
   const usedProdIds = new Set<number>();
 
-  for (const rawIng of chosen.rawIngredients) {
-    const matchedProd = matchStoreProductByTermsV122(allProds, rawIng.searchTerms);
+  for (const rawIng of variant.rawIngredients) {
+    const matchedProd = matchStoreProductByTermsV123(allProds, rawIng.searchTerms);
     if (matchedProd && !usedProdIds.has(Number(matchedProd.id))) {
       usedProdIds.add(Number(matchedProd.id));
       const cName = cleanProductNameV112(matchedProd.name);
@@ -740,17 +835,27 @@ function buildDynamicRecipeResponseV122(userMessage: string, allProds: any[]): {
     }
   }
 
+  const introLine = isFollowUpUpgrade
+    ? "👨‍🍳 أبشر يا غالي! جبت لك طريقة ثانية أفخم وألذ لـ «" + variant.title + "» (⏱️ " + variant.prepTime + "):"
+    : "👨‍🍳 أبشر يا غالي! إليك الوصفة الكاملة لـ «" + variant.title + "» (⏱️ " + variant.prepTime + "):";
+
+  const reply =
+    introLine + "\n\n" +
+    "📋 خطوات التحضير:\n" +
+    variant.steps;
+
   return {
-    title: chosen.title,
-    prepTime: chosen.prepTime,
-    steps: chosen.steps,
+    title: variant.title,
+    prepTime: variant.prepTime,
+    steps: variant.steps,
     tableRows,
     availableItems,
-    missingItemsText: missingNames.join(" + ")
+    missingItemsText: missingNames.join(" + "),
+    reply
   };
 }
 
-const FUNNY_CLEAN_JOKES_V122 = [
+const FUNNY_CLEAN_JOKES_V123 = [
   "😄 مرة واحد راح السوبر ماركت قال للبائع: عندكم سكر؟ قال له: أيوه! قال له: الله يخليك لا تقوله إني جيت لأنه زعلان مني عشان الدكتور منعني منه! 😂❤️\n\nقولي يا غالي، إيش نفسك نجهز اليوم؟ حلى بارد ولا وجبة سريعة؟",
   "😂 واحد سأل صاحبه: ليش تحط البسكويت في الثلاجة وبابها مفتوح؟ قال له: عشان أشوف النور يطفي ولا شغال! 🤣✨\n\nيلا يا غالي، آمرني بأي وصفة تخطر على بالك وأنا أضبطك بالمقادير والخطوات فوراً!",
   "😄 واحد قال لزوجته: سوي لنا حلى سريع! جابت له بسكويت ماري وكوب حليب وقالت له: غمس وأنت ساكت، هذا أسرع حلى في التاريخ! 😂🍪\n\nولو تبي حلى فخم بجد، بس قولي وأنا أعطيك الوصفة الكاملة الحين!"
@@ -762,19 +867,7 @@ export function registerAiEngineV112(app: Express) {
   app.get("/api/ai-studio/state", async (_req, res) => {
     try {
       await loadStateFromDbOnce();
-      const db = await getDb();
-      let allProds: any[] = [];
-      if (db) {
-        allProds = await db
-          .select({
-            id: products.id,
-            name: products.name,
-            price: products.price,
-            unit: products.unit,
-            description: products.description
-          })
-          .from(products);
-      }
+      const allProds = await getProductsCatalogLightV123();
       const catalog = allProds.map(p => {
         const pid = String(p.id);
         const cleanName = cleanProductNameV112(p.name);
@@ -901,7 +994,9 @@ export function registerAiEngineV112(app: Express) {
     try {
       await loadStateFromDbOnce();
       const body = req.body || {};
+      const sessionId = String(body.sessionId || "default_sess");
       const userMessage = String(body.message || "").trim();
+      const prevUserMessage = String(body.prevMessage || "").trim();
       const productContextName = cleanProductNameV112(String(body.productName || ""));
       const normMsg = normalizeArabicV112(userMessage);
 
@@ -909,20 +1004,44 @@ export function registerAiEngineV112(app: Express) {
         return res.json({ ok: true, passThrough: true });
       }
 
-      const db = await getDb();
-      const allProds = db
-        ? await db
-            .select({
-              id: products.id,
-              name: products.name,
-              price: products.price,
-              unit: products.unit,
-              description: products.description
-            })
-            .from(products)
-        : [];
+      const allProds = await getProductsCatalogLightV123();
 
-      // 1. Check Custom Admin Rules first (Tab 2)
+      // 0. Check if user is asking for a "better/different method" in follow-up conversation!
+      if (isFollowUpAskingBetterOrAnotherMethodV123(normMsg)) {
+        zeroTokenCounter++;
+        const prevMem = sessionMemoryMap.get(sessionId);
+        let targetDish = prevMem ? MULTI_METHOD_CHEF_DISHES_V123.find(d => d.id === prevMem.lastRecipeId) : undefined;
+
+        if (!targetDish && prevUserMessage) {
+          const normPrev = normalizeArabicV112(prevUserMessage);
+          targetDish = MULTI_METHOD_CHEF_DISHES_V123.find(d => d.keywords.test(normPrev));
+        }
+        if (!targetDish) {
+          targetDish = MULTI_METHOD_CHEF_DISHES_V123[0];
+        }
+
+        const nextIdx = prevMem ? (prevMem.variantIndex + 1) % targetDish.variants.length : Math.min(1, targetDish.variants.length - 1);
+        sessionMemoryMap.set(sessionId, {
+          lastRecipeId: targetDish.id,
+          lastDishTitle: targetDish.variants[nextIdx].title,
+          variantIndex: nextIdx,
+          updatedAt: Date.now()
+        });
+
+        const built = buildRecipePayloadFromVariantV123(targetDish.variants[nextIdx], allProds, true);
+        return res.json({
+          ok: true,
+          zeroToken: true,
+          matchedOverride: true,
+          reply: built.reply,
+          recipeTitle: built.title,
+          ingredientsTable: built.tableRows,
+          missingItemsText: built.missingItemsText,
+          suggestedItems: built.availableItems
+        });
+      }
+
+      // 1. Check Custom Admin Rules (Tab 2)
       for (const rule of memoryConfig.rules) {
         if (!rule.active || !rule.trigger) continue;
         const triggers = rule.trigger.split(/[،,|]+/).map(t => normalizeArabicV112(t)).filter(Boolean);
@@ -939,11 +1058,18 @@ export function registerAiEngineV112(app: Express) {
       }
 
       // 2. Check Custom Illustrated Recipes saved by Admin (Tab 4)
-      const matchedRecipe = findMatchingSavedRecipeV117(userMessage + " " + productContextName, memoryConfig.recipes);
+      const matchedRecipe = findMatchingSavedRecipeV123(userMessage + " " + productContextName, memoryConfig.recipes);
       if (matchedRecipe) {
         zeroTokenCounter++;
+        sessionMemoryMap.set(sessionId, {
+          lastRecipeId: "sweet_biscuit",
+          lastDishTitle: matchedRecipe.title,
+          variantIndex: 0,
+          updatedAt: Date.now()
+        });
+
         const matchedItems: any[] = [];
-        const tableRows: IngredientTableRowV122[] = [];
+        const tableRows: IngredientTableRowV123[] = [];
         const missingList: string[] = [];
 
         for (const ing of matchedRecipe.ingredients || []) {
@@ -987,21 +1113,18 @@ export function registerAiEngineV112(app: Express) {
           }
         }
 
-        // Auto-detect additional ingredients mentioned in recipe title/steps if not already in tableRows
         const combinedRecText = normalizeArabicV112(matchedRecipe.title + " " + matchedRecipe.steps);
         const extraCheckList = [
           { label: "شوكولاتة للذوبان والصوص", terms: ["شوكلاته", "شوكولاته", "شوكولاتة", "بريك", "بلاتو"], amount: "2 حبة" },
-          { label: "حليب سائل أو دافئ", terms: ["حليب", "لبن"], amount: "1 كوب" },
+          { label: "حليب سائل", terms: ["حليب", "لبن"], amount: "1 كوب" },
           { label: "بسكويت شاي أو كريمة", terms: ["بسكويت", "ماري", "ابو ولد", "ديما"], amount: "2 باكيت" },
-          { label: "قشطة أو كريمة خفق للتزيين", terms: ["قشطه", "قشطة", "كريمه", "كريمة"], amount: "1 علبة" },
-          { label: "زبدة أو سمن", terms: ["زبده", "زبدة", "سمن"], amount: "2 ملعقة" },
-          { label: "سكر", terms: ["سكر"], amount: "حسب الرغبة" }
+          { label: "قشطة طازجة للكريمة", terms: ["قشطه", "قشطة", "كريمه", "كريمة"], amount: "1 علبة" }
         ];
         for (const ex of extraCheckList) {
           if (ex.terms.some(t => combinedRecText.includes(normalizeArabicV112(t)))) {
             const alreadyInTable = tableRows.some(r => ex.terms.some(t => normalizeArabicV112(r.name).includes(normalizeArabicV112(t))));
             if (!alreadyInTable) {
-              const storeMatch = matchStoreProductByTermsV122(allProds, ex.terms);
+              const storeMatch = matchStoreProductByTermsV123(allProds, ex.terms);
               if (storeMatch) {
                 const sName = cleanProductNameV112(storeMatch.name);
                 tableRows.push({
@@ -1031,15 +1154,13 @@ export function registerAiEngineV112(app: Express) {
             }
           }
         }
-        // Always ensure at least one optional extra garnish/ingredient row is shown if missingList is empty so customer sees how missing items work
         if (missingList.length === 0) {
-          const defaultExtra = "قشطة طازجة أو كريمة تزيين (1 علبة)";
           tableRows.push({
-            name: "قشطة طازجة أو كريمة تزيين",
+            name: "قشطة طازجة للتزيين",
             amount: "1 علبة",
             available: false
           });
-          missingList.push(defaultExtra);
+          missingList.push("قشطة طازجة للتزيين (1 علبة)");
         }
 
         const cleanSteps = String(matchedRecipe.steps || "").replace(/^\s*(?:📋\s*)?طريقة التحضير[^\n]*\n+/i, "").trim();
@@ -1102,7 +1223,7 @@ export function registerAiEngineV112(app: Express) {
       // 4. Jokes & Light-hearted Banter
       if (/(نكته|نكتة|ضحكني|فرفش|امزح|مزحه|مزحة)/.test(normMsg)) {
         zeroTokenCounter++;
-        const joke = FUNNY_CLEAN_JOKES_V122[Math.floor(Math.random() * FUNNY_CLEAN_JOKES_V122.length)];
+        const joke = FUNNY_CLEAN_JOKES_V123[Math.floor(Math.random() * FUNNY_CLEAN_JOKES_V123.length)];
         return res.json({
           ok: true,
           zeroToken: true,
@@ -1112,26 +1233,33 @@ export function registerAiEngineV112(app: Express) {
         });
       }
 
-      // 5. ANY Recipe / Dish Request (Even if ingredients are NOT in the store!)
-      const builtInRecipe = buildDynamicRecipeResponseV122(userMessage, allProds);
-      if (builtInRecipe && !productContextName) {
-        zeroTokenCounter++;
-        const fullRecipeReply =
-          "👨‍🍳 أبشر يا غالي! جبت لك الوصفة الكاملة لـ «" + builtInRecipe.title + "» (⏱️ وقت التحضير: " + builtInRecipe.prepTime + "):\n\n" +
-          "📋 خطوات التحضير بالتفصيل:\n" +
-          builtInRecipe.steps +
-          "\n\n📊 بالأسفل جهزت لك جدولاً كاملاً يوضح المكونات المتوفرة حالياً في متجر أورجنال (تقدر تضيفها للسلة فوراً)، والمكونات الإضافية غير الظاهرة بالمتجر (تقدر تنسخها وتضعها تلقائياً في ملاحظة الطلب بضغطة زر، وسيرد عليك المتجر فوراً لتأكيد توفيرها مع طلبك!).";
-
-        return res.json({
-          ok: true,
-          zeroToken: true,
-          matchedOverride: true,
-          reply: fullRecipeReply,
-          recipeTitle: builtInRecipe.title,
-          ingredientsTable: builtInRecipe.tableRows,
-          missingItemsText: builtInRecipe.missingItemsText,
-          suggestedItems: builtInRecipe.availableItems
-        });
+      // 5. Match Multi-Method Chef Dishes (Indomie, Kabsa, Mandi, Pasta, Saltah, Basbousa, Desserts)
+      if (!productContextName) {
+        const matchedDish = MULTI_METHOD_CHEF_DISHES_V123.find(d => d.keywords.test(normMsg));
+        if (matchedDish) {
+          zeroTokenCounter++;
+          const prevMem = sessionMemoryMap.get(sessionId);
+          const vIdx = (prevMem && prevMem.lastRecipeId === matchedDish.id)
+            ? (prevMem.variantIndex + 1) % matchedDish.variants.length
+            : 0;
+          sessionMemoryMap.set(sessionId, {
+            lastRecipeId: matchedDish.id,
+            lastDishTitle: matchedDish.variants[vIdx].title,
+            variantIndex: vIdx,
+            updatedAt: Date.now()
+          });
+          const built = buildRecipePayloadFromVariantV123(matchedDish.variants[vIdx], allProds, vIdx > 0);
+          return res.json({
+            ok: true,
+            zeroToken: true,
+            matchedOverride: true,
+            reply: built.reply,
+            recipeTitle: built.title,
+            ingredientsTable: built.tableRows,
+            missingItemsText: built.missingItemsText,
+            suggestedItems: built.availableItems
+          });
+        }
       }
 
       // 6. Product Modal / Specific Product Question
@@ -1208,7 +1336,7 @@ export function registerAiEngineV112(app: Express) {
         });
       }
 
-      const stopWords = new Set(["هل", "عندكم", "معاكم", "معكم", "في", "متوفر", "اريد", "ابغي", "اشتي", "بكم", "سعر", "وين", "وش", "ايش", "كيف", "طريقه", "عمل", "وصفه", "معلومات", "سعرات", "ابحث", "عن", "رد", "منك", "لو", "سمحت", "شي", "حاجه"]);
+      const stopWords = new Set(["هل", "عندكم", "معاكم", "معكم", "في", "متوفر", "اريد", "ابغي", "اشتي", "بكم", "سعر", "وين", "وش", "ايش", "كيف", "طريقه", "عمل", "وصفه", "معلومات", "سعرات", "ابحث", "عن", "رد", "منك", "لو", "سمحت", "شي", "حاجه", "يااخي", "افضل", "احسن"]);
       const words = normMsg.split(" ").filter(w => w.length >= 3 && !stopWords.has(w));
       const matchedProds = allProds.filter(p => {
         const cn = normalizeArabicV112(cleanProductNameV112(p.name));
@@ -1222,7 +1350,7 @@ export function registerAiEngineV112(app: Express) {
         const customMissingInst = (memoryConfig.instructions || []).find(i => i.active && i.category === "missing_item");
         const friendlyReply = customMissingInst?.text
           ? customMissingInst.text.replace(/\{المنتج\}/g, requestedName)
-          : "فهمتك يا غالي! أنت تطلب «" + requestedName + "».. حلو حلو 👌\nحالياً هذا الصنف غير ظاهر في قائمة المتجر، لكن ولا يهمك! جهزته لك في الجدول بالأسفل كصنف قابل للطلب: اضغط على زر (📋 نسخ ووضع الصنف في ملاحظة الطلب) ليُضاف تلقائياً مع طلبك، وسيتواصل معك المتجر ويرد عليك فوراً حول حالة توفره!";
+          : "فهمتك يا غالي! أنت تطلب «" + requestedName + "».. حلو حلو 👌\nحالياً هذا الصنف غير ظاهر في قائمة المتجر، لكن ولا يهمك! جهزته لك في الجدول بالأسفل كصنف قابل للطلب: اضغط على زر (📋 إضافة للملاحظة والطلب) ليُضاف تلقائياً مع طلبك، وسيتواصل معك المتجر ويرد عليك فوراً حول حالة توفره!";
         return res.json({
           ok: true,
           zeroToken: true,

@@ -229,29 +229,31 @@
         
 
         
-        window.__v122SmartDataByQuery = window.__v122SmartDataByQuery || {};
-        window.__v122LastBubbleCount = 0;
+        
 
-        (function injectGeminiChatStylesV122() {
-          var oldSt = document.getElementById("v121-gemini-chat-styles") || document.getElementById("v122-gemini-chat-styles");
+        
+        window.__v123SmartDataByQuery = window.__v123SmartDataByQuery || {};
+        window.__v123LastBubbleCount = 0;
+        window.__v123PreviousUserMsg = "";
+
+        (function injectGeminiChatStylesV123() {
+          var oldSt = document.getElementById("v121-gemini-chat-styles") || document.getElementById("v122-gemini-chat-styles") || document.getElementById("v123-gemini-chat-styles");
           if (oldSt) oldSt.remove();
           var st = document.createElement("style");
-          st.id = "v122-gemini-chat-styles";
+          st.id = "v123-gemini-chat-styles";
           st.textContent =
-            /* User bubble: distinct compact colored pill like ChatGPT (247755.jpg) */
-            ".v122-gemini-user-bubble { background: #0d3825 !important; color: #ffffff !important; border: 1.5px solid #165b3c !important; border-radius: 22px 22px 4px 22px !important; padding: 10px 18px !important; box-shadow: 0 3px 10px rgba(13,56,37,0.16) !important; font-weight: 800 !important; font-size: 0.93rem !important; width: fit-content !important; max-width: 80% !important; display: inline-block !important; overflow-anchor: none !important; }" +
-            ".v122-gemini-user-bubble * { color: #ffffff !important; }" +
-            /* Bot message: full-width open layout without bubble like ChatGPT (247755.jpg) */
-            ".v122-gemini-bot-full { width: 100% !important; max-width: 100% !important; background: transparent !important; border: none !important; box-shadow: none !important; border-bottom: 1px solid #e2e8f0 !important; border-radius: 0 !important; padding: 14px 4px 18px 4px !important; margin: 6px 0 !important; overflow-anchor: none !important; }" +
-            ".v122-gemini-bot-row { width: 100% !important; max-width: 100% !important; display: block !important; overflow-anchor: none !important; }" +
-            ".v118-wa-photo-box, .v122-ingredients-panel { overflow-anchor: none !important; }";
+            ".v123-gemini-user-bubble { background: #0d3825 !important; color: #ffffff !important; border: 1.5px solid #165b3c !important; border-radius: 20px 20px 4px 20px !important; padding: 9px 16px !important; box-shadow: 0 3px 10px rgba(13,56,37,0.15) !important; font-weight: 800 !important; font-size: 0.92rem !important; width: fit-content !important; max-width: 80% !important; display: inline-block !important; overflow-anchor: none !important; }" +
+            ".v123-gemini-user-bubble * { color: #ffffff !important; }" +
+            ".v123-gemini-bot-full { width: 100% !important; max-width: 100% !important; background: transparent !important; border: none !important; box-shadow: none !important; border-bottom: 1px solid #e2e8f0 !important; border-radius: 0 !important; padding: 12px 2px 18px 2px !important; margin: 4px 0 !important; overflow-anchor: none !important; }" +
+            ".v123-gemini-bot-row { width: 100% !important; max-width: 100% !important; display: block !important; overflow-anchor: none !important; }" +
+            ".v118-wa-photo-box, .v123-ingredients-panel { overflow-anchor: none !important; }";
           document.head.appendChild(st);
         })();
 
-        function scrollToChatBottomSmoothV122() {
+        function scrollToChatBottomSmoothV123() {
           try {
             if (document.body.textContent.indexOf("مساعد وشيف أورجنال الذكي") === -1) return;
-            var allUserAndBot = Array.from(document.querySelectorAll(".v122-gemini-user-bubble, .v122-gemini-bot-full"));
+            var allUserAndBot = Array.from(document.querySelectorAll(".v123-gemini-user-bubble, .v123-gemini-bot-full"));
             if (allUserAndBot.length === 0) return;
             var lastEl = allUserAndBot[allUserAndBot.length - 1];
             var sc = lastEl.parentElement;
@@ -267,74 +269,84 @@
           } catch (e) {}
         }
 
-        function bindChatInputScrollLockV122() {
+        function bindChatInputScrollLockV123() {
           if (document.body.textContent.indexOf("مساعد وشيف أورجنال الذكي") === -1) return;
           var chatInputs = Array.from(document.querySelectorAll("input, textarea")).filter(function(inp) {
             var ph = inp.getAttribute("placeholder") || "";
             return ph.indexOf("اطلب سلة") !== -1 || ph.indexOf("وصفة") !== -1 || ph.indexOf("مقاضي") !== -1;
           });
           chatInputs.forEach(function(inp) {
-            if (inp.getAttribute("data-v122-scroll-bound") === "1") return;
-            inp.setAttribute("data-v122-scroll-bound", "1");
+            if (inp.getAttribute("data-v123-scroll-bound") === "1") return;
+            inp.setAttribute("data-v123-scroll-bound", "1");
             inp.addEventListener("keydown", function(ev) {
               if (ev.key === "Enter") {
-                setTimeout(scrollToChatBottomSmoothV122, 60);
-                setTimeout(scrollToChatBottomSmoothV122, 250);
-                setTimeout(scrollToChatBottomSmoothV122, 600);
+                setTimeout(scrollToChatBottomSmoothV123, 60);
+                setTimeout(scrollToChatBottomSmoothV123, 250);
               }
             });
             var sendBtn = inp.parentElement ? inp.parentElement.querySelector("button") : null;
-            if (sendBtn && sendBtn.getAttribute("data-v122-scroll-bound") !== "1") {
-              sendBtn.setAttribute("data-v122-scroll-bound", "1");
+            if (sendBtn && sendBtn.getAttribute("data-v123-scroll-bound") !== "1") {
+              sendBtn.setAttribute("data-v123-scroll-bound", "1");
               sendBtn.addEventListener("click", function() {
-                setTimeout(scrollToChatBottomSmoothV122, 60);
-                setTimeout(scrollToChatBottomSmoothV122, 250);
-                setTimeout(scrollToChatBottomSmoothV122, 600);
+                setTimeout(scrollToChatBottomSmoothV123, 60);
+                setTimeout(scrollToChatBottomSmoothV123, 250);
               });
             }
           });
         }
 
-        window.__copyAndAttachMissingToOrderNotesV122 = function(btnEl, missingText, recipeTitle) {
-          var fullNote = "📋 مكونات إضافية مطلوبة (" + (recipeTitle || "وصفة الشيف") + "): " + missingText + " — يرجى إفادتي بحالة توفرها وإضافتها مع طلبي.";
+        window.__copyAndAttachMissingToOrderNotesV123 = function(btnEl, missingText, recipeTitle) {
+          var cleanMissing = String(missingText || "").trim();
+          if (!cleanMissing) return;
+          var newEntry = "📋 مكونات إضافية مطلوبة (" + (recipeTitle || "وصفة الشيف") + "): " + cleanMissing + " — يرجى إفادتي بحالة توفرها مع طلبي.";
+          var existingNote = "";
           try {
-            localStorage.setItem("original_v122_order_note", fullNote);
+            existingNote = localStorage.getItem("original_v123_order_note") || "";
           } catch (e) {}
+          var combinedNote = existingNote && existingNote.indexOf(cleanMissing) === -1
+            ? (existingNote + "\n" + newEntry)
+            : (existingNote || newEntry);
+
+          try {
+            localStorage.setItem("original_v123_order_note", combinedNote);
+            localStorage.setItem("original_v122_order_note", combinedNote);
+          } catch (e) {}
+
           if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(fullNote).catch(function() {});
+            navigator.clipboard.writeText(combinedNote).catch(function() {});
           } else {
             try {
               var ta = document.createElement("textarea");
-              ta.value = fullNote;
+              ta.value = combinedNote;
               document.body.appendChild(ta);
               ta.select();
               document.execCommand("copy");
               ta.remove();
             } catch (e) {}
           }
-          syncOrderNotesFieldV122();
+          syncOrderNotesFieldV123();
           fetch("/api/ai-studio/request-item", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               sessionId: window.__v112SessionId,
-              requestedItem: missingText,
-              userMessage: fullNote
+              requestedItem: cleanMissing,
+              userMessage: newEntry
             })
           }).catch(function() {});
           if (btnEl) {
             btnEl.style.background = "#15803d";
             btnEl.style.color = "#ffffff";
-            btnEl.textContent = "✅ تم النسخ ووضع المكونات في ملاحظة الطلب! سيرد عليك المتجر بحالة توفرها";
+            btnEl.textContent = "✅ تم النسخ والإضافة لملاحظة الطلب! سيرد عليك المتجر بحالة توفرها";
           }
         };
 
-        function syncOrderNotesFieldV122() {
+        function syncOrderNotesFieldV123() {
           var savedNote = "";
           try {
-            savedNote = localStorage.getItem("original_v122_order_note") || localStorage.getItem("original_v121_order_note") || "";
+            savedNote = localStorage.getItem("original_v123_order_note") || localStorage.getItem("original_v122_order_note") || "";
           } catch (e) {}
-          if (!savedNote) return;
+          if (!savedNote || window.location.pathname.indexOf("/admin") !== -1) return;
 
           var noteFields = Array.from(document.querySelectorAll("textarea, input[type='text']")).filter(function(el) {
             var ph = (el.getAttribute("placeholder") || "") + " " + (el.getAttribute("name") || "") + " " + (el.getAttribute("aria-label") || "");
@@ -342,15 +354,15 @@
             return (
               ph.indexOf("ملاحظ") !== -1 ||
               ph.indexOf("توجيهات") !== -1 ||
+              ph.indexOf("إضافية") !== -1 ||
               ph.indexOf("note") !== -1 ||
-              (parentTxt.indexOf("ملاحظات") !== -1 && parentTxt.length < 120)
+              (parentTxt.indexOf("ملاحظ") !== -1 && parentTxt.length < 140)
             );
           });
 
           noteFields.forEach(function(field) {
-            if (window.location.pathname.indexOf("/admin") !== -1) return;
             var curVal = field.value || "";
-            if (curVal.indexOf(savedNote) === -1 && field.getAttribute("data-v122-note-filled") !== savedNote) {
+            if (curVal.indexOf(savedNote) === -1 && field.getAttribute("data-v123-note-filled") !== savedNote) {
               var nextVal = curVal.trim() ? (curVal.trim() + "\n" + savedNote) : savedNote;
               try {
                 var proto = field.tagName === "TEXTAREA" ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
@@ -362,7 +374,7 @@
                 }
                 field.dispatchEvent(new Event("input", { bubbles: true }));
                 field.dispatchEvent(new Event("change", { bubbles: true }));
-                field.setAttribute("data-v122-note-filled", savedNote);
+                field.setAttribute("data-v123-note-filled", savedNote);
               } catch (e) {
                 field.value = nextVal;
               }
@@ -436,8 +448,8 @@
 
         function isDarkGreenBgV119(el) {
           if (!el || el === document.body) return false;
-          if (el.getAttribute && el.getAttribute("data-v122-role") === "user") return true;
-          if (el.getAttribute && el.getAttribute("data-v121-role") === "user") return true;
+          if (el.closest && (el.closest(".v123-gemini-bot-full") || el.closest(".v123-gemini-ai-header") || el.closest(".v122-gemini-ai-header"))) return false;
+          if (el.getAttribute && (el.getAttribute("data-v123-role") === "user" || el.getAttribute("data-v122-role") === "user" || el.getAttribute("data-v121-role") === "user")) return true;
           try {
             var cs = window.getComputedStyle(el);
             var bg = cs.backgroundColor || "";
@@ -453,28 +465,30 @@
         }
 
         function isInsideDarkGreenUserBubbleV119(el) {
+          if (!el) return false;
+          if (el.closest && (el.closest(".v123-gemini-bot-full") || el.closest(".v123-gemini-ai-header"))) return false;
           var cur = el;
           for (var i = 0; i < 4 && cur && cur !== document.body; i++) {
-            if (cur.getAttribute && (cur.getAttribute("data-v122-role") === "user" || cur.getAttribute("data-v121-role") === "user")) return true;
+            if (cur.getAttribute && (cur.getAttribute("data-v123-role") === "user" || cur.getAttribute("data-v122-role") === "user")) return true;
             if (isDarkGreenBgV119(cur)) return true;
             cur = cur.parentElement;
           }
           return false;
         }
 
-        function buildIngredientsTableHtmlV122(tableRows, missingItemsText, recipeTitle) {
+        function buildIngredientsTableHtmlV123(tableRows, missingItemsText, recipeTitle) {
           if (!Array.isArray(tableRows) || tableRows.length === 0) return "";
           var rowsHtml = tableRows.map(function(row) {
             var priceCell = row.available ? ((row.price || 100) + " ر.ي") : "—";
             var statusCell = row.available
-              ? '<span style="color:#15803d;font-weight:800;white-space:nowrap;">متوفر ✅</span>'
-              : '<span style="color:#d97706;font-weight:800;white-space:nowrap;">يُطلب بالملاحظة 📌</span>';
+              ? '<span style="color:#15803d;font-weight:800;">✅ متوفر</span>'
+              : '<span style="color:#d97706;font-weight:800;">📌 بالملاحظة</span>';
             return (
               '<tr style="border-bottom:1px solid #e2e8f0;">' +
-              '<td style="padding:10px 6px;font-weight:800;color:#0f172a;font-size:0.86rem;">' + (row.name || "") + '</td>' +
-              '<td style="padding:10px 6px;color:#475569;font-size:0.84rem;font-weight:700;white-space:nowrap;">' + (row.amount || "1 حبة") + '</td>' +
-              '<td style="padding:10px 6px;color:#0f172a;font-size:0.84rem;font-weight:800;white-space:nowrap;">' + priceCell + '</td>' +
-              '<td style="padding:10px 6px;font-size:0.82rem;white-space:nowrap;">' + statusCell + '</td>' +
+              '<td style="padding:9px 4px;font-weight:800;color:#0f172a;font-size:0.85rem;width:44%;line-height:1.4;">' + (row.name || "") + '</td>' +
+              '<td style="padding:9px 4px;color:#475569;font-size:0.81rem;font-weight:700;width:20%;">' + (row.amount || "1 حبة") + '</td>' +
+              '<td style="padding:9px 4px;color:#0f172a;font-size:0.82rem;font-weight:800;width:16%;white-space:nowrap;">' + priceCell + '</td>' +
+              '<td style="padding:9px 4px;font-size:0.8rem;width:20%;white-space:nowrap;">' + statusCell + '</td>' +
               '</tr>'
             );
           }).join("");
@@ -485,73 +499,104 @@
           var missingActionHtml = "";
           if (missingItemsText) {
             missingActionHtml =
-              '<div style="margin-top:12px;padding:12px 14px;background:#f8fafc;border-right:3.5px solid #0d3825;border-radius:10px;">' +
-              '<div style="font-weight:900;color:#0d3825;font-size:0.85rem;margin-bottom:4px;">📦 مكونات إضافية غير ظاهرة بالمتجر (قابلة للطلب مع فاتورتك):</div>' +
-              '<div style="font-size:0.82rem;color:#334155;font-weight:700;margin-bottom:10px;">' + missingItemsText + '</div>' +
-              '<button type="button" class="v122-copy-notes-btn" data-missing="' + safeMissing + '" data-title="' + safeTitle + '" style="width:100%;padding:10px 14px;border-radius:10px;border:none;background:#0d3825;color:#d4af37;font-weight:900;font-size:0.84rem;cursor:pointer;">📋 نسخ المكونات غير المتوفرة ووضعها تلقائياً في ملاحظة الطلب</button>' +
-              '<div style="font-size:0.76rem;color:#64748b;margin-top:6px;line-height:1.5;font-weight:700;">💡 عند الضغط على الزر سيتم نسخ هذه المكونات ووضعها تلقائياً في خانة (ملاحظة الطلب) عند إرسال طلبك، وسيرد عليك المتجر فوراً حول حالة توفرها!</div>' +
+              '<div style="margin-top:12px;padding:12px;background:#f8fafc;border-right:3.5px solid #0d3825;border-radius:10px;">' +
+              '<div style="font-weight:900;color:#0d3825;font-size:0.84rem;margin-bottom:4px;">📦 مكونات إضافية غير ظاهرة بالمتجر (قابلة للطلب مع فاتورتك):</div>' +
+              '<div style="font-size:0.81rem;color:#334155;font-weight:700;margin-bottom:9px;line-height:1.5;">' + missingItemsText + '</div>' +
+              '<button type="button" class="v123-copy-notes-btn" data-missing="' + safeMissing + '" data-title="' + safeTitle + '" style="width:100%;padding:10px 12px;border-radius:10px;border:none;background:#0d3825;color:#d4af37;font-weight:900;font-size:0.83rem;cursor:pointer;">📋 نسخ المكونات غير المتوفرة ووضعها تلقائياً في ملاحظة الطلب</button>' +
+              '<div style="font-size:0.75rem;color:#64748b;margin-top:6px;line-height:1.45;font-weight:700;">💡 بضغطة زر تُنسخ المكونات وتُوضع تلقائياً في (ملاحظة الطلب) عند إرسال طلبك، وسيرد عليك المتجر فوراً حول حالة توفرها!</div>' +
               '</div>';
           }
 
-          /* Flat, borderless ChatGPT-style table (exactly like 247755.jpg) */
           return (
-            '<div style="margin:14px 0;direction:rtl;text-align:right;">' +
-            '<div style="font-weight:900;color:#0f172a;font-size:0.92rem;margin-bottom:6px;">📊 جدول مقادير الوصفة وحالة التوفر:</div>' +
-            '<div style="overflow-x:auto;">' +
-            '<table style="width:100%;border-collapse:collapse;text-align:right;direction:rtl;">' +
+            '<div style="margin:12px 0;direction:rtl;text-align:right;width:100%;">' +
+            '<div style="font-weight:900;color:#0f172a;font-size:0.9rem;margin-bottom:6px;">📊 جدول مقادير الوصفة وحالة التوفر:</div>' +
+            '<table style="width:100%;border-collapse:collapse;text-align:right;direction:rtl;table-layout:fixed;">' +
             '<thead><tr style="border-bottom:1.5px solid #94a3b8;">' +
-            '<th style="padding:8px 6px;font-size:0.82rem;color:#475569;font-weight:900;">المكون</th>' +
-            '<th style="padding:8px 6px;font-size:0.82rem;color:#475569;font-weight:900;white-space:nowrap;">المقدار</th>' +
-            '<th style="padding:8px 6px;font-size:0.82rem;color:#475569;font-weight:900;white-space:nowrap;">السعر</th>' +
-            '<th style="padding:8px 6px;font-size:0.82rem;color:#475569;font-weight:900;white-space:nowrap;">الحالة</th>' +
+            '<th style="padding:7px 4px;font-size:0.8rem;color:#475569;font-weight:900;width:44%;">المكون</th>' +
+            '<th style="padding:7px 4px;font-size:0.8rem;color:#475569;font-weight:900;width:20%;">المقدار</th>' +
+            '<th style="padding:7px 4px;font-size:0.8rem;color:#475569;font-weight:900;width:16%;">السعر</th>' +
+            '<th style="padding:7px 4px;font-size:0.8rem;color:#475569;font-weight:900;width:20%;">الحالة</th>' +
             '</tr></thead>' +
             '<tbody>' + rowsHtml + '</tbody>' +
             '</table>' +
-            '</div>' +
             missingActionHtml +
             '</div>'
           );
         }
 
+        function syncNativeGreenCartBoxV123(assistantCard, availItems) {
+          if (!assistantCard || !Array.isArray(availItems)) return;
+          var singleAddBtns = Array.from(assistantCard.querySelectorAll("button")).filter(function(b) {
+            return (b.textContent || "").indexOf("أضف بمفرده") !== -1;
+          });
+          if (singleAddBtns.length === 0) return;
+
+          var greenBox = singleAddBtns[0].parentElement ? singleAddBtns[0].parentElement.parentElement : null;
+          if (availItems.length === 0) {
+            if (greenBox && (greenBox.textContent || "").indexOf("الأصناف والمقادير") !== -1) {
+              greenBox.style.display = "none";
+            }
+            return;
+          }
+          if (greenBox) greenBox.style.display = "";
+
+          singleAddBtns.forEach(function(sBtn, sIdx) {
+            var itemRow = sBtn.parentElement;
+            if (!itemRow) return;
+            var targetIng = availItems[sIdx];
+            if (!targetIng) {
+              itemRow.style.display = "none";
+              return;
+            }
+            itemRow.style.display = "";
+            var tName = String(targetIng.name || "").replace(/\s*\([^()]*\)\s*$/g, "").trim();
+            var tPrice = Number(targetIng.price || 100);
+            var tUnit = String(targetIng.unit || "حبة");
+
+            var rowLeaves = Array.from(itemRow.querySelectorAll("span, strong, p, div")).filter(function(rl) {
+              return rl.children.length === 0 && rl.tagName !== "BUTTON" && !sBtn.contains(rl);
+            });
+            rowLeaves.forEach(function(rl) {
+              var rt = (rl.textContent || "").trim();
+              if (rt.indexOf("ر.ي") !== -1 && /\d/.test(rt)) {
+                setLeafTextSafe(rl, "1 × " + tPrice.toLocaleString("en-US") + " ر.ي (" + tUnit + ")");
+              } else if (rt.length >= 2 && rt.indexOf("أضف") === -1) {
+                setLeafTextSafe(rl, tName);
+              }
+            });
+          });
+
+          var totalSum = availItems.slice(0, singleAddBtns.length).reduce(function(acc, g) {
+            return acc + Number(g.price || 100);
+          }, 0);
+
+          var cardLeaves = Array.from(assistantCard.querySelectorAll("span, strong, p, div, button")).filter(function(x) {
+            return x.children.length === 0 && !(x.closest && x.closest(".v123-ingredients-panel"));
+          });
+          cardLeaves.forEach(function(cl) {
+            var ct = (cl.textContent || "").trim();
+            if (ct.indexOf("الإجمالي:") !== -1) {
+              setLeafTextSafe(cl, "الإجمالي: " + totalSum.toLocaleString("en-US") + " ر.ي");
+            } else if (ct.indexOf("اعتمد وإضافة") !== -1 || ct.indexOf("نعم، اعتمد") !== -1) {
+              setLeafTextSafe(cl, "✅ اعتمد وإضافة الكل للسلة (" + totalSum.toLocaleString("en-US") + " ر.ي)");
+            }
+          });
+        }
+
         function enhanceChatBubblesSafelyV117() {
-          syncOrderNotesFieldV122();
-          bindChatInputScrollLockV122();
+          syncOrderNotesFieldV123();
+          bindChatInputScrollLockV123();
           if (document.body.textContent.indexOf("مساعد وشيف أورجنال الذكي") === -1) return;
 
-          // 1. Clean up any accidental photo boxes inside user bubbles
           Array.from(document.querySelectorAll(".v117-recipe-photo-banner, .v118-wa-photo-box")).forEach(function(box) {
             if (box.classList.contains("v117-recipe-photo-banner") || isInsideDarkGreenUserBubbleV119(box)) {
               box.remove();
             }
           });
 
-          // 2. Find all USER message bubbles and style them with compact emerald ChatGPT pill!
-          var allUserBubbles = Array.from(document.querySelectorAll("div, p, span")).filter(function(el) {
-            if (!isDarkGreenBgV119(el)) return false;
-            if (el.tagName === "BUTTON" || el.querySelector("button, input, textarea")) return false;
-            var hasDarkGreenChild = Array.from(el.children).some(function(c) { return isDarkGreenBgV119(c); });
-            if (hasDarkGreenChild) return false;
-            var t = (el.textContent || "").trim();
-            if (t.indexOf("محادثة جديدة") !== -1 || t.indexOf("الأصناف والمقادير") !== -1) return false;
-            if (t.length < 1 || t.length > 220) return false;
-
-            el.setAttribute("data-v122-role", "user");
-            el.classList.remove("v121-gemini-user-bubble");
-            el.classList.add("v122-gemini-user-bubble");
-
-            if (t.indexOf("🍰") !== -1 && el.getAttribute("data-v119-orig-user")) {
-              setLeafTextSafe(el, el.getAttribute("data-v119-orig-user"));
-            } else if (t.indexOf("🍰") === -1 && !el.getAttribute("data-v119-orig-user")) {
-              el.setAttribute("data-v119-orig-user", t);
-            }
-            return true;
-          });
-
-          // 3. Find all AI Assistant reply paragraphs and style their container as full-width ChatGPT layout!
           var allLeaves = Array.from(document.querySelectorAll("p, div")).filter(function(el) {
             if (el.children.length !== 0) return false;
-            if (el.closest && (el.closest(".v118-wa-photo-box") || el.closest(".v122-ingredients-panel") || el.closest(".v121-ingredients-panel") || el.closest(".v122-gemini-ai-header") || el.closest("button"))) return false;
-            if (isInsideDarkGreenUserBubbleV119(el)) return false;
+            if (el.closest && (el.closest(".v118-wa-photo-box") || el.closest(".v123-ingredients-panel") || el.closest(".v122-ingredients-panel") || el.closest(".v121-ingredients-panel") || el.closest(".v123-gemini-ai-header") || el.closest(".v122-gemini-ai-header") || el.closest("button"))) return false;
 
             var parentCard = el.parentElement;
             if (!parentCard) return false;
@@ -585,52 +630,86 @@
             return t.length >= 10;
           });
 
+          allLeaves.forEach(function(rl) {
+            if (rl.parentElement) {
+              rl.parentElement.classList.add("v123-gemini-bot-full");
+            }
+          });
+
+          var allUserBubbles = Array.from(document.querySelectorAll("div, p, span")).filter(function(el) {
+            if (el.closest && (el.closest(".v123-gemini-bot-full") || el.closest(".v123-gemini-ai-header") || el.closest(".v122-gemini-ai-header"))) return false;
+            if (!isDarkGreenBgV119(el)) return false;
+            if (el.tagName === "BUTTON" || el.querySelector("button, input, textarea")) return false;
+            var hasDarkGreenChild = Array.from(el.children).some(function(c) { return isDarkGreenBgV119(c); });
+            if (hasDarkGreenChild) return false;
+            var t = (el.textContent || "").trim();
+            if (t === "✨" || t.indexOf("شيف ومساعد") !== -1 || t.indexOf("محادثة جديدة") !== -1 || t.indexOf("الأصناف والمقادير") !== -1) return false;
+            if (t.length < 1 || t.length > 220) return false;
+
+            el.setAttribute("data-v123-role", "user");
+            el.classList.remove("v121-gemini-user-bubble", "v122-gemini-user-bubble");
+            el.classList.add("v123-gemini-user-bubble");
+
+            if (t.indexOf("🍰") !== -1 && el.getAttribute("data-v119-orig-user")) {
+              setLeafTextSafe(el, el.getAttribute("data-v119-orig-user"));
+            } else if (t.indexOf("🍰") === -1 && !el.getAttribute("data-v119-orig-user")) {
+              el.setAttribute("data-v119-orig-user", t);
+            }
+            return true;
+          });
+
           allLeaves.forEach(function(replyLeaf) {
             var assistantCard = replyLeaf.parentElement;
             if (!assistantCard || isInsideDarkGreenUserBubbleV119(assistantCard)) return;
 
-            assistantCard.classList.add("v122-gemini-bot-full");
+            assistantCard.classList.add("v123-gemini-bot-full");
             if (assistantCard.parentElement && assistantCard.parentElement.textContent.indexOf("محادثة جديدة") === -1) {
-              assistantCard.parentElement.classList.add("v122-gemini-bot-row");
+              assistantCard.parentElement.classList.add("v123-gemini-bot-row");
             }
 
-            if (!assistantCard.querySelector(".v122-gemini-ai-header") && !assistantCard.querySelector(".v121-gemini-ai-header")) {
+            var oldHdr = assistantCard.querySelector(".v122-gemini-ai-header, .v121-gemini-ai-header");
+            if (oldHdr) oldHdr.remove();
+            if (!assistantCard.querySelector(".v123-gemini-ai-header")) {
               var aiHdr = document.createElement("div");
-              aiHdr.className = "v122-gemini-ai-header";
-              aiHdr.style.cssText = "display:flex;align-items:center;gap:6px;margin-bottom:8px;font-weight:900;font-size:0.82rem;color:#0d3825;";
-              aiHdr.innerHTML = "<span style='background:#0d3825;color:#d4af37;width:22px;height:22px;border-radius:99px;display:inline-flex;align-items:center;justify-content:center;font-size:0.72rem;'>✨</span><span>شيف ومساعد أورجنال الذكي</span>";
+              aiHdr.className = "v123-gemini-ai-header";
+              aiHdr.style.cssText = "display:flex;align-items:center;gap:6px;margin-bottom:8px;font-weight:900;font-size:0.83rem;color:#0d3825;";
+              aiHdr.innerHTML = "<span style='background:#fef3c7;color:#b45309;border:1px solid #f59e0b;width:22px;height:22px;border-radius:99px;display:inline-flex;align-items:center;justify-content:center;font-size:0.75rem;'>✨</span><span>شيف ومساعد أورجنال الذكي</span>";
               assistantCard.insertBefore(aiHdr, assistantCard.firstChild);
             }
 
             replyLeaf.style.whiteSpace = "pre-line";
             replyLeaf.style.lineHeight = "1.75";
-            replyLeaf.style.fontSize = "0.95rem";
+            replyLeaf.style.fontSize = "0.94rem";
             replyLeaf.style.color = "#0f172a";
 
             var precedingUsers = allUserBubbles.filter(function(ub) {
               return Boolean(ub.compareDocumentPosition(assistantCard) & Node.DOCUMENT_POSITION_FOLLOWING);
             });
             var lastUserBubble = precedingUsers.length > 0 ? precedingUsers[precedingUsers.length - 1] : null;
-            var userQueryTxt = "";
-            if (lastUserBubble) {
-              userQueryTxt = (lastUserBubble.getAttribute("data-v119-orig-user") || lastUserBubble.textContent || "").trim();
-            }
+            var prevUserBubble = precedingUsers.length > 1 ? precedingUsers[precedingUsers.length - 2] : null;
+
+            var userQueryTxt = lastUserBubble ? (lastUserBubble.getAttribute("data-v119-orig-user") || lastUserBubble.textContent || "").trim() : "";
+            var prevUserTxt = prevUserBubble ? (prevUserBubble.getAttribute("data-v119-orig-user") || prevUserBubble.textContent || "").trim() : "";
             if (!userQueryTxt) return;
 
-            var normQ = normalizeArabicClientV116(userQueryTxt);
-            var cachedSmart = window.__v122SmartDataByQuery[normQ];
+            var normQ = normalizeArabicClientV116(userQueryTxt + "|" + prevUserTxt);
+            var cachedSmart = window.__v123SmartDataByQuery[normQ] || window.__v123SmartDataByQuery[normalizeArabicClientV116(userQueryTxt)];
 
-            if (!cachedSmart && !assistantCard.getAttribute("data-v122-fetched")) {
-              assistantCard.setAttribute("data-v122-fetched", "1");
+            if (!cachedSmart && !assistantCard.getAttribute("data-v123-fetched")) {
+              assistantCard.setAttribute("data-v123-fetched", "1");
               origFetch("/api/ai-studio/smart-chat", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ message: userQueryTxt, sessionId: window.__v112SessionId })
+                body: JSON.stringify({
+                  message: userQueryTxt,
+                  prevMessage: prevUserTxt,
+                  sessionId: window.__v112SessionId
+                })
               })
                 .then(function(r) { return r.json(); })
                 .then(function(sd) {
                   if (sd && sd.ok && sd.matchedOverride) {
-                    window.__v122SmartDataByQuery[normQ] = sd;
+                    window.__v123SmartDataByQuery[normQ] = sd;
                     enhanceChatBubblesSafelyV117();
                   }
                 })
@@ -664,14 +743,13 @@
                 setLeafTextSafe(replyLeaf, cachedSmart.reply);
               }
 
-              // Remove old v121 boxed table if present and render flat ChatGPT-style v122 table
-              var oldV121Tbl = assistantCard.querySelector(".v121-ingredients-panel");
-              if (oldV121Tbl) oldV121Tbl.remove();
+              var oldTbls = assistantCard.querySelectorAll(".v121-ingredients-panel, .v122-ingredients-panel");
+              Array.from(oldTbls).forEach(function(ot) { ot.remove(); });
 
-              if (Array.isArray(cachedSmart.ingredientsTable) && cachedSmart.ingredientsTable.length > 0 && !assistantCard.querySelector(".v122-ingredients-panel")) {
+              if (Array.isArray(cachedSmart.ingredientsTable) && cachedSmart.ingredientsTable.length > 0 && !assistantCard.querySelector(".v123-ingredients-panel")) {
                 var tblPanel = document.createElement("div");
-                tblPanel.className = "v122-ingredients-panel";
-                tblPanel.innerHTML = buildIngredientsTableHtmlV122(
+                tblPanel.className = "v123-ingredients-panel";
+                tblPanel.innerHTML = buildIngredientsTableHtmlV123(
                   cachedSmart.ingredientsTable,
                   cachedSmart.missingItemsText || "",
                   cachedSmart.recipeTitle || userQueryTxt
@@ -681,10 +759,10 @@
                 } else {
                   replyLeaf.parentNode.appendChild(tblPanel);
                 }
-                var copyBtn = tblPanel.querySelector(".v122-copy-notes-btn");
+                var copyBtn = tblPanel.querySelector(".v123-copy-notes-btn");
                 if (copyBtn) {
                   copyBtn.onclick = function() {
-                    window.__copyAndAttachMissingToOrderNotesV122(
+                    window.__copyAndAttachMissingToOrderNotesV123(
                       copyBtn,
                       copyBtn.getAttribute("data-missing") || "",
                       copyBtn.getAttribute("data-title") || ""
@@ -692,6 +770,8 @@
                   };
                 }
               }
+
+              syncNativeGreenCartBoxV123(assistantCard, cachedSmart.suggestedItems || []);
             } else if (matchedRec) {
               assistantCard.setAttribute("data-v119-bubble", "1");
               replyLeaf.setAttribute("data-v119-reply", "1");
@@ -732,12 +812,12 @@
           });
 
           var currentTotalBubbles = allUserBubbles.length + allLeaves.length;
-          if (currentTotalBubbles > window.__v122LastBubbleCount) {
-            var prevCount = window.__v122LastBubbleCount;
-            window.__v122LastBubbleCount = currentTotalBubbles;
+          if (currentTotalBubbles > window.__v123LastBubbleCount) {
+            var prevCount = window.__v123LastBubbleCount;
+            window.__v123LastBubbleCount = currentTotalBubbles;
             if (prevCount > 0) {
-              setTimeout(scrollToChatBottomSmoothV122, 50);
-              setTimeout(scrollToChatBottomSmoothV122, 220);
+              setTimeout(scrollToChatBottomSmoothV123, 50);
+              setTimeout(scrollToChatBottomSmoothV123, 220);
             }
           }
         }
@@ -2644,8 +2724,8 @@
         }
 
         refreshStudioDataV114(true);
-        setInterval(function() { refreshStudioDataV114(false); }, 6000);
-        setInterval(pollCustomerNotificationsV112, 6500);
+        setInterval(function() { if (document.visibilityState === 'visible') refreshStudioDataV114(false); }, 25000);
+        setInterval(function() { if (document.visibilityState === 'visible') pollCustomerNotificationsV112(); }, 25000);
         setInterval(runAllSyncV117, 260);
         document.addEventListener("click", function() {
           setTimeout(runAllSyncV117, 40);
