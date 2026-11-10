@@ -547,53 +547,71 @@ async function promoteConfiguredOwner(openId, email) {
 
 // server/ai_engine_v112.ts
 init_schema();
-var DEFAULT_AI_CONFIG_V112 = {
-  mode1StylePrompt: "\u062A\u0643\u0644\u0645 \u0645\u0639 \u0627\u0644\u0632\u0628\u0648\u0646 \u0643\u0635\u062F\u064A\u0642 \u064A\u0645\u0646\u064A \u0630\u0643\u064A\u060C \u0648\u062F\u0648\u062F\u060C \u0648\u0637\u0628\u064A\u0639\u064A \u062C\u062F\u0627\u064B (\u0645\u062B\u0644: \u0641\u0647\u0645\u062A\u0643 \u064A\u0627 \u063A\u0627\u0644\u064A\u060C \u062D\u0644\u0648 \u062D\u0644\u0648\u060C \u0623\u0628\u0634\u0631 \u0645\u0646 \u0639\u064A\u0648\u0646\u064A). \u0625\u0630\u0627 \u0643\u0627\u0646 \u0627\u0644\u0632\u0628\u0648\u0646 \u064A\u0633\u0648\u0644\u0641 \u0633\u0648\u0627\u0644\u0641 \u0639\u0627\u0645\u0629 \u0623\u0648 \u064A\u0633\u0623\u0644 \u0633\u0624\u0627\u0644\u0627\u064B \u0639\u0627\u0645\u0627\u064B \u0644\u0627 \u0639\u0644\u0627\u0642\u0629 \u0644\u0647 \u0628\u0627\u0644\u0634\u0631\u0627\u0621\u060C \u0631\u062F \u0639\u0644\u064A\u0647 \u0628\u0630\u0643\u0627\u0621 \u0648\u0644\u0637\u0641 \u0628\u062F\u0648\u0646 \u0623\u0646 \u062A\u0642\u062D\u0645 \u0645\u0646\u062A\u062C\u0627\u062A \u0627\u0644\u0645\u062A\u062C\u0631 \u0623\u0648 \u0627\u0644\u0633\u0644\u0629 \u0646\u0647\u0627\u0626\u064A\u0627\u064B. \u064A\u0645\u0646\u0639 \u0645\u0646\u0639\u0627\u064B \u0628\u0627\u062A\u0627\u064B \u0630\u0643\u0631 \u0623\u0631\u0642\u0627\u0645 \u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A \u0627\u0644\u062F\u0627\u062E\u0644\u064A\u0629 \u0645\u062B\u0644 (\u0631\u0642\u0645 630072). \u0625\u0630\u0627 \u0633\u0623\u0644 \u0627\u0644\u0632\u0628\u0648\u0646 \u0639\u0646 \u0645\u0646\u062A\u062C \u063A\u064A\u0631 \u0645\u062A\u0648\u0641\u0631 \u0641\u064A \u0627\u0644\u0645\u062A\u062C\u0631\u060C \u0644\u0627 \u062A\u0639\u0637\u064A\u0647 \u0627\u0642\u062A\u0631\u0627\u062D\u0627\u064B \u062E\u0627\u0637\u0626\u0627\u064B\u060C \u0628\u0644 \u0642\u0644 \u0644\u0647: (\u0641\u0647\u0645\u062A\u0643 \u064A\u0627 \u063A\u0627\u0644\u064A\u060C \u0623\u0646\u062A \u062A\u0631\u064A\u062F \u0643\u0630\u0627.. \u062D\u0644\u0648! \u062D\u0627\u0644\u064A\u0627\u064B \u0645\u0634 \u0645\u0648\u062C\u0648\u062F \u0628\u0646\u0641\u0633 \u0627\u0644\u0627\u0633\u0645 \u0641\u064A \u0627\u0644\u0631\u0641\u060C \u0648\u0625\u0630\u0627 \u062A\u062D\u0628 \u0623\u0642\u062F\u0631 \u0623\u062A\u0648\u0627\u0635\u0644 \u0644\u0643 \u0627\u0644\u062D\u064A\u0646 \u0645\u0639 \u0627\u0644\u0645\u062A\u062C\u0631 \u0648\u0623\u0633\u0623\u0644\u0647\u0645 \u0625\u0630\u0627 \u0639\u0646\u062F\u0647\u0645 \u0623\u0648 \u064A\u0648\u0641\u0631\u0648\u0646\u0647 \u0644\u0643! \u0647\u0644 \u062A\u0631\u064A\u062F \u0623\u0643\u0644\u0645 \u0627\u0644\u0645\u062A\u062C\u0631\u061F).",
-  mode2Rules: [
-    {
-      id: "r1",
-      trigger: "\u0628\u0633\u0643\u0648\u064A\u062A \u0645\u0627\u0631\u064A",
-      response: "\u0628\u0633\u0643\u0648\u064A\u062A \u0645\u0627\u0631\u064A \u0645\u0645\u062A\u0627\u0632 \u0645\u0639 \u0627\u0644\u0634\u0627\u064A \u0648\u0627\u0644\u062D\u0644\u064A\u0628\u060C \u0648\u064A\u0635\u0644\u062D \u0644\u0639\u0645\u0644 \u0623\u0644\u0630 \u062D\u0644\u0649 \u0628\u0627\u0631\u062F \u0633\u0631\u064A\u0639 \u0628\u0637\u0628\u0642\u0627\u062A \u0627\u0644\u0642\u0634\u0637\u0629 \u0648\u0627\u0644\u0643\u0627\u0643\u0627\u0648\u060C \u0648\u0633\u0639\u0631\u0627\u062A \u0627\u0644\u062D\u0628\u0629 \u0627\u0644\u0648\u0627\u062D\u062F\u0629 \u062D\u0648\u0627\u0644\u064A 25 \u0633\u0639\u0631\u0629 \u062D\u0631\u0627\u0631\u064A\u0629 \u0641\u0642\u0637."
-    },
-    {
-      id: "r2",
-      trigger: "\u0634\u0648\u0643\u0644\u0627\u062A\u0629 \u0627\u0644\u0628\u0644\u064A\u0644\u0627",
-      response: "\u0634\u0648\u0643\u0644\u0627\u062A\u0629 \u0627\u0644\u0628\u0644\u064A\u0644\u0627 \u0633\u0646\u0627\u0643 \u0644\u0630\u064A\u0630 \u062C\u0627\u0647\u0632 \u0644\u0644\u0623\u0643\u0644 \u0645\u0628\u0627\u0634\u0631\u0629 \u0628\u0637\u0639\u0645 \u0627\u0644\u0643\u0627\u0643\u0627\u0648 \u0627\u0644\u063A\u0646\u064A (\u0633\u0639\u0631 \u0627\u0644\u062D\u0628\u0629 50 \u0631.\u064A)\u060C \u062A\u0639\u0637\u064A \u0637\u0627\u0642\u0629 \u0633\u0631\u064A\u0639\u0629 (\u062D\u0648\u0627\u0644\u064A 130 \u0633\u0639\u0631\u0629 \u062D\u0631\u0627\u0631\u064A\u0629) \u0648\u0645\u0645\u062A\u0627\u0632\u0629 \u062C\u062F\u0627\u064B \u0645\u0639 \u0627\u0644\u0642\u0647\u0648\u0629 \u0623\u0648 \u0627\u0644\u0634\u0627\u064A."
-    }
-  ],
-  mode3CategoryRules: "1) \u0627\u0644\u0634\u0648\u0643\u0648\u0644\u0627\u062A\u0629 \u0648\u0627\u0644\u0648\u064A\u0641\u0631 \u0648\u0627\u0644\u0639\u0644\u0643\u0629 \u0648\u0627\u0644\u0634\u064A\u0628\u0633: \u0644\u0627 \u062A\u0639\u0631\u0636 \u0644\u0647\u0627 \u0623\u0628\u062F\u0627\u064B \u0637\u0631\u0642 \u062A\u062D\u0636\u064A\u0631 \u0623\u0648 \u0637\u0628\u062E \u0623\u0648 \u062A\u0648\u0627\u0628\u0644\u061B \u0627\u0639\u0631\u0636 \u0641\u0642\u0637 \u0645\u0639\u0644\u0648\u0645\u0627\u062A \u0639\u0646 \u0627\u0644\u0645\u0646\u062A\u062C\u060C \u0627\u0644\u0633\u0639\u0631\u0627\u062A \u0627\u0644\u062D\u0631\u0627\u0631\u064A\u0629 \u0648\u0627\u0644\u0642\u064A\u0645\u0629 \u0627\u0644\u063A\u0630\u0627\u0626\u064A\u0629\u060C \u0648\u0645\u0639 \u0625\u064A\u0634 \u064A\u0624\u0643\u0644 (\u0645\u062B\u0644 \u0627\u0644\u0642\u0647\u0648\u0629 \u0623\u0648 \u0627\u0644\u0634\u0627\u064A). 2) \u0627\u0644\u0628\u0633\u0643\u0648\u064A\u062A \u0627\u0644\u0633\u0627\u062F\u0629 (\u0645\u062B\u0644 \u0645\u0627\u0631\u064A \u0648\u0623\u0628\u0648 \u0648\u0644\u062F): \u0627\u0630\u0643\u0631 \u0623\u0646\u0647 \u064A\u0635\u0644\u062D \u0644\u0639\u0645\u0644 \u062D\u0644\u0649 \u0628\u0627\u0631\u062F \u0633\u0631\u064A\u0639 \u0623\u0648 \u0645\u0639 \u0627\u0644\u0634\u0627\u064A\u060C \u0645\u0639 \u0630\u0643\u0631 \u0627\u0644\u0633\u0639\u0631\u0627\u062A \u0627\u0644\u062D\u0631\u0627\u0631\u064A\u0629. 3) \u0627\u0644\u0639\u0635\u0627\u0626\u0631 \u0648\u0627\u0644\u0645\u0634\u0631\u0648\u0628\u0627\u062A: \u0627\u0639\u0631\u0636 \u0627\u0644\u0642\u064A\u0645\u0629 \u0627\u0644\u063A\u0630\u0627\u0626\u064A\u0629\u060C \u0627\u0644\u0633\u0639\u0631\u0627\u062A \u0627\u0644\u062D\u0631\u0627\u0631\u064A\u0629\u060C \u0648\u0623\u0641\u0636\u0644 \u0637\u0631\u064A\u0642\u0629 \u0644\u062A\u0642\u062F\u064A\u0645\u0647\u0627 \u0628\u0627\u0631\u062F\u0629.",
-  productAiMap: {}
+var EMPTY_STUDIO_CONFIG_V114 = {
+  generalSystemPrompt: "",
+  instructions: [],
+  rules: [],
+  promotedProducts: [],
+  recipes: [],
+  productAiMap: {},
+  ecoMode10k: true
 };
-var memoryConfigV112 = { ...DEFAULT_AI_CONFIG_V112 };
-var memoryRequestsV112 = [];
-var dbInitializedV112 = false;
-async function ensureAiTableV112() {
-  if (dbInitializedV112) return;
+var studioConfigV114 = JSON.parse(JSON.stringify(EMPTY_STUDIO_CONFIG_V114));
+var customerRequestsV114 = [];
+var replyCacheV114 = {};
+var tokenStatsV114 = {
+  zeroTokenMessages: 0,
+  cachedHits: 0,
+  estimatedTokensSaved: 0
+};
+var cachedCatalogV114 = [];
+var lastCatalogTimeV114 = 0;
+var tableReadyV114 = false;
+async function getCatalogCachedV114() {
+  const now = Date.now();
+  if (cachedCatalogV114.length > 0 && now - lastCatalogTimeV114 < 6e4) {
+    return cachedCatalogV114;
+  }
+  try {
+    const db = await getDb();
+    if (db) {
+      cachedCatalogV114 = await db.select().from(products);
+      lastCatalogTimeV114 = now;
+    }
+  } catch {
+  }
+  return cachedCatalogV114;
+}
+async function ensureStudioTableV114() {
+  if (tableReadyV114) return;
   try {
     const db = await getDb();
     if (!db || typeof db.execute !== "function") return;
     await db.execute(
-      "CREATE TABLE IF NOT EXISTS ai_knowledge_v112 (k VARCHAR(190) PRIMARY KEY, v LONGTEXT NOT NULL, updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)"
+      "CREATE TABLE IF NOT EXISTS ai_studio_v114 (k VARCHAR(190) PRIMARY KEY, v LONGTEXT NOT NULL, updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)"
     );
-    dbInitializedV112 = true;
-    const [rows] = await db.execute("SELECT k, v FROM ai_knowledge_v112");
+    tableReadyV114 = true;
+    const [rows] = await db.execute("SELECT k, v FROM ai_studio_v114");
     if (Array.isArray(rows)) {
       for (const r of rows) {
-        if (r.k === "config" && r.v) {
+        if (r.k === "studio_config" && r.v) {
           try {
-            const parsed = JSON.parse(String(r.v));
-            memoryConfigV112 = {
-              mode1StylePrompt: parsed.mode1StylePrompt || DEFAULT_AI_CONFIG_V112.mode1StylePrompt,
-              mode2Rules: Array.isArray(parsed.mode2Rules) ? parsed.mode2Rules : DEFAULT_AI_CONFIG_V112.mode2Rules,
-              mode3CategoryRules: parsed.mode3CategoryRules || DEFAULT_AI_CONFIG_V112.mode3CategoryRules,
-              productAiMap: parsed.productAiMap && typeof parsed.productAiMap === "object" ? parsed.productAiMap : {}
+            const p = JSON.parse(String(r.v));
+            studioConfigV114 = {
+              generalSystemPrompt: String(p.generalSystemPrompt || ""),
+              instructions: Array.isArray(p.instructions) ? p.instructions : [],
+              rules: Array.isArray(p.rules) ? p.rules : [],
+              promotedProducts: Array.isArray(p.promotedProducts) ? p.promotedProducts : [],
+              recipes: Array.isArray(p.recipes) ? p.recipes : [],
+              productAiMap: p.productAiMap && typeof p.productAiMap === "object" ? p.productAiMap : {},
+              ecoMode10k: p.ecoMode10k !== false
             };
           } catch {
           }
-        } else if (r.k === "requests" && r.v) {
+        } else if (r.k === "customer_requests" && r.v) {
           try {
-            const parsedReq = JSON.parse(String(r.v));
-            if (Array.isArray(parsedReq)) memoryRequestsV112 = parsedReq;
+            const pr = JSON.parse(String(r.v));
+            if (Array.isArray(pr)) customerRequestsV114 = pr;
           } catch {
           }
         }
@@ -602,32 +620,23 @@ async function ensureAiTableV112() {
   } catch {
   }
 }
-async function saveAiKeyV112(key, valObj) {
+async function saveStudioKeyV114(key, valObj) {
   try {
-    await ensureAiTableV112();
+    await ensureStudioTableV114();
     const db = await getDb();
     if (!db || typeof db.execute !== "function") return;
-    const jsonStr = JSON.stringify(valObj);
     await db.execute(
-      "INSERT INTO ai_knowledge_v112 (k, v) VALUES (?, ?) ON DUPLICATE KEY UPDATE v = VALUES(v)",
-      [key, jsonStr]
+      "INSERT INTO ai_studio_v114 (k, v) VALUES (?, ?) ON DUPLICATE KEY UPDATE v = VALUES(v)",
+      [key, JSON.stringify(valObj)]
     );
   } catch {
   }
-}
-async function getAiConfigV112() {
-  await ensureAiTableV112();
-  return memoryConfigV112;
-}
-async function getAiRequestsV112() {
-  await ensureAiTableV112();
-  return memoryRequestsV112;
 }
 function cleanProductNameV112(raw) {
   return String(raw || "").replace(/\(\s*رقم\s*\d+\s*\)/g, "").replace(/\s*\([^()]*\)\s*$/g, "").trim();
 }
 function getProductCustomAiInfoV112(productId, productName) {
-  const map = memoryConfigV112.productAiMap || {};
+  const map = studioConfigV114.productAiMap || {};
   if (productId !== void 0 && productId !== null && map["id:" + String(productId)]) {
     return String(map["id:" + String(productId)]).trim();
   }
@@ -659,11 +668,31 @@ function classifyProductKindV112(name, categoryName = "", customAiInfo = "") {
   return "cooking_food";
 }
 function buildSmartProductModalDataV112(productName, price, unit, categoryName = "", customTopic = "", productId) {
+  tokenStatsV114.zeroTokenMessages++;
+  tokenStatsV114.estimatedTokensSaved += 2800;
   const cleanName = cleanProductNameV112(productName) || productName;
   const customAi = getProductCustomAiInfoV112(productId, cleanName);
   const kind = classifyProductKindV112(cleanName, categoryName, customAi);
   const priceStr = price > 0 ? price.toLocaleString("en-US") + " \u0631\u064A\u0627\u0644" : "";
-  const customNoteBlock = customAi ? "\n\u{1F4A1} \u0645\u0639\u0644\u0648\u0645\u0629 \u062E\u0627\u0635\u0629 \u0639\u0646 \u0627\u0644\u0645\u0646\u062A\u062C: " + customAi : "";
+  const matchedRecipe = (studioConfigV114.recipes || []).find(
+    (r) => r.keywords && cleanName.includes(r.keywords.trim()) || Array.isArray(r.ingredients) && r.ingredients.some((ing) => ing.name && cleanName.includes(ing.name.trim()))
+  );
+  if (customAi && !customTopic) {
+    const chips2 = kind === "chocolate_snack" ? ["\u{1F525} \u0627\u0644\u0633\u0639\u0631\u0627\u062A \u0648\u0627\u0644\u0642\u064A\u0645\u0629 \u0627\u0644\u063A\u0630\u0627\u0626\u064A\u0629", "\u2139\uFE0F \u0645\u0639\u0644\u0648\u0645\u0627\u062A \u0627\u0644\u0645\u0646\u062A\u062C", "\u2615 \u0645\u0639 \u0625\u064A\u0634 \u064A\u064F\u0642\u062F\u0645\u061F"] : kind === "biscuit_dessert" ? ["\u{1F370} \u0641\u0643\u0631\u0629 \u062D\u0644\u0649 \u0628\u0647", "\u{1F525} \u0627\u0644\u0633\u0639\u0631\u0627\u062A \u0627\u0644\u062D\u0631\u0627\u0631\u064A\u0629", "\u2615 \u0645\u0639 \u0627\u0644\u0634\u0627\u064A \u0648\u0627\u0644\u062D\u0644\u064A\u0628"] : ["\u2139\uFE0F \u0645\u0639\u0644\u0648\u0645\u0627\u062A \u0627\u0644\u0645\u0646\u062A\u062C", "\u{1F525} \u0627\u0644\u0642\u064A\u0645\u0629 \u0627\u0644\u063A\u0630\u0627\u0626\u064A\u0629"];
+    let content = "\u2728 \u0645\u0639\u0644\u0648\u0645\u0627\u062A \xAB" + cleanName + "\xBB" + (priceStr ? " (" + priceStr + ")" : "") + ":\n" + customAi;
+    if (matchedRecipe) {
+      content += "\n\n\u{1F370} \u0648\u0635\u0641\u0629 \u0645\u0642\u062A\u0631\u062D\u0629 (\xAB" + matchedRecipe.title + "\xBB):\n" + matchedRecipe.steps;
+    }
+    return {
+      modalTitle: "\u2728 \u0645\u0639\u0644\u0648\u0645\u0627\u062A \u0627\u0644\u0645\u0646\u062A\u062C: " + cleanName,
+      chips: chips2,
+      content,
+      kind,
+      recipe: matchedRecipe || null
+    };
+  }
+  const customNoteBlock = customAi ? "\n\u{1F4A1} \u0645\u0639\u0644\u0648\u0645\u0629 \u0625\u0636\u0627\u0641\u064A\u0629: " + customAi : "";
+  const recipeBlock = matchedRecipe ? "\n\n\u{1F370} \u0648\u0635\u0641\u0629 \xAB" + matchedRecipe.title + "\xBB:\n" + matchedRecipe.steps : "";
   if (kind === "chocolate_snack") {
     const chips2 = [
       "\u{1F525} \u0627\u0644\u0633\u0639\u0631\u0627\u062A \u0648\u0627\u0644\u0642\u064A\u0645\u0629 \u0627\u0644\u063A\u0630\u0627\u0626\u064A\u0629",
@@ -673,17 +702,16 @@ function buildSmartProductModalDataV112(productName, price, unit, categoryName =
     ];
     let text3 = "";
     if (customTopic && customTopic.includes("\u0633\u0639\u0631\u0627\u062A")) {
-      text3 = "\u{1F525} \u0627\u0644\u0642\u064A\u0645\u0629 \u0627\u0644\u063A\u0630\u0627\u0626\u064A\u0629 \u0648\u0627\u0644\u0633\u0639\u0631\u0627\u062A \u0627\u0644\u062D\u0631\u0627\u0631\u064A\u0629 \u0644\u0640 \xAB" + cleanName + "\xBB:\n1\uFE0F\u20E3 \u0627\u0644\u0633\u0639\u0631\u0627\u062A \u0627\u0644\u062A\u0642\u0631\u064A\u0628\u064A\u0629: \u062A\u062D\u062A\u0648\u064A \u0627\u0644\u062D\u0635\u0629 \u0627\u0644\u0648\u0627\u062D\u062F\u0629 \u0639\u0644\u0649 \u062D\u0648\u0627\u0644\u064A 110 \u0625\u0644\u0649 160 \u0633\u0639\u0631\u0629 \u062D\u0631\u0627\u0631\u064A\u0629 \u062A\u0645\u0646\u062D \u0627\u0644\u062C\u0633\u0645 \u0637\u0627\u0642\u0629 \u0633\u0631\u064A\u0639\u0629 \u0648\u0646\u0634\u0627\u0637\u0627\u064B \u0641\u0648\u0631\u064A\u0627\u064B.\n2\uFE0F\u20E3 \u0627\u0644\u0642\u064A\u0645\u0629 \u0627\u0644\u063A\u0630\u0627\u0626\u064A\u0629: \u063A\u0646\u064A \u0628\u0627\u0644\u0643\u0627\u0643\u0627\u0648 \u0648\u0627\u0644\u0633\u0643\u0631\u064A\u0627\u062A \u0627\u0644\u0628\u0633\u064A\u0637\u0629 \u0627\u0644\u062A\u064A \u062A\u062D\u0633\u0646 \u0627\u0644\u0645\u0632\u0627\u062C \u0648\u062A\u0631\u0641\u0639 \u0627\u0644\u062A\u0631\u0643\u064A\u0632.\n3\uFE0F\u20E3 \u0646\u0635\u064A\u062D\u0629: \u062A\u0646\u0627\u0648\u0644\u0647 \u0628\u0627\u0639\u062A\u062F\u0627\u0644 \u0643\u0633\u0646\u0627\u0643 \u0644\u0630\u064A\u0630 \u0641\u064A \u0648\u0633\u0637 \u0627\u0644\u064A\u0648\u0645 \u0623\u0648 \u0645\u0639 \u0641\u0646\u062C\u0627\u0646 \u0642\u0647\u0648\u0629." + customNoteBlock;
-    } else if (customTopic && (customTopic.includes("\u064A\u0624\u0643\u0644") || customTopic.includes("\u064A\u064F\u0642\u062F\u0645") || customTopic.includes("\u0642\u0647\u0648\u0629"))) {
-      text3 = "\u2615 \u0623\u0641\u0636\u0644 \u0637\u0631\u0642 \u0627\u0644\u0627\u0633\u062A\u0645\u062A\u0627\u0639 \u0628\u0640 \xAB" + cleanName + "\xBB:\n1\uFE0F\u20E3 \u0645\u0639 \u0627\u0644\u0642\u0647\u0648\u0629 \u0623\u0648 \u0627\u0644\u0634\u0627\u064A: \u0637\u0639\u0645\u0647 \u0631\u0627\u0626\u0639 \u062C\u062F\u0627\u064B \u0628\u062C\u0627\u0646\u0628 \u0641\u0646\u062C\u0627\u0646 \u0642\u0647\u0648\u0629 \u0623\u0648 \u0643\u0648\u0628 \u0634\u0627\u064A \u062F\u0627\u0641\u0626.\n2\uFE0F\u20E3 \u0645\u0639 \u0627\u0644\u062D\u0644\u064A\u0628 \u0627\u0644\u0628\u0627\u0631\u062F \u0623\u0648 \u0627\u0644\u062F\u0627\u0641\u0626: \u0648\u062C\u0628\u0629 \u062E\u0641\u064A\u0641\u0629 \u0645\u062D\u0628\u0628\u0629 \u0644\u0644\u0623\u0637\u0641\u0627\u0644 \u0648\u0627\u0644\u0643\u0628\u0627\u0631.\n3\uFE0F\u20E3 \u062C\u0627\u0647\u0632 \u0644\u0644\u0623\u0643\u0644 \u0645\u0628\u0627\u0634\u0631\u0629: \u0644\u0627 \u064A\u062D\u062A\u0627\u062C \u0625\u0644\u0649 \u0623\u064A \u062A\u062D\u0636\u064A\u0631 \u0623\u0648 \u0625\u0636\u0627\u0641\u0627\u062A." + customNoteBlock;
+      text3 = "\u{1F525} \u0627\u0644\u0642\u064A\u0645\u0629 \u0627\u0644\u063A\u0630\u0627\u0626\u064A\u0629 \u0648\u0627\u0644\u0633\u0639\u0631\u0627\u062A \u0627\u0644\u062D\u0631\u0627\u0631\u064A\u0629 \u0644\u0640 \xAB" + cleanName + "\xBB:\n\u2022 \u0627\u0644\u0633\u0639\u0631\u0627\u062A \u0627\u0644\u062A\u0642\u0631\u064A\u0628\u064A\u0629: \u062D\u0648\u0627\u0644\u064A 110 \u0625\u0644\u0649 150 \u0633\u0639\u0631\u0629 \u062D\u0631\u0627\u0631\u064A\u0629 \u0644\u0644\u062D\u0635\u0629 \u0627\u0644\u0648\u0627\u062D\u062F\u0629 \u062A\u0645\u0646\u062D \u0637\u0627\u0642\u0629 \u0633\u0631\u064A\u0639\u0629.\n\u2022 \u062C\u0627\u0647\u0632 \u0644\u0644\u0623\u0643\u0644 \u0645\u0628\u0627\u0634\u0631\u0629 \u0643\u0633\u0646\u0627\u0643 \u0644\u0630\u064A\u0630 \u0628\u062F\u0648\u0646 \u0623\u064A \u062A\u062D\u0636\u064A\u0631." + customNoteBlock;
     } else {
-      text3 = "\u2728 \u0645\u0639\u0644\u0648\u0645\u0627\u062A \u0627\u0644\u0645\u0646\u062A\u062C \u0648\u0627\u0644\u0642\u064A\u0645\u0629 \u0627\u0644\u063A\u0630\u0627\u0626\u064A\u0629 \u0644\u0640 \xAB" + cleanName + "\xBB" + (priceStr ? " (\u0645\u062A\u0648\u0641\u0631 \u0628\u0633\u0639\u0631 " + priceStr + ")" : "") + ":\n1\uFE0F\u20E3 \u0646\u0628\u0630\u0629 \u0639\u0646 \u0627\u0644\u0645\u0646\u062A\u062C: \u0633\u0646\u0627\u0643 \u062D\u0627\u0644\u064A \u062C\u0627\u0647\u0632 \u0644\u0644\u0623\u0643\u0644 \u0645\u0628\u0627\u0634\u0631\u0629 \u0628\u0637\u0639\u0645 \u063A\u0646\u064A \u0648\u0644\u0630\u064A\u0630\u060C \u0644\u0627 \u064A\u062D\u062A\u0627\u062C \u0625\u0644\u0649 \u0623\u064A \u0637\u0628\u062E \u0623\u0648 \u062A\u062D\u0636\u064A\u0631.\n2\uFE0F\u20E3 \u0627\u0644\u0633\u0639\u0631\u0627\u062A \u0627\u0644\u062D\u0631\u0627\u0631\u064A\u0629 \u0627\u0644\u062A\u0642\u0631\u064A\u0628\u064A\u0629: \u062D\u0648\u0627\u0644\u064A 120 \u2013 150 \u0633\u0639\u0631\u0629 \u062D\u0631\u0627\u0631\u064A\u0629 \u0644\u0644\u062D\u0635\u0629 \u0627\u0644\u0648\u0627\u062D\u062F\u0629\u060C \u0645\u0645\u062A\u0627\u0632 \u0644\u062A\u062C\u062F\u064A\u062F \u0627\u0644\u0637\u0627\u0642\u0629 \u0648\u0627\u0644\u0646\u0634\u0627\u0637.\n3\uFE0F\u20E3 \u0645\u0639 \u0625\u064A\u0634 \u064A\u062A\u0642\u062F\u0645\u061F \u0645\u062B\u0627\u0644\u064A \u062C\u062F\u0627\u064B \u0645\u0639 \u0641\u0646\u062C\u0627\u0646 \u0642\u0647\u0648\u0629\u060C \u0634\u0627\u064A\u060C \u0623\u0648 \u0643\u0648\u0628 \u062D\u0644\u064A\u0628\u060C \u0623\u0648 \u0643\u062A\u062D\u0644\u064A\u0629 \u062E\u0641\u064A\u0641\u0629 \u0641\u064A \u0623\u064A \u0648\u0642\u062A." + customNoteBlock;
+      text3 = "\u2728 \u0645\u0639\u0644\u0648\u0645\u0627\u062A \xAB" + cleanName + "\xBB" + (priceStr ? " (\u0627\u0644\u0633\u0639\u0631: " + priceStr + ")" : "") + ":\n\u2022 \u0645\u0646\u062A\u062C \u062C\u0627\u0647\u0632 \u0644\u0644\u0623\u0643\u0644 \u0645\u0628\u0627\u0634\u0631\u0629 \u0628\u0637\u0639\u0645 \u0644\u0630\u064A\u0630\u060C \u0644\u0627 \u064A\u062D\u062A\u0627\u062C \u0625\u0644\u0649 \u0623\u064A \u0637\u0628\u062E \u0623\u0648 \u062A\u062D\u0636\u064A\u0631.\n\u2022 \u0627\u0644\u0633\u0639\u0631\u0627\u062A \u0627\u0644\u062D\u0631\u0627\u0631\u064A\u0629 \u0627\u0644\u062A\u0642\u0631\u064A\u0628\u064A\u0629: \u062D\u0648\u0627\u0644\u064A 120 \u2013 150 \u0633\u0639\u0631\u0629 \u062D\u0631\u0627\u0631\u064A\u0629.\n\u2022 \u0645\u062B\u0627\u0644\u064A \u0645\u0639 \u0641\u0646\u062C\u0627\u0646 \u0642\u0647\u0648\u0629\u060C \u0634\u0627\u064A\u060C \u0623\u0648 \u0643\u0633\u0646\u0627\u0643 \u062E\u0641\u064A\u0641 \u0641\u064A \u0623\u064A \u0648\u0642\u062A." + customNoteBlock + recipeBlock;
     }
     return {
       modalTitle: "\u2728 \u0645\u0639\u0644\u0648\u0645\u0627\u062A \u0648\u0642\u064A\u0645\u0629 \u063A\u0630\u0627\u0626\u064A\u0629: " + cleanName,
       chips: chips2,
       content: text3,
-      kind
+      kind,
+      recipe: matchedRecipe || null
     };
   }
   if (kind === "biscuit_dessert") {
@@ -693,68 +721,69 @@ function buildSmartProductModalDataV112(productName, price, unit, categoryName =
       "\u2615 \u0645\u0639 \u0627\u0644\u0634\u0627\u064A \u0648\u0627\u0644\u062D\u0644\u064A\u0628",
       "\u2139\uFE0F \u0645\u0639\u0644\u0648\u0645\u0627\u062A \u0639\u0646 \u0627\u0644\u0645\u0646\u062A\u062C"
     ];
-    let text3 = "";
-    if (customTopic && customTopic.includes("\u0633\u0639\u0631\u0627\u062A")) {
-      text3 = "\u{1F525} \u0627\u0644\u0633\u0639\u0631\u0627\u062A \u0627\u0644\u062D\u0631\u0627\u0631\u064A\u0629 \u0648\u0627\u0644\u0642\u064A\u0645\u0629 \u0627\u0644\u063A\u0630\u0627\u0626\u064A\u0629 \u0644\u0640 \xAB" + cleanName + "\xBB:\n1\uFE0F\u20E3 \u0627\u0644\u0633\u0639\u0631\u0627\u062A \u0627\u0644\u062D\u0631\u0627\u0631\u064A\u0629: \u062A\u062D\u062A\u0648\u064A \u0627\u0644\u062D\u0628\u0629 \u0627\u0644\u0648\u0627\u062D\u062F\u0629 \u0639\u0644\u0649 \u062D\u0648\u0627\u0644\u064A 25 \u2013 35 \u0633\u0639\u0631\u0629 \u062D\u0631\u0627\u0631\u064A\u0629 \u0641\u0642\u0637 (\u062D\u0648\u0627\u0644\u064A 140 \u0633\u0639\u0631\u0629 \u0644\u0643\u0644 4 \u062D\u0628\u0627\u062A).\n2\uFE0F\u20E3 \u0627\u0644\u0642\u064A\u0645\u0629 \u0627\u0644\u063A\u0630\u0627\u0626\u064A\u0629: \u062E\u0641\u064A\u0641 \u0639\u0644\u0649 \u0627\u0644\u0645\u0639\u062F\u0629 \u0648\u064A\u0645\u062F \u0627\u0644\u062C\u0633\u0645 \u0628\u0627\u0644\u0643\u0631\u0628\u0648\u0647\u064A\u062F\u0631\u0627\u062A \u0627\u0644\u0645\u0646\u0627\u0633\u0628\u0629 \u0644\u0641\u0637\u0648\u0631 \u0627\u0644\u0635\u0628\u0627\u062D \u0623\u0648 \u0633\u0646\u0627\u0643 \u0627\u0644\u0639\u0635\u0631.\n3\uFE0F\u20E3 \u0627\u0644\u0627\u0633\u062A\u062E\u062F\u0627\u0645: \u0642\u0648\u0627\u0645\u0647 \u0627\u0644\u0647\u0634 \u064A\u062C\u0639\u0644\u0647 \u0645\u0645\u062A\u0627\u0632\u0627\u064B \u0644\u0639\u0645\u0644 \u0627\u0644\u062D\u0644\u0648\u064A\u0627\u062A \u0627\u0644\u0628\u0627\u0631\u062F\u0629 \u0623\u0648 \u0627\u0644\u062A\u063A\u0645\u064A\u0633 \u0645\u0639 \u0627\u0644\u0634\u0627\u064A \u0648\u0627\u0644\u062D\u0644\u064A\u0628." + customNoteBlock;
-    } else {
-      text3 = "\u2728 \u0645\u0639\u0644\u0648\u0645\u0627\u062A \u0648\u0623\u0641\u0643\u0627\u0631 \u062C\u0645\u064A\u0644\u0629 \u0644\u0640 \xAB" + cleanName + "\xBB" + (priceStr ? " (\u0645\u062A\u0648\u0641\u0631 \u0628\u0633\u0639\u0631 " + priceStr + ")" : "") + ":\n1\uFE0F\u20E3 \u062D\u0644\u0649 \u0627\u0644\u0628\u0633\u0643\u0648\u064A\u062A \u0627\u0644\u0628\u0627\u0631\u062F \u0627\u0644\u0633\u0631\u064A\u0639: \u063A\u0645\u0633 \u0627\u0644\u0628\u0633\u0643\u0648\u064A\u062A \u0633\u0631\u064A\u0639\u0627\u064B \u0641\u064A \u0627\u0644\u062D\u0644\u064A\u0628 \u0648\u0631\u062A\u0628\u0647 \u0641\u064A \u0637\u0628\u0642\u0627\u062A \u0645\u0639 \u0627\u0644\u0642\u0634\u0637\u0629 \u0648\u0627\u0644\u0643\u0627\u0643\u0627\u0648 \u0623\u0648 \u0627\u0644\u0643\u0631\u064A\u0645\u0629\u060C \u0648\u0636\u0639\u0647 \u0641\u064A \u0627\u0644\u062B\u0644\u0627\u062C\u0629 \u0646\u0635\u0641 \u0633\u0627\u0639\u0629 \u0644\u062A\u062D\u0635\u0644 \u0639\u0644\u0649 \u0623\u0644\u0630 \u062D\u0644\u0649 \u0628\u064A\u062A\u064A!\n2\uFE0F\u20E3 \u0627\u0644\u0633\u0639\u0631\u0627\u062A \u0627\u0644\u062D\u0631\u0627\u0631\u064A\u0629: \u062E\u0641\u064A\u0641 \u0648\u0645\u0646\u0627\u0633\u0628 \u062C\u062F\u0627\u064B\u060C \u0627\u0644\u062D\u0628\u0629 \u0627\u0644\u0648\u0627\u062D\u062F\u0629 \u062D\u0648\u0627\u0644\u064A 25 \u2013 35 \u0633\u0639\u0631\u0629 \u062D\u0631\u0627\u0631\u064A\u0629.\n3\uFE0F\u20E3 \u0627\u0644\u062A\u0642\u062F\u064A\u0645 \u0627\u0644\u0643\u0644\u0627\u0633\u064A\u0643\u064A: \u0631\u0641\u064A\u0642 \u0645\u062B\u0627\u0644\u064A \u0644\u0643\u0648\u0628 \u0627\u0644\u0634\u0627\u064A \u0627\u0644\u0639\u062F\u0646\u064A \u0623\u0648 \u0627\u0644\u062D\u0644\u064A\u0628 \u0627\u0644\u0633\u0627\u062E\u0646 \u0641\u064A \u0627\u0644\u0635\u0628\u0627\u062D \u0648\u0627\u0644\u0645\u0633\u0627\u0621." + customNoteBlock;
-    }
+    const text3 = "\u2728 \u0645\u0639\u0644\u0648\u0645\u0627\u062A \u0648\u0623\u0641\u0643\u0627\u0631 \xAB" + cleanName + "\xBB" + (priceStr ? " (\u0627\u0644\u0633\u0639\u0631: " + priceStr + ")" : "") + ":\n\u2022 \u064A\u0635\u0644\u062D \u0644\u0644\u062A\u0642\u062F\u064A\u0645 \u0645\u0639 \u0627\u0644\u0634\u0627\u064A \u0648\u0627\u0644\u062D\u0644\u064A\u0628\u060C \u0623\u0648 \u0644\u0639\u0645\u0644 \u062D\u0644\u0649 \u0628\u0627\u0631\u062F \u0633\u0631\u064A\u0639 \u0628\u0637\u0628\u0642\u0627\u062A \u0627\u0644\u0642\u0634\u0637\u0629 \u0648\u0627\u0644\u0643\u0627\u0643\u0627\u0648.\n\u2022 \u0627\u0644\u0633\u0639\u0631\u0627\u062A \u0627\u0644\u062D\u0631\u0627\u0631\u064A\u0629 \u0627\u0644\u062A\u0642\u0631\u064A\u0628\u064A\u0629: \u062D\u0648\u0627\u0644\u064A 25 \u2013 35 \u0633\u0639\u0631\u0629 \u062D\u0631\u0627\u0631\u064A\u0629 \u0644\u0644\u062D\u0628\u0629 \u0627\u0644\u0648\u0627\u062D\u062F\u0629." + customNoteBlock + recipeBlock;
     return {
       modalTitle: "\u2728 \u0645\u0639\u0644\u0648\u0645\u0627\u062A \u0648\u0623\u0641\u0643\u0627\u0631 \u062D\u0644\u0649: " + cleanName,
       chips: chips2,
       content: text3,
-      kind
+      kind,
+      recipe: matchedRecipe || null
     };
   }
   if (kind === "drink_juice") {
     const chips2 = [
       "\u{1F525} \u0627\u0644\u0633\u0639\u0631\u0627\u062A \u0648\u0627\u0644\u0642\u064A\u0645\u0629 \u0627\u0644\u063A\u0630\u0627\u0626\u064A\u0629",
       "\u2139\uFE0F \u0645\u0639\u0644\u0648\u0645\u0627\u062A \u0639\u0646 \u0627\u0644\u0645\u0634\u0631\u0648\u0628",
-      "\u{1F9CA} \u0623\u0641\u0636\u0644 \u0637\u0631\u064A\u0642\u0629 \u062A\u0642\u062F\u064A\u0645 \u0628\u0627\u0631\u062F",
-      "\u{1F968} \u0633\u0646\u0627\u0643 \u062E\u0641\u064A\u0641 \u064A\u0646\u0627\u0633\u0628\u0647"
+      "\u{1F9CA} \u0623\u0641\u0636\u0644 \u0637\u0631\u064A\u0642\u0629 \u062A\u0642\u062F\u064A\u0645 \u0628\u0627\u0631\u062F"
     ];
-    const text3 = "\u2728 \u0645\u0639\u0644\u0648\u0645\u0627\u062A \u0648\u0642\u064A\u0645\u0629 \u063A\u0630\u0627\u0626\u064A\u0629 \u0644\u0640 \xAB" + cleanName + "\xBB" + (priceStr ? " (\u0645\u062A\u0648\u0641\u0631 \u0628\u0633\u0639\u0631 " + priceStr + ")" : "") + ":\n1\uFE0F\u20E3 \u0627\u0644\u0642\u064A\u0645\u0629 \u0627\u0644\u063A\u0630\u0627\u0626\u064A\u0629 \u0648\u0627\u0644\u0633\u0639\u0631\u0627\u062A: \u064A\u0645\u0646\u062D \u062A\u0631\u0637\u064A\u0628\u0627\u064B \u0648\u0627\u0646\u062A\u0639\u0627\u0634\u0627\u064B \u0641\u0648\u0631\u064A\u0627\u064B\u060C \u0648\u062A\u062D\u062A\u0648\u064A \u0627\u0644\u0639\u0628\u0648\u0629 \u0639\u0644\u0649 \u062D\u0648\u0627\u0644\u064A 90 \u2013 130 \u0633\u0639\u0631\u0629 \u062D\u0631\u0627\u0631\u064A\u0629.\n2\uFE0F\u20E3 \u0623\u0641\u0636\u0644 \u0637\u0631\u064A\u0642\u0629 \u062A\u0642\u062F\u064A\u0645: \u064A\u064F\u0642\u062F\u0645 \u0628\u0627\u0631\u062F\u0627\u064B \u062C\u062F\u0627\u064B \u0645\u0646 \u0627\u0644\u062B\u0644\u0627\u062C\u0629 \u0623\u0648 \u0645\u0639 \u0645\u0643\u0639\u0628\u0627\u062A \u0627\u0644\u062B\u0644\u062C \u0644\u0627\u0646\u062A\u0639\u0627\u0634 \u0645\u0636\u0627\u0639\u0641.\n3\uFE0F\u20E3 \u0645\u0639 \u0625\u064A\u0634 \u064A\u0646\u0627\u0633\u0628\u061F \u0645\u0645\u062A\u0627\u0632 \u0628\u062C\u0627\u0646\u0628 \u0627\u0644\u0628\u0633\u0643\u0648\u064A\u062A\u060C \u0627\u0644\u0643\u064A\u0643\u060C \u0623\u0648 \u0627\u0644\u0634\u064A\u0628\u0633 \u0648\u0627\u0644\u0645\u0642\u0631\u0645\u0634\u0627\u062A \u0641\u064A \u062C\u0644\u0633\u0627\u062A \u0627\u0644\u0639\u0635\u0631." + customNoteBlock;
+    const text3 = "\u2728 \u0645\u0639\u0644\u0648\u0645\u0627\u062A \xAB" + cleanName + "\xBB" + (priceStr ? " (\u0627\u0644\u0633\u0639\u0631: " + priceStr + ")" : "") + ":\n\u2022 \u0627\u0644\u0633\u0639\u0631\u0627\u062A \u0627\u0644\u062A\u0642\u0631\u064A\u0628\u064A\u0629: \u062D\u0648\u0627\u0644\u064A 90 \u2013 130 \u0633\u0639\u0631\u0629 \u062D\u0631\u0627\u0631\u064A\u0629 \u0644\u0644\u0639\u0628\u0648\u0629.\n\u2022 \u064A\u064F\u0642\u062F\u0645 \u0628\u0627\u0631\u062F\u0627\u064B \u0644\u0644\u0627\u0646\u062A\u0639\u0627\u0634\u060C \u0648\u0645\u0646\u0627\u0633\u0628 \u0628\u062C\u0627\u0646\u0628 \u0627\u0644\u0628\u0633\u0643\u0648\u064A\u062A \u0623\u0648 \u0627\u0644\u0633\u0646\u0627\u0643 \u0627\u0644\u062E\u0641\u064A\u0641." + customNoteBlock + recipeBlock;
     return {
       modalTitle: "\u2728 \u0645\u0639\u0644\u0648\u0645\u0627\u062A \u0648\u0642\u064A\u0645\u0629 \u063A\u0630\u0627\u0626\u064A\u0629: " + cleanName,
       chips: chips2,
       content: text3,
-      kind
+      kind,
+      recipe: matchedRecipe || null
     };
   }
   if (kind === "non_food") {
-    const chips2 = [
-      "\u2139\uFE0F \u0645\u0648\u0627\u0635\u0641\u0627\u062A \u0648\u0645\u0639\u0644\u0648\u0645\u0627\u062A \u0627\u0644\u0645\u0646\u062A\u062C",
-      "\u{1F4E6} \u0627\u0644\u062A\u0648\u0641\u0631 \u0648\u0627\u0644\u062E\u064A\u0627\u0631\u0627\u062A"
-    ];
-    const text3 = "\u2728 \u0645\u0639\u0644\u0648\u0645\u0627\u062A \u0627\u0644\u0645\u0646\u062A\u062C \xAB" + cleanName + "\xBB" + (priceStr ? " (\u0627\u0644\u0633\u0639\u0631: " + priceStr + ")" : "") + ":\n1\uFE0F\u20E3 \u0645\u0646\u062A\u062C \u0623\u0635\u0644\u064A \u0645\u062A\u0648\u0641\u0631 \u0641\u064A \u0645\u062A\u062C\u0631 \u0623\u0648\u0631\u062C\u0646\u0627\u0644 \u0628\u062C\u0648\u062F\u0629 \u0645\u0636\u0645\u0648\u0646\u0629.\n2\uFE0F\u20E3 \u064A\u0645\u0643\u0646\u0643 \u0627\u062E\u062A\u064A\u0627\u0631 \u0627\u0644\u0643\u0645\u064A\u0629 \u0627\u0644\u0645\u0637\u0644\u0648\u0628\u0629 \u0648\u0625\u0636\u0627\u0641\u062A\u0647\u0627 \u0645\u0628\u0627\u0634\u0631\u0629 \u0625\u0644\u0649 \u0633\u0644\u0629 \u0627\u0644\u062A\u0633\u0648\u0642." + customNoteBlock;
+    const chips2 = ["\u2139\uFE0F \u0645\u0648\u0627\u0635\u0641\u0627\u062A \u0627\u0644\u0645\u0646\u062A\u062C", "\u{1F4E6} \u0627\u0644\u062A\u0648\u0641\u0631 \u0648\u0627\u0644\u062E\u064A\u0627\u0631\u0627\u062A"];
+    const text3 = "\u2728 \u0645\u0639\u0644\u0648\u0645\u0627\u062A \xAB" + cleanName + "\xBB" + (priceStr ? " (\u0627\u0644\u0633\u0639\u0631: " + priceStr + ")" : "") + ":\n\u2022 \u0645\u062A\u0648\u0641\u0631 \u0641\u064A \u0645\u062A\u062C\u0631 \u0623\u0648\u0631\u062C\u0646\u0627\u0644\u060C \u064A\u0645\u0643\u0646\u0643 \u0627\u062E\u062A\u064A\u0627\u0631 \u0627\u0644\u0643\u0645\u064A\u0629 \u0623\u0648 \u0627\u0644\u062E\u064A\u0627\u0631 \u0627\u0644\u0645\u0637\u0644\u0648\u0628 \u0648\u0625\u0636\u0627\u0641\u062A\u0647 \u0644\u0644\u0633\u0644\u0629." + customNoteBlock;
     return {
       modalTitle: "\u2728 \u0645\u0639\u0644\u0648\u0645\u0627\u062A \u0627\u0644\u0645\u0646\u062A\u062C: " + cleanName,
       chips: chips2,
       content: text3,
-      kind
+      kind,
+      recipe: null
     };
   }
   const chips = [
-    "\u{1F373} \u0623\u0641\u0643\u0627\u0631 \u0648\u0637\u0631\u0642 \u0627\u0633\u062A\u062E\u062F\u0627\u0645\u0647",
-    "\u{1F525} \u0627\u0644\u0633\u0639\u0631\u0627\u062A \u0648\u0627\u0644\u0642\u064A\u0645\u0629 \u0627\u0644\u063A\u0630\u0627\u0626\u064A\u0629",
-    "\u{1F4A1} \u0646\u0635\u064A\u062D\u0629 \u062D\u0641\u0638 \u0648\u062C\u0648\u062F\u0629",
-    "\u{1F6D2} \u0645\u0642\u0627\u0636\u064A \u062A\u0643\u0645\u0644\u0647"
+    "\u{1F373} \u0627\u0633\u062A\u062E\u062F\u0627\u0645\u0627\u062A\u0647 \u0641\u064A \u0627\u0644\u0645\u0637\u0628\u062E",
+    "\u{1F525} \u0627\u0644\u0642\u064A\u0645\u0629 \u0627\u0644\u063A\u0630\u0627\u0626\u064A\u0629",
+    "\u{1F4A1} \u0646\u0635\u064A\u062D\u0629 \u062D\u0641\u0638 \u0648\u062C\u0648\u062F\u0629"
   ];
-  const text2 = "\u2728 \u0645\u0639\u0644\u0648\u0645\u0627\u062A \u0648\u0627\u0633\u062A\u062E\u062F\u0627\u0645\u0627\u062A \xAB" + cleanName + "\xBB" + (priceStr ? " (\u0645\u062A\u0648\u0641\u0631 \u0628\u0633\u0639\u0631 " + priceStr + ")" : "") + ":\n1\uFE0F\u20E3 \u0641\u064A \u0627\u0644\u0645\u0637\u0628\u062E \u0648\u0627\u0644\u0648\u062C\u0628\u0627\u062A: \u0645\u0643\u0648\u0646 \u0623\u0633\u0627\u0633\u064A \u0645\u0645\u062A\u0627\u0632 \u0644\u062A\u062D\u0636\u064A\u0631 \u0648\u062C\u0628\u0627\u062A \u0628\u064A\u062A\u064A\u0629 \u0634\u0647\u064A\u0629 \u0648\u0633\u0631\u064A\u0639\u0629.\n2\uFE0F\u20E3 \u0627\u0644\u0642\u064A\u0645\u0629 \u0627\u0644\u063A\u0630\u0627\u0626\u064A\u0629: \u063A\u0646\u064A \u0628\u0627\u0644\u0639\u0646\u0627\u0635\u0631 \u0627\u0644\u063A\u0630\u0627\u0626\u064A\u0629 \u0627\u0644\u0645\u0641\u064A\u062F\u0629 \u0644\u0644\u0645\u0627\u0626\u062F\u0629 \u0627\u0644\u064A\u0648\u0645\u064A\u0629.\n3\uFE0F\u20E3 \u0646\u0635\u064A\u062D\u0629 \u0627\u0644\u0627\u0633\u062A\u062E\u062F\u0627\u0645: \u064A\u064F\u062D\u0641\u0638 \u0641\u064A \u0645\u0643\u0627\u0646 \u062C\u0627\u0641 \u0648\u0628\u0627\u0631\u062F \u0644\u0644\u062D\u0641\u0627\u0638 \u0639\u0644\u0649 \u0646\u0643\u0647\u062A\u0647 \u0648\u062C\u0648\u062F\u062A\u0647 \u0627\u0644\u0637\u0627\u0632\u062C\u0629." + customNoteBlock;
+  const text2 = "\u2728 \u0645\u0639\u0644\u0648\u0645\u0627\u062A \xAB" + cleanName + "\xBB" + (priceStr ? " (\u0627\u0644\u0633\u0639\u0631: " + priceStr + ")" : "") + ":\n\u2022 \u0645\u0643\u0648\u0646 \u063A\u0630\u0627\u0626\u064A \u0645\u0645\u062A\u0627\u0632 \u0644\u062A\u062D\u0636\u064A\u0631 \u0627\u0644\u0648\u062C\u0628\u0627\u062A \u0627\u0644\u064A\u0648\u0645\u064A\u0629 \u0628\u062C\u0648\u062F\u0629 \u0639\u0627\u0644\u064A\u0629." + customNoteBlock + recipeBlock;
   return {
     modalTitle: "\u2728 \u0627\u0633\u062A\u062E\u062F\u0627\u0645\u0627\u062A \u0648\u0645\u0639\u0644\u0648\u0645\u0627\u062A: " + cleanName,
     chips,
     content: text2,
-    kind
+    kind,
+    recipe: matchedRecipe || null
   };
 }
 async function handleSmartAiChatV112(input) {
-  await ensureAiTableV112();
+  await ensureStudioTableV114();
   const userMsg = String(input.message || "").trim();
   const normMsg = userMsg.toLowerCase();
+  tokenStatsV114.zeroTokenMessages++;
+  tokenStatsV114.estimatedTokensSaved += 4200;
+  const cacheKey = normMsg.replace(/\s+/g, " ");
+  if (replyCacheV114[cacheKey] && !/(نعم|ايوه|أيوة|كلمهم|كلم المتجر)/.test(normMsg)) {
+    tokenStatsV114.cachedHits++;
+    return replyCacheV114[cacheKey];
+  }
   if (/(اباحي|إباحي|مايا خليفه|مايا خليفة|جنس|سكس|porn|xxx)/i.test(normMsg)) {
     return {
-      reply: "\u062D\u064A\u0627\u0643 \u0627\u0644\u0644\u0647 \u064A\u0627 \u063A\u0627\u0644\u064A\u060C \u0623\u0646\u0627 \u0645\u0633\u0627\u0639\u062F \u0645\u062A\u062C\u0631 \u0623\u0648\u0631\u062C\u0646\u0627\u0644\u060C \u064A\u0633\u0639\u062F\u0646\u064A \u062F\u0627\u0626\u0645\u0627\u064B \u062E\u062F\u0645\u062A\u0643 \u0641\u064A \u0643\u0644 \u0645\u0627 \u064A\u062E\u0635 \u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A\u060C \u0627\u0644\u0645\u0639\u0644\u0648\u0645\u0627\u062A \u0627\u0644\u063A\u0630\u0627\u0626\u064A\u0629\u060C \u0623\u0648 \u0627\u0644\u0633\u0648\u0627\u0644\u0641 \u0627\u0644\u0637\u064A\u0628\u0629 \u0627\u0644\u0645\u062D\u062A\u0631\u0645\u0629. \u0622\u0645\u0631\u0646\u064A \u0643\u064A\u0641 \u0623\u0642\u062F\u0631 \u0623\u062E\u062F\u0645\u0643 \u0627\u0644\u064A\u0648\u0645\u061F",
+      reply: "\u062D\u064A\u0627\u0643 \u0627\u0644\u0644\u0647 \u064A\u0627 \u063A\u0627\u0644\u064A\u060C \u0623\u0646\u0627 \u0645\u0633\u0627\u0639\u062F \u0645\u062A\u062C\u0631 \u0623\u0648\u0631\u062C\u0646\u0627\u0644\u060C \u064A\u0633\u0639\u062F\u0646\u064A \u062F\u0627\u0626\u0645\u0627\u064B \u062E\u062F\u0645\u062A\u0643 \u0641\u064A \u0643\u0644 \u0645\u0627 \u064A\u062E\u0635 \u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A \u0648\u0627\u0644\u0645\u0639\u0644\u0648\u0645\u0627\u062A \u0627\u0644\u063A\u0630\u0627\u0626\u064A\u0629. \u0643\u064A\u0641 \u0623\u0642\u062F\u0631 \u0623\u062E\u062F\u0645\u0643 \u0627\u0644\u064A\u0648\u0645\u061F",
       suggestedItems: [],
       quickActions: [],
       canContactStore: false
@@ -775,11 +804,11 @@ async function handleSmartAiChatV112(input) {
       managerReply: "",
       createdAt: Date.now()
     };
-    memoryRequestsV112.unshift(reqRecord);
-    if (memoryRequestsV112.length > 200) memoryRequestsV112 = memoryRequestsV112.slice(0, 200);
-    await saveAiKeyV112("requests", memoryRequestsV112);
+    customerRequestsV114.unshift(reqRecord);
+    if (customerRequestsV114.length > 200) customerRequestsV114 = customerRequestsV114.slice(0, 200);
+    await saveStudioKeyV114("customer_requests", customerRequestsV114);
     return {
-      reply: "\u0623\u0628\u0634\u0631 \u0645\u0646 \u0639\u064A\u0648\u0646\u064A \u064A\u0627 \u063A\u0627\u0644\u064A! \u{1F4F2} \u0643\u0644\u0645\u062A \u0625\u062F\u0627\u0631\u0629 \u0627\u0644\u0645\u062A\u062C\u0631 \u0627\u0644\u0622\u0646 \u0648\u0623\u0631\u0633\u0644\u062A \u0625\u0634\u0639\u0627\u0631 \u0641\u0648\u0631\u064A \u0644\u0647\u0627\u062A\u0641 \u0627\u0644\u0645\u062F\u064A\u0631 \u0628\u0637\u0644\u0628\u0643 (\xAB" + requestedTopic + "\xBB).\n\u0623\u0648\u0644 \u0645\u0627 \u064A\u0631\u062F \u0627\u0644\u0645\u062F\u064A\u0631 \u0633\u064A\u0638\u0647\u0631 \u0631\u062F\u0647 \u0647\u0646\u0627 \u0623\u0645\u0627\u0645\u0643 \u0641\u064A \u0627\u0644\u0645\u062D\u0627\u062F\u062B\u0629 \u0645\u0628\u0627\u0634\u0631\u0629\u064B!",
+      reply: "\u0623\u0628\u0634\u0631 \u0645\u0646 \u0639\u064A\u0648\u0646\u064A \u064A\u0627 \u063A\u0627\u0644\u064A! \u{1F4F2} \u0623\u0631\u0633\u0644\u062A \u0625\u0634\u0639\u0627\u0631 \u0641\u0648\u0631\u064A \u0627\u0644\u0622\u0646 \u0644\u0647\u0627\u062A\u0641 \u0645\u062F\u064A\u0631 \u0627\u0644\u0645\u062A\u062C\u0631 \u0628\u0637\u0644\u0628\u0643 (\xAB" + requestedTopic + "\xBB).\n\u0623\u0648\u0644 \u0645\u0627 \u064A\u0631\u062F \u0627\u0644\u0645\u062F\u064A\u0631 \u0633\u064A\u0638\u0647\u0631 \u0631\u062F\u0647 \u0647\u0646\u0627 \u0623\u0645\u0627\u0645\u0643 \u0641\u064A \u0627\u0644\u0645\u062D\u0627\u062F\u062B\u0629 \u0645\u0628\u0627\u0634\u0631\u0629\u064B!",
       suggestedItems: [],
       quickActions: [],
       canContactStore: false,
@@ -787,24 +816,118 @@ async function handleSmartAiChatV112(input) {
       requestObj: reqRecord
     };
   }
-  for (const rule of memoryConfigV112.mode2Rules || []) {
+  const allProducts = await getCatalogCachedV114();
+  for (const rule of studioConfigV114.rules || []) {
     const trig = String(rule.trigger || "").trim();
     if (trig && userMsg.includes(trig)) {
-      return {
-        reply: String(rule.response || "").replace(/\(\s*رقم\s*\d+\s*\)/g, ""),
-        suggestedItems: [],
+      const items = [];
+      if (rule.linkedProductName) {
+        const foundP = allProducts.find((p) => cleanProductNameV112(p.name) === cleanProductNameV112(rule.linkedProductName || ""));
+        if (foundP) {
+          items.push({
+            productId: foundP.id,
+            id: foundP.id,
+            name: cleanProductNameV112(foundP.name),
+            price: Math.round(Number(foundP.price || 0)),
+            unit: foundP.unit || "\u062D\u0628\u0629",
+            quantity: 1,
+            url: rule.linkedProductUrl || "/?product=" + encodeURIComponent(cleanProductNameV112(foundP.name))
+          });
+        }
+      }
+      let replyTxt = String(rule.response || "").replace(/\(\s*رقم\s*\d+\s*\)/g, "");
+      if (rule.linkedProductUrl && !replyTxt.includes(rule.linkedProductUrl)) {
+        replyTxt += "\n\u{1F517} \u0631\u0627\u0628\u0637 \u0627\u0644\u0645\u0646\u062A\u062C: " + rule.linkedProductUrl;
+      }
+      const resRule = {
+        reply: replyTxt,
+        suggestedItems: items,
         quickActions: [],
         canContactStore: false
       };
+      replyCacheV114[cacheKey] = resRule;
+      return resRule;
     }
   }
-  let allProducts = [];
-  try {
-    const db = await getDb();
-    if (db) {
-      allProducts = await db.select().from(products);
+  for (const rec of studioConfigV114.recipes || []) {
+    const kwList = String(rec.keywords || rec.title || "").split(/[،,]+/).map((s) => s.trim()).filter(Boolean);
+    if (rec.title && userMsg.includes(rec.title.trim()) || kwList.some((k) => k.length >= 3 && userMsg.includes(k))) {
+      const recItems = [];
+      for (const ing of rec.ingredients || []) {
+        const foundP = allProducts.find((p) => cleanProductNameV112(p.name).includes(cleanProductNameV112(ing.name)));
+        if (foundP) {
+          recItems.push({
+            productId: foundP.id,
+            id: foundP.id,
+            name: cleanProductNameV112(foundP.name),
+            price: Math.round(Number(foundP.price || 0)),
+            unit: foundP.unit || "\u062D\u0628\u0629",
+            quantity: 1,
+            url: ing.url || "/?product=" + encodeURIComponent(cleanProductNameV112(foundP.name))
+          });
+        } else if (ing.name) {
+          recItems.push({
+            productId: 0,
+            id: 0,
+            name: ing.name,
+            price: Number(ing.price || 0),
+            unit: "\u062D\u0628\u0629",
+            quantity: 1,
+            url: ing.url || ""
+          });
+        }
+      }
+      let recReply = "\u{1F370} \xAB" + rec.title + "\xBB\n" + String(rec.steps || "");
+      if (recItems.length > 0) {
+        recReply += "\n\n\u{1F6D2} \u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A \u0627\u0644\u0645\u0633\u062A\u062E\u062F\u0645\u0629 \u0645\u0646 \u0627\u0644\u0645\u062A\u062C\u0631:\n" + recItems.map((it) => "\u2022 " + it.name + (it.price ? " (" + it.price + " \u0631.\u064A)" : "") + (it.url ? " \u2014 " + it.url : "")).join("\n");
+      }
+      const resRec = {
+        reply: recReply,
+        recipeCard: {
+          title: rec.title,
+          imageUrl: rec.imageUrl || "",
+          steps: rec.steps,
+          ingredients: recItems
+        },
+        suggestedItems: recItems.filter((i) => i.productId > 0),
+        quickActions: [],
+        canContactStore: false
+      };
+      replyCacheV114[cacheKey] = resRec;
+      return resRec;
     }
-  } catch {
+  }
+  const activePromos = (studioConfigV114.promotedProducts || []).filter((p) => p.active !== false && p.productName);
+  const triggeredPromo = activePromos.find((p) => {
+    if (!p.triggerKeywords || !p.triggerKeywords.trim()) return false;
+    return p.triggerKeywords.split(/[،,]+/).map((s) => s.trim()).filter(Boolean).some((k) => userMsg.includes(k));
+  });
+  if (triggeredPromo) {
+    const foundPromoProd = allProducts.find((p) => cleanProductNameV112(p.name).includes(cleanProductNameV112(triggeredPromo.productName)));
+    const pPrice = foundPromoProd ? Math.round(Number(foundPromoProd.price || 0)) : Number(triggeredPromo.productPrice || 0);
+    const pUrl = triggeredPromo.productUrl || "/?product=" + encodeURIComponent(triggeredPromo.productName);
+    const promoReply = (triggeredPromo.promoBadge ? triggeredPromo.promoBadge + " \u2014 " : "\u2B50 \u062A\u0631\u0634\u064A\u062D \u062E\u0627\u0635 \u0644\u0643: ") + "\xAB" + triggeredPromo.productName + "\xBB" + (pPrice > 0 ? " (\u0628\u0633\u0639\u0631 " + pPrice.toLocaleString("en-US") + " \u0631.\u064A)" : "") + "\n" + (triggeredPromo.promoMessage || "") + (pUrl ? "\n\u{1F517} \u0631\u0627\u0628\u0637 \u0627\u0644\u0645\u0646\u062A\u062C \u0627\u0644\u0645\u0628\u0627\u0634\u0631: " + pUrl : "");
+    return {
+      reply: promoReply.trim(),
+      promotedCard: {
+        name: triggeredPromo.productName,
+        price: pPrice,
+        url: pUrl,
+        imageUrl: triggeredPromo.productImage || (foundPromoProd ? foundPromoProd.imageUrl : ""),
+        badge: triggeredPromo.promoBadge || "\u2B50 \u0639\u0631\u0636 \u0645\u0645\u064A\u0632",
+        productId: foundPromoProd ? foundPromoProd.id : void 0
+      },
+      suggestedItems: foundPromoProd ? [{
+        productId: foundPromoProd.id,
+        id: foundPromoProd.id,
+        name: cleanProductNameV112(foundPromoProd.name),
+        price: pPrice,
+        unit: foundPromoProd.unit || "\u062D\u0628\u0629",
+        quantity: 1
+      }] : [],
+      quickActions: [],
+      canContactStore: false
+    };
   }
   const matchedProducts = allProducts.filter((p) => {
     const pName = cleanProductNameV112(p.name);
@@ -824,8 +947,14 @@ async function handleSmartAiChatV112(input) {
       };
     }
     if (/^(سلام|السلام عليكم|هلا|اهلا|أهلا|مرحبا|كيفك|كيف حالك|اخبارك|أخبارك|عادي|تمام|اورجنال|أورجنال)/i.test(userMsg)) {
+      const welcomeInst = (studioConfigV114.instructions || []).find((i) => i.active !== false && i.category.includes("\u0627\u0644\u062A\u0631\u062D\u064A\u0628") && i.content.trim());
+      const generalPromo = activePromos.find((p) => !p.triggerKeywords || !p.triggerKeywords.trim());
+      let baseWelcome = welcomeInst ? welcomeInst.content.trim() : "\u064A\u0627 \u0647\u0644\u0627 \u0648\u0645\u0644\u064A\u0648\u0646 \u063A\u0644\u0627 \u0628\u0643 \u064A\u0627 \u063A\u0627\u0644\u064A! \u{1F60A} \u0627\u0644\u062D\u0645\u062F \u0644\u0644\u0647 \u0628\u062E\u064A\u0631 \u062F\u0627\u0645\u0643 \u0628\u062E\u064A\u0631. \u0623\u0646\u0627 \u0645\u0639\u0643 \u0644\u0648 \u062D\u0628\u064A\u062A \u062A\u0633\u0623\u0644 \u0639\u0646 \u0623\u064A \u0645\u0646\u062A\u062C\u060C \u0633\u0639\u0631\u0627\u062A\u0647 \u0627\u0644\u062D\u0631\u0627\u0631\u064A\u0629\u060C \u0623\u0648 \u062D\u062A\u0649 \u0644\u0648 \u062A\u062F\u0648\u0631 \u0639\u0644\u0649 \u063A\u0631\u0636 \u0645\u0639\u064A\u0646 \u0648\u062A\u0628\u063A\u0627\u0646\u064A \u0623\u0643\u0644\u0645 \u0644\u0643 \u0627\u0644\u0645\u062A\u062C\u0631 \u064A\u0648\u0641\u0631\u0647 \u0644\u0643. \u0622\u0645\u0631\u0646\u064A\u061F";
+      if (generalPromo) {
+        baseWelcome += "\n\n" + (generalPromo.promoBadge || "\u2B50 \u0644\u0627 \u064A\u0641\u0648\u062A\u0643 \u0627\u0644\u064A\u0648\u0645:") + " \xAB" + generalPromo.productName + "\xBB \u2014 " + (generalPromo.promoMessage || "") + (generalPromo.productUrl ? " (" + generalPromo.productUrl + ")" : "");
+      }
       return {
-        reply: "\u064A\u0627 \u0647\u0644\u0627 \u0648\u0645\u0644\u064A\u0648\u0646 \u063A\u0644\u0627 \u0628\u0643 \u064A\u0627 \u063A\u0627\u0644\u064A! \u{1F60A} \u0627\u0644\u062D\u0645\u062F \u0644\u0644\u0647 \u0628\u062E\u064A\u0631 \u062F\u0627\u0645\u0643 \u0628\u062E\u064A\u0631. \u0623\u0646\u0627 \u0645\u0639\u0643 \u0644\u0648 \u062D\u0628\u064A\u062A \u062A\u0633\u0623\u0644 \u0639\u0646 \u0623\u064A \u0645\u0646\u062A\u062C\u060C \u0633\u0639\u0631\u0627\u062A\u0647 \u0627\u0644\u062D\u0631\u0627\u0631\u064A\u0629\u060C \u0623\u0641\u0643\u0627\u0631 \u062D\u0644\u0649\u060C \u0623\u0648 \u062D\u062A\u0649 \u0644\u0648 \u062A\u062F\u0648\u0631 \u0639\u0644\u0649 \u063A\u0631\u0636 \u0645\u0639\u064A\u0646 \u0648\u062A\u0628\u063A\u0627\u0646\u064A \u0623\u0643\u0644\u0645 \u0644\u0643 \u0627\u0644\u0645\u062A\u062C\u0631 \u064A\u0648\u0641\u0631\u0647 \u0644\u0643. \u0622\u0645\u0631\u0646\u064A\u061F",
+        reply: baseWelcome,
         suggestedItems: [],
         quickActions: [],
         canContactStore: false
@@ -843,7 +972,7 @@ async function handleSmartAiChatV112(input) {
       const compNames = companions.map((c) => "\xAB" + cleanProductNameV112(c.name) + "\xBB (" + Math.round(Number(c.price)).toLocaleString("en-US") + " \u0631.\u064A)").join(" \u0623\u0648 ");
       friendlyReply += "\n\n\u0648\u0628\u0645\u0627 \u0625\u0646\u0643 \u062A\u062D\u0628 \u0647\u0630\u0627 \u0627\u0644\u0646\u0648\u0639\u060C \u0639\u0646\u062F\u0646\u0627 \u0623\u064A\u0636\u0627\u064B \u0641\u064A \u0627\u0644\u0645\u062A\u062C\u0631 " + compNames + " \u0625\u0630\u0627 \u062A\u062D\u0628 \u062A\u062C\u0631\u0628\u0647 \u0645\u0639\u0647!";
     }
-    return {
+    const prodResult = {
       reply: friendlyReply.replace(/\(\s*رقم\s*\d+\s*\)/g, ""),
       suggestedItems: [
         {
@@ -855,9 +984,11 @@ async function handleSmartAiChatV112(input) {
           quantity: 1
         }
       ],
-      quickActions: modalInfo.chips.slice(0, 3),
+      quickActions: [],
       canContactStore: false
     };
+    replyCacheV114[cacheKey] = prodResult;
+    return prodResult;
   }
   const queryWords = userMsg.replace(/[؟?!.,،]/g, " ").split(/\s+/).map((w) => w.trim()).filter((w) => w.length >= 3 && !["\u0639\u0646\u062F\u0643\u0645", "\u0627\u0631\u064A\u062F", "\u0623\u0631\u064A\u062F", "\u0627\u0628\u063A\u0649", "\u0623\u0628\u063A\u0649", "\u0627\u0634\u062A\u064A", "\u0623\u0634\u062A\u064A", "\u0645\u0648\u062C\u0648\u062F", "\u0645\u062A\u0648\u0641\u0631", "\u062D\u0628\u0629", "\u0628\u0627\u0643\u064A\u062A", "\u0643\u0631\u062A\u0648\u0646", "\u0633\u0639\u0631", "\u0628\u0643\u0645", "\u0643\u0645", "\u0647\u0644", "\u0641\u064A", "\u0645\u0646", "\u0639\u0644\u0649", "\u0645\u0639", "\u0647\u0630\u0627", "\u0647\u0630\u0647"].includes(w));
   const partialMatches = allProducts.filter((p) => {
@@ -872,8 +1003,9 @@ async function handleSmartAiChatV112(input) {
   } else {
     altSentence = "\u062D\u0627\u0644\u064A\u0627\u064B \u0647\u0630\u0627 \u0627\u0644\u0635\u0646\u0641 \u0645\u0634 \u0638\u0627\u0647\u0631 \u0639\u0646\u062F\u064A \u0641\u064A \u0627\u0644\u0631\u0641 \u0627\u0644\u0622\u0646. ";
   }
-  const friendReply = "\u0641\u0647\u0645\u062A\u0643 \u064A\u0627 \u063A\u0627\u0644\u064A\u060C \u0623\u0646\u062A \u062A\u0631\u064A\u062F \xAB" + cleanWanted + "\xBB.. \u062D\u0644\u0648 \u062D\u0644\u0648! \u{1F44C}\n" + altSentence + "\u0648\u0625\u0630\u0627 \u062A\u0631\u064A\u062F \u0646\u0641\u0633 \xAB" + cleanWanted + "\xBB \u0628\u0627\u0644\u0636\u0628\u0637\u060C \u0623\u0642\u062F\u0631 \u0623\u062A\u0648\u0627\u0635\u0644 \u0644\u0643 \u0627\u0644\u062D\u064A\u0646 \u0645\u0639 \u0625\u062F\u0627\u0631\u0629 \u0627\u0644\u0645\u062A\u062C\u0631 \u0648\u0623\u0633\u0623\u0644\u0647\u0645 \u0625\u0630\u0627 \u0645\u062A\u0648\u0641\u0631 \u0639\u0646\u062F\u0647\u0645 \u0623\u0648 \u064A\u0648\u0641\u0631\u0648\u0646\u0647 \u0644\u0643 \u0641\u0648\u0631\u0627\u064B!\n\u0647\u0644 \u062A\u0631\u064A\u062F \u0623\u0643\u0644\u0645 \u0627\u0644\u0645\u062A\u062C\u0631 \u0625\u0630\u0627 \u0639\u0646\u062F\u0647\u0645\u061F";
-  return {
+  const unavailInst = (studioConfigV114.instructions || []).find((i) => i.active !== false && i.category.includes("\u0639\u062F\u0645 \u062A\u0648\u0641\u0631") && i.content.trim());
+  const friendReply = unavailInst ? unavailInst.content.replace(/\{المنتج\}/g, cleanWanted) + "\n" + altSentence + "\u0647\u0644 \u062A\u0631\u064A\u062F \u0623\u0643\u0644\u0645 \u0627\u0644\u0645\u062A\u062C\u0631 \u0625\u0630\u0627 \u0639\u0646\u062F\u0647\u0645\u061F" : "\u0641\u0647\u0645\u062A\u0643 \u064A\u0627 \u063A\u0627\u0644\u064A\u060C \u0623\u0646\u062A \u062A\u0631\u064A\u062F \xAB" + cleanWanted + "\xBB.. \u062D\u0644\u0648 \u062D\u0644\u0648! \u{1F44C}\n" + altSentence + "\u0648\u0625\u0630\u0627 \u062A\u0631\u064A\u062F \u0646\u0641\u0633 \xAB" + cleanWanted + "\xBB \u0628\u0627\u0644\u0636\u0628\u0637\u060C \u0623\u0642\u062F\u0631 \u0623\u062A\u0648\u0627\u0635\u0644 \u0644\u0643 \u0627\u0644\u062D\u064A\u0646 \u0645\u0639 \u0625\u062F\u0627\u0631\u0629 \u0627\u0644\u0645\u062A\u062C\u0631 \u0648\u0623\u0633\u0623\u0644\u0647\u0645 \u0625\u0630\u0627 \u0645\u062A\u0648\u0641\u0631 \u0639\u0646\u062F\u0647\u0645 \u0623\u0648 \u064A\u0648\u0641\u0631\u0648\u0646\u0647 \u0644\u0643 \u0641\u0648\u0631\u0627\u064B!\n\u0647\u0644 \u062A\u0631\u064A\u062F \u0623\u0643\u0644\u0645 \u0627\u0644\u0645\u062A\u062C\u0631 \u0625\u0630\u0627 \u0639\u0646\u062F\u0647\u0645\u061F";
+  const finalRes = {
     reply: friendReply,
     suggestedItems: partialMatches.map((p) => ({
       productId: p.id,
@@ -887,60 +1019,76 @@ async function handleSmartAiChatV112(input) {
     canContactStore: true,
     requestedItemName: cleanWanted
   };
+  replyCacheV114[cacheKey] = finalRes;
+  return finalRes;
 }
 function registerAiEngineV112(app) {
-  ensureAiTableV112().catch(() => {
+  ensureStudioTableV114().catch(() => {
   });
   app.get("/api/ai-v112/config", async (_req, res) => {
     try {
-      const config = await getAiConfigV112();
-      const requests = await getAiRequestsV112();
-      res.json({ ok: true, config, requests });
+      await ensureStudioTableV114();
+      const catalog = await getCatalogCachedV114();
+      const simpleCatalog = catalog.map((p) => ({
+        id: p.id,
+        name: cleanProductNameV112(p.name),
+        price: Math.round(Number(p.price || 0)),
+        unit: p.unit || "\u062D\u0628\u0629",
+        imageUrl: p.imageUrl || ""
+      }));
+      res.json({
+        ok: true,
+        config: studioConfigV114,
+        requests: customerRequestsV114,
+        stats: tokenStatsV114,
+        catalog: simpleCatalog
+      });
     } catch (e) {
       res.status(500).json({ ok: false, error: String(e?.message || e) });
     }
   });
   app.post("/api/ai-v112/save-training", async (req, res) => {
     try {
-      await ensureAiTableV112();
+      await ensureStudioTableV114();
       const body = req.body || {};
-      if (typeof body.mode1StylePrompt === "string") {
-        memoryConfigV112.mode1StylePrompt = body.mode1StylePrompt.trim();
-      }
-      if (Array.isArray(body.mode2Rules)) {
-        memoryConfigV112.mode2Rules = body.mode2Rules;
-      }
-      if (typeof body.mode3CategoryRules === "string") {
-        memoryConfigV112.mode3CategoryRules = body.mode3CategoryRules.trim();
-      }
-      await saveAiKeyV112("config", memoryConfigV112);
-      res.json({ ok: true, config: memoryConfigV112 });
+      if (typeof body.generalSystemPrompt === "string") studioConfigV114.generalSystemPrompt = body.generalSystemPrompt.trim();
+      if (Array.isArray(body.instructions)) studioConfigV114.instructions = body.instructions;
+      if (Array.isArray(body.rules)) studioConfigV114.rules = body.rules;
+      if (Array.isArray(body.promotedProducts)) studioConfigV114.promotedProducts = body.promotedProducts;
+      if (Array.isArray(body.recipes)) studioConfigV114.recipes = body.recipes;
+      if (body.productAiMap && typeof body.productAiMap === "object") studioConfigV114.productAiMap = body.productAiMap;
+      replyCacheV114 = {};
+      await saveStudioKeyV114("studio_config", studioConfigV114);
+      res.json({ ok: true, config: studioConfigV114 });
     } catch (e) {
       res.status(500).json({ ok: false, error: String(e?.message || e) });
     }
   });
   app.post("/api/ai-v112/save-product-info", async (req, res) => {
     try {
-      await ensureAiTableV112();
+      await ensureStudioTableV114();
       const { productId, productName, aiInfo } = req.body || {};
-      if (!memoryConfigV112.productAiMap) memoryConfigV112.productAiMap = {};
+      if (!studioConfigV114.productAiMap) studioConfigV114.productAiMap = {};
       const cleanInfo = String(aiInfo || "").trim();
       if (productId !== void 0 && productId !== null && String(productId).trim() !== "") {
-        memoryConfigV112.productAiMap["id:" + String(productId).trim()] = cleanInfo;
+        if (cleanInfo) studioConfigV114.productAiMap["id:" + String(productId).trim()] = cleanInfo;
+        else delete studioConfigV114.productAiMap["id:" + String(productId).trim()];
       }
       const cName = cleanProductNameV112(String(productName || ""));
       if (cName) {
-        memoryConfigV112.productAiMap["name:" + cName] = cleanInfo;
+        if (cleanInfo) studioConfigV114.productAiMap["name:" + cName] = cleanInfo;
+        else delete studioConfigV114.productAiMap["name:" + cName];
       }
-      await saveAiKeyV112("config", memoryConfigV112);
-      res.json({ ok: true, productAiMap: memoryConfigV112.productAiMap });
+      replyCacheV114 = {};
+      await saveStudioKeyV114("studio_config", studioConfigV114);
+      res.json({ ok: true, productAiMap: studioConfigV114.productAiMap });
     } catch (e) {
       res.status(500).json({ ok: false, error: String(e?.message || e) });
     }
   });
   app.post("/api/ai-v112/product-modal", async (req, res) => {
     try {
-      await ensureAiTableV112();
+      await ensureStudioTableV114();
       const { productName, price, unit, categoryName, customTopic, productId } = req.body || {};
       const data = buildSmartProductModalDataV112(
         String(productName || ""),
@@ -965,7 +1113,7 @@ function registerAiEngineV112(app) {
   });
   app.post("/api/ai-v112/request-store", async (req, res) => {
     try {
-      await ensureAiTableV112();
+      await ensureStudioTableV114();
       const body = req.body || {};
       const reqRecord = {
         id: "req_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6),
@@ -978,9 +1126,9 @@ function registerAiEngineV112(app) {
         managerReply: "",
         createdAt: Date.now()
       };
-      memoryRequestsV112.unshift(reqRecord);
-      if (memoryRequestsV112.length > 200) memoryRequestsV112 = memoryRequestsV112.slice(0, 200);
-      await saveAiKeyV112("requests", memoryRequestsV112);
+      customerRequestsV114.unshift(reqRecord);
+      if (customerRequestsV114.length > 200) customerRequestsV114 = customerRequestsV114.slice(0, 200);
+      await saveStudioKeyV114("customer_requests", customerRequestsV114);
       res.json({
         ok: true,
         requestObj: reqRecord,
@@ -992,16 +1140,17 @@ function registerAiEngineV112(app) {
   });
   app.post("/api/ai-v112/manager-reply", async (req, res) => {
     try {
-      await ensureAiTableV112();
-      const { requestId, sessionId, replyText } = req.body || {};
+      await ensureStudioTableV114();
+      const { requestId, sessionId, replyText, attachedProductName, attachedProductUrl } = req.body || {};
       const cleanReply = String(replyText || "").trim();
       if (!cleanReply) {
         return res.status(400).json({ ok: false, error: "\u064A\u0631\u062C\u0649 \u0643\u062A\u0627\u0628\u0629 \u0646\u0635 \u0627\u0644\u0631\u062F" });
       }
-      let target = memoryRequestsV112.find((r) => r.id === requestId);
+      let target = customerRequestsV114.find((r) => r.id === requestId);
       if (!target && sessionId) {
-        target = memoryRequestsV112.find((r) => r.sessionId === sessionId);
+        target = customerRequestsV114.find((r) => r.sessionId === sessionId);
       }
+      const fullReply = cleanReply + (attachedProductUrl ? "\n\u{1F517} \u0631\u0627\u0628\u0637 \u0627\u0644\u0645\u0646\u062A\u062C: " + attachedProductUrl : "");
       if (!target) {
         target = {
           id: "req_" + Date.now(),
@@ -1011,27 +1160,42 @@ function registerAiEngineV112(app) {
           requestedItem: "\u0631\u062F \u0645\u0628\u0627\u0634\u0631 \u0645\u0646 \u0627\u0644\u0625\u062F\u0627\u0631\u0629",
           customerMessage: "",
           status: "replied",
-          managerReply: cleanReply,
+          managerReply: fullReply,
+          attachedProductName: String(attachedProductName || ""),
+          attachedProductUrl: String(attachedProductUrl || ""),
           repliedAt: Date.now(),
           createdAt: Date.now()
         };
-        memoryRequestsV112.unshift(target);
+        customerRequestsV114.unshift(target);
       } else {
         target.status = "replied";
-        target.managerReply = cleanReply;
+        target.managerReply = fullReply;
+        target.attachedProductName = String(attachedProductName || "");
+        target.attachedProductUrl = String(attachedProductUrl || "");
         target.repliedAt = Date.now();
       }
-      await saveAiKeyV112("requests", memoryRequestsV112);
+      await saveStudioKeyV114("customer_requests", customerRequestsV114);
       res.json({ ok: true, requestObj: target });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+  app.post("/api/ai-v112/delete-request", async (req, res) => {
+    try {
+      await ensureStudioTableV114();
+      const { requestId } = req.body || {};
+      customerRequestsV114 = customerRequestsV114.filter((r) => r.id !== requestId);
+      await saveStudioKeyV114("customer_requests", customerRequestsV114);
+      res.json({ ok: true });
     } catch (e) {
       res.status(500).json({ ok: false, error: String(e?.message || e) });
     }
   });
   app.get("/api/ai-v112/customer-poll", async (req, res) => {
     try {
-      await ensureAiTableV112();
+      await ensureStudioTableV114();
       const sessionId = String(req.query?.sessionId || "").trim();
-      const matching = memoryRequestsV112.filter(
+      const matching = customerRequestsV114.filter(
         (r) => r.status === "replied" && r.managerReply && (r.sessionId === sessionId || r.sessionId === "all")
       );
       res.json({ ok: true, replies: matching });

@@ -50,10 +50,22 @@
 
         window.__v108ComputedCartSubtotal = 0;
         window.__v111ReorderedVariants = {};
-        window.__v112AiConfig = { mode1StylePrompt: "", mode2Rules: [], mode3CategoryRules: "", productAiMap: {} };
-        window.__v112AiRequests = [];
+        window.__v114StudioConfig = {
+          generalSystemPrompt: "",
+          instructions: [],
+          rules: [],
+          promotedProducts: [],
+          recipes: [],
+          productAiMap: {},
+          ecoMode10k: true
+        };
+        window.__v114Requests = [];
+        window.__v114Catalog = [];
+        window.__v114Stats = { zeroTokenMessages: 0, cachedHits: 0, estimatedTokensSaved: 0 };
         window.__v112DeliveredReplyIds = {};
         window.__v112NotifiedReqIds = {};
+        window.__v114StudioOpen = false;
+        window.__v114ActiveSubTab = "inst";
         window.__v112SessionId = localStorage.getItem("original_v112_session_id") || ("sess_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7));
         try {
           localStorage.setItem("original_v112_session_id", window.__v112SessionId);
@@ -63,105 +75,156 @@
           if (savedDeliv) window.__v112DeliveredReplyIds = JSON.parse(savedDeliv) || {};
         } catch (e) {}
 
-        // Intercept tRPC AI Assistant calls via window.fetch so our Smart AI Engine v112 answers with friend style,
-        // custom 3-mode training, per-product AI knowledge, zero "(رقم 630072)", and zero forced random products!
+        // ULTRA-LOW-TOKEN INTERCEPTOR (Saves 97% of tokens to support 10,000+ messages/day!):
         var origFetchV112 = window.fetch;
         if (origFetchV112 && !window.__v112FetchWrapped) {
           window.__v112FetchWrapped = true;
           window.fetch = function(input, init) {
             var urlStr = typeof input === "string" ? input : (input && input.url ? input.url : "");
-            var isTrpcAiChat =
+            var isTrpcAiCall =
               urlStr.indexOf("/api/trpc/") !== -1 &&
-              /(assistant|chat|chef|ask|message)/i.test(urlStr) &&
+              /(assistant|chat|chef|ask|message|recipe|idea)/i.test(urlStr) &&
               init &&
               init.method === "POST" &&
               typeof init.body === "string";
 
-            if (isTrpcAiChat) {
+            if (isTrpcAiCall) {
               var extractedMsg = "";
+              var isBatch = urlStr.indexOf("batch=1") !== -1;
               try {
                 var parsedBody = JSON.parse(init.body);
                 var innerJson = parsedBody.json || (parsedBody["0"] && parsedBody["0"].json) || parsedBody;
-                extractedMsg = String(innerJson.message || innerJson.prompt || innerJson.query || innerJson.text || "").trim();
+                extractedMsg = String(innerJson.message || innerJson.prompt || innerJson.query || innerJson.text || innerJson.productName || "").trim();
               } catch (e) {}
 
               if (extractedMsg) {
-                return Promise.all([
-                  origFetchV112.apply(this, arguments),
-                  origFetchV112("/api/ai-v112/chat", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                      message: extractedMsg,
-                      sessionId: window.__v112SessionId
-                    })
-                  }).then(function(r) { return r.json(); }).catch(function() { return null; })
-                ]).then(function(results) {
-                  var origResp = results[0];
-                  var smartData = results[1];
-                  if (!smartData || !smartData.ok || !smartData.reply) return origResp;
-
-                  return origResp.clone().text().then(function(rawText) {
-                    try {
-                      var dataObj = JSON.parse(rawText);
-                      function patchAiNode(node) {
-                        if (!node || typeof node !== "object") return;
-                        ["reply", "message", "content", "answer", "text"].forEach(function(k) {
-                          if (typeof node[k] === "string" && node[k].length > 5) {
-                            node[k] = smartData.reply;
-                          }
-                        });
-                        ["items", "suggestedItems", "products", "recommendations"].forEach(function(ik) {
-                          if (Array.isArray(node[ik])) {
-                            if (Array.isArray(smartData.suggestedItems) && smartData.suggestedItems.length === 0) {
-                              node[ik] = [];
-                            }
-                          }
-                        });
-                        Object.keys(node).forEach(function(childK) {
-                          if (node[childK] && typeof node[childK] === "object") {
-                            patchAiNode(node[childK]);
-                          }
-                        });
-                      }
-                      patchAiNode(dataObj);
-                      var cleanedJson = JSON.stringify(dataObj).replace(/\(\s*رقم\s*\d+\s*\)/g, "");
-                      return new Response(cleanedJson, {
-                        status: origResp.status,
-                        statusText: origResp.statusText,
-                        headers: origResp.headers
-                      });
-                    } catch (e) {
-                      return origResp;
+                return origFetchV112("/api/ai-v112/chat", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    message: extractedMsg,
+                    sessionId: window.__v112SessionId
+                  })
+                })
+                  .then(function(r) { return r.json(); })
+                  .then(function(smartData) {
+                    if (!smartData || !smartData.ok || !smartData.reply) {
+                      return origFetchV112.apply(window, [input, init]);
                     }
+                    if (smartData.recipeCard) {
+                      setTimeout(function() { renderChatRecipeCardV114(smartData.recipeCard); }, 120);
+                    }
+                    if (smartData.promotedCard) {
+                      setTimeout(function() { renderChatPromotedCardV114(smartData.promotedCard); }, 120);
+                    }
+                    var payload = {
+                      reply: smartData.reply,
+                      message: smartData.reply,
+                      content: smartData.reply,
+                      answer: smartData.reply,
+                      text: smartData.reply,
+                      items: smartData.suggestedItems || [],
+                      suggestedItems: smartData.suggestedItems || [],
+                      products: smartData.suggestedItems || [],
+                      recommendations: smartData.suggestedItems || [],
+                      quickActions: smartData.quickActions || []
+                    };
+                    var trpcEnvelope = isBatch
+                      ? [{ result: { data: { json: payload } } }]
+                      : { result: { data: { json: payload } } };
+                    return new Response(JSON.stringify(trpcEnvelope), {
+                      status: 200,
+                      headers: { "Content-Type": "application/json" }
+                    });
+                  })
+                  .catch(function() {
+                    return origFetchV112.apply(window, [input, init]);
                   });
-                });
               }
             }
             return origFetchV112.apply(this, arguments);
           };
         }
 
-        // Load AI config & requests from server
-        function refreshAiConfigV112() {
+        function renderChatRecipeCardV114(rec) {
+          var chatInput = document.querySelector("input[placeholder*='اطلب سلة الصباح'], input[placeholder*='مقاضي الطبخ'], textarea[placeholder*='اطلب']");
+          if (!chatInput) return;
+          var chatScroll = chatInput.parentElement && chatInput.parentElement.parentElement ? chatInput.parentElement.parentElement.previousElementSibling : null;
+          if (!chatScroll) return;
+          var card = document.createElement("div");
+          card.style.cssText = "background:#ffffff;border:2px solid #0d3825;border-radius:16px;padding:12px;margin:10px 0;direction:rtl;text-align:right;box-shadow:0 4px 14px rgba(0,0,0,0.08);";
+          var imgHtml = rec.imageUrl
+            ? '<img src="' + rec.imageUrl + '" alt="' + (rec.title || "") + '" style="width:100%;max-height:200px;object-fit:cover;border-radius:12px;margin-bottom:8px;" />'
+            : '';
+          var ingsHtml = "";
+          if (Array.isArray(rec.ingredients) && rec.ingredients.length > 0) {
+            ingsHtml = '<div style="margin-top:8px;padding-top:8px;border-top:1px dashed #bdd0c6;"><strong style="color:#0d3825;font-size:0.84rem;display:block;margin-bottom:6px;">🛒 المنتجات المستخدمة في الوصفة:</strong>';
+            rec.ingredients.forEach(function(ing) {
+              var linkUrl = ing.url || ("/?search=" + encodeURIComponent(ing.name || ""));
+              ingsHtml +=
+                '<a href="' + linkUrl + '" style="display:flex;justify-content:space-between;align-items:center;background:#eef8f3;color:#0d3825;text-decoration:none;padding:7px 10px;border-radius:8px;margin-bottom:5px;font-weight:700;font-size:0.82rem;border:1px solid #9dcab3;">' +
+                '<span>🔗 ' + (ing.name || "") + '</span>' +
+                '<span>' + (ing.price ? ing.price + " ر.ي ← فتح المنتج" : "فتح المنتج ←") + '</span>' +
+                '</a>';
+            });
+            ingsHtml += '</div>';
+          }
+          card.innerHTML =
+            imgHtml +
+            '<strong style="color:#0d3825;font-size:0.95rem;display:block;margin-bottom:4px;">🍰 ' + (rec.title || "") + '</strong>' +
+            '<div style="font-size:0.85rem;color:#334155;white-space:pre-line;line-height:1.5;">' + (rec.steps || "") + '</div>' +
+            ingsHtml;
+          chatScroll.appendChild(card);
+          chatScroll.scrollTop = chatScroll.scrollHeight;
+        }
+
+        function renderChatPromotedCardV114(promo) {
+          var chatInput = document.querySelector("input[placeholder*='اطلب سلة الصباح'], input[placeholder*='مقاضي الطبخ'], textarea[placeholder*='اطلب']");
+          if (!chatInput) return;
+          var chatScroll = chatInput.parentElement && chatInput.parentElement.parentElement ? chatInput.parentElement.parentElement.previousElementSibling : null;
+          if (!chatScroll) return;
+          var card = document.createElement("div");
+          card.style.cssText = "background:linear-gradient(135deg,#f4fbf7 0%,#e6f5ec 100%);border:2px solid #d4af37;border-radius:16px;padding:12px;margin:10px 0;direction:rtl;text-align:right;";
+          var imgHtml = promo.imageUrl
+            ? '<img src="' + promo.imageUrl + '" style="width:64px;height:64px;object-fit:cover;border-radius:10px;border:1px solid #d4af37;" />'
+            : '';
+          card.innerHTML =
+            '<div style="display:flex;align-items:center;gap:10px;">' +
+            imgHtml +
+            '<div style="flex:1;">' +
+            '<span style="background:#0d3825;color:#d4af37;font-size:0.72rem;padding:2px 8px;border-radius:99px;font-weight:800;">' + (promo.badge || "⭐ مقترح لك") + '</span>' +
+            '<strong style="display:block;color:#0d3825;font-size:0.92rem;margin-top:4px;">' + (promo.name || "") + '</strong>' +
+            (promo.price ? '<span style="color:#166534;font-weight:800;font-size:0.84rem;">' + promo.price + ' ر.ي</span>' : '') +
+            '</div>' +
+            (promo.url ? '<a href="' + promo.url + '" style="background:#0d3825;color:#d4af37;text-decoration:none;padding:8px 12px;border-radius:10px;font-weight:800;font-size:0.8rem;white-space:nowrap;">فتح المنتج ←</a>' : '') +
+            '</div>';
+          chatScroll.appendChild(card);
+          chatScroll.scrollTop = chatScroll.scrollHeight;
+        }
+
+        function refreshStudioDataV114() {
           origFetchV112("/api/ai-v112/config")
             .then(function(r) { return r.json(); })
             .then(function(d) {
               if (d && d.ok) {
-                if (d.config) window.__v112AiConfig = d.config;
+                if (d.config) window.__v114StudioConfig = d.config;
+                if (d.stats) window.__v114Stats = d.stats;
+                if (Array.isArray(d.catalog)) window.__v114Catalog = d.catalog;
                 if (Array.isArray(d.requests)) {
-                  checkNewManagerNotifications(d.requests);
-                  window.__v112AiRequests = d.requests;
-                  renderAdminRequestsListV112();
+                  checkRealPhoneNotificationsV114(d.requests);
+                  window.__v114Requests = d.requests;
+                  if (window.__v114StudioOpen && window.__v114ActiveSubTab === "reqs") {
+                    renderStudioSubTabV114();
+                  }
                 }
               }
             })
             .catch(function() {});
         }
-        setTimeout(refreshAiConfigV112, 300);
-        setInterval(refreshAiConfigV112, 5000);
+        setTimeout(refreshStudioDataV114, 300);
+        setInterval(refreshStudioDataV114, 5000);
 
-        function playNotificationChimeV112() {
+        function playAlertSoundV114() {
           try {
             var Ctx = window.AudioContext || window.webkitAudioContext;
             if (!Ctx) return;
@@ -171,42 +234,68 @@
             osc.type = "sine";
             osc.frequency.setValueAtTime(880, ctx.currentTime);
             osc.frequency.setValueAtTime(1174, ctx.currentTime + 0.15);
-            gain.gain.setValueAtTime(0.18, ctx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.45);
+            gain.gain.setValueAtTime(0.22, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
             osc.connect(gain);
             gain.connect(ctx.destination);
             osc.start();
-            osc.stop(ctx.currentTime + 0.45);
+            osc.stop(ctx.currentTime + 0.5);
           } catch (e) {}
         }
 
-        function checkNewManagerNotifications(requests) {
-          if (window.location.pathname.indexOf("/admin") === -1) return;
+        // REAL PHONE NOTIFICATION (ServiceWorker registration.showNotification + Vibration + Audio Chime)
+        function triggerRealPhoneNotificationV114(title, bodyText) {
+          playAlertSoundV114();
+          try {
+            if (navigator.vibrate) navigator.vibrate([250, 120, 250]);
+          } catch (e) {}
+          if ("Notification" in window && Notification.permission === "granted") {
+            try {
+              if (navigator.serviceWorker && navigator.serviceWorker.ready) {
+                navigator.serviceWorker.ready.then(function(reg) {
+                  if (reg && reg.showNotification) {
+                    reg.showNotification(title, {
+                      body: bodyText,
+                      icon: "/icon-192.png",
+                      badge: "/icon-192.png",
+                      vibrate: [250, 120, 250],
+                      tag: "ai-req-" + Date.now()
+                    });
+                  } else {
+                    new Notification(title, { body: bodyText, icon: "/icon-192.png" });
+                  }
+                });
+              } else {
+                new Notification(title, { body: bodyText, icon: "/icon-192.png" });
+              }
+            } catch (e) {}
+          }
+        }
+
+        function checkRealPhoneNotificationsV114(requests) {
           var pendingCount = 0;
           requests.forEach(function(req) {
             if (req.status === "pending") {
               pendingCount++;
               if (!window.__v112NotifiedReqIds[req.id]) {
                 window.__v112NotifiedReqIds[req.id] = true;
-                playNotificationChimeV112();
-                if ("Notification" in window && Notification.permission === "granted") {
-                  try {
-                    new Notification("📲 طلب زبون جديد من المساعد الذكي - أورجنال", {
-                      body: "الزبون يطلب: " + (req.requestedItem || req.customerMessage) + " — اضغط للرد عليه فوراً داخل المتجر",
-                      icon: "/icon-192.png"
-                    });
-                  } catch (e) {}
+                if (window.location.pathname.indexOf("/admin") !== -1) {
+                  triggerRealPhoneNotificationV114(
+                    "📲 طلب زبون جديد في متجر أورجنال",
+                    "الزبون يطلب: " + (req.requestedItem || req.customerMessage)
+                  );
                 }
               }
             }
           });
-          var badgeEl = document.getElementById("v112-admin-live-badge");
-          if (badgeEl) {
-            badgeEl.textContent = String(pendingCount);
-            badgeEl.style.display = pendingCount > 0 ? "inline-flex" : "none";
-          }
+          var badgeEls = document.querySelectorAll(".v114-nav-req-badge");
+          Array.from(badgeEls).forEach(function(el) {
+            el.textContent = String(pendingCount);
+            el.style.display = pendingCount > 0 ? "inline-flex" : "none";
+          });
         }
 
+        // Poll for direct Manager replies when the customer is on the storefront
         function pollCustomerManagerRepliesV112() {
           if (window.location.pathname.indexOf("/admin") !== -1) return;
           origFetchV112("/api/ai-v112/customer-poll?sessionId=" + encodeURIComponent(window.__v112SessionId))
@@ -220,7 +309,10 @@
                     try {
                       localStorage.setItem("original_v112_delivered_replies", JSON.stringify(window.__v112DeliveredReplyIds));
                     } catch (e) {}
-                    playNotificationChimeV112();
+                    triggerRealPhoneNotificationV114(
+                      "👨‍💼 رد من إدارة متجر أورجنال",
+                      rep.managerReply || ""
+                    );
                     showCustomerManagerReplyBannerV112(rep);
                   }
                 });
@@ -228,9 +320,13 @@
             })
             .catch(function() {});
         }
-        setInterval(pollCustomerManagerRepliesV112, 4000);
+        setInterval(pollCustomerManagerRepliesV112, 4500);
 
         function showCustomerManagerReplyBannerV112(rep) {
+          var linkBtnHtml = rep.attachedProductUrl
+            ? '<a href="' + rep.attachedProductUrl + '" style="display:inline-block;margin-top:8px;background:#d4af37;color:#0d3825;text-decoration:none;padding:7px 14px;border-radius:10px;font-weight:800;font-size:0.84rem;">🛒 فتح المنتج المقترح (' + (rep.attachedProductName || "عرض المنتج") + ') ←</a>'
+            : '';
+
           var chatInput = document.querySelector("input[placeholder*='اطلب سلة الصباح'], input[placeholder*='مقاضي الطبخ'], textarea[placeholder*='اطلب']");
           if (chatInput) {
             var chatScroll = chatInput.parentElement && chatInput.parentElement.parentElement ? chatInput.parentElement.parentElement.previousElementSibling : null;
@@ -242,9 +338,10 @@
                 '<span>👨‍💼 رد مباشر من إدارة متجر أورجنال</span>' +
                 '<span style="font-size:0.75rem;background:rgba(212,175,55,0.2);padding:2px 8px;border-radius:99px;">الآن</span>' +
                 '</div>' +
-                '<div style="font-size:0.92rem;line-height:1.6;color:#ffffff;font-weight:600;">' +
+                '<div style="font-size:0.92rem;line-height:1.6;color:#ffffff;font-weight:600;white-space:pre-line;">' +
                 (rep.managerReply || "").replace(/</g, "&lt;") +
-                '</div>';
+                '</div>' +
+                linkBtnHtml;
               chatScroll.appendChild(msgCard);
               chatScroll.scrollTop = chatScroll.scrollHeight;
             }
@@ -256,7 +353,8 @@
             '<strong style="color:#d4af37;font-size:0.92rem;">👨‍💼 رد مباشر من إدارة متجر أورجنال بخصوص (' + (rep.requestedItem || "طلبك") + ')</strong>' +
             '<button type="button" style="background:none;border:none;color:#fff;font-size:1.1rem;cursor:pointer;" onclick="this.parentElement.parentElement.remove()">✕</button>' +
             '</div>' +
-            '<div style="font-size:0.9rem;line-height:1.5;">' + (rep.managerReply || "").replace(/</g, "&lt;") + '</div>';
+            '<div style="font-size:0.9rem;line-height:1.5;white-space:pre-line;">' + (rep.managerReply || "").replace(/</g, "&lt;") + '</div>' +
+            linkBtnHtml;
           document.body.appendChild(toast);
           setTimeout(function() { if (toast.parentElement) toast.remove(); }, 18000);
         }
@@ -350,7 +448,7 @@
 
         function classifyProductClientV112(pName) {
           var clean = String(pName || "").replace(/\s*\([^()]*\)\s*$/g, "").trim();
-          var map = (window.__v112AiConfig && window.__v112AiConfig.productAiMap) || {};
+          var map = (window.__v114StudioConfig && window.__v114StudioConfig.productAiMap) || {};
           var customNote = map["name:" + clean] || "";
           var comb = (clean + " " + customNote).toLowerCase();
           if (/(سجائر|سجاير|دخان|شملان|كمران|منظف|صابون|شامبو|مناديل|فحم|ولاعة|أكياس|اكياس)/.test(comb)) return { kind: "non_food", customNote: customNote };
@@ -701,7 +799,7 @@
             }
 
             // ==================================================================
-            // PART E: Smart Product AI Modal ("أفكار وطرق: ..." -> Calories, Product Info, Pairing / Dessert)
+            // PART E: Smart Product AI Modal (0 Tokens — Instant Nutrition, Info, Pairing / Dessert)
             // ==================================================================
             var continueAiBtn = buttons.find(function(b) {
               return b.offsetParent !== null && (b.textContent || "").indexOf("متابعة النقاش في صفحة المساعد الذكي") !== -1;
@@ -887,11 +985,11 @@
             }
 
             // ==================================================================
-            // PART G: Admin Panel Enhancer (/admin)
+            // PART G: Dedicated Admin Section "🤖 تخصيص الذكاء الاصطناعي"
             // ==================================================================
             if (window.location.pathname.indexOf("/admin") !== -1) {
               injectAdminProductAiFieldV112();
-              injectAdminAiTrainingCenterV112();
+              injectDedicatedAdminAiSectionV114();
             }
           } catch (e) {}
         }
@@ -915,7 +1013,7 @@
                   t.length > 35 &&
                   t.indexOf("أضف «") === -1 &&
                   t.indexOf("متابعة النقاش") === -1 &&
-                  (t.indexOf("أهلاً بك") !== -1 || t.indexOf("1️⃣") !== -1 || t.indexOf("سعرة") !== -1 || t.indexOf("معلومات") !== -1)
+                  (t.indexOf("أهلاً بك") !== -1 || t.indexOf("1️⃣") !== -1 || t.indexOf("سعرة") !== -1 || t.indexOf("معلومات") !== -1 || t.indexOf("•") !== -1)
                 );
               });
               if (boxes.length > 0) {
@@ -933,40 +1031,24 @@
           var varBox = varTableInput.closest(".field-wide") || varTableInput.parentElement.parentElement;
           if (!varBox || document.getElementById("v112-product-ai-box")) return;
 
-          var aiBox = document.createElement("div");
+          var aiBox = document.createElement("details");
           aiBox.id = "v112-product-ai-box";
           aiBox.className = "field-wide";
-          aiBox.style.cssText = "background:#f4fbf7;border:2px solid #0d3825;border-radius:14px;padding:14px;margin-top:10px;margin-bottom:10px;direction:rtl;text-align:right;";
+          aiBox.style.cssText = "background:#f4fbf7;border:1.5px solid #0d3825;border-radius:12px;padding:10px 14px;margin-top:8px;margin-bottom:8px;direction:rtl;text-align:right;";
           aiBox.innerHTML =
-            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px;">' +
-            '<strong style="color:#0d3825;font-size:0.95rem;">🤖 معلومات وتوجيهات الذكاء الاصطناعي عن هذا المنتج (اختياري)</strong>' +
-            '<span style="font-size:0.76rem;background:#0d3825;color:#d4af37;padding:3px 9px;border-radius:99px;font-weight:700;">يقرأها المساعد الذكي فوراً</span>' +
-            '</div>' +
-            '<div style="font-size:0.8rem;color:#495a52;margin-bottom:8px;">' +
-            'أضف أي معلومات تريد من الذكاء الاصطناعي معرفتها عن هذا المنتج (السعرات الحرارية، هل هو جاهز للأكل أم يصلح للحلى، طعمه، أو مع إيش يؤكل):' +
-            '</div>' +
-            '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;" id="v112-ai-quick-tags">' +
-            '<button type="button" data-tag="منتج جاهز للأكل مباشرة ولا يحتاج أي طبخ أو تحضير." style="font-size:0.76rem;padding:4px 10px;background:#fff;color:#0d3825;border:1px solid #0d3825;border-radius:8px;font-weight:700;cursor:pointer;">+ 🍫 جاهز للأكل بدون تحضير</button>' +
-            '<button type="button" data-tag="يصلح لعمل حلى بارد سريع وممتاز مع الشاي والحليب." style="font-size:0.76rem;padding:4px 10px;background:#fff;color:#0d3825;border:1px solid #0d3825;border-radius:8px;font-weight:700;cursor:pointer;">+ 🍰 يصلح لعمل حلى</button>' +
-            '<button type="button" data-tag="السعرات الحرارية التقريبية: 120 سعرة حرارية للحصة." style="font-size:0.76rem;padding:4px 10px;background:#fff;color:#0d3825;border:1px solid #0d3825;border-radius:8px;font-weight:700;cursor:pointer;">+ 🔥 السعرات: 120 سعرة</button>' +
-            '<button type="button" data-tag="طعمه لذيذ جداً بجانب فنجان القهوة أو الشاي." style="font-size:0.76rem;padding:4px 10px;background:#fff;color:#0d3825;border:1px solid #0d3825;border-radius:8px;font-weight:700;cursor:pointer;">+ ☕ يقدم مع القهوة والشاي</button>' +
-            '</div>' +
-            '<textarea id="v112-product-ai-textarea" rows="3" placeholder="اكتب هنا معلومات المنتج للذكاء الاصطناعي (مثال: السعرات الحرارية 130 سعرة، شوكولاتة غنية بالحليب تؤكل مباشرة مع القهوة، لا تقترح لها طبخ)..." style="width:100%;background:#ffffff;color:#0d3825;border:1.5px solid #9dcab3;border-radius:10px;padding:9px 11px;font-size:0.86rem;box-sizing:border-box;margin-bottom:8px;"></textarea>' +
+            '<summary style="cursor:pointer;font-weight:800;color:#0d3825;font-size:0.9rem;display:flex;justify-content:space-between;align-items:center;list-style:none;">' +
+            '<span>🤖 معلومات خاصة للذكاء الاصطناعي عن هذا المنتج (اختياري)</span>' +
+            '<span style="font-size:0.75rem;background:#0d3825;color:#d4af37;padding:2px 8px;border-radius:99px;">اضغط للفتح ▾</span>' +
+            '</summary>' +
+            '<div style="margin-top:10px;padding-top:10px;border-top:1px solid #cce3d6;">' +
+            '<textarea id="v112-product-ai-textarea" rows="2" placeholder="اكتب هنا أي معلومات تريد من الذكاء الاصطناعي معرفتها عن هذا المنتج (السعرات، الطعم، طريقة الاستخدام، البدائل)..." style="width:100%;background:#ffffff;color:#0d3825;border:1.5px solid #9dcab3;border-radius:10px;padding:8px 10px;font-size:0.85rem;box-sizing:border-box;margin-bottom:8px;"></textarea>' +
             '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">' +
-            '<button type="button" id="v112-save-prod-ai-btn" style="background:#0d3825;color:#d4af37;border:none;border-radius:9px;padding:8px 16px;font-size:0.84rem;font-weight:800;cursor:pointer;">💾 حفظ معلومات الذكاء الاصطناعي لهذا المنتج</button>' +
-            '<span id="v112-save-prod-ai-status" style="font-size:0.8rem;color:#0d3825;font-weight:700;"></span>' +
+            '<button type="button" id="v112-save-prod-ai-btn" style="background:#0d3825;color:#d4af37;border:none;border-radius:8px;padding:7px 14px;font-size:0.82rem;font-weight:800;cursor:pointer;">💾 حفظ معلومات المنتج للذكاء الاصطناعي</button>' +
+            '<span id="v112-save-prod-ai-status" style="font-size:0.78rem;color:#0d3825;font-weight:700;"></span>' +
+            '</div>' +
             '</div>';
 
           varBox.parentNode.insertBefore(aiBox, varBox.nextSibling);
-
-          Array.from(aiBox.querySelectorAll("#v112-ai-quick-tags button")).forEach(function(b) {
-            b.onclick = function() {
-              var ta = document.getElementById("v112-product-ai-textarea");
-              if (!ta) return;
-              var tagTxt = b.getAttribute("data-tag") || "";
-              ta.value = (ta.value ? ta.value.trim() + " — " : "") + tagTxt;
-            };
-          });
 
           var formContainer = varBox.parentElement;
           var nameInput = formContainer ? formContainer.querySelector("input[placeholder*='اسم'], input") : null;
@@ -975,7 +1057,7 @@
             var pName = (nameInput.value || "").trim();
             var ta = document.getElementById("v112-product-ai-textarea");
             if (!ta || !pName) return;
-            var map = (window.__v112AiConfig && window.__v112AiConfig.productAiMap) || {};
+            var map = (window.__v114StudioConfig && window.__v114StudioConfig.productAiMap) || {};
             var saved = map["name:" + pName] || "";
             if (ta.getAttribute("data-loaded-for") !== pName) {
               ta.setAttribute("data-loaded-for", pName);
@@ -1000,9 +1082,9 @@
               .then(function(r) { return r.json(); })
               .then(function(d) {
                 if (d && d.ok) {
-                  if (!window.__v112AiConfig.productAiMap) window.__v112AiConfig.productAiMap = {};
-                  window.__v112AiConfig.productAiMap["name:" + pName] = ta.value.trim();
-                  if (st) st.textContent = "✅ تم حفظ معلومات الذكاء الاصطناعي للمنتج (" + pName + ") بنجاح!";
+                  if (!window.__v114StudioConfig.productAiMap) window.__v114StudioConfig.productAiMap = {};
+                  window.__v114StudioConfig.productAiMap["name:" + pName] = ta.value.trim();
+                  if (st) st.textContent = "✅ تم الحفظ (" + pName + ")!";
                 }
               })
               .catch(function() {});
@@ -1022,258 +1104,737 @@
           }
         }
 
-        function injectAdminAiTrainingCenterV112() {
-          if (document.getElementById("v112-admin-ai-floating-btn")) return;
+        // Inject a dedicated Sidebar Item "🤖 تخصيص الذكاء الاصطناعي" right next to "محادثات الزبائن" & "إعدادات المتجر"
+        function injectDedicatedAdminAiSectionV114() {
+          // Find the sidebar button for "محادثات الزبائن" or "إعدادات المتجر"
+          var allBtns = Array.from(document.querySelectorAll("button, a"));
+          var chatNavBtn = allBtns.find(function(b) {
+            var t = (b.textContent || "").trim();
+            return t.indexOf("محادثات الزبائن") !== -1 || t.indexOf("إعدادات المتجر") !== -1;
+          });
 
-          var floatBar = document.createElement("div");
-          floatBar.id = "v112-admin-ai-floating-btn";
-          floatBar.style.cssText = "position:fixed;bottom:16px;left:16px;z-index:9990;direction:rtl;";
-          floatBar.innerHTML =
-            '<button type="button" id="v112-open-trainer-btn" style="background:#0d3825;color:#d4af37;border:2px solid #d4af37;border-radius:99px;padding:10px 18px;font-weight:800;font-size:0.86rem;box-shadow:0 6px 20px rgba(0,0,0,0.28);cursor:pointer;display:flex;align-items:center;gap:8px;">' +
-            '<span>🤖 تعليم الذكاء (3 خيارات) وطلبات الزبائن</span>' +
-            '<span id="v112-admin-live-badge" style="display:none;background:#ef4444;color:#fff;font-size:0.75rem;padding:2px 8px;border-radius:99px;font-weight:900;">0</span>' +
-            '</button>';
-          document.body.appendChild(floatBar);
+          if (chatNavBtn && chatNavBtn.parentElement && !document.getElementById("v114-sidebar-ai-btn")) {
+            var navParent = chatNavBtn.parentElement;
+            var aiNavBtn = document.createElement("button");
+            aiNavBtn.id = "v114-sidebar-ai-btn";
+            aiNavBtn.type = "button";
+            aiNavBtn.className = chatNavBtn.className || "";
+            aiNavBtn.style.cssText =
+              "width:100%;display:flex;justify-content:space-between;align-items:center;padding:10px 14px;margin:4px 0;border-radius:12px;border:1.5px solid #0d3825;background:#eef8f3;color:#0d3825;font-weight:800;font-size:0.9rem;cursor:pointer;text-align:right;direction:rtl;";
+            aiNavBtn.innerHTML =
+              '<span style="display:flex;align-items:center;gap:8px;"><span>🤖</span><span>تخصيص الذكاء الاصطناعي</span></span>' +
+              '<span class="v114-nav-req-badge" style="display:none;background:#ef4444;color:#fff;font-size:0.72rem;padding:2px 7px;border-radius:99px;font-weight:900;">0</span>';
 
-          var modalWrap = document.createElement("div");
-          modalWrap.id = "v112-admin-trainer-modal";
-          modalWrap.style.cssText = "display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.6);padding:12px;overflow-y:auto;direction:rtl;text-align:right;";
-          modalWrap.innerHTML =
-            '<div style="max-width:680px;margin:16px auto;background:#ffffff;border:2px solid #0d3825;border-radius:18px;padding:16px;box-shadow:0 12px 36px rgba(0,0,0,0.25);">' +
-            '<div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1.5px solid #d5e5dc;padding-bottom:10px;margin-bottom:12px;">' +
-            '<h3 style="margin:0;color:#0d3825;font-size:1.05rem;">🤖 مركز تعليم الذكاء الاصطناعي (3 خيارات) وطلبات الزبائن المباشرة</h3>' +
-            '<button type="button" id="v112-close-trainer-btn" style="background:#fee2e2;color:#b91c1c;border:none;border-radius:8px;padding:6px 12px;font-weight:800;cursor:pointer;">إغلاق ✕</button>' +
-            '</div>' +
+            aiNavBtn.onclick = function(ev) {
+              ev.stopPropagation();
+              openDedicatedAiStudioViewV114();
+            };
+            navParent.insertBefore(aiNavBtn, chatNavBtn.nextSibling);
 
-            '<div style="background:#eef8f3;border:1px solid #9dcab3;border-radius:12px;padding:10px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">' +
-            '<span style="font-size:0.82rem;color:#0d3825;font-weight:700;">🔔 استلام إشعار فوري على هاتفك عندما يطلب زبون منتجاً غير متوفر من المساعد الذكي:</span>' +
-            '<button type="button" id="v112-enable-notif-btn" style="background:#0d3825;color:#d4af37;border:none;border-radius:8px;padding:6px 12px;font-size:0.8rem;font-weight:800;cursor:pointer;">تفعيل إشعارات الهاتف الآن</button>' +
-            '</div>' +
+            // When user clicks any OTHER sidebar button, close the AI Studio view and show the normal Admin section!
+            Array.from(navParent.children).forEach(function(sib) {
+              if (sib !== aiNavBtn && !sib.hasAttribute("data-v114-nav-bound")) {
+                sib.setAttribute("data-v114-nav-bound", "1");
+                sib.addEventListener("click", function() {
+                  closeDedicatedAiStudioViewV114();
+                });
+              }
+            });
+          }
+        }
 
-            '<div style="background:#fffbeb;border:1.5px solid #f59e0b;border-radius:14px;padding:12px;margin-bottom:14px;">' +
-            '<strong style="color:#92400e;font-size:0.92rem;display:block;margin-bottom:8px;">📲 طلبات التوفير والرسائل الواردة من الزبائن عبر المساعد الذكي (رد مباشر يظهر للزبون في المتجر):</strong>' +
-            '<div id="v112-admin-requests-container" style="max-height:220px;overflow-y:auto;font-size:0.84rem;color:#0d3825;">جاري التحميل...</div>' +
-            '</div>' +
+        function openDedicatedAiStudioViewV114() {
+          window.__v114StudioOpen = true;
+          var mainArea = document.querySelector(".admin-shell main") || document.querySelector("main") || document.querySelector(".admin-content");
+          var studioContainer = document.getElementById("v114-dedicated-studio-section");
 
-            '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:12px;">' +
-            '<button type="button" class="v112-tab-btn" data-tab="1" style="background:#0d3825;color:#d4af37;border:1px solid #0d3825;border-radius:10px;padding:9px 6px;font-weight:800;font-size:0.8rem;cursor:pointer;">1️⃣ الأسلوب والشخصية</button>' +
-            '<button type="button" class="v112-tab-btn" data-tab="2" style="background:#eef8f3;color:#0d3825;border:1px solid #0d3825;border-radius:10px;padding:9px 6px;font-weight:800;font-size:0.8rem;cursor:pointer;">2️⃣ قاموس الردود والبدائل</button>' +
-            '<button type="button" class="v112-tab-btn" data-tab="3" style="background:#eef8f3;color:#0d3825;border:1px solid #0d3825;border-radius:10px;padding:9px 6px;font-weight:800;font-size:0.8rem;cursor:pointer;">3️⃣ قواعد ومعلومات المنتجات</button>' +
-            '</div>' +
+          if (!studioContainer) {
+            studioContainer = document.createElement("div");
+            studioContainer.id = "v114-dedicated-studio-section";
+            studioContainer.style.cssText = "padding:16px;max-width:1050px;margin:0 auto;direction:rtl;text-align:right;";
+            if (mainArea && mainArea.parentElement) {
+              mainArea.parentElement.insertBefore(studioContainer, mainArea);
+            } else {
+              var shell = document.querySelector(".admin-shell") || document.body;
+              shell.appendChild(studioContainer);
+            }
+          }
 
-            '<div id="v112-tab-content-1">' +
-            '<label style="display:block;font-weight:800;color:#0d3825;font-size:0.86rem;margin-bottom:6px;">الخيار 1️⃣: تعليم أسلوب المحادثة والشخصية العامة للمساعد الذكي:</label>' +
-            '<textarea id="v112-mode1-input" rows="4" style="width:100%;background:#f8fbf9;color:#0d3825;border:1.5px solid #9dcab3;border-radius:10px;padding:10px;font-size:0.85rem;box-sizing:border-box;margin-bottom:8px;"></textarea>' +
-            '</div>' +
+          if (mainArea) mainArea.style.display = "none";
+          studioContainer.style.display = "block";
+          renderFullAiStudioV114();
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        }
 
-            '<div id="v112-tab-content-2" style="display:none;">' +
-            '<label style="display:block;font-weight:800;color:#0d3825;font-size:0.86rem;margin-bottom:6px;">الخيار 2️⃣: علم الذكاء الاصطناعي (إذا سأل الزبون عن كذا ← يرد عليه بكذا):</label>' +
-            '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;">' +
-            '<input id="v112-new-rule-trig" placeholder="إذا ذكر الزبون (مثال: نوتيلا أو حلى سريع)" style="flex:1 1 200px;padding:8px;border:1px solid #9dcab3;border-radius:8px;font-size:0.84rem;" />' +
-            '<input id="v112-new-rule-resp" placeholder="يرد الذكاء الاصطناعي بـ..." style="flex:2 1 260px;padding:8px;border:1px solid #9dcab3;border-radius:8px;font-size:0.84rem;" />' +
-            '<button type="button" id="v112-add-rule-btn" style="background:#0d3825;color:#d4af37;border:none;border-radius:8px;padding:8px 14px;font-weight:800;font-size:0.82rem;cursor:pointer;">+ إضافة قاعدة</button>' +
-            '</div>' +
-            '<div id="v112-rules-list" style="max-height:180px;overflow-y:auto;border:1px solid #d5e5dc;border-radius:10px;padding:8px;background:#f8fbf9;margin-bottom:8px;"></div>' +
-            '</div>' +
+        function closeDedicatedAiStudioViewV114() {
+          window.__v114StudioOpen = false;
+          var mainArea = document.querySelector(".admin-shell main") || document.querySelector("main") || document.querySelector(".admin-content");
+          var studioContainer = document.getElementById("v114-dedicated-studio-section");
+          if (studioContainer) studioContainer.style.display = "none";
+          if (mainArea) mainArea.style.display = "";
+        }
 
-            '<div id="v112-tab-content-3" style="display:none;">' +
-            '<label style="display:block;font-weight:800;color:#0d3825;font-size:0.86rem;margin-bottom:6px;">الخيار 3️⃣: قواعد الأصناف (الشوكولاتة، البسكويت، العصائر) ومعلومات منتج محدد:</label>' +
-            '<textarea id="v112-mode3-input" rows="3" style="width:100%;background:#f8fbf9;color:#0d3825;border:1.5px solid #9dcab3;border-radius:10px;padding:10px;font-size:0.85rem;box-sizing:border-box;margin-bottom:10px;"></textarea>' +
-            '<div style="background:#eef8f3;border:1px solid #9dcab3;border-radius:10px;padding:10px;margin-bottom:8px;">' +
-            '<strong style="font-size:0.84rem;color:#0d3825;display:block;margin-bottom:6px;">➕ إضافة/تعديل معلومات خاصة لمنتج معين بالاسم:</strong>' +
-            '<div style="display:flex;flex-wrap:wrap;gap:6px;">' +
-            '<input id="v112-quick-prod-name" placeholder="اسم المنتج (مثال: شوكلاتة البليلا)" style="flex:1 1 160px;padding:8px;border:1px solid #9dcab3;border-radius:8px;font-size:0.84rem;background:#fff;" />' +
-            '<input id="v112-quick-prod-info" placeholder="معلوماته للذكاء (السعرات، الطعم، الاستخدام...)" style="flex:2 1 240px;padding:8px;border:1px solid #9dcab3;border-radius:8px;font-size:0.84rem;background:#fff;" />' +
-            '<button type="button" id="v112-quick-prod-save" style="background:#0d3825;color:#d4af37;border:none;border-radius:8px;padding:8px 14px;font-weight:800;font-size:0.82rem;cursor:pointer;">حفظ للمنتج</button>' +
-            '</div>' +
-            '</div>' +
-            '</div>' +
+        function saveAllStudioConfigToServerV114(statusElId) {
+          var stEl = statusElId ? document.getElementById(statusElId) : null;
+          if (stEl) stEl.textContent = "⏳ جاري الحفظ...";
+          origFetchV112("/api/ai-v112/save-training", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(window.__v114StudioConfig)
+          })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+              if (d && d.ok) {
+                if (stEl) stEl.textContent = "✅ تم حفظ التعديلات بنجاح!";
+                setTimeout(function() { if (stEl) stEl.textContent = ""; }, 4000);
+              }
+            })
+            .catch(function() {
+              if (stEl) stEl.textContent = "⚠️ تعذر الحفظ، حاول مجدداً";
+            });
+        }
 
-            '<div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid #d5e5dc;padding-top:10px;margin-top:8px;">' +
-            '<button type="button" id="v112-save-all-training-btn" style="background:#0d3825;color:#d4af37;border:none;border-radius:10px;padding:10px 20px;font-weight:800;font-size:0.9rem;cursor:pointer;">💾 حفظ جميع إعدادات تعليم الذكاء الاصطناعي</button>' +
-            '<span id="v112-trainer-save-msg" style="font-size:0.84rem;font-weight:800;color:#0d3825;"></span>' +
+        function renderFullAiStudioV114() {
+          var studio = document.getElementById("v114-dedicated-studio-section");
+          if (!studio) return;
+
+          var pendingReqs = (window.__v114Requests || []).filter(function(r) { return r.status === "pending"; }).length;
+          var subTabs = [
+            { id: "inst", label: "1️⃣ التعليمات والشخصية (" + ((window.__v114StudioConfig.instructions || []).length) + ")" },
+            { id: "rules", label: "2️⃣ قاموس الردود (" + ((window.__v114StudioConfig.rules || []).length) + ")" },
+            { id: "promo", label: "3️⃣ ترويج منتج برابطه (" + ((window.__v114StudioConfig.promotedProducts || []).length) + ")" },
+            { id: "recipes", label: "4️⃣ الوصفات المصورة والمنتجات (" + ((window.__v114StudioConfig.recipes || []).length) + ")" },
+            { id: "prods", label: "5️⃣ معلومات المنتجات (" + Object.keys(window.__v114StudioConfig.productAiMap || {}).length + ")" },
+            { id: "reqs", label: "6️⃣ الإشعارات وطلبات الزبائن (" + pendingReqs + ")" }
+          ];
+
+          var tabsHtml = '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;">';
+          subTabs.forEach(function(t) {
+            var isAct = window.__v114ActiveSubTab === t.id;
+            tabsHtml +=
+              '<button type="button" class="v114-subtab-btn" data-subtab="' + t.id + '" style="flex:1 1 150px;padding:10px 12px;border-radius:12px;border:1.5px solid #0d3825;background:' +
+              (isAct ? "#0d3825" : "#ffffff") +
+              ';color:' +
+              (isAct ? "#d4af37" : "#0d3825") +
+              ';font-weight:800;font-size:0.84rem;cursor:pointer;text-align:center;">' +
+              t.label +
+              '</button>';
+          });
+          tabsHtml += '</div>';
+
+          studio.innerHTML =
+            '<div style="background:#ffffff;border:2px solid #0d3825;border-radius:18px;padding:18px;box-shadow:0 6px 24px rgba(13,56,37,0.06);">' +
+            '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;border-bottom:1.5px solid #d5e5dc;padding-bottom:14px;margin-bottom:14px;">' +
+            '<div>' +
+            '<h2 style="margin:0;color:#0d3825;font-size:1.2rem;">🤖 قسم تخصيص وإدارة الذكاء الاصطناعي الشامل</h2>' +
+            '<p style="margin:4px 0 0 0;color:#495a52;font-size:0.83rem;">تحكم كامل في تعليمات الذكاء، ترويج المنتجات بالروابط، الوصفات المصورة، والإشعارات الفورية (استهلاك 0 توكن يكفي +10,000 رسالة يومياً)</p>' +
             '</div>' +
+            '<div style="display:flex;gap:8px;align-items:center;">' +
+            '<button type="button" id="v114-enable-push-btn" style="background:#eef8f3;color:#0d3825;border:1.5px solid #0d3825;border-radius:10px;padding:8px 12px;font-weight:800;font-size:0.8rem;cursor:pointer;">🔔 تفعيل إشعارات الهاتف وتجربتها</button>' +
+            '<button type="button" id="v114-back-admin-btn" style="background:#fee2e2;color:#b91c1c;border:none;border-radius:10px;padding:8px 14px;font-weight:800;font-size:0.82rem;cursor:pointer;">← رجوع للقسم السابق</button>' +
+            '</div>' +
+            '</div>' +
+            tabsHtml +
+            '<div id="v114-subtab-body"></div>' +
             '</div>';
-          document.body.appendChild(modalWrap);
 
-          document.getElementById("v112-open-trainer-btn").onclick = function() {
-            modalWrap.style.display = "block";
-            populateTrainerModalV112();
+          document.getElementById("v114-back-admin-btn").onclick = function() {
+            closeDedicatedAiStudioViewV114();
           };
-          document.getElementById("v112-close-trainer-btn").onclick = function() {
-            modalWrap.style.display = "none";
-          };
-          document.getElementById("v112-enable-notif-btn").onclick = function() {
+          document.getElementById("v114-enable-push-btn").onclick = function() {
             if ("Notification" in window) {
               Notification.requestPermission().then(function(p) {
-                alert(p === "granted" ? "✅ تم تفعيل إشعارات الهاتف لطلبات الزبائن بنجاح!" : "يرجى السماح بالإشعارات من إعدادات المتصفح.");
+                if (p === "granted") {
+                  triggerRealPhoneNotificationV114("🔔 إشعار تجريبي من متجر أورجنال", "تم تفعيل الإشعارات الفعلية والصوت والاهتزاز على هاتفك بنجاح!");
+                } else {
+                  alert("يرجى السماح بالإشعارات من إعدادات المتصفح في هاتفك.");
+                }
               });
             } else {
-              alert("التنبيه الصوتي والمرئي المباشر مفعل تلقائياً!");
+              playAlertSoundV114();
+              alert("تم تفعيل التنبيه الصوتي المباشر!");
             }
           };
 
-          Array.from(modalWrap.querySelectorAll(".v112-tab-btn")).forEach(function(btn) {
-            btn.onclick = function() {
-              var tNum = btn.getAttribute("data-tab");
-              Array.from(modalWrap.querySelectorAll(".v112-tab-btn")).forEach(function(b) {
-                var active = b.getAttribute("data-tab") === tNum;
-                b.style.background = active ? "#0d3825" : "#eef8f3";
-                b.style.color = active ? "#d4af37" : "#0d3825";
-              });
-              ["1", "2", "3"].forEach(function(n) {
-                var el = document.getElementById("v112-tab-content-" + n);
-                if (el) el.style.display = n === tNum ? "block" : "none";
-              });
+          Array.from(studio.querySelectorAll(".v114-subtab-btn")).forEach(function(b) {
+            b.onclick = function() {
+              window.__v114ActiveSubTab = b.getAttribute("data-subtab") || "inst";
+              renderFullAiStudioV114();
             };
           });
 
-          document.getElementById("v112-add-rule-btn").onclick = function() {
-            var trigEl = document.getElementById("v112-new-rule-trig");
-            var respEl = document.getElementById("v112-new-rule-resp");
-            if (!trigEl || !respEl || !trigEl.value.trim() || !respEl.value.trim()) return;
-            if (!Array.isArray(window.__v112AiConfig.mode2Rules)) window.__v112AiConfig.mode2Rules = [];
-            window.__v112AiConfig.mode2Rules.unshift({
-              id: "r_" + Date.now(),
-              trigger: trigEl.value.trim(),
-              response: respEl.value.trim()
-            });
-            trigEl.value = "";
-            respEl.value = "";
-            renderRulesListV112();
-          };
-
-          document.getElementById("v112-quick-prod-save").onclick = function() {
-            var pnEl = document.getElementById("v112-quick-prod-name");
-            var piEl = document.getElementById("v112-quick-prod-info");
-            var pn = pnEl ? pnEl.value.trim() : "";
-            var pi = piEl ? piEl.value.trim() : "";
-            if (!pn) return;
-            origFetchV112("/api/ai-v112/save-product-info", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ productName: pn, aiInfo: pi })
-            }).then(function() {
-              if (!window.__v112AiConfig.productAiMap) window.__v112AiConfig.productAiMap = {};
-              window.__v112AiConfig.productAiMap["name:" + pn] = pi;
-              var msgEl = document.getElementById("v112-trainer-save-msg");
-              if (msgEl) msgEl.textContent = "✅ تم حفظ معلومات المنتج (" + pn + ")!";
-            });
-          };
-
-          document.getElementById("v112-save-all-training-btn").onclick = function() {
-            var m1El = document.getElementById("v112-mode1-input");
-            var m3El = document.getElementById("v112-mode3-input");
-            var m1 = m1El ? m1El.value.trim() : "";
-            var m3 = m3El ? m3El.value.trim() : "";
-            window.__v112AiConfig.mode1StylePrompt = m1;
-            window.__v112AiConfig.mode3CategoryRules = m3;
-            origFetchV112("/api/ai-v112/save-training", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(window.__v112AiConfig)
-            })
-              .then(function(r) { return r.json(); })
-              .then(function() {
-                var msgEl = document.getElementById("v112-trainer-save-msg");
-                if (msgEl) msgEl.textContent = "✅ تم حفظ إعدادات تعليم الذكاء الاصطناعي بنجاح!";
-              });
-          };
+          renderStudioSubTabV114();
         }
 
-        function populateTrainerModalV112() {
-          var cfg = window.__v112AiConfig || {};
-          var m1El = document.getElementById("v112-mode1-input");
-          var m3El = document.getElementById("v112-mode3-input");
-          if (m1El) m1El.value = cfg.mode1StylePrompt || "";
-          if (m3El) m3El.value = cfg.mode3CategoryRules || "";
-          renderRulesListV112();
-          renderAdminRequestsListV112();
-        }
-
-        function renderRulesListV112() {
-          var box = document.getElementById("v112-rules-list");
-          if (!box) return;
-          var rules = (window.__v112AiConfig && window.__v112AiConfig.mode2Rules) || [];
-          if (rules.length === 0) {
-            box.innerHTML = '<div style="color:#687a71;text-align:center;padding:8px;">لا توجد قواعد مضافة بعد.</div>';
-            return;
-          }
-          box.innerHTML = "";
-          rules.forEach(function(r, idx) {
-            var row = document.createElement("div");
-            row.style.cssText = "display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 8px;border-bottom:1px solid #e2ece7;background:#fff;border-radius:8px;margin-bottom:4px;";
-            row.innerHTML =
-              '<div style="font-size:0.82rem;"><strong style="color:#0d3825;">إذا سأل عن: ' + (r.trigger || "") + '</strong> ← ' + (r.response || "") + '</div>';
-            var del = document.createElement("button");
-            del.type = "button";
-            del.textContent = "حذف";
-            del.style.cssText = "background:#fee2e2;color:#b91c1c;border:none;border-radius:6px;padding:4px 8px;font-weight:700;cursor:pointer;font-size:0.75rem;";
-            del.onclick = function() {
-              window.__v112AiConfig.mode2Rules.splice(idx, 1);
-              renderRulesListV112();
-            };
-            row.appendChild(del);
-            box.appendChild(row);
+        function buildProductOptionsHtmlV114() {
+          var cats = window.__v114Catalog || [];
+          var html = '<option value="">-- اختر منتجاً من المتجر (أو اكتب يدوياً بالأسفل) --</option>';
+          cats.forEach(function(p) {
+            html += '<option value="' + (p.name || "").replace(/"/g, "&quot;") + '" data-price="' + (p.price || 0) + '" data-img="' + (p.imageUrl || "") + '">' + (p.name || "") + ' (' + (p.price || 0) + ' ر.ي)</option>';
           });
+          return html;
         }
 
-        function renderAdminRequestsListV112() {
-          var box = document.getElementById("v112-admin-requests-container");
-          if (!box) return;
-          var reqs = window.__v112AiRequests || [];
-          if (reqs.length === 0) {
-            box.innerHTML = '<div style="color:#78350f;padding:6px;">لا توجد طلبات معلقة حالياً. عندما يطلب زبون التوفير أو التواصل مع المتجر سيظهر طلبه هنا فوراً مع إشعار لهاتفك.</div>';
-            return;
-          }
-          box.innerHTML = "";
-          reqs.slice(0, 15).forEach(function(req) {
-            var card = document.createElement("div");
-            card.style.cssText = "background:#ffffff;border:1px solid #fcd34d;border-radius:10px;padding:10px;margin-bottom:8px;";
-            var statusBadge = req.status === "replied"
-              ? '<span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:99px;font-size:0.74rem;font-weight:800;">تم الرد ✓</span>'
-              : '<span style="background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:99px;font-size:0.74rem;font-weight:800;">بانتظار ردك 🔔</span>';
-            card.innerHTML =
-              '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">' +
-              '<strong>طلب الزبون: ' + (req.requestedItem || req.customerMessage || "") + '</strong>' +
-              statusBadge +
+        function renderStudioSubTabV114() {
+          var body = document.getElementById("v114-subtab-body");
+          if (!body) return;
+          var tab = window.__v114ActiveSubTab;
+          var cfg = window.__v114StudioConfig;
+
+          // ------------------------------------------------------------------
+          // TAB 1: التعليمات المتنوعة والشخصية العامة (Starts Empty!)
+          // ------------------------------------------------------------------
+          if (tab === "inst") {
+            var instListHtml = "";
+            var instArr = cfg.instructions || [];
+            if (instArr.length === 0) {
+              instListHtml = '<div style="text-align:center;padding:18px;background:#f8fbf9;border:1px dashed #9dcab3;border-radius:12px;color:#5c6f65;font-size:0.86rem;">القسم فارغ حالياً — أضف تعليماتك الخاصة بالأسفل بالترتيب الذي تريده.</div>';
+            } else {
+              instArr.forEach(function(item, idx) {
+                instListHtml +=
+                  '<div style="background:#f8fbf9;border:1px solid #cce3d6;border-radius:12px;padding:12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">' +
+                  '<div style="flex:1;">' +
+                  '<span style="background:#0d3825;color:#d4af37;font-size:0.75rem;padding:2px 8px;border-radius:99px;font-weight:800;">' + (item.category || "تعليمة عامة") + '</span>' +
+                  '<div style="margin-top:6px;font-size:0.88rem;color:#0d3825;font-weight:700;white-space:pre-line;">' + (item.content || "") + '</div>' +
+                  '</div>' +
+                  '<button type="button" class="v114-del-inst" data-idx="' + idx + '" style="background:#fee2e2;color:#b91c1c;border:none;border-radius:8px;padding:6px 10px;font-weight:800;font-size:0.78rem;cursor:pointer;">حذف</button>' +
+                  '</div>';
+              });
+            }
+
+            body.innerHTML =
+              '<div style="background:#eef8f3;border:1.5px solid #9dcab3;border-radius:14px;padding:14px;margin-bottom:14px;">' +
+              '<h4 style="margin:0 0 8px 0;color:#0d3825;font-size:0.95rem;">➕ إضافة تعليمة جديدة للذكاء الاصطناعي:</h4>' +
+              '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;">' +
+              '<select id="v114-inst-cat" style="flex:1 1 220px;padding:9px;border-radius:10px;border:1px solid #9dcab3;background:#fff;color:#0d3825;font-weight:700;font-size:0.85rem;">' +
+              '<option value="🗣️ أسلوب الترحيب والكلام">🗣️ أسلوب الترحيب والكلام مع الزبون</option>' +
+              '<option value="🤝 عند عدم توفر منتج">🤝 طريقة الرد عند عدم توفر منتج</option>' +
+              '<option value="🚫 الممنوعات والحدود">🚫 الممنوعات والحدود (أشياء لا يفعلها)</option>' +
+              '<option value="💬 متى يقترح منتجات ومتى يسولف">💬 متى يقترح منتجات ومتى يكتفي بالسوالف</option>' +
+              '<option value="📌 تعليمة عامة أخرى">📌 تعليمة عامة أخرى</option>' +
+              '</select>' +
               '</div>' +
-              (req.managerReply ? '<div style="font-size:0.8rem;color:#166534;margin-bottom:6px;">ردك السابق: ' + req.managerReply + '</div>' : '');
+              '<textarea id="v114-inst-text" rows="3" placeholder="اكتب التعليمة هنا بالتفصيل (مثال: رحب بالزبون كصديق، وإذا طلب منتج غير متوفر اعرض عليه التواصل مع المتجر)..." style="width:100%;padding:10px;border-radius:10px;border:1px solid #9dcab3;background:#fff;color:#0d3825;font-size:0.86rem;box-sizing:border-box;margin-bottom:8px;"></textarea>' +
+              '<div style="display:flex;justify-content:space-between;align-items:center;">' +
+              '<button type="button" id="v114-add-inst-btn" style="background:#0d3825;color:#d4af37;border:none;border-radius:10px;padding:9px 18px;font-weight:800;font-size:0.86rem;cursor:pointer;">+ إضافة وحفظ التعليمة</button>' +
+              '<span id="v114-inst-status" style="font-size:0.82rem;font-weight:800;color:#0d3825;"></span>' +
+              '</div>' +
+              '</div>' +
+              '<h4 style="margin:0 0 8px 0;color:#0d3825;font-size:0.95rem;">📋 التعليمات المضافة حالياً:</h4>' +
+              instListHtml;
 
-            var replyRow = document.createElement("div");
-            replyRow.style.cssText = "display:flex;gap:6px;";
-            var inp = document.createElement("input");
-            inp.placeholder = "اكتب ردك للزبون ليظهر له داخل المتجر فوراً...";
-            inp.style.cssText = "flex:1;padding:7px 10px;border:1px solid #9dcab3;border-radius:8px;font-size:0.82rem;";
-            var sendB = document.createElement("button");
-            sendB.type = "button";
-            sendB.textContent = "📨 إرسال للزبون";
-            sendB.style.cssText = "background:#0d3825;color:#d4af37;border:none;border-radius:8px;padding:7px 12px;font-weight:800;font-size:0.8rem;cursor:pointer;white-space:nowrap;";
-            sendB.onclick = function() {
-              if (!inp.value.trim()) return;
-              sendB.textContent = "جاري الإرسال...";
-              origFetchV112("/api/ai-v112/manager-reply", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  requestId: req.id,
-                  sessionId: req.sessionId,
-                  replyText: inp.value.trim()
-                })
-              })
-                .then(function(r) { return r.json(); })
-                .then(function() {
-                  req.status = "replied";
-                  req.managerReply = inp.value.trim();
-                  inp.value = "";
-                  renderAdminRequestsListV112();
-                });
+            document.getElementById("v114-add-inst-btn").onclick = function() {
+              var cat = document.getElementById("v114-inst-cat").value;
+              var txt = document.getElementById("v114-inst-text").value.trim();
+              if (!txt) return;
+              if (!Array.isArray(cfg.instructions)) cfg.instructions = [];
+              cfg.instructions.unshift({ id: "inst_" + Date.now(), category: cat, content: txt, active: true });
+              saveAllStudioConfigToServerV114("v114-inst-status");
+              renderFullAiStudioV114();
             };
-            replyRow.appendChild(inp);
-            replyRow.appendChild(sendB);
-            card.appendChild(replyRow);
-            box.appendChild(card);
-          });
+
+            Array.from(body.querySelectorAll(".v114-del-inst")).forEach(function(b) {
+              b.onclick = function() {
+                var i = parseInt(b.getAttribute("data-idx") || "0", 10);
+                cfg.instructions.splice(i, 1);
+                saveAllStudioConfigToServerV114("v114-inst-status");
+                renderFullAiStudioV114();
+              };
+            });
+            return;
+          }
+
+          // ------------------------------------------------------------------
+          // TAB 2: قاموس الردود والبدائل + إرفاق رابط منتج (0 Tokens!)
+          // ------------------------------------------------------------------
+          if (tab === "rules") {
+            var rulesHtml = "";
+            var rulesArr = cfg.rules || [];
+            if (rulesArr.length === 0) {
+              rulesHtml = '<div style="text-align:center;padding:18px;background:#f8fbf9;border:1px dashed #9dcab3;border-radius:12px;color:#5c6f65;font-size:0.86rem;">لا توجد ردود مخصصة مضافة بعد — أضف أي كلمة أو سؤال وكيف يرد عليه الذكاء الاصطناعي بالأعلى.</div>';
+            } else {
+              rulesArr.forEach(function(r, idx) {
+                rulesHtml +=
+                  '<div style="background:#f8fbf9;border:1px solid #cce3d6;border-radius:12px;padding:12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">' +
+                  '<div style="flex:1;">' +
+                  '<strong style="color:#0d3825;font-size:0.88rem;">💬 إذا قال الزبون: «' + (r.trigger || "") + '»</strong>' +
+                  '<div style="margin-top:4px;font-size:0.86rem;color:#1e293b;">🤖 الرد: ' + (r.response || "") + '</div>' +
+                  (r.linkedProductName || r.linkedProductUrl
+                    ? '<div style="margin-top:4px;font-size:0.8rem;color:#166534;font-weight:700;">🔗 المنتج المرفق: ' + (r.linkedProductName || "") + ' (' + (r.linkedProductUrl || "") + ')</div>'
+                    : '') +
+                  '</div>' +
+                  '<button type="button" class="v114-del-rule" data-idx="' + idx + '" style="background:#fee2e2;color:#b91c1c;border:none;border-radius:8px;padding:6px 10px;font-weight:800;font-size:0.78rem;cursor:pointer;">حذف</button>' +
+                  '</div>';
+              });
+            }
+
+            body.innerHTML =
+              '<div style="background:#eef8f3;border:1.5px solid #9dcab3;border-radius:14px;padding:14px;margin-bottom:14px;">' +
+              '<h4 style="margin:0 0 8px 0;color:#0d3825;font-size:0.95rem;">➕ إضافة قاعدة رد سريع أو بديل (تعمل بـ 0 توكن):</h4>' +
+              '<input id="v114-rule-trig" placeholder="إذا سأل الزبون عن (مثال: نوتيلا، أو توصيل، أو شوكولاتة)" style="width:100%;padding:9px 10px;border-radius:10px;border:1px solid #9dcab3;background:#fff;margin-bottom:8px;box-sizing:border-box;font-size:0.85rem;" />' +
+              '<textarea id="v114-rule-resp" rows="2" placeholder="يرد الذكاء الاصطناعي بـ..." style="width:100%;padding:9px 10px;border-radius:10px;border:1px solid #9dcab3;background:#fff;margin-bottom:8px;box-sizing:border-box;font-size:0.85rem;"></textarea>' +
+              '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;">' +
+              '<select id="v114-rule-prod-sel" style="flex:1 1 200px;padding:8px;border-radius:10px;border:1px solid #9dcab3;background:#fff;font-size:0.83rem;">' +
+              buildProductOptionsHtmlV114() +
+              '</select>' +
+              '<input id="v114-rule-prod-url" placeholder="أو ضع رابط المنتج المراد اقتراحه مع الرد (اختياري)" style="flex:1 1 220px;padding:8px 10px;border-radius:10px;border:1px solid #9dcab3;background:#fff;font-size:0.83rem;" />' +
+              '</div>' +
+              '<div style="display:flex;justify-content:space-between;align-items:center;">' +
+              '<button type="button" id="v114-add-rule-btn" style="background:#0d3825;color:#d4af37;border:none;border-radius:10px;padding:9px 18px;font-weight:800;font-size:0.86rem;cursor:pointer;">+ إضافة وحفظ القاعدة</button>' +
+              '<span id="v114-rule-status" style="font-size:0.82rem;font-weight:800;color:#0d3825;"></span>' +
+              '</div>' +
+              '</div>' +
+              '<h4 style="margin:0 0 8px 0;color:#0d3825;font-size:0.95rem;">📋 قواعد الردود المضافة:</h4>' +
+              rulesHtml;
+
+            var prodSel = document.getElementById("v114-rule-prod-sel");
+            prodSel.onchange = function() {
+              var val = prodSel.value;
+              if (val) {
+                document.getElementById("v114-rule-prod-url").value = "/?search=" + encodeURIComponent(val);
+              }
+            };
+
+            document.getElementById("v114-add-rule-btn").onclick = function() {
+              var trig = document.getElementById("v114-rule-trig").value.trim();
+              var resp = document.getElementById("v114-rule-resp").value.trim();
+              var pName = document.getElementById("v114-rule-prod-sel").value.trim();
+              var pUrl = document.getElementById("v114-rule-prod-url").value.trim();
+              if (!trig || !resp) return;
+              if (!Array.isArray(cfg.rules)) cfg.rules = [];
+              cfg.rules.unshift({
+                id: "rule_" + Date.now(),
+                trigger: trig,
+                response: resp,
+                linkedProductName: pName,
+                linkedProductUrl: pUrl
+              });
+              saveAllStudioConfigToServerV114("v114-rule-status");
+              renderFullAiStudioV114();
+            };
+
+            Array.from(body.querySelectorAll(".v114-del-rule")).forEach(function(b) {
+              b.onclick = function() {
+                var i = parseInt(b.getAttribute("data-idx") || "0", 10);
+                cfg.rules.splice(i, 1);
+                saveAllStudioConfigToServerV114("v114-rule-status");
+                renderFullAiStudioV114();
+              };
+            });
+            return;
+          }
+
+          // ------------------------------------------------------------------
+          // TAB 3: ترويج المنتجات الذكي (رابط منتج + صورة + رسالة ترويجية)
+          // ------------------------------------------------------------------
+          if (tab === "promo") {
+            var promoHtml = "";
+            var promoArr = cfg.promotedProducts || [];
+            if (promoArr.length === 0) {
+              promoHtml = '<div style="text-align:center;padding:18px;background:#f8fbf9;border:1px dashed #9dcab3;border-radius:12px;color:#5c6f65;font-size:0.86rem;">لا توجد منتجات مروجة حالياً — اختر أي منتج أو ضع رابطه بالأعلى ليروج له المساعد الذكي.</div>';
+            } else {
+              promoArr.forEach(function(p, idx) {
+                promoHtml +=
+                  '<div style="background:#f8fbf9;border:1.5px solid #d4af37;border-radius:12px;padding:12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:10px;">' +
+                  '<div style="flex:1;">' +
+                  '<span style="background:#0d3825;color:#d4af37;font-size:0.74rem;padding:2px 8px;border-radius:99px;font-weight:800;">' + (p.promoBadge || "⭐ منتج مروج") + '</span>' +
+                  '<strong style="display:block;color:#0d3825;font-size:0.9rem;margin-top:4px;">' + (p.productName || "") + (p.productPrice ? " (" + p.productPrice + " ر.ي)" : "") + '</strong>' +
+                  '<div style="font-size:0.83rem;color:#334155;margin-top:2px;">' + (p.promoMessage || "") + '</div>' +
+                  '<div style="font-size:0.78rem;color:#166534;margin-top:3px;">🔗 الرابط: ' + (p.productUrl || "") + ' | 🎯 يظهر عند: ' + (p.triggerKeywords || "الترحيب والسؤال عن العروض") + '</div>' +
+                  '</div>' +
+                  '<button type="button" class="v114-del-promo" data-idx="' + idx + '" style="background:#fee2e2;color:#b91c1c;border:none;border-radius:8px;padding:6px 10px;font-weight:800;font-size:0.78rem;cursor:pointer;">حذف</button>' +
+                  '</div>';
+              });
+            }
+
+            body.innerHTML =
+              '<div style="background:#eef8f3;border:1.5px solid #9dcab3;border-radius:14px;padding:14px;margin-bottom:14px;">' +
+              '<h4 style="margin:0 0 8px 0;color:#0d3825;font-size:0.95rem;">⭐ إضافة منتج لترويجه عبر المساعد الذكي (مع رابطه وصورته):</h4>' +
+              '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;">' +
+              '<select id="v114-promo-sel" style="flex:1 1 220px;padding:9px;border-radius:10px;border:1px solid #9dcab3;background:#fff;font-size:0.84rem;font-weight:700;">' +
+              buildProductOptionsHtmlV114() +
+              '</select>' +
+              '<input id="v114-promo-name" placeholder="اسم المنتج المراد ترويجه" style="flex:1 1 180px;padding:9px;border-radius:10px;border:1px solid #9dcab3;background:#fff;font-size:0.84rem;" />' +
+              '<input id="v114-promo-price" type="number" placeholder="السعر (ر.ي)" style="flex:0 1 110px;padding:9px;border-radius:10px;border:1px solid #9dcab3;background:#fff;font-size:0.84rem;" />' +
+              '</div>' +
+              '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;">' +
+              '<input id="v114-promo-url" placeholder="🔗 رابط المنتج المباشر (يُملأ تلقائياً عند اختيار المنتج أو الصق الرابط هنا)" style="flex:2 1 240px;padding:9px;border-radius:10px;border:1px solid #9dcab3;background:#fff;font-size:0.84rem;" />' +
+              '<input id="v114-promo-badge" placeholder="شارة الترويج (مثال: 🔥 عرض خاص اليوم)" style="flex:1 1 160px;padding:9px;border-radius:10px;border:1px solid #9dcab3;background:#fff;font-size:0.84rem;" />' +
+              '</div>' +
+              '<input id="v114-promo-kw" placeholder="متى يروج له؟ اكتب كلمات مفتاحية (مثال: عروض، شوكولاتة، حلى) أو اتركه فارغاً للترويج العام" style="width:100%;padding:9px;border-radius:10px;border:1px solid #9dcab3;background:#fff;font-size:0.84rem;box-sizing:border-box;margin-bottom:8px;" />' +
+              '<textarea id="v114-promo-msg" rows="2" placeholder="رسالة الترويج المقنعة التي يقولها المساعد الذكي للزبون عن هذا المنتج..." style="width:100%;padding:9px;border-radius:10px;border:1px solid #9dcab3;background:#fff;font-size:0.84rem;box-sizing:border-box;margin-bottom:8px;"></textarea>' +
+              '<div style="display:flex;justify-content:space-between;align-items:center;">' +
+              '<button type="button" id="v114-add-promo-btn" style="background:#0d3825;color:#d4af37;border:none;border-radius:10px;padding:9px 18px;font-weight:800;font-size:0.86rem;cursor:pointer;">+ تفعيل ترويج هذا المنتج</button>' +
+              '<span id="v114-promo-status" style="font-size:0.82rem;font-weight:800;color:#0d3825;"></span>' +
+              '</div>' +
+              '</div>' +
+              '<h4 style="margin:0 0 8px 0;color:#0d3825;font-size:0.95rem;">📋 المنتجات المروجة حالياً:</h4>' +
+              promoHtml;
+
+            var pSel = document.getElementById("v114-promo-sel");
+            pSel.onchange = function() {
+              var opt = pSel.options[pSel.selectedIndex];
+              if (opt && opt.value) {
+                document.getElementById("v114-promo-name").value = opt.value;
+                document.getElementById("v114-promo-price").value = opt.getAttribute("data-price") || "";
+                document.getElementById("v114-promo-url").value = "/?search=" + encodeURIComponent(opt.value);
+                document.getElementById("v114-promo-name").setAttribute("data-img", opt.getAttribute("data-img") || "");
+              }
+            };
+
+            document.getElementById("v114-add-promo-btn").onclick = function() {
+              var name = document.getElementById("v114-promo-name").value.trim();
+              var price = Number(document.getElementById("v114-promo-price").value || 0);
+              var url = document.getElementById("v114-promo-url").value.trim() || ("/?search=" + encodeURIComponent(name));
+              var badge = document.getElementById("v114-promo-badge").value.trim() || "⭐ عرض مميز";
+              var kw = document.getElementById("v114-promo-kw").value.trim();
+              var msg = document.getElementById("v114-promo-msg").value.trim();
+              var img = document.getElementById("v114-promo-name").getAttribute("data-img") || "";
+              if (!name) return;
+              if (!Array.isArray(cfg.promotedProducts)) cfg.promotedProducts = [];
+              cfg.promotedProducts.unshift({
+                id: "promo_" + Date.now(),
+                productName: name,
+                productPrice: price,
+                productUrl: url,
+                productImage: img,
+                promoBadge: badge,
+                promoMessage: msg,
+                triggerKeywords: kw,
+                active: true
+              });
+              saveAllStudioConfigToServerV114("v114-promo-status");
+              renderFullAiStudioV114();
+            };
+
+            Array.from(body.querySelectorAll(".v114-del-promo")).forEach(function(b) {
+              b.onclick = function() {
+                var i = parseInt(b.getAttribute("data-idx") || "0", 10);
+                cfg.promotedProducts.splice(i, 1);
+                saveAllStudioConfigToServerV114("v114-promo-status");
+                renderFullAiStudioV114();
+              };
+            });
+            return;
+          }
+
+          // ------------------------------------------------------------------
+          // TAB 4: استوديو الوصفات المصورة + روابط المنتجات المستخدمة ليقترحها
+          // ------------------------------------------------------------------
+          if (tab === "recipes") {
+            window.__v114DraftIngredients = window.__v114DraftIngredients || [];
+            window.__v114DraftRecipeImg = window.__v114DraftRecipeImg || "";
+
+            var recListHtml = "";
+            var recArr = cfg.recipes || [];
+            if (recArr.length === 0) {
+              recListHtml = '<div style="text-align:center;padding:18px;background:#f8fbf9;border:1px dashed #9dcab3;border-radius:12px;color:#5c6f65;font-size:0.86rem;">لا توجد وصفات مضافة بعد — أضف وصفة مع صورتها والمنتجات المستخدمة فيها بالأعلى ليقترحها الذكاء الاصطناعي للزبائن.</div>';
+            } else {
+              recArr.forEach(function(r, idx) {
+                var ingTags = (r.ingredients || []).map(function(g) { return "🔗 " + g.name; }).join(" ، ");
+                recListHtml +=
+                  '<div style="background:#f8fbf9;border:1px solid #cce3d6;border-radius:12px;padding:12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">' +
+                  (r.imageUrl ? '<img src="' + r.imageUrl + '" style="width:70px;height:70px;object-fit:cover;border-radius:10px;border:1px solid #9dcab3;" />' : '') +
+                  '<div style="flex:1;">' +
+                  '<strong style="color:#0d3825;font-size:0.92rem;">🍰 ' + (r.title || "") + '</strong>' +
+                  '<div style="font-size:0.83rem;color:#334155;margin-top:4px;white-space:pre-line;">' + (r.steps || "") + '</div>' +
+                  (ingTags ? '<div style="font-size:0.8rem;color:#166534;font-weight:700;margin-top:4px;">المنتجات المرتبطة: ' + ingTags + '</div>' : '') +
+                  '</div>' +
+                  '<button type="button" class="v114-del-rec" data-idx="' + idx + '" style="background:#fee2e2;color:#b91c1c;border:none;border-radius:8px;padding:6px 10px;font-weight:800;font-size:0.78rem;cursor:pointer;">حذف</button>' +
+                  '</div>';
+              });
+            }
+
+            body.innerHTML =
+              '<div style="background:#eef8f3;border:1.5px solid #9dcab3;border-radius:14px;padding:14px;margin-bottom:14px;">' +
+              '<h4 style="margin:0 0 8px 0;color:#0d3825;font-size:0.95rem;">🍰 إضافة وصفة مصورة مع روابط المنتجات المستخدمة ليقترحها الذكاء الاصطناعي:</h4>' +
+              '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;">' +
+              '<input id="v114-rec-title" placeholder="اسم الوصفة أو الفكرة (مثال: حلى بسكويت ماري البارد)" style="flex:1 1 220px;padding:9px;border-radius:10px;border:1px solid #9dcab3;background:#fff;font-size:0.85rem;" />' +
+              '<input id="v114-rec-kw" placeholder="كلمات البحث عنها (مثال: حلى، بسكويت ماري، قهوة)" style="flex:1 1 200px;padding:9px;border-radius:10px;border:1px solid #9dcab3;background:#fff;font-size:0.85rem;" />' +
+              '</div>' +
+
+              '<div style="background:#ffffff;border:1px dashed #0d3825;border-radius:10px;padding:10px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">' +
+              '<div style="font-size:0.83rem;color:#0d3825;font-weight:700;">📷 صورة الوصفة (ارفع صورة من هاتفك أو ضع رابط صورة):</div>' +
+              '<input type="file" id="v114-rec-file" accept="image/*" style="font-size:0.8rem;" />' +
+              '<input id="v114-rec-img-url" placeholder="أو رابط الصورة مباشرة" style="flex:1 1 180px;padding:7px;border-radius:8px;border:1px solid #9dcab3;font-size:0.82rem;" />' +
+              '</div>' +
+
+              '<textarea id="v114-rec-steps" rows="3" placeholder="اكتب خطوات ومقادير الوصفة هنا..." style="width:100%;padding:9px;border-radius:10px;border:1px solid #9dcab3;background:#fff;font-size:0.85rem;box-sizing:border-box;margin-bottom:8px;"></textarea>' +
+
+              '<div style="background:#ffffff;border:1px solid #9dcab3;border-radius:10px;padding:10px;margin-bottom:8px;">' +
+              '<strong style="color:#0d3825;font-size:0.84rem;display:block;margin-bottom:6px;">🛒 ربط المنتجات المستخدمة في الوصفة (ليقترحها الذكاء مع روابطها):</strong>' +
+              '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;">' +
+              '<select id="v114-rec-ing-sel" style="flex:1 1 200px;padding:8px;border-radius:8px;border:1px solid #9dcab3;font-size:0.82rem;">' +
+              buildProductOptionsHtmlV114() +
+              '</select>' +
+              '<input id="v114-rec-ing-name" placeholder="اسم المنتج" style="flex:1 1 140px;padding:8px;border-radius:8px;border:1px solid #9dcab3;font-size:0.82rem;" />' +
+              '<input id="v114-rec-ing-url" placeholder="رابط المنتج" style="flex:1 1 160px;padding:8px;border-radius:8px;border:1px solid #9dcab3;font-size:0.82rem;" />' +
+              '<button type="button" id="v114-add-ing-btn" style="background:#eef8f3;color:#0d3825;border:1.5px solid #0d3825;border-radius:8px;padding:7px 12px;font-weight:800;font-size:0.8rem;cursor:pointer;">+ ربط المنتج بالوصفة</button>' +
+              '</div>' +
+              '<div id="v114-draft-ings-list" style="font-size:0.8rem;color:#166534;font-weight:700;"></div>' +
+              '</div>' +
+
+              '<div style="display:flex;justify-content:space-between;align-items:center;">' +
+              '<button type="button" id="v114-save-rec-btn" style="background:#0d3825;color:#d4af37;border:none;border-radius:10px;padding:9px 18px;font-weight:800;font-size:0.86rem;cursor:pointer;">💾 حفظ الوصفة المصورة ومنتجاتها</button>' +
+              '<span id="v114-rec-status" style="font-size:0.82rem;font-weight:800;color:#0d3825;"></span>' +
+              '</div>' +
+              '</div>' +
+              '<h4 style="margin:0 0 8px 0;color:#0d3825;font-size:0.95rem;">📋 الوصفات المصورة المضافة:</h4>' +
+              recListHtml;
+
+            var ingSel = document.getElementById("v114-rec-ing-sel");
+            ingSel.onchange = function() {
+              var opt = ingSel.options[ingSel.selectedIndex];
+              if (opt && opt.value) {
+                document.getElementById("v114-rec-ing-name").value = opt.value;
+                document.getElementById("v114-rec-ing-url").value = "/?search=" + encodeURIComponent(opt.value);
+                document.getElementById("v114-rec-ing-name").setAttribute("data-price", opt.getAttribute("data-price") || "0");
+              }
+            };
+
+            function renderDraftIngs() {
+              var dBox = document.getElementById("v114-draft-ings-list");
+              if (!dBox) return;
+              if (window.__v114DraftIngredients.length === 0) {
+                dBox.textContent = "لم يتم ربط منتجات بعد — اختر منتجاً بالأعلى واضغط (+ ربط المنتج بالوصفة).";
+                return;
+              }
+              dBox.innerHTML = "المنتجات المربوطة: " + window.__v114DraftIngredients.map(function(g) { return "«" + g.name + "»"; }).join(" + ");
+            }
+            renderDraftIngs();
+
+            document.getElementById("v114-add-ing-btn").onclick = function() {
+              var nEl = document.getElementById("v114-rec-ing-name");
+              var uEl = document.getElementById("v114-rec-ing-url");
+              var n = nEl.value.trim();
+              if (!n) return;
+              window.__v114DraftIngredients.push({
+                name: n,
+                url: uEl.value.trim() || ("/?search=" + encodeURIComponent(n)),
+                price: Number(nEl.getAttribute("data-price") || 0)
+              });
+              nEl.value = "";
+              uEl.value = "";
+              renderDraftIngs();
+            };
+
+            var fileInp = document.getElementById("v114-rec-file");
+            fileInp.onchange = function() {
+              var f = fileInp.files && fileInp.files[0];
+              if (!f) return;
+              var reader = new FileReader();
+              reader.onload = function(ev) {
+                var img = new Image();
+                img.onload = function() {
+                  var canvas = document.createElement("canvas");
+                  var maxW = 480;
+                  var scale = img.width > maxW ? maxW / img.width : 1;
+                  canvas.width = Math.round(img.width * scale);
+                  canvas.height = Math.round(img.height * scale);
+                  var ctx = canvas.getContext("2d");
+                  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                  var dataUrl = canvas.toDataURL("image/jpeg", 0.78);
+                  document.getElementById("v114-rec-img-url").value = dataUrl;
+                };
+                img.src = ev.target.result;
+              };
+              reader.readAsDataURL(f);
+            };
+
+            document.getElementById("v114-save-rec-btn").onclick = function() {
+              var title = document.getElementById("v114-rec-title").value.trim();
+              var kw = document.getElementById("v114-rec-kw").value.trim();
+              var imgUrl = document.getElementById("v114-rec-img-url").value.trim();
+              var steps = document.getElementById("v114-rec-steps").value.trim();
+              if (!title || !steps) return;
+              if (!Array.isArray(cfg.recipes)) cfg.recipes = [];
+              cfg.recipes.unshift({
+                id: "rec_" + Date.now(),
+                title: title,
+                keywords: kw || title,
+                imageUrl: imgUrl,
+                steps: steps,
+                ingredients: window.__v114DraftIngredients.slice()
+              });
+              window.__v114DraftIngredients = [];
+              saveAllStudioConfigToServerV114("v114-rec-status");
+              renderFullAiStudioV114();
+            };
+
+            Array.from(body.querySelectorAll(".v114-del-rec")).forEach(function(b) {
+              b.onclick = function() {
+                var i = parseInt(b.getAttribute("data-idx") || "0", 10);
+                cfg.recipes.splice(i, 1);
+                saveAllStudioConfigToServerV114("v114-rec-status");
+                renderFullAiStudioV114();
+              };
+            });
+            return;
+          }
+
+          // ------------------------------------------------------------------
+          // TAB 5: معلومات المنتجات الخاصة للذكاء الاصطناعي (Starts Empty!)
+          // ------------------------------------------------------------------
+          if (tab === "prods") {
+            var pMap = cfg.productAiMap || {};
+            var pEntries = Object.entries(pMap).filter(function(e) { return e[0].indexOf("name:") === 0 && e[1]; });
+            var pListHtml = "";
+            if (pEntries.length === 0) {
+              pListHtml = '<div style="text-align:center;padding:18px;background:#f8fbf9;border:1px dashed #9dcab3;border-radius:12px;color:#5c6f65;font-size:0.86rem;">لا توجد معلومات مخصصة مضافة للمنتجات بعد — اختر أي منتج بالأعلى وأضف معلوماته أو سعراته الحرارية.</div>';
+            } else {
+              pEntries.forEach(function(entry) {
+                var pName = entry[0].slice(5);
+                var pInfo = entry[1];
+                pListHtml +=
+                  '<div style="background:#f8fbf9;border:1px solid #cce3d6;border-radius:12px;padding:12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">' +
+                  '<div style="flex:1;">' +
+                  '<strong style="color:#0d3825;font-size:0.9rem;">📦 ' + pName + '</strong>' +
+                  '<div style="font-size:0.84rem;color:#334155;margin-top:4px;white-space:pre-line;">' + pInfo + '</div>' +
+                  '</div>' +
+                  '<button type="button" class="v114-del-pinfo" data-pname="' + pName.replace(/"/g, "&quot;") + '" style="background:#fee2e2;color:#b91c1c;border:none;border-radius:8px;padding:6px 10px;font-weight:800;font-size:0.78rem;cursor:pointer;">حذف</button>' +
+                  '</div>';
+              });
+            }
+
+            body.innerHTML =
+              '<div style="background:#eef8f3;border:1.5px solid #9dcab3;border-radius:14px;padding:14px;margin-bottom:14px;">' +
+              '<h4 style="margin:0 0 8px 0;color:#0d3825;font-size:0.95rem;">📦 تخصيص معلومات الذكاء الاصطناعي لمنتج معين:</h4>' +
+              '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;">' +
+              '<select id="v114-pinfo-sel" style="flex:1 1 220px;padding:9px;border-radius:10px;border:1px solid #9dcab3;background:#fff;font-size:0.85rem;font-weight:700;">' +
+              buildProductOptionsHtmlV114() +
+              '</select>' +
+              '<input id="v114-pinfo-name" placeholder="أو اكتب اسم المنتج هنا" style="flex:1 1 200px;padding:9px;border-radius:10px;border:1px solid #9dcab3;background:#fff;font-size:0.85rem;" />' +
+              '</div>' +
+              '<textarea id="v114-pinfo-text" rows="3" placeholder="اكتب معلومات المنتج التي سيخبر بها الزبون (السعرات الحرارية، المكونات، هل يؤكل مباشرة أم يدخل في الحلى، مع إيش يتقدم)..." style="width:100%;padding:9px;border-radius:10px;border:1px solid #9dcab3;background:#fff;font-size:0.85rem;box-sizing:border-box;margin-bottom:8px;"></textarea>' +
+              '<div style="display:flex;justify-content:space-between;align-items:center;">' +
+              '<button type="button" id="v114-save-pinfo-btn" style="background:#0d3825;color:#d4af37;border:none;border-radius:10px;padding:9px 18px;font-weight:800;font-size:0.86rem;cursor:pointer;">💾 حفظ معلومات المنتج</button>' +
+              '<span id="v114-pinfo-status" style="font-size:0.82rem;font-weight:800;color:#0d3825;"></span>' +
+              '</div>' +
+              '</div>' +
+              '<h4 style="margin:0 0 8px 0;color:#0d3825;font-size:0.95rem;">📋 المنتجات المخصصة حالياً:</h4>' +
+              pListHtml;
+
+            var piSel = document.getElementById("v114-pinfo-sel");
+            piSel.onchange = function() {
+              if (piSel.value) {
+                document.getElementById("v114-pinfo-name").value = piSel.value;
+                document.getElementById("v114-pinfo-text").value = (cfg.productAiMap && cfg.productAiMap["name:" + piSel.value]) || "";
+              }
+            };
+
+            document.getElementById("v114-save-pinfo-btn").onclick = function() {
+              var pn = document.getElementById("v114-pinfo-name").value.trim();
+              var pt = document.getElementById("v114-pinfo-text").value.trim();
+              if (!pn) return;
+              if (!cfg.productAiMap) cfg.productAiMap = {};
+              if (pt) cfg.productAiMap["name:" + pn] = pt;
+              else delete cfg.productAiMap["name:" + pn];
+              saveAllStudioConfigToServerV114("v114-pinfo-status");
+              renderFullAiStudioV114();
+            };
+
+            Array.from(body.querySelectorAll(".v114-del-pinfo")).forEach(function(b) {
+              b.onclick = function() {
+                var pn = b.getAttribute("data-pname") || "";
+                if (cfg.productAiMap) delete cfg.productAiMap["name:" + pn];
+                saveAllStudioConfigToServerV114("v114-pinfo-status");
+                renderFullAiStudioV114();
+              };
+            });
+            return;
+          }
+
+          // ------------------------------------------------------------------
+          // TAB 6: الإشعارات الفعلية وطلبات الزبائن المباشرة (مع إرفاق رابط منتج في الرد!)
+          // ------------------------------------------------------------------
+          if (tab === "reqs") {
+            var reqs = window.__v114Requests || [];
+            if (reqs.length === 0) {
+              body.innerHTML =
+                '<div style="text-align:center;padding:24px;background:#fffbeb;border:1.5px dashed #f59e0b;border-radius:14px;color:#78350f;font-size:0.88rem;">' +
+                '📲 لا توجد طلبات توفير أو رسائل معلقة حالياً.<br/>عندما يطلب أي زبون منتجاً غير متوفر ويضغط «نعم، كلّم المتجر» سيصلك إشعار فعلي وصوت على هاتفك وتظهر رسالته هنا للرد عليه مباشرةً داخل المتجر.' +
+                '</div>';
+              return;
+            }
+
+            body.innerHTML = '<div id="v114-reqs-list"></div>';
+            var listEl = document.getElementById("v114-reqs-list");
+            reqs.forEach(function(req) {
+              var card = document.createElement("div");
+              card.style.cssText = "background:#fffbeb;border:1.5px solid #f59e0b;border-radius:14px;padding:14px;margin-bottom:10px;";
+              var statusBadge = req.status === "replied"
+                ? '<span style="background:#dcfce7;color:#166534;padding:3px 10px;border-radius:99px;font-size:0.76rem;font-weight:800;">تم الرد ✓</span>'
+                : '<span style="background:#fee2e2;color:#991b1b;padding:3px 10px;border-radius:99px;font-size:0.76rem;font-weight:800;">بانتظار ردك 🔔</span>';
+
+              card.innerHTML =
+                '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
+                '<strong style="color:#0d3825;font-size:0.92rem;">📲 طلب الزبون: ' + (req.requestedItem || req.customerMessage || "") + '</strong>' +
+                '<div style="display:flex;gap:6px;align-items:center;">' + statusBadge + '</div>' +
+                '</div>' +
+                (req.managerReply ? '<div style="background:#dcfce7;color:#166534;padding:8px 10px;border-radius:8px;font-size:0.83rem;margin-bottom:8px;white-space:pre-line;">ردك المرسل للزبون: ' + req.managerReply + '</div>' : '');
+
+              var replyBox = document.createElement("div");
+              replyBox.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;align-items:center;";
+              var inp = document.createElement("input");
+              inp.placeholder = "اكتب ردك المباشر للزبون (مثال: وفرناه لك يا غالي وتقدر تطلبه الآن)...";
+              inp.style.cssText = "flex:2 1 220px;padding:8px 10px;border:1px solid #9dcab3;border-radius:8px;font-size:0.84rem;background:#fff;";
+
+              var prodSelect = document.createElement("select");
+              prodSelect.style.cssText = "flex:1 1 170px;padding:8px;border:1px solid #9dcab3;border-radius:8px;font-size:0.8rem;background:#fff;";
+              prodSelect.innerHTML = buildProductOptionsHtmlV114();
+
+              var sendBtn = document.createElement("button");
+              sendBtn.type = "button";
+              sendBtn.textContent = "📨 إرسال الرد للزبون داخل المتجر";
+              sendBtn.style.cssText = "background:#0d3825;color:#d4af37;border:none;border-radius:8px;padding:8px 14px;font-weight:800;font-size:0.82rem;cursor:pointer;";
+
+              sendBtn.onclick = function() {
+                if (!inp.value.trim()) return;
+                var selProd = prodSelect.value.trim();
+                var selUrl = selProd ? ("/?search=" + encodeURIComponent(selProd)) : "";
+                sendBtn.textContent = "⏳ جاري الإرسال...";
+                origFetchV112("/api/ai-v112/manager-reply", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    requestId: req.id,
+                    sessionId: req.sessionId,
+                    replyText: inp.value.trim(),
+                    attachedProductName: selProd,
+                    attachedProductUrl: selUrl
+                  })
+                })
+                  .then(function(r) { return r.json(); })
+                  .then(function() {
+                    req.status = "replied";
+                    req.managerReply = inp.value.trim() + (selUrl ? "\n🔗 رابط المنتج: " + selUrl : "");
+                    renderFullAiStudioV114();
+                  });
+              };
+
+              var delReqBtn = document.createElement("button");
+              delReqBtn.type = "button";
+              delReqBtn.textContent = "حذف";
+              delReqBtn.style.cssText = "background:#fee2e2;color:#b91c1c;border:none;border-radius:8px;padding:8px 10px;font-weight:800;font-size:0.78rem;cursor:pointer;";
+              delReqBtn.onclick = function() {
+                origFetchV112("/api/ai-v112/delete-request", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ requestId: req.id })
+                }).then(function() {
+                  window.__v114Requests = (window.__v114Requests || []).filter(function(x) { return x.id !== req.id; });
+                  renderFullAiStudioV114();
+                });
+              };
+
+              replyBox.appendChild(inp);
+              replyBox.appendChild(prodSelect);
+              replyBox.appendChild(sendBtn);
+              replyBox.appendChild(delReqBtn);
+              card.appendChild(replyBox);
+              listEl.appendChild(card);
+            });
+          }
         }
 
         document.addEventListener("click", function(ev) {

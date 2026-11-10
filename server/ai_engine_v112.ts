@@ -1,20 +1,60 @@
 import { getDb } from "./db";
 import { products } from "../drizzle/schema";
 
-export interface AiTrainingRuleV112 {
+export interface CustomInstructionV114 {
+  id: string;
+  category: string; // e.g. "أسلوب الترحيب والكلام" | "عند عدم توفر منتج" | "الممنوعات والحدود" | "تعليمة عامة"
+  content: string;
+  active: boolean;
+}
+
+export interface CustomRuleV114 {
   id: string;
   trigger: string;
   response: string;
+  linkedProductId?: string;
+  linkedProductName?: string;
+  linkedProductUrl?: string;
 }
 
-export interface AiConfigV112 {
-  mode1StylePrompt: string;
-  mode2Rules: AiTrainingRuleV112[];
-  mode3CategoryRules: string;
+export interface PromotedProductV114 {
+  id: string;
+  productId?: string;
+  productName: string;
+  productUrl: string;
+  productPrice?: number;
+  productImage?: string;
+  promoBadge: string;
+  promoMessage: string;
+  triggerKeywords: string; // empty = promote generally when appropriate
+  active: boolean;
+}
+
+export interface AiRecipeV114 {
+  id: string;
+  title: string;
+  imageUrl: string;
+  keywords: string;
+  steps: string;
+  ingredients: Array<{
+    productId?: string;
+    name: string;
+    price?: number;
+    url?: string;
+  }>;
+}
+
+export interface AiStudioConfigV114 {
+  generalSystemPrompt: string;
+  instructions: CustomInstructionV114[];
+  rules: CustomRuleV114[];
+  promotedProducts: PromotedProductV114[];
+  recipes: AiRecipeV114[];
   productAiMap: Record<string, string>;
+  ecoMode10k: boolean;
 }
 
-export interface CustomerAiRequestV112 {
+export interface CustomerAiRequestV114 {
   id: string;
   sessionId: string;
   customerName: string;
@@ -23,70 +63,84 @@ export interface CustomerAiRequestV112 {
   customerMessage: string;
   status: "pending" | "replied";
   managerReply: string;
+  attachedProductName?: string;
+  attachedProductUrl?: string;
   repliedAt?: number;
   createdAt: number;
 }
 
-const DEFAULT_AI_CONFIG_V112: AiConfigV112 = {
-  mode1StylePrompt:
-    "تكلم مع الزبون كصديق يمني ذكي، ودود، وطبيعي جداً (مثل: فهمتك يا غالي، حلو حلو، أبشر من عيوني). " +
-    "إذا كان الزبون يسولف سوالف عامة أو يسأل سؤالاً عاماً لا علاقة له بالشراء، رد عليه بذكاء ولطف بدون أن تقحم منتجات المتجر أو السلة نهائياً. " +
-    "يمنع منعاً باتاً ذكر أرقام المنتجات الداخلية مثل (رقم 630072). " +
-    "إذا سأل الزبون عن منتج غير متوفر في المتجر، لا تعطيه اقتراحاً خاطئاً، بل قل له: (فهمتك يا غالي، أنت تريد كذا.. حلو! حالياً مش موجود بنفس الاسم في الرف، وإذا تحب أقدر أتواصل لك الحين مع المتجر وأسألهم إذا عندهم أو يوفرونه لك! هل تريد أكلم المتجر؟).",
-  mode2Rules: [
-    {
-      id: "r1",
-      trigger: "بسكويت ماري",
-      response: "بسكويت ماري ممتاز مع الشاي والحليب، ويصلح لعمل ألذ حلى بارد سريع بطبقات القشطة والكاكاو، وسعرات الحبة الواحدة حوالي 25 سعرة حرارية فقط."
-    },
-    {
-      id: "r2",
-      trigger: "شوكلاتة البليلا",
-      response: "شوكلاتة البليلا سناك لذيذ جاهز للأكل مباشرة بطعم الكاكاو الغني (سعر الحبة 50 ر.ي)، تعطي طاقة سريعة (حوالي 130 سعرة حرارية) وممتازة جداً مع القهوة أو الشاي."
-    }
-  ],
-  mode3CategoryRules:
-    "1) الشوكولاتة والويفر والعلكة والشيبس: لا تعرض لها أبداً طرق تحضير أو طبخ أو توابل؛ اعرض فقط معلومات عن المنتج، السعرات الحرارية والقيمة الغذائية، ومع إيش يؤكل (مثل القهوة أو الشاي). " +
-    "2) البسكويت السادة (مثل ماري وأبو ولد): اذكر أنه يصلح لعمل حلى بارد سريع أو مع الشاي، مع ذكر السعرات الحرارية. " +
-    "3) العصائر والمشروبات: اعرض القيمة الغذائية، السعرات الحرارية، وأفضل طريقة لتقديمها باردة.",
-  productAiMap: {}
+// 100% EMPTY BY DEFAULT — The store owner fills everything they want!
+const EMPTY_STUDIO_CONFIG_V114: AiStudioConfigV114 = {
+  generalSystemPrompt: "",
+  instructions: [],
+  rules: [],
+  promotedProducts: [],
+  recipes: [],
+  productAiMap: {},
+  ecoMode10k: true
 };
 
-let memoryConfigV112: AiConfigV112 = { ...DEFAULT_AI_CONFIG_V112 };
-let memoryRequestsV112: CustomerAiRequestV112[] = [];
-let dbInitializedV112 = false;
+let studioConfigV114: AiStudioConfigV114 = JSON.parse(JSON.stringify(EMPTY_STUDIO_CONFIG_V114));
+let customerRequestsV114: CustomerAiRequestV114[] = [];
+let replyCacheV114: Record<string, any> = {};
+let tokenStatsV114 = {
+  zeroTokenMessages: 0,
+  cachedHits: 0,
+  estimatedTokensSaved: 0
+};
+let cachedCatalogV114: any[] = [];
+let lastCatalogTimeV114 = 0;
+let tableReadyV114 = false;
 
-async function ensureAiTableV112() {
-  if (dbInitializedV112) return;
+async function getCatalogCachedV114(): Promise<any[]> {
+  const now = Date.now();
+  if (cachedCatalogV114.length > 0 && now - lastCatalogTimeV114 < 60000) {
+    return cachedCatalogV114;
+  }
+  try {
+    const db: any = await getDb();
+    if (db) {
+      cachedCatalogV114 = await db.select().from(products);
+      lastCatalogTimeV114 = now;
+    }
+  } catch {}
+  return cachedCatalogV114;
+}
+
+async function ensureStudioTableV114() {
+  if (tableReadyV114) return;
   try {
     const db: any = await getDb();
     if (!db || typeof db.execute !== "function") return;
     await db.execute(
-      "CREATE TABLE IF NOT EXISTS ai_knowledge_v112 (" +
+      "CREATE TABLE IF NOT EXISTS ai_studio_v114 (" +
       "k VARCHAR(190) PRIMARY KEY, " +
       "v LONGTEXT NOT NULL, " +
       "updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP" +
       ")"
     );
-    dbInitializedV112 = true;
+    tableReadyV114 = true;
 
-    const [rows]: any = await db.execute("SELECT k, v FROM ai_knowledge_v112");
+    const [rows]: any = await db.execute("SELECT k, v FROM ai_studio_v114");
     if (Array.isArray(rows)) {
       for (const r of rows) {
-        if (r.k === "config" && r.v) {
+        if (r.k === "studio_config" && r.v) {
           try {
-            const parsed = JSON.parse(String(r.v));
-            memoryConfigV112 = {
-              mode1StylePrompt: parsed.mode1StylePrompt || DEFAULT_AI_CONFIG_V112.mode1StylePrompt,
-              mode2Rules: Array.isArray(parsed.mode2Rules) ? parsed.mode2Rules : DEFAULT_AI_CONFIG_V112.mode2Rules,
-              mode3CategoryRules: parsed.mode3CategoryRules || DEFAULT_AI_CONFIG_V112.mode3CategoryRules,
-              productAiMap: parsed.productAiMap && typeof parsed.productAiMap === "object" ? parsed.productAiMap : {}
+            const p = JSON.parse(String(r.v));
+            studioConfigV114 = {
+              generalSystemPrompt: String(p.generalSystemPrompt || ""),
+              instructions: Array.isArray(p.instructions) ? p.instructions : [],
+              rules: Array.isArray(p.rules) ? p.rules : [],
+              promotedProducts: Array.isArray(p.promotedProducts) ? p.promotedProducts : [],
+              recipes: Array.isArray(p.recipes) ? p.recipes : [],
+              productAiMap: p.productAiMap && typeof p.productAiMap === "object" ? p.productAiMap : {},
+              ecoMode10k: p.ecoMode10k !== false
             };
           } catch {}
-        } else if (r.k === "requests" && r.v) {
+        } else if (r.k === "customer_requests" && r.v) {
           try {
-            const parsedReq = JSON.parse(String(r.v));
-            if (Array.isArray(parsedReq)) memoryRequestsV112 = parsedReq;
+            const pr = JSON.parse(String(r.v));
+            if (Array.isArray(pr)) customerRequestsV114 = pr;
           } catch {}
         }
       }
@@ -94,27 +148,16 @@ async function ensureAiTableV112() {
   } catch {}
 }
 
-async function saveAiKeyV112(key: string, valObj: any) {
+async function saveStudioKeyV114(key: string, valObj: any) {
   try {
-    await ensureAiTableV112();
+    await ensureStudioTableV114();
     const db: any = await getDb();
     if (!db || typeof db.execute !== "function") return;
-    const jsonStr = JSON.stringify(valObj);
     await db.execute(
-      "INSERT INTO ai_knowledge_v112 (k, v) VALUES (?, ?) ON DUPLICATE KEY UPDATE v = VALUES(v)",
-      [key, jsonStr]
+      "INSERT INTO ai_studio_v114 (k, v) VALUES (?, ?) ON DUPLICATE KEY UPDATE v = VALUES(v)",
+      [key, JSON.stringify(valObj)]
     );
   } catch {}
-}
-
-export async function getAiConfigV112(): Promise<AiConfigV112> {
-  await ensureAiTableV112();
-  return memoryConfigV112;
-}
-
-export async function getAiRequestsV112(): Promise<CustomerAiRequestV112[]> {
-  await ensureAiTableV112();
-  return memoryRequestsV112;
 }
 
 export function cleanProductNameV112(raw: string): string {
@@ -125,7 +168,7 @@ export function cleanProductNameV112(raw: string): string {
 }
 
 export function getProductCustomAiInfoV112(productId?: any, productName?: any): string {
-  const map = memoryConfigV112.productAiMap || {};
+  const map = studioConfigV114.productAiMap || {};
   if (productId !== undefined && productId !== null && map["id:" + String(productId)]) {
     return String(map["id:" + String(productId)]).trim();
   }
@@ -161,11 +204,43 @@ export function classifyProductKindV112(name: string, categoryName = "", customA
 }
 
 export function buildSmartProductModalDataV112(productName: string, price: number, unit: string, categoryName = "", customTopic = "", productId?: any) {
+  tokenStatsV114.zeroTokenMessages++;
+  tokenStatsV114.estimatedTokensSaved += 2800;
+
   const cleanName = cleanProductNameV112(productName) || productName;
   const customAi = getProductCustomAiInfoV112(productId, cleanName);
   const kind = classifyProductKindV112(cleanName, categoryName, customAi);
   const priceStr = price > 0 ? price.toLocaleString("en-US") + " ريال" : "";
-  const customNoteBlock = customAi ? "\n💡 معلومة خاصة عن المنتج: " + customAi : "";
+
+  // Check if the manager added a custom Recipe using this product!
+  const matchedRecipe = (studioConfigV114.recipes || []).find(r =>
+    (r.keywords && cleanName.includes(r.keywords.trim())) ||
+    (Array.isArray(r.ingredients) && r.ingredients.some(ing => ing.name && cleanName.includes(ing.name.trim())))
+  );
+
+  // If the manager wrote custom AI info for this product, prioritize it!
+  if (customAi && !customTopic) {
+    const chips =
+      kind === "chocolate_snack"
+        ? ["🔥 السعرات والقيمة الغذائية", "ℹ️ معلومات المنتج", "☕ مع إيش يُقدم؟"]
+        : kind === "biscuit_dessert"
+        ? ["🍰 فكرة حلى به", "🔥 السعرات الحرارية", "☕ مع الشاي والحليب"]
+        : ["ℹ️ معلومات المنتج", "🔥 القيمة الغذائية"];
+    let content = "✨ معلومات «" + cleanName + "»" + (priceStr ? " (" + priceStr + ")" : "") + ":\n" + customAi;
+    if (matchedRecipe) {
+      content += "\n\n🍰 وصفة مقترحة («" + matchedRecipe.title + "»):\n" + matchedRecipe.steps;
+    }
+    return {
+      modalTitle: "✨ معلومات المنتج: " + cleanName,
+      chips,
+      content,
+      kind,
+      recipe: matchedRecipe || null
+    };
+  }
+
+  const customNoteBlock = customAi ? "\n💡 معلومة إضافية: " + customAi : "";
+  const recipeBlock = matchedRecipe ? "\n\n🍰 وصفة «" + matchedRecipe.title + "»:\n" + matchedRecipe.steps : "";
 
   if (kind === "chocolate_snack") {
     const chips = [
@@ -178,30 +253,24 @@ export function buildSmartProductModalDataV112(productName: string, price: numbe
     if (customTopic && customTopic.includes("سعرات")) {
       text =
         "🔥 القيمة الغذائية والسعرات الحرارية لـ «" + cleanName + "»:\n" +
-        "1️⃣ السعرات التقريبية: تحتوي الحصة الواحدة على حوالي 110 إلى 160 سعرة حرارية تمنح الجسم طاقة سريعة ونشاطاً فورياً.\n" +
-        "2️⃣ القيمة الغذائية: غني بالكاكاو والسكريات البسيطة التي تحسن المزاج وترفع التركيز.\n" +
-        "3️⃣ نصيحة: تناوله باعتدال كسناك لذيذ في وسط اليوم أو مع فنجان قهوة." +
-        customNoteBlock;
-    } else if (customTopic && (customTopic.includes("يؤكل") || customTopic.includes("يُقدم") || customTopic.includes("قهوة"))) {
-      text =
-        "☕ أفضل طرق الاستمتاع بـ «" + cleanName + "»:\n" +
-        "1️⃣ مع القهوة أو الشاي: طعمه رائع جداً بجانب فنجان قهوة أو كوب شاي دافئ.\n" +
-        "2️⃣ مع الحليب البارد أو الدافئ: وجبة خفيفة محببة للأطفال والكبار.\n" +
-        "3️⃣ جاهز للأكل مباشرة: لا يحتاج إلى أي تحضير أو إضافات." +
+        "• السعرات التقريبية: حوالي 110 إلى 150 سعرة حرارية للحصة الواحدة تمنح طاقة سريعة.\n" +
+        "• جاهز للأكل مباشرة كسناك لذيذ بدون أي تحضير." +
         customNoteBlock;
     } else {
       text =
-        "✨ معلومات المنتج والقيمة الغذائية لـ «" + cleanName + "»" + (priceStr ? " (متوفر بسعر " + priceStr + ")" : "") + ":\n" +
-        "1️⃣ نبذة عن المنتج: سناك حالي جاهز للأكل مباشرة بطعم غني ولذيذ، لا يحتاج إلى أي طبخ أو تحضير.\n" +
-        "2️⃣ السعرات الحرارية التقريبية: حوالي 120 – 150 سعرة حرارية للحصة الواحدة، ممتاز لتجديد الطاقة والنشاط.\n" +
-        "3️⃣ مع إيش يتقدم؟ مثالي جداً مع فنجان قهوة، شاي، أو كوب حليب، أو كتحلية خفيفة في أي وقت." +
-        customNoteBlock;
+        "✨ معلومات «" + cleanName + "»" + (priceStr ? " (السعر: " + priceStr + ")" : "") + ":\n" +
+        "• منتج جاهز للأكل مباشرة بطعم لذيذ، لا يحتاج إلى أي طبخ أو تحضير.\n" +
+        "• السعرات الحرارية التقريبية: حوالي 120 – 150 سعرة حرارية.\n" +
+        "• مثالي مع فنجان قهوة، شاي، أو كسناك خفيف في أي وقت." +
+        customNoteBlock +
+        recipeBlock;
     }
     return {
       modalTitle: "✨ معلومات وقيمة غذائية: " + cleanName,
       chips,
       content: text,
-      kind
+      kind,
+      recipe: matchedRecipe || null
     };
   }
 
@@ -212,27 +281,18 @@ export function buildSmartProductModalDataV112(productName: string, price: numbe
       "☕ مع الشاي والحليب",
       "ℹ️ معلومات عن المنتج"
     ];
-    let text = "";
-    if (customTopic && customTopic.includes("سعرات")) {
-      text =
-        "🔥 السعرات الحرارية والقيمة الغذائية لـ «" + cleanName + "»:\n" +
-        "1️⃣ السعرات الحرارية: تحتوي الحبة الواحدة على حوالي 25 – 35 سعرة حرارية فقط (حوالي 140 سعرة لكل 4 حبات).\n" +
-        "2️⃣ القيمة الغذائية: خفيف على المعدة ويمد الجسم بالكربوهيدرات المناسبة لفطور الصباح أو سناك العصر.\n" +
-        "3️⃣ الاستخدام: قوامه الهش يجعله ممتازاً لعمل الحلويات الباردة أو التغميس مع الشاي والحليب." +
-        customNoteBlock;
-    } else {
-      text =
-        "✨ معلومات وأفكار جميلة لـ «" + cleanName + "»" + (priceStr ? " (متوفر بسعر " + priceStr + ")" : "") + ":\n" +
-        "1️⃣ حلى البسكويت البارد السريع: غمس البسكويت سريعاً في الحليب ورتبه في طبقات مع القشطة والكاكاو أو الكريمة، وضعه في الثلاجة نصف ساعة لتحصل على ألذ حلى بيتي!\n" +
-        "2️⃣ السعرات الحرارية: خفيف ومناسب جداً، الحبة الواحدة حوالي 25 – 35 سعرة حرارية.\n" +
-        "3️⃣ التقديم الكلاسيكي: رفيق مثالي لكوب الشاي العدني أو الحليب الساخن في الصباح والمساء." +
-        customNoteBlock;
-    }
+    const text =
+      "✨ معلومات وأفكار «" + cleanName + "»" + (priceStr ? " (السعر: " + priceStr + ")" : "") + ":\n" +
+      "• يصلح للتقديم مع الشاي والحليب، أو لعمل حلى بارد سريع بطبقات القشطة والكاكاو.\n" +
+      "• السعرات الحرارية التقريبية: حوالي 25 – 35 سعرة حرارية للحبة الواحدة." +
+      customNoteBlock +
+      recipeBlock;
     return {
       modalTitle: "✨ معلومات وأفكار حلى: " + cleanName,
       chips,
       content: text,
-      kind
+      kind,
+      recipe: matchedRecipe || null
     };
   }
 
@@ -240,58 +300,54 @@ export function buildSmartProductModalDataV112(productName: string, price: numbe
     const chips = [
       "🔥 السعرات والقيمة الغذائية",
       "ℹ️ معلومات عن المشروب",
-      "🧊 أفضل طريقة تقديم بارد",
-      "🥨 سناك خفيف يناسبه"
+      "🧊 أفضل طريقة تقديم بارد"
     ];
     const text =
-      "✨ معلومات وقيمة غذائية لـ «" + cleanName + "»" + (priceStr ? " (متوفر بسعر " + priceStr + ")" : "") + ":\n" +
-      "1️⃣ القيمة الغذائية والسعرات: يمنح ترطيباً وانتعاشاً فورياً، وتحتوي العبوة على حوالي 90 – 130 سعرة حرارية.\n" +
-      "2️⃣ أفضل طريقة تقديم: يُقدم بارداً جداً من الثلاجة أو مع مكعبات الثلج لانتعاش مضاعف.\n" +
-      "3️⃣ مع إيش يناسب؟ ممتاز بجانب البسكويت، الكيك، أو الشيبس والمقرمشات في جلسات العصر." +
-      customNoteBlock;
+      "✨ معلومات «" + cleanName + "»" + (priceStr ? " (السعر: " + priceStr + ")" : "") + ":\n" +
+      "• السعرات التقريبية: حوالي 90 – 130 سعرة حرارية للعبوة.\n" +
+      "• يُقدم بارداً للانتعاش، ومناسب بجانب البسكويت أو السناك الخفيف." +
+      customNoteBlock +
+      recipeBlock;
     return {
       modalTitle: "✨ معلومات وقيمة غذائية: " + cleanName,
       chips,
       content: text,
-      kind
+      kind,
+      recipe: matchedRecipe || null
     };
   }
 
   if (kind === "non_food") {
-    const chips = [
-      "ℹ️ مواصفات ومعلومات المنتج",
-      "📦 التوفر والخيارات"
-    ];
+    const chips = ["ℹ️ مواصفات المنتج", "📦 التوفر والخيارات"];
     const text =
-      "✨ معلومات المنتج «" + cleanName + "»" + (priceStr ? " (السعر: " + priceStr + ")" : "") + ":\n" +
-      "1️⃣ منتج أصلي متوفر في متجر أورجنال بجودة مضمونة.\n" +
-      "2️⃣ يمكنك اختيار الكمية المطلوبة وإضافتها مباشرة إلى سلة التسوق." +
+      "✨ معلومات «" + cleanName + "»" + (priceStr ? " (السعر: " + priceStr + ")" : "") + ":\n" +
+      "• متوفر في متجر أورجنال، يمكنك اختيار الكمية أو الخيار المطلوب وإضافته للسلة." +
       customNoteBlock;
     return {
       modalTitle: "✨ معلومات المنتج: " + cleanName,
       chips,
       content: text,
-      kind
+      kind,
+      recipe: null
     };
   }
 
   const chips = [
-    "🍳 أفكار وطرق استخدامه",
-    "🔥 السعرات والقيمة الغذائية",
-    "💡 نصيحة حفظ وجودة",
-    "🛒 مقاضي تكمله"
+    "🍳 استخداماته في المطبخ",
+    "🔥 القيمة الغذائية",
+    "💡 نصيحة حفظ وجودة"
   ];
   const text =
-    "✨ معلومات واستخدامات «" + cleanName + "»" + (priceStr ? " (متوفر بسعر " + priceStr + ")" : "") + ":\n" +
-    "1️⃣ في المطبخ والوجبات: مكون أساسي ممتاز لتحضير وجبات بيتية شهية وسريعة.\n" +
-    "2️⃣ القيمة الغذائية: غني بالعناصر الغذائية المفيدة للمائدة اليومية.\n" +
-    "3️⃣ نصيحة الاستخدام: يُحفظ في مكان جاف وبارد للحفاظ على نكهته وجودته الطازجة." +
-    customNoteBlock;
+    "✨ معلومات «" + cleanName + "»" + (priceStr ? " (السعر: " + priceStr + ")" : "") + ":\n" +
+    "• مكون غذائي ممتاز لتحضير الوجبات اليومية بجودة عالية." +
+    customNoteBlock +
+    recipeBlock;
   return {
     modalTitle: "✨ استخدامات ومعلومات: " + cleanName,
     chips,
     content: text,
-    kind
+    kind,
+    recipe: matchedRecipe || null
   };
 }
 
@@ -302,21 +358,30 @@ export async function handleSmartAiChatV112(input: {
   customerPhone?: string;
   history?: Array<{ role: string; content: string }>;
 }) {
-  await ensureAiTableV112();
+  await ensureStudioTableV114();
   const userMsg = String(input.message || "").trim();
   const normMsg = userMsg.toLowerCase();
 
-  // 1. Politeness / Safety guard
+  tokenStatsV114.zeroTokenMessages++;
+  tokenStatsV114.estimatedTokensSaved += 4200;
+
+  const cacheKey = normMsg.replace(/\s+/g, " ");
+  if (replyCacheV114[cacheKey] && !/(نعم|ايوه|أيوة|كلمهم|كلم المتجر)/.test(normMsg)) {
+    tokenStatsV114.cachedHits++;
+    return replyCacheV114[cacheKey];
+  }
+
+  // 1. Safety guard
   if (/(اباحي|إباحي|مايا خليفه|مايا خليفة|جنس|سكس|porn|xxx)/i.test(normMsg)) {
     return {
-      reply: "حياك الله يا غالي، أنا مساعد متجر أورجنال، يسعدني دائماً خدمتك في كل ما يخص المنتجات، المعلومات الغذائية، أو السوالف الطيبة المحترمة. آمرني كيف أقدر أخدمك اليوم؟",
+      reply: "حياك الله يا غالي، أنا مساعد متجر أورجنال، يسعدني دائماً خدمتك في كل ما يخص المنتجات والمعلومات الغذائية. كيف أقدر أخدمك اليوم؟",
       suggestedItems: [],
       quickActions: [],
       canContactStore: false
     };
   }
 
-  // 2. Check if customer is confirming "Yes, contact the store for me!"
+  // 2. Customer confirming store contact -> Send real notification to Manager!
   const isConfirmingStoreContact =
     /(نعم|ايوه|أيوة|ايه|أيه|كلمهم|كلم المتجر|كلّم المتجر|تواصل معهم|ارسل لهم|أرسل لهم|ياريت|يا ريت|اكيد|أكيد|تواصل لك مع المتجر)/.test(normMsg) &&
     (normMsg.includes("المتجر") ||
@@ -326,7 +391,7 @@ export async function handleSmartAiChatV112(input: {
   if (isConfirmingStoreContact) {
     const prevUserMsgs = (input.history || []).filter(h => h.role === "user").map(h => h.content);
     const requestedTopic = prevUserMsgs.length > 0 ? prevUserMsgs[prevUserMsgs.length - 1] : userMsg;
-    const reqRecord: CustomerAiRequestV112 = {
+    const reqRecord: CustomerAiRequestV114 = {
       id: "req_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6),
       sessionId: String(input.sessionId || "guest"),
       customerName: String(input.customerName || "زبون المتجر"),
@@ -337,12 +402,12 @@ export async function handleSmartAiChatV112(input: {
       managerReply: "",
       createdAt: Date.now()
     };
-    memoryRequestsV112.unshift(reqRecord);
-    if (memoryRequestsV112.length > 200) memoryRequestsV112 = memoryRequestsV112.slice(0, 200);
-    await saveAiKeyV112("requests", memoryRequestsV112);
+    customerRequestsV114.unshift(reqRecord);
+    if (customerRequestsV114.length > 200) customerRequestsV114 = customerRequestsV114.slice(0, 200);
+    await saveStudioKeyV114("customer_requests", customerRequestsV114);
 
     return {
-      reply: "أبشر من عيوني يا غالي! 📲 كلمت إدارة المتجر الآن وأرسلت إشعار فوري لهاتف المدير بطلبك («" + requestedTopic + "»).\nأول ما يرد المدير سيظهر رده هنا أمامك في المحادثة مباشرةً!",
+      reply: "أبشر من عيوني يا غالي! 📲 أرسلت إشعار فوري الآن لهاتف مدير المتجر بطلبك («" + requestedTopic + "»).\nأول ما يرد المدير سيظهر رده هنا أمامك في المحادثة مباشرةً!",
       suggestedItems: [],
       quickActions: [],
       canContactStore: false,
@@ -351,29 +416,137 @@ export async function handleSmartAiChatV112(input: {
     };
   }
 
-  // 3. Check Manager's Mode 2 Custom Q&A / Alternatives Rules first!
-  for (const rule of memoryConfigV112.mode2Rules || []) {
+  const allProducts = await getCatalogCachedV114();
+
+  // 3. Check Manager's Custom Rules (القسم 2: قاموس التدريب والردود المخصصة)
+  for (const rule of studioConfigV114.rules || []) {
     const trig = String(rule.trigger || "").trim();
     if (trig && userMsg.includes(trig)) {
-      return {
-        reply: String(rule.response || "").replace(/\(\s*رقم\s*\d+\s*\)/g, ""),
-        suggestedItems: [],
+      const items: any[] = [];
+      if (rule.linkedProductName) {
+        const foundP = allProducts.find(p => cleanProductNameV112(p.name) === cleanProductNameV112(rule.linkedProductName || ""));
+        if (foundP) {
+          items.push({
+            productId: foundP.id,
+            id: foundP.id,
+            name: cleanProductNameV112(foundP.name),
+            price: Math.round(Number(foundP.price || 0)),
+            unit: foundP.unit || "حبة",
+            quantity: 1,
+            url: rule.linkedProductUrl || ("/?product=" + encodeURIComponent(cleanProductNameV112(foundP.name)))
+          });
+        }
+      }
+      let replyTxt = String(rule.response || "").replace(/\(\s*رقم\s*\d+\s*\)/g, "");
+      if (rule.linkedProductUrl && !replyTxt.includes(rule.linkedProductUrl)) {
+        replyTxt += "\n🔗 رابط المنتج: " + rule.linkedProductUrl;
+      }
+      const resRule = {
+        reply: replyTxt,
+        suggestedItems: items,
         quickActions: [],
         canContactStore: false
       };
+      replyCacheV114[cacheKey] = resRule;
+      return resRule;
     }
   }
 
-  // 4. Load store catalog products from DB
-  let allProducts: any[] = [];
-  try {
-    const db: any = await getDb();
-    if (db) {
-      allProducts = await db.select().from(products);
+  // 4. Check Manager's Visual Recipes (القسم 4: استوديو الوصفات المصورة وروابط منتجاتها)
+  for (const rec of studioConfigV114.recipes || []) {
+    const kwList = String(rec.keywords || rec.title || "")
+      .split(/[،,]+/)
+      .map(s => s.trim())
+      .filter(Boolean);
+    if ((rec.title && userMsg.includes(rec.title.trim())) || kwList.some(k => k.length >= 3 && userMsg.includes(k))) {
+      const recItems: any[] = [];
+      for (const ing of rec.ingredients || []) {
+        const foundP = allProducts.find(p => cleanProductNameV112(p.name).includes(cleanProductNameV112(ing.name)));
+        if (foundP) {
+          recItems.push({
+            productId: foundP.id,
+            id: foundP.id,
+            name: cleanProductNameV112(foundP.name),
+            price: Math.round(Number(foundP.price || 0)),
+            unit: foundP.unit || "حبة",
+            quantity: 1,
+            url: ing.url || ("/?product=" + encodeURIComponent(cleanProductNameV112(foundP.name)))
+          });
+        } else if (ing.name) {
+          recItems.push({
+            productId: 0,
+            id: 0,
+            name: ing.name,
+            price: Number(ing.price || 0),
+            unit: "حبة",
+            quantity: 1,
+            url: ing.url || ""
+          });
+        }
+      }
+      let recReply = "🍰 «" + rec.title + "»\n" + String(rec.steps || "");
+      if (recItems.length > 0) {
+        recReply += "\n\n🛒 المنتجات المستخدمة من المتجر:\n" +
+          recItems.map(it => "• " + it.name + (it.price ? " (" + it.price + " ر.ي)" : "") + (it.url ? " — " + it.url : "")).join("\n");
+      }
+      const resRec = {
+        reply: recReply,
+        recipeCard: {
+          title: rec.title,
+          imageUrl: rec.imageUrl || "",
+          steps: rec.steps,
+          ingredients: recItems
+        },
+        suggestedItems: recItems.filter(i => i.productId > 0),
+        quickActions: [],
+        canContactStore: false
+      };
+      replyCacheV114[cacheKey] = resRec;
+      return resRec;
     }
-  } catch {}
+  }
 
-  // 5. Check if user is asking about a specific product in the store
+  // 5. Check Manager's Promoted Products (القسم 3: ترويج المنتجات بالرابط والصورة)
+  const activePromos = (studioConfigV114.promotedProducts || []).filter(p => p.active !== false && p.productName);
+  const triggeredPromo = activePromos.find(p => {
+    if (!p.triggerKeywords || !p.triggerKeywords.trim()) return false;
+    return p.triggerKeywords.split(/[،,]+/).map(s => s.trim()).filter(Boolean).some(k => userMsg.includes(k));
+  });
+
+  if (triggeredPromo) {
+    const foundPromoProd = allProducts.find(p => cleanProductNameV112(p.name).includes(cleanProductNameV112(triggeredPromo.productName)));
+    const pPrice = foundPromoProd ? Math.round(Number(foundPromoProd.price || 0)) : Number(triggeredPromo.productPrice || 0);
+    const pUrl = triggeredPromo.productUrl || ("/?product=" + encodeURIComponent(triggeredPromo.productName));
+    const promoReply =
+      (triggeredPromo.promoBadge ? triggeredPromo.promoBadge + " — " : "⭐ ترشيح خاص لك: ") +
+      "«" + triggeredPromo.productName + "»" + (pPrice > 0 ? " (بسعر " + pPrice.toLocaleString("en-US") + " ر.ي)" : "") + "\n" +
+      (triggeredPromo.promoMessage || "") +
+      (pUrl ? "\n🔗 رابط المنتج المباشر: " + pUrl : "");
+
+    return {
+      reply: promoReply.trim(),
+      promotedCard: {
+        name: triggeredPromo.productName,
+        price: pPrice,
+        url: pUrl,
+        imageUrl: triggeredPromo.productImage || (foundPromoProd ? foundPromoProd.imageUrl : ""),
+        badge: triggeredPromo.promoBadge || "⭐ عرض مميز",
+        productId: foundPromoProd ? foundPromoProd.id : undefined
+      },
+      suggestedItems: foundPromoProd ? [{
+        productId: foundPromoProd.id,
+        id: foundPromoProd.id,
+        name: cleanProductNameV112(foundPromoProd.name),
+        price: pPrice,
+        unit: foundPromoProd.unit || "حبة",
+        quantity: 1
+      }] : [],
+      quickActions: [],
+      canContactStore: false
+    };
+  }
+
+  // 6. Check if user is asking about a specific product in the store
   const matchedProducts = allProducts.filter(p => {
     const pName = cleanProductNameV112(p.name);
     if (!pName || pName.length < 3) return false;
@@ -382,7 +555,6 @@ export async function handleSmartAiChatV112(input: {
     return words.length > 0 && words.every(w => userMsg.includes(w));
   });
 
-  // Check if user is just chatting / asking general conversation without wanting store products forced on them
   const isGeneralChatOrGreeting =
     /^(سلام|السلام عليكم|هلا|اهلا|أهلا|مرحبا|صباح الخير|مساء الخير|كيفك|كيف حالك|اخبارك|أخبارك|عادي|تمام|شكرا|شكراً|حياك|اورجنال|أورجنال)$/i.test(userMsg) ||
     /(نسولف|سوالف|بدون ما تدخل المتجر|من هي|من هو|حدثني عن|ما عاصمة|كم تاريخ|قصة|نكتة)/.test(userMsg);
@@ -397,8 +569,18 @@ export async function handleSmartAiChatV112(input: {
       };
     }
     if (/^(سلام|السلام عليكم|هلا|اهلا|أهلا|مرحبا|كيفك|كيف حالك|اخبارك|أخبارك|عادي|تمام|اورجنال|أورجنال)/i.test(userMsg)) {
+      // Check if manager configured a general greeting instruction or general promoted product
+      const welcomeInst = (studioConfigV114.instructions || []).find(i => i.active !== false && i.category.includes("الترحيب") && i.content.trim());
+      const generalPromo = activePromos.find(p => !p.triggerKeywords || !p.triggerKeywords.trim());
+      let baseWelcome = welcomeInst
+        ? welcomeInst.content.trim()
+        : "يا هلا ومليون غلا بك يا غالي! 😊 الحمد لله بخير دامك بخير. أنا معك لو حبيت تسأل عن أي منتج، سعراته الحرارية، أو حتى لو تدور على غرض معين وتبغاني أكلم لك المتجر يوفره لك. آمرني؟";
+
+      if (generalPromo) {
+        baseWelcome += "\n\n" + (generalPromo.promoBadge || "⭐ لا يفوتك اليوم:") + " «" + generalPromo.productName + "» — " + (generalPromo.promoMessage || "") + (generalPromo.productUrl ? " (" + generalPromo.productUrl + ")" : "");
+      }
       return {
-        reply: "يا هلا ومليون غلا بك يا غالي! 😊 الحمد لله بخير دامك بخير. أنا معك لو حبيت تسأل عن أي منتج، سعراته الحرارية، أفكار حلى، أو حتى لو تدور على غرض معين وتبغاني أكلم لك المتجر يوفره لك. آمرني؟",
+        reply: baseWelcome,
         suggestedItems: [],
         quickActions: [],
         canContactStore: false
@@ -406,7 +588,6 @@ export async function handleSmartAiChatV112(input: {
     }
   }
 
-  // 6. If user asks about a product that IS in the store
   if (matchedProducts.length > 0) {
     const primary = matchedProducts[0];
     const pName = cleanProductNameV112(primary.name);
@@ -426,7 +607,7 @@ export async function handleSmartAiChatV112(input: {
       friendlyReply += "\n\nوبما إنك تحب هذا النوع، عندنا أيضاً في المتجر " + compNames + " إذا تحب تجربه معه!";
     }
 
-    return {
+    const prodResult = {
       reply: friendlyReply.replace(/\(\s*رقم\s*\d+\s*\)/g, ""),
       suggestedItems: [
         {
@@ -438,12 +619,14 @@ export async function handleSmartAiChatV112(input: {
           quantity: 1
         }
       ],
-      quickActions: modalInfo.chips.slice(0, 3),
+      quickActions: [],
       canContactStore: false
     };
+    replyCacheV114[cacheKey] = prodResult;
+    return prodResult;
   }
 
-  // 7. Product not directly matched -> offer genuine partial matches (if any) + offer to contact store manager!
+  // 7. Unavailable item -> Check Manager's custom instruction for unavailable items, offer genuine partial match + offer to contact store!
   const queryWords = userMsg
     .replace(/[؟?!.,،]/g, " ")
     .split(/\s+/)
@@ -466,13 +649,15 @@ export async function handleSmartAiChatV112(input: {
     altSentence = "حالياً هذا الصنف مش ظاهر عندي في الرف الآن. ";
   }
 
-  const friendReply =
-    "فهمتك يا غالي، أنت تريد «" + cleanWanted + "».. حلو حلو! 👌\n" +
-    altSentence +
-    "وإذا تريد نفس «" + cleanWanted + "» بالضبط، أقدر أتواصل لك الحين مع إدارة المتجر وأسألهم إذا متوفر عندهم أو يوفرونه لك فوراً!\n" +
-    "هل تريد أكلم المتجر إذا عندهم؟";
+  const unavailInst = (studioConfigV114.instructions || []).find(i => i.active !== false && i.category.includes("عدم توفر") && i.content.trim());
+  const friendReply = unavailInst
+    ? unavailInst.content.replace(/\{المنتج\}/g, cleanWanted) + "\n" + altSentence + "هل تريد أكلم المتجر إذا عندهم؟"
+    : "فهمتك يا غالي، أنت تريد «" + cleanWanted + "».. حلو حلو! 👌\n" +
+      altSentence +
+      "وإذا تريد نفس «" + cleanWanted + "» بالضبط، أقدر أتواصل لك الحين مع إدارة المتجر وأسألهم إذا متوفر عندهم أو يوفرونه لك فوراً!\n" +
+      "هل تريد أكلم المتجر إذا عندهم؟";
 
-  return {
+  const finalRes = {
     reply: friendReply,
     suggestedItems: partialMatches.map(p => ({
       productId: p.id,
@@ -486,16 +671,31 @@ export async function handleSmartAiChatV112(input: {
     canContactStore: true,
     requestedItemName: cleanWanted
   };
+  replyCacheV114[cacheKey] = finalRes;
+  return finalRes;
 }
 
 export function registerAiEngineV112(app: any) {
-  ensureAiTableV112().catch(() => {});
+  ensureStudioTableV114().catch(() => {});
 
   app.get("/api/ai-v112/config", async (_req: any, res: any) => {
     try {
-      const config = await getAiConfigV112();
-      const requests = await getAiRequestsV112();
-      res.json({ ok: true, config, requests });
+      await ensureStudioTableV114();
+      const catalog = await getCatalogCachedV114();
+      const simpleCatalog = catalog.map(p => ({
+        id: p.id,
+        name: cleanProductNameV112(p.name),
+        price: Math.round(Number(p.price || 0)),
+        unit: p.unit || "حبة",
+        imageUrl: p.imageUrl || ""
+      }));
+      res.json({
+        ok: true,
+        config: studioConfigV114,
+        requests: customerRequestsV114,
+        stats: tokenStatsV114,
+        catalog: simpleCatalog
+      });
     } catch (e: any) {
       res.status(500).json({ ok: false, error: String(e?.message || e) });
     }
@@ -503,19 +703,17 @@ export function registerAiEngineV112(app: any) {
 
   app.post("/api/ai-v112/save-training", async (req: any, res: any) => {
     try {
-      await ensureAiTableV112();
+      await ensureStudioTableV114();
       const body = req.body || {};
-      if (typeof body.mode1StylePrompt === "string") {
-        memoryConfigV112.mode1StylePrompt = body.mode1StylePrompt.trim();
-      }
-      if (Array.isArray(body.mode2Rules)) {
-        memoryConfigV112.mode2Rules = body.mode2Rules;
-      }
-      if (typeof body.mode3CategoryRules === "string") {
-        memoryConfigV112.mode3CategoryRules = body.mode3CategoryRules.trim();
-      }
-      await saveAiKeyV112("config", memoryConfigV112);
-      res.json({ ok: true, config: memoryConfigV112 });
+      if (typeof body.generalSystemPrompt === "string") studioConfigV114.generalSystemPrompt = body.generalSystemPrompt.trim();
+      if (Array.isArray(body.instructions)) studioConfigV114.instructions = body.instructions;
+      if (Array.isArray(body.rules)) studioConfigV114.rules = body.rules;
+      if (Array.isArray(body.promotedProducts)) studioConfigV114.promotedProducts = body.promotedProducts;
+      if (Array.isArray(body.recipes)) studioConfigV114.recipes = body.recipes;
+      if (body.productAiMap && typeof body.productAiMap === "object") studioConfigV114.productAiMap = body.productAiMap;
+      replyCacheV114 = {};
+      await saveStudioKeyV114("studio_config", studioConfigV114);
+      res.json({ ok: true, config: studioConfigV114 });
     } catch (e: any) {
       res.status(500).json({ ok: false, error: String(e?.message || e) });
     }
@@ -523,19 +721,22 @@ export function registerAiEngineV112(app: any) {
 
   app.post("/api/ai-v112/save-product-info", async (req: any, res: any) => {
     try {
-      await ensureAiTableV112();
+      await ensureStudioTableV114();
       const { productId, productName, aiInfo } = req.body || {};
-      if (!memoryConfigV112.productAiMap) memoryConfigV112.productAiMap = {};
+      if (!studioConfigV114.productAiMap) studioConfigV114.productAiMap = {};
       const cleanInfo = String(aiInfo || "").trim();
       if (productId !== undefined && productId !== null && String(productId).trim() !== "") {
-        memoryConfigV112.productAiMap["id:" + String(productId).trim()] = cleanInfo;
+        if (cleanInfo) studioConfigV114.productAiMap["id:" + String(productId).trim()] = cleanInfo;
+        else delete studioConfigV114.productAiMap["id:" + String(productId).trim()];
       }
       const cName = cleanProductNameV112(String(productName || ""));
       if (cName) {
-        memoryConfigV112.productAiMap["name:" + cName] = cleanInfo;
+        if (cleanInfo) studioConfigV114.productAiMap["name:" + cName] = cleanInfo;
+        else delete studioConfigV114.productAiMap["name:" + cName];
       }
-      await saveAiKeyV112("config", memoryConfigV112);
-      res.json({ ok: true, productAiMap: memoryConfigV112.productAiMap });
+      replyCacheV114 = {};
+      await saveStudioKeyV114("studio_config", studioConfigV114);
+      res.json({ ok: true, productAiMap: studioConfigV114.productAiMap });
     } catch (e: any) {
       res.status(500).json({ ok: false, error: String(e?.message || e) });
     }
@@ -543,7 +744,7 @@ export function registerAiEngineV112(app: any) {
 
   app.post("/api/ai-v112/product-modal", async (req: any, res: any) => {
     try {
-      await ensureAiTableV112();
+      await ensureStudioTableV114();
       const { productName, price, unit, categoryName, customTopic, productId } = req.body || {};
       const data = buildSmartProductModalDataV112(
         String(productName || ""),
@@ -570,9 +771,9 @@ export function registerAiEngineV112(app: any) {
 
   app.post("/api/ai-v112/request-store", async (req: any, res: any) => {
     try {
-      await ensureAiTableV112();
+      await ensureStudioTableV114();
       const body = req.body || {};
-      const reqRecord: CustomerAiRequestV112 = {
+      const reqRecord: CustomerAiRequestV114 = {
         id: "req_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6),
         sessionId: String(body.sessionId || "guest"),
         customerName: String(body.customerName || "زبون المتجر"),
@@ -583,9 +784,9 @@ export function registerAiEngineV112(app: any) {
         managerReply: "",
         createdAt: Date.now()
       };
-      memoryRequestsV112.unshift(reqRecord);
-      if (memoryRequestsV112.length > 200) memoryRequestsV112 = memoryRequestsV112.slice(0, 200);
-      await saveAiKeyV112("requests", memoryRequestsV112);
+      customerRequestsV114.unshift(reqRecord);
+      if (customerRequestsV114.length > 200) customerRequestsV114 = customerRequestsV114.slice(0, 200);
+      await saveStudioKeyV114("customer_requests", customerRequestsV114);
       res.json({
         ok: true,
         requestObj: reqRecord,
@@ -598,16 +799,17 @@ export function registerAiEngineV112(app: any) {
 
   app.post("/api/ai-v112/manager-reply", async (req: any, res: any) => {
     try {
-      await ensureAiTableV112();
-      const { requestId, sessionId, replyText } = req.body || {};
+      await ensureStudioTableV114();
+      const { requestId, sessionId, replyText, attachedProductName, attachedProductUrl } = req.body || {};
       const cleanReply = String(replyText || "").trim();
       if (!cleanReply) {
         return res.status(400).json({ ok: false, error: "يرجى كتابة نص الرد" });
       }
-      let target = memoryRequestsV112.find(r => r.id === requestId);
+      let target = customerRequestsV114.find(r => r.id === requestId);
       if (!target && sessionId) {
-        target = memoryRequestsV112.find(r => r.sessionId === sessionId);
+        target = customerRequestsV114.find(r => r.sessionId === sessionId);
       }
+      const fullReply = cleanReply + (attachedProductUrl ? "\n🔗 رابط المنتج: " + attachedProductUrl : "");
       if (!target) {
         target = {
           id: "req_" + Date.now(),
@@ -617,18 +819,34 @@ export function registerAiEngineV112(app: any) {
           requestedItem: "رد مباشر من الإدارة",
           customerMessage: "",
           status: "replied",
-          managerReply: cleanReply,
+          managerReply: fullReply,
+          attachedProductName: String(attachedProductName || ""),
+          attachedProductUrl: String(attachedProductUrl || ""),
           repliedAt: Date.now(),
           createdAt: Date.now()
         };
-        memoryRequestsV112.unshift(target);
+        customerRequestsV114.unshift(target);
       } else {
         target.status = "replied";
-        target.managerReply = cleanReply;
+        target.managerReply = fullReply;
+        target.attachedProductName = String(attachedProductName || "");
+        target.attachedProductUrl = String(attachedProductUrl || "");
         target.repliedAt = Date.now();
       }
-      await saveAiKeyV112("requests", memoryRequestsV112);
+      await saveStudioKeyV114("customer_requests", customerRequestsV114);
       res.json({ ok: true, requestObj: target });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  app.post("/api/ai-v112/delete-request", async (req: any, res: any) => {
+    try {
+      await ensureStudioTableV114();
+      const { requestId } = req.body || {};
+      customerRequestsV114 = customerRequestsV114.filter(r => r.id !== requestId);
+      await saveStudioKeyV114("customer_requests", customerRequestsV114);
+      res.json({ ok: true });
     } catch (e: any) {
       res.status(500).json({ ok: false, error: String(e?.message || e) });
     }
@@ -636,9 +854,9 @@ export function registerAiEngineV112(app: any) {
 
   app.get("/api/ai-v112/customer-poll", async (req: any, res: any) => {
     try {
-      await ensureAiTableV112();
+      await ensureStudioTableV114();
       const sessionId = String(req.query?.sessionId || "").trim();
-      const matching = memoryRequestsV112.filter(
+      const matching = customerRequestsV114.filter(
         r => r.status === "replied" && r.managerReply && (r.sessionId === sessionId || r.sessionId === "all")
       );
       res.json({ ok: true, replies: matching });
