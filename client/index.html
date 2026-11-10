@@ -232,45 +232,104 @@
         
 
         
+        
+
+        
         window.__v123SmartDataByQuery = window.__v123SmartDataByQuery || {};
         window.__v123LastBubbleCount = 0;
         window.__v123PreviousUserMsg = "";
 
-        (function injectGeminiChatStylesV123() {
-          var oldSt = document.getElementById("v121-gemini-chat-styles") || document.getElementById("v122-gemini-chat-styles") || document.getElementById("v123-gemini-chat-styles");
+        (function injectGeminiChatStylesV124() {
+          var oldSt = document.getElementById("v121-gemini-chat-styles") || document.getElementById("v122-gemini-chat-styles") || document.getElementById("v123-gemini-chat-styles") || document.getElementById("v124-gemini-chat-styles");
           if (oldSt) oldSt.remove();
           var st = document.createElement("style");
-          st.id = "v123-gemini-chat-styles";
+          st.id = "v124-gemini-chat-styles";
           st.textContent =
-            ".v123-gemini-user-bubble { background: #0d3825 !important; color: #ffffff !important; border: 1.5px solid #165b3c !important; border-radius: 20px 20px 4px 20px !important; padding: 9px 16px !important; box-shadow: 0 3px 10px rgba(13,56,37,0.15) !important; font-weight: 800 !important; font-size: 0.92rem !important; width: fit-content !important; max-width: 80% !important; display: inline-block !important; overflow-anchor: none !important; }" +
-            ".v123-gemini-user-bubble * { color: #ffffff !important; }" +
-            ".v123-gemini-bot-full { width: 100% !important; max-width: 100% !important; background: transparent !important; border: none !important; box-shadow: none !important; border-bottom: 1px solid #e2e8f0 !important; border-radius: 0 !important; padding: 12px 2px 18px 2px !important; margin: 4px 0 !important; overflow-anchor: none !important; }" +
-            ".v123-gemini-bot-row { width: 100% !important; max-width: 100% !important; display: block !important; overflow-anchor: none !important; }" +
-            ".v118-wa-photo-box, .v123-ingredients-panel { overflow-anchor: none !important; }";
+            /* Disable browser scroll anchoring everywhere inside chat so images/tables never pull scrollbar up! */
+            "body, main, div, p, span, img, table { overflow-anchor: none !important; }" +
+            /* User bubble row: positioned on the LEFT side of the screen! */
+            ".v124-user-row-left { display: flex !important; flex-direction: row !important; justify-content: flex-start !important; align-items: flex-start !important; direction: ltr !important; width: 100% !important; margin: 6px 0 !important; }" +
+            /* User bubble pill: compact emerald pill on the LEFT with Arabic RTL text inside */
+            ".v123-gemini-user-bubble { background: #0d3825 !important; color: #ffffff !important; border: 1.5px solid #165b3c !important; border-radius: 20px 20px 20px 4px !important; padding: 9px 16px !important; box-shadow: 0 3px 10px rgba(13,56,37,0.15) !important; font-weight: 800 !important; font-size: 0.92rem !important; width: fit-content !important; max-width: 80% !important; display: inline-block !important; direction: rtl !important; text-align: right !important; margin-left: 0 !important; margin-right: auto !important; }" +
+            ".v123-gemini-user-bubble * { color: #ffffff !important; direction: rtl !important; text-align: right !important; }" +
+            /* Bot message: full-width open layout without outer bubble */
+            ".v123-gemini-bot-full { width: 100% !important; max-width: 100% !important; background: transparent !important; border: none !important; box-shadow: none !important; border-bottom: 1px solid #e2e8f0 !important; border-radius: 0 !important; padding: 12px 2px 18px 2px !important; margin: 4px 0 !important; direction: rtl !important; text-align: right !important; }" +
+            ".v123-gemini-bot-row { width: 100% !important; max-width: 100% !important; display: block !important; }";
           document.head.appendChild(st);
         })();
+
+        function getChatScrollContainerV124() {
+          var sampleEl = document.querySelector(".v123-gemini-user-bubble, .v123-gemini-bot-full");
+          var cur = sampleEl ? sampleEl.parentElement : null;
+          while (cur && cur !== document.body && cur !== document.documentElement) {
+            try {
+              var cs = window.getComputedStyle(cur);
+              var oy = cs.overflowY;
+              if ((oy === "auto" || oy === "scroll") && cur.scrollHeight > cur.clientHeight + 10) {
+                return cur;
+              }
+            } catch (e) {}
+            cur = cur.parentElement;
+          }
+          var allDivs = Array.from(document.querySelectorAll("div"));
+          for (var i = 0; i < allDivs.length; i++) {
+            var d = allDivs[i];
+            if (d.scrollHeight > d.clientHeight + 30 && (d.textContent || "").indexOf("شيف ومساعد") !== -1 && (d.textContent || "").indexOf("محادثة جديدة") === -1) {
+              try {
+                var oy2 = window.getComputedStyle(d).overflowY;
+                if (oy2 === "auto" || oy2 === "scroll") return d;
+              } catch (e) {}
+            }
+          }
+          return null;
+        }
 
         function scrollToChatBottomSmoothV123() {
           try {
             if (document.body.textContent.indexOf("مساعد وشيف أورجنال الذكي") === -1) return;
-            var allUserAndBot = Array.from(document.querySelectorAll(".v123-gemini-user-bubble, .v123-gemini-bot-full"));
-            if (allUserAndBot.length === 0) return;
-            var lastEl = allUserAndBot[allUserAndBot.length - 1];
-            var sc = lastEl.parentElement;
-            while (sc && sc !== document.body) {
-              var oy = window.getComputedStyle(sc).overflowY;
-              if ((oy === "auto" || oy === "scroll") && sc.scrollHeight > sc.clientHeight + 20) {
-                sc.scrollTo({ top: sc.scrollHeight, behavior: "smooth" });
-                break;
-              }
-              sc = sc.parentElement;
+            var sc = getChatScrollContainerV124();
+            if (sc) {
+              sc.scrollTop = sc.scrollHeight + 9999;
             }
-            lastEl.scrollIntoView({ behavior: "smooth", block: "end" });
           } catch (e) {}
+        }
+
+        if (!window.__v124ScrollIntoViewPatched) {
+          window.__v124ScrollIntoViewPatched = true;
+          var origScrollIntoView = Element.prototype.scrollIntoView;
+          Element.prototype.scrollIntoView = function(arg) {
+            if (document.body && document.body.textContent.indexOf("مساعد وشيف أورجنال الذكي") !== -1 && window.location.pathname.indexOf("/admin") === -1) {
+              var sc = getChatScrollContainerV124();
+              if (sc && sc.contains(this)) {
+                sc.scrollTop = sc.scrollHeight + 9999;
+                return;
+              }
+            }
+            return origScrollIntoView.apply(this, arguments);
+          };
         }
 
         function bindChatInputScrollLockV123() {
           if (document.body.textContent.indexOf("مساعد وشيف أورجنال الذكي") === -1) return;
+          var sc = getChatScrollContainerV124();
+          if (sc && !sc.getAttribute("data-v124-observer-bound")) {
+            sc.setAttribute("data-v124-observer-bound", "1");
+            sc.addEventListener("touchstart", function() {
+              window.__v124UserTouching = true;
+            }, { passive: true });
+            sc.addEventListener("touchend", function() {
+              setTimeout(function() { window.__v124UserTouching = false; }, 300);
+            }, { passive: true });
+            sc.addEventListener("scroll", function() {
+              if (!window.__v124UserTouching && window.__v124PinBottomUntil && Date.now() < window.__v124PinBottomUntil) {
+                var maxScroll = sc.scrollHeight - sc.clientHeight;
+                if (maxScroll > 0 && sc.scrollTop < maxScroll - 30) {
+                  sc.scrollTop = sc.scrollHeight + 9999;
+                }
+              }
+            }, { passive: true });
+          }
+
           var chatInputs = Array.from(document.querySelectorAll("input, textarea")).filter(function(inp) {
             var ph = inp.getAttribute("placeholder") || "";
             return ph.indexOf("اطلب سلة") !== -1 || ph.indexOf("وصفة") !== -1 || ph.indexOf("مقاضي") !== -1;
@@ -278,19 +337,22 @@
           chatInputs.forEach(function(inp) {
             if (inp.getAttribute("data-v123-scroll-bound") === "1") return;
             inp.setAttribute("data-v123-scroll-bound", "1");
+            function triggerPinBottom() {
+              window.__v124PinBottomUntil = Date.now() + 6000;
+              scrollToChatBottomSmoothV123();
+              setTimeout(scrollToChatBottomSmoothV123, 50);
+              setTimeout(scrollToChatBottomSmoothV123, 150);
+              setTimeout(scrollToChatBottomSmoothV123, 350);
+              setTimeout(scrollToChatBottomSmoothV123, 700);
+              setTimeout(scrollToChatBottomSmoothV123, 1200);
+            }
             inp.addEventListener("keydown", function(ev) {
-              if (ev.key === "Enter") {
-                setTimeout(scrollToChatBottomSmoothV123, 60);
-                setTimeout(scrollToChatBottomSmoothV123, 250);
-              }
+              if (ev.key === "Enter") triggerPinBottom();
             });
             var sendBtn = inp.parentElement ? inp.parentElement.querySelector("button") : null;
             if (sendBtn && sendBtn.getAttribute("data-v123-scroll-bound") !== "1") {
               sendBtn.setAttribute("data-v123-scroll-bound", "1");
-              sendBtn.addEventListener("click", function() {
-                setTimeout(scrollToChatBottomSmoothV123, 60);
-                setTimeout(scrollToChatBottomSmoothV123, 250);
-              });
+              sendBtn.addEventListener("click", triggerPinBottom);
             }
           });
         }
@@ -649,6 +711,9 @@
             el.setAttribute("data-v123-role", "user");
             el.classList.remove("v121-gemini-user-bubble", "v122-gemini-user-bubble");
             el.classList.add("v123-gemini-user-bubble");
+            if (el.parentElement && el.parentElement.textContent.indexOf("محادثة جديدة") === -1) {
+              el.parentElement.classList.add("v124-user-row-left");
+            }
 
             if (t.indexOf("🍰") !== -1 && el.getAttribute("data-v119-orig-user")) {
               setLeafTextSafe(el, el.getAttribute("data-v119-orig-user"));
@@ -816,8 +881,11 @@
             var prevCount = window.__v123LastBubbleCount;
             window.__v123LastBubbleCount = currentTotalBubbles;
             if (prevCount > 0) {
-              setTimeout(scrollToChatBottomSmoothV123, 50);
+              window.__v124PinBottomUntil = Date.now() + 3500;
+              scrollToChatBottomSmoothV123();
+              setTimeout(scrollToChatBottomSmoothV123, 60);
               setTimeout(scrollToChatBottomSmoothV123, 220);
+              setTimeout(scrollToChatBottomSmoothV123, 500);
             }
           }
         }

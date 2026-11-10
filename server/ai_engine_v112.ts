@@ -112,11 +112,9 @@ let memoryRequests: AiCustomerRequestV112[] = [];
 let dbLoadedOnce = false;
 let dbTableCreated = false;
 
-// RAM Cache for Products Catalog (5 minutes TTL) — reduces TiDB database load by 99.8%!
 let cachedProductsCatalog: any[] = [];
 let cachedProductsExpiresAt = 0;
 
-// Conversational Context Memory per Customer Session
 const sessionMemoryMap = new Map<string, SessionMemoryV123>();
 
 let zeroTokenCounter = 0;
@@ -350,7 +348,7 @@ function normalizeArabicV112(str: string): string {
     .replace(/[أإآ]/g, "ا")
     .replace(/ة/g, "ه")
     .replace(/ى/g, "ي")
-    .replace(/\bحلا\b/g, "حلي")
+    .replace(/\bحلا\b/g, "حلي").replace(/ب+س+ك+و+ي+ت/g, "بسكويت")
     .replace(/[؟?!.,،]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -481,9 +479,6 @@ export function classifyProductSmartV112(productName: string, customMeta?: Produ
   };
 }
 
-// ============================================================================
-// CONVERSATIONAL FOLLOW-UP DETECTION (e.g. "يااخي اريد طريقة افضل", "طريقة ثانية")
-// ============================================================================
 function isFollowUpAskingBetterOrAnotherMethodV123(normMsg: string): boolean {
   return /(طريقه افضل|طريقه احسن|طريقه ثانيه|طريقه غير|طريقه احلي|وصفه ثانيه|وصفه افضل|غيرها|شي ثاني|افضل من كذا|احسن من كذا|ما عجبتني|اريد افضل|ابغي افضل)/.test(normMsg);
 }
@@ -534,9 +529,6 @@ function findMatchingSavedRecipeV123(userMessage: string, recipes: CustomRecipeI
   return null;
 }
 
-// ============================================================================
-// MULTI-METHOD MASTER CHEF ENCYCLOPEDIA (Each dish has Multiple Chef Methods!)
-// ============================================================================
 interface ChefMethodVariantV123 {
   title: string;
   prepTime: string;
@@ -1233,7 +1225,7 @@ export function registerAiEngineV112(app: Express) {
         });
       }
 
-      // 5. Match Multi-Method Chef Dishes (Indomie, Kabsa, Mandi, Pasta, Saltah, Basbousa, Desserts)
+      // 5. Match Multi-Method Chef Dishes
       if (!productContextName) {
         const matchedDish = MULTI_METHOD_CHEF_DISHES_V123.find(d => d.keywords.test(normMsg));
         if (matchedDish) {
