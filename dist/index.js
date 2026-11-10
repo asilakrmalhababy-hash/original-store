@@ -731,6 +731,32 @@ function classifyProductKindV112(name, categoryName = "", customAiInfo = "") {
   }
   return "cooking_food";
 }
+function normalizeArabicV116(str) {
+  return String(str || "").toLowerCase().replace(/[أإآ]/g, "\u0627").replace(/ة/g, "\u0647").replace(/ى/g, "\u064A").replace(/[؟?!.,،]/g, " ").replace(/\s+/g, " ").trim();
+}
+function findMatchingRecipeV116(userMsg, recipesList) {
+  const list = Array.isArray(recipesList) ? recipesList : studioConfigV114.recipes || [];
+  if (list.length === 0) return null;
+  const normUser = normalizeArabicV116(userMsg);
+  if (!normUser) return null;
+  const stopWords = ["\u0627\u0631\u064A\u062F", "\u0627\u0628\u063A\u064A", "\u0627\u0634\u062A\u064A", "\u0647\u0644", "\u0639\u0646\u062F\u0643\u0645", "\u0645\u0645\u0643\u0646", "\u0643\u064A\u0641", "\u0627\u0633\u0648\u064A", "\u0637\u0631\u064A\u0642\u0647", "\u0639\u0645\u0644", "\u0648\u0635\u0641\u0647", "\u062D\u0644\u0648", "\u0644\u0630\u064A\u0630", "\u0633\u0631\u064A\u0639", "\u0641\u064A", "\u0645\u0646", "\u0645\u0639", "\u0639\u0644\u0649", "\u0639\u0646"];
+  for (const rec of list) {
+    const normTitle = normalizeArabicV116(rec.title || "");
+    const normKw = normalizeArabicV116(rec.keywords || "");
+    if (normTitle && (normUser.includes(normTitle) || normTitle.includes(normUser))) return rec;
+    if (normKw && (normUser.includes(normKw) || normKw.includes(normUser))) return rec;
+    const kwParts = String(rec.keywords || "").split(/[،,]+/).map((s) => normalizeArabicV116(s)).filter((s) => s.length >= 3);
+    if (kwParts.some((k) => normUser.includes(k) || k.includes(normUser))) return rec;
+    const combinedTarget = normTitle + " " + normKw;
+    const userWords = normUser.split(" ").filter((w) => w.length >= 3 && !stopWords.includes(w));
+    const matchedWords = userWords.filter((w) => combinedTarget.includes(w));
+    if (matchedWords.length >= 2) return rec;
+    if (matchedWords.length >= 1 && (normUser.includes("\u062D\u0644\u064A") || normUser.includes("\u0648\u0635\u0641\u0647")) && (combinedTarget.includes("\u062D\u0644\u064A") || combinedTarget.includes("\u0628\u0633\u0643\u0648\u064A\u062A") || combinedTarget.includes("\u0634\u0648\u0643\u0648\u0644\u0627\u062A\u0647") || combinedTarget.includes("\u0634\u0643\u0644\u0627\u062A\u0647"))) {
+      return rec;
+    }
+  }
+  return null;
+}
 function buildSmartProductModalDataV112(productName, price, unit, categoryName = "", customTopic = "", productId) {
   tokenStatsV114.zeroTokenMessages++;
   tokenStatsV114.estimatedTokensSaved += 2800;
@@ -738,9 +764,7 @@ function buildSmartProductModalDataV112(productName, price, unit, categoryName =
   const customAi = getProductCustomAiInfoV112(productId, cleanName);
   const kind = classifyProductKindV112(cleanName, categoryName, customAi);
   const priceStr = price > 0 ? price.toLocaleString("en-US") + " \u0631\u064A\u0627\u0644" : "";
-  const matchedRecipe = (studioConfigV114.recipes || []).find(
-    (r) => r.keywords && cleanName.includes(r.keywords.trim()) || Array.isArray(r.ingredients) && r.ingredients.some((ing) => ing.name && (cleanName.includes(cleanProductNameV112(ing.name)) || cleanProductNameV112(ing.name).includes(cleanName)))
-  );
+  const matchedRecipe = findMatchingRecipeV116(cleanName);
   if (customAi && !customTopic) {
     const chips2 = kind === "chocolate_snack" ? ["\u{1F525} \u0627\u0644\u0633\u0639\u0631\u0627\u062A \u0648\u0627\u0644\u0642\u064A\u0645\u0629 \u0627\u0644\u063A\u0630\u0627\u0626\u064A\u0629", "\u2139\uFE0F \u0645\u0639\u0644\u0648\u0645\u0627\u062A \u0627\u0644\u0645\u0646\u062A\u062C", "\u2615 \u0645\u0639 \u0625\u064A\u0634 \u064A\u064F\u0642\u062F\u0645\u061F"] : kind === "biscuit_dessert" ? ["\u{1F370} \u0641\u0643\u0631\u0629 \u062D\u0644\u0649 \u0628\u0647", "\u{1F525} \u0627\u0644\u0633\u0639\u0631\u0627\u062A \u0627\u0644\u062D\u0631\u0627\u0631\u064A\u0629", "\u2615 \u0645\u0639 \u0627\u0644\u0634\u0627\u064A \u0648\u0627\u0644\u062D\u0644\u064A\u0628"] : ["\u2139\uFE0F \u0645\u0639\u0644\u0648\u0645\u0627\u062A \u0627\u0644\u0645\u0646\u062A\u062C", "\u{1F525} \u0627\u0644\u0642\u064A\u0645\u0629 \u0627\u0644\u063A\u0630\u0627\u0626\u064A\u0629"];
     let content = "\u2728 \u0645\u0639\u0644\u0648\u0645\u0627\u062A \xAB" + cleanName + "\xBB" + (priceStr ? " (" + priceStr + ")" : "") + ":\n" + customAi;
@@ -882,8 +906,8 @@ async function handleSmartAiChatV112(input) {
   }
   const allProducts = await getCatalogCachedV114();
   for (const rule of studioConfigV114.rules || []) {
-    const trig = String(rule.trigger || "").trim();
-    if (trig && userMsg.includes(trig)) {
+    const trig = normalizeArabicV116(rule.trigger || "");
+    if (trig && normalizeArabicV116(userMsg).includes(trig)) {
       const items = [];
       if (rule.linkedProductName) {
         const foundP = allProducts.find((p) => cleanProductNameV112(p.name) === cleanProductNameV112(rule.linkedProductName || ""));
@@ -913,61 +937,56 @@ async function handleSmartAiChatV112(input) {
       return resRule;
     }
   }
-  for (const rec of studioConfigV114.recipes || []) {
-    const kwList = String(rec.keywords || rec.title || "").split(/[،,]+/).map((s) => s.trim()).filter(Boolean);
-    const titleWords = String(rec.title || "").split(/\s+/).filter((w) => w.length >= 4);
-    const matchesRecipe = rec.title && userMsg.includes(rec.title.trim()) || kwList.some((k) => k.length >= 3 && userMsg.includes(k)) || titleWords.length >= 2 && titleWords.filter((w) => userMsg.includes(w)).length >= 2;
-    if (matchesRecipe) {
-      const recItems = [];
-      for (const ing of rec.ingredients || []) {
-        const cleanIng = cleanProductNameV112(ing.name);
-        const foundP = allProducts.find((p) => cleanProductNameV112(p.name).includes(cleanIng) || cleanIng.includes(cleanProductNameV112(p.name)));
-        if (foundP) {
-          recItems.push({
-            productId: foundP.id,
-            id: foundP.id,
-            name: cleanProductNameV112(foundP.name),
-            price: Math.round(Number(foundP.price || 0)),
-            unit: foundP.unit || "\u062D\u0628\u0629",
-            quantity: 1,
-            url: ing.url || "/?search=" + encodeURIComponent(cleanProductNameV112(foundP.name))
-          });
-        } else if (ing.name) {
-          recItems.push({
-            productId: 0,
-            id: 0,
-            name: cleanIng || ing.name,
-            price: Number(ing.price || 0),
-            unit: "\u062D\u0628\u0629",
-            quantity: 1,
-            url: ing.url || "/?search=" + encodeURIComponent(cleanIng || ing.name)
-          });
-        }
+  const matchedRec = findMatchingRecipeV116(userMsg);
+  if (matchedRec) {
+    const recItems = [];
+    for (const ing of matchedRec.ingredients || []) {
+      const cleanIng = cleanProductNameV112(ing.name);
+      const foundP = allProducts.find((p) => cleanProductNameV112(p.name).includes(cleanIng) || cleanIng.includes(cleanProductNameV112(p.name)));
+      if (foundP) {
+        recItems.push({
+          productId: foundP.id,
+          id: foundP.id,
+          name: cleanProductNameV112(foundP.name),
+          price: Math.round(Number(foundP.price || 0)),
+          unit: foundP.unit || "\u062D\u0628\u0629",
+          quantity: 1,
+          imageUrl: foundP.imageUrl || "",
+          url: ing.url || "/?search=" + encodeURIComponent(cleanProductNameV112(foundP.name))
+        });
+      } else if (ing.name) {
+        recItems.push({
+          productId: 1,
+          id: 1,
+          name: cleanIng || ing.name,
+          price: Number(ing.price || 100),
+          unit: "\u062D\u0628\u0629",
+          quantity: 1,
+          imageUrl: "",
+          url: ing.url || "/?search=" + encodeURIComponent(cleanIng || ing.name)
+        });
       }
-      let recReply = "\u{1F370} \xAB" + rec.title + "\xBB\n" + String(rec.steps || "");
-      if (recItems.length > 0) {
-        recReply += "\n\n\u{1F6D2} \u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A \u0627\u0644\u0645\u0633\u062A\u062E\u062F\u0645\u0629 \u0645\u0646 \u0627\u0644\u0645\u062A\u062C\u0631:\n" + recItems.map((it) => "\u2022 " + it.name + (it.price ? " (" + it.price + " \u0631.\u064A)" : "")).join("\n");
-      }
-      const resRec = {
-        reply: recReply,
-        recipeCard: {
-          title: rec.title,
-          imageUrl: rec.imageUrl || "",
-          steps: rec.steps,
-          ingredients: recItems
-        },
-        suggestedItems: recItems.filter((i) => i.productId > 0),
-        quickActions: [],
-        canContactStore: false
-      };
-      replyCacheV114[cacheKey] = resRec;
-      return resRec;
     }
+    const recReply = "\u064A\u0627 \u063A\u0627\u0644\u064A\u060C \u062C\u0628\u062A \u0644\u0643 \u0623\u0644\u0630 \u0648\u0623\u0641\u062E\u0645 \u0648\u0635\u0641\u0629 \u062A\u0641\u062A\u062D \u0627\u0644\u0646\u0641\u0633 \u0645\u0646 \u0645\u0637\u0628\u062E \u0623\u0648\u0631\u062C\u0646\u0627\u0644: \u{1F60D}\u2728\n\u{1F370} \xAB" + matchedRec.title + "\xBB\n\n\u{1F4CB} \u0637\u0631\u064A\u0642\u0629 \u0627\u0644\u062A\u062D\u0636\u064A\u0631 \u0627\u0644\u0643\u0627\u0645\u0644\u0629:\n" + String(matchedRec.steps || "");
+    const resRec = {
+      reply: recReply,
+      recipeCard: {
+        title: matchedRec.title,
+        imageUrl: matchedRec.imageUrl || "",
+        steps: matchedRec.steps,
+        ingredients: recItems
+      },
+      suggestedItems: recItems,
+      quickActions: [],
+      canContactStore: false
+    };
+    replyCacheV114[cacheKey] = resRec;
+    return resRec;
   }
   const activePromos = (studioConfigV114.promotedProducts || []).filter((p) => p.active !== false && p.productName);
   const triggeredPromo = activePromos.find((p) => {
     if (!p.triggerKeywords || !p.triggerKeywords.trim()) return false;
-    return p.triggerKeywords.split(/[،,]+/).map((s) => s.trim()).filter(Boolean).some((k) => userMsg.includes(k));
+    return p.triggerKeywords.split(/[،,]+/).map((s) => normalizeArabicV116(s)).filter(Boolean).some((k) => normalizeArabicV116(userMsg).includes(k));
   });
   if (triggeredPromo) {
     const foundPromoProd = allProducts.find((p) => cleanProductNameV112(p.name).includes(cleanProductNameV112(triggeredPromo.productName)));

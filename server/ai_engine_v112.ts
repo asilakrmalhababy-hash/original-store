@@ -267,6 +267,48 @@ export function classifyProductKindV112(name: string, categoryName = "", customA
   return "cooking_food";
 }
 
+function normalizeArabicV116(str: string): string {
+  return String(str || "")
+    .toLowerCase()
+    .replace(/[أإآ]/g, "ا")
+    .replace(/ة/g, "ه")
+    .replace(/ى/g, "ي")
+    .replace(/[؟?!.,،]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function findMatchingRecipeV116(userMsg: string, recipesList?: AiRecipeV114[]): AiRecipeV114 | null {
+  const list = Array.isArray(recipesList) ? recipesList : (studioConfigV114.recipes || []);
+  if (list.length === 0) return null;
+  const normUser = normalizeArabicV116(userMsg);
+  if (!normUser) return null;
+
+  const stopWords = ["اريد", "ابغي", "اشتي", "هل", "عندكم", "ممكن", "كيف", "اسوي", "طريقه", "عمل", "وصفه", "حلو", "لذيذ", "سريع", "في", "من", "مع", "على", "عن"];
+
+  for (const rec of list) {
+    const normTitle = normalizeArabicV116(rec.title || "");
+    const normKw = normalizeArabicV116(rec.keywords || "");
+    if (normTitle && (normUser.includes(normTitle) || normTitle.includes(normUser))) return rec;
+    if (normKw && (normUser.includes(normKw) || normKw.includes(normUser))) return rec;
+
+    const kwParts = String(rec.keywords || "")
+      .split(/[،,]+/)
+      .map(s => normalizeArabicV116(s))
+      .filter(s => s.length >= 3);
+    if (kwParts.some(k => normUser.includes(k) || k.includes(normUser))) return rec;
+
+    const combinedTarget = normTitle + " " + normKw;
+    const userWords = normUser.split(" ").filter(w => w.length >= 3 && !stopWords.includes(w));
+    const matchedWords = userWords.filter(w => combinedTarget.includes(w));
+    if (matchedWords.length >= 2) return rec;
+    if (matchedWords.length >= 1 && (normUser.includes("حلي") || normUser.includes("وصفه")) && (combinedTarget.includes("حلي") || combinedTarget.includes("بسكويت") || combinedTarget.includes("شوكولاته") || combinedTarget.includes("شكلاته"))) {
+      return rec;
+    }
+  }
+  return null;
+}
+
 export function buildSmartProductModalDataV112(productName: string, price: number, unit: string, categoryName = "", customTopic = "", productId?: any) {
   tokenStatsV114.zeroTokenMessages++;
   tokenStatsV114.estimatedTokensSaved += 2800;
@@ -276,10 +318,7 @@ export function buildSmartProductModalDataV112(productName: string, price: numbe
   const kind = classifyProductKindV112(cleanName, categoryName, customAi);
   const priceStr = price > 0 ? price.toLocaleString("en-US") + " ريال" : "";
 
-  const matchedRecipe = (studioConfigV114.recipes || []).find(r =>
-    (r.keywords && cleanName.includes(r.keywords.trim())) ||
-    (Array.isArray(r.ingredients) && r.ingredients.some(ing => ing.name && (cleanName.includes(cleanProductNameV112(ing.name)) || cleanProductNameV112(ing.name).includes(cleanName))))
-  );
+  const matchedRecipe = findMatchingRecipeV116(cleanName);
 
   if (customAi && !customTopic) {
     const chips =
@@ -480,8 +519,8 @@ export async function handleSmartAiChatV112(input: {
 
   // Check Manager's Custom Rules (القسم 2: قاموس الردود)
   for (const rule of studioConfigV114.rules || []) {
-    const trig = String(rule.trigger || "").trim();
-    if (trig && userMsg.includes(trig)) {
+    const trig = normalizeArabicV116(rule.trigger || "");
+    if (trig && normalizeArabicV116(userMsg).includes(trig)) {
       const items: any[] = [];
       if (rule.linkedProductName) {
         const foundP = allProducts.find(p => cleanProductNameV112(p.name) === cleanProductNameV112(rule.linkedProductName || ""));
@@ -513,71 +552,63 @@ export async function handleSmartAiChatV112(input: {
   }
 
   // Check Manager's Visual Recipes (القسم 4: الوصفات المصورة والمنتجات)
-  for (const rec of studioConfigV114.recipes || []) {
-    const kwList = String(rec.keywords || rec.title || "")
-      .split(/[،,]+/)
-      .map(s => s.trim())
-      .filter(Boolean);
-    const titleWords = String(rec.title || "").split(/\s+/).filter(w => w.length >= 4);
-    const matchesRecipe =
-      (rec.title && userMsg.includes(rec.title.trim())) ||
-      kwList.some(k => k.length >= 3 && userMsg.includes(k)) ||
-      (titleWords.length >= 2 && titleWords.filter(w => userMsg.includes(w)).length >= 2);
-
-    if (matchesRecipe) {
-      const recItems: any[] = [];
-      for (const ing of rec.ingredients || []) {
-        const cleanIng = cleanProductNameV112(ing.name);
-        const foundP = allProducts.find(p => cleanProductNameV112(p.name).includes(cleanIng) || cleanIng.includes(cleanProductNameV112(p.name)));
-        if (foundP) {
-          recItems.push({
-            productId: foundP.id,
-            id: foundP.id,
-            name: cleanProductNameV112(foundP.name),
-            price: Math.round(Number(foundP.price || 0)),
-            unit: foundP.unit || "حبة",
-            quantity: 1,
-            url: ing.url || ("/?search=" + encodeURIComponent(cleanProductNameV112(foundP.name)))
-          });
-        } else if (ing.name) {
-          recItems.push({
-            productId: 0,
-            id: 0,
-            name: cleanIng || ing.name,
-            price: Number(ing.price || 0),
-            unit: "حبة",
-            quantity: 1,
-            url: ing.url || ("/?search=" + encodeURIComponent(cleanIng || ing.name))
-          });
-        }
+  const matchedRec = findMatchingRecipeV116(userMsg);
+  if (matchedRec) {
+    const recItems: any[] = [];
+    for (const ing of matchedRec.ingredients || []) {
+      const cleanIng = cleanProductNameV112(ing.name);
+      const foundP = allProducts.find(p => cleanProductNameV112(p.name).includes(cleanIng) || cleanIng.includes(cleanProductNameV112(p.name)));
+      if (foundP) {
+        recItems.push({
+          productId: foundP.id,
+          id: foundP.id,
+          name: cleanProductNameV112(foundP.name),
+          price: Math.round(Number(foundP.price || 0)),
+          unit: foundP.unit || "حبة",
+          quantity: 1,
+          imageUrl: foundP.imageUrl || "",
+          url: ing.url || ("/?search=" + encodeURIComponent(cleanProductNameV112(foundP.name)))
+        });
+      } else if (ing.name) {
+        recItems.push({
+          productId: 1,
+          id: 1,
+          name: cleanIng || ing.name,
+          price: Number(ing.price || 100),
+          unit: "حبة",
+          quantity: 1,
+          imageUrl: "",
+          url: ing.url || ("/?search=" + encodeURIComponent(cleanIng || ing.name))
+        });
       }
-      let recReply = "🍰 «" + rec.title + "»\n" + String(rec.steps || "");
-      if (recItems.length > 0) {
-        recReply += "\n\n🛒 المنتجات المستخدمة من المتجر:\n" +
-          recItems.map(it => "• " + it.name + (it.price ? " (" + it.price + " ر.ي)" : "")).join("\n");
-      }
-      const resRec = {
-        reply: recReply,
-        recipeCard: {
-          title: rec.title,
-          imageUrl: rec.imageUrl || "",
-          steps: rec.steps,
-          ingredients: recItems
-        },
-        suggestedItems: recItems.filter(i => i.productId > 0),
-        quickActions: [],
-        canContactStore: false
-      };
-      replyCacheV114[cacheKey] = resRec;
-      return resRec;
     }
+    const recReply =
+      "يا غالي، جبت لك ألذ وأفخم وصفة تفتح النفس من مطبخ أورجنال: 😍✨\n" +
+      "🍰 «" + matchedRec.title + "»\n\n" +
+      "📋 طريقة التحضير الكاملة:\n" +
+      String(matchedRec.steps || "");
+
+    const resRec = {
+      reply: recReply,
+      recipeCard: {
+        title: matchedRec.title,
+        imageUrl: matchedRec.imageUrl || "",
+        steps: matchedRec.steps,
+        ingredients: recItems
+      },
+      suggestedItems: recItems,
+      quickActions: [],
+      canContactStore: false
+    };
+    replyCacheV114[cacheKey] = resRec;
+    return resRec;
   }
 
   // Check Manager's Promoted Products (القسم 3: ترويج منتج برابطه)
   const activePromos = (studioConfigV114.promotedProducts || []).filter(p => p.active !== false && p.productName);
   const triggeredPromo = activePromos.find(p => {
     if (!p.triggerKeywords || !p.triggerKeywords.trim()) return false;
-    return p.triggerKeywords.split(/[،,]+/).map(s => s.trim()).filter(Boolean).some(k => userMsg.includes(k));
+    return p.triggerKeywords.split(/[،,]+/).map(s => normalizeArabicV116(s)).filter(Boolean).some(k => normalizeArabicV116(userMsg).includes(k));
   });
 
   if (triggeredPromo) {
