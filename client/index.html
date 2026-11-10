@@ -226,24 +226,79 @@
         }
 
         
-        window.__v121SmartDataByQuery = window.__v121SmartDataByQuery || {};
+        
 
-        (function injectGeminiChatStylesV121() {
-          if (document.getElementById("v121-gemini-chat-styles")) return;
+        
+        window.__v122SmartDataByQuery = window.__v122SmartDataByQuery || {};
+        window.__v122LastBubbleCount = 0;
+
+        (function injectGeminiChatStylesV122() {
+          var oldSt = document.getElementById("v121-gemini-chat-styles") || document.getElementById("v122-gemini-chat-styles");
+          if (oldSt) oldSt.remove();
           var st = document.createElement("style");
-          st.id = "v121-gemini-chat-styles";
+          st.id = "v122-gemini-chat-styles";
           st.textContent =
-            ".v121-gemini-user-bubble { background: #ffffff !important; color: #0f172a !important; border: 1.5px solid #cbd5e1 !important; border-radius: 20px 20px 4px 20px !important; padding: 10px 16px !important; box-shadow: 0 2px 8px rgba(15,23,42,0.06) !important; font-weight: 700 !important; }" +
-            ".v121-gemini-user-bubble * { color: #0f172a !important; }" +
-            ".v121-gemini-bot-full { width: 100% !important; max-width: 100% !important; background: transparent !important; border: none !important; box-shadow: none !important; border-bottom: 1px solid #e2e8f0 !important; border-radius: 0 !important; padding: 14px 4px 18px 4px !important; margin: 4px 0 !important; }" +
-            ".v121-gemini-bot-row { width: 100% !important; max-width: 100% !important; display: block !important; }";
+            /* User bubble: distinct compact colored pill like ChatGPT (247755.jpg) */
+            ".v122-gemini-user-bubble { background: #0d3825 !important; color: #ffffff !important; border: 1.5px solid #165b3c !important; border-radius: 22px 22px 4px 22px !important; padding: 10px 18px !important; box-shadow: 0 3px 10px rgba(13,56,37,0.16) !important; font-weight: 800 !important; font-size: 0.93rem !important; width: fit-content !important; max-width: 80% !important; display: inline-block !important; overflow-anchor: none !important; }" +
+            ".v122-gemini-user-bubble * { color: #ffffff !important; }" +
+            /* Bot message: full-width open layout without bubble like ChatGPT (247755.jpg) */
+            ".v122-gemini-bot-full { width: 100% !important; max-width: 100% !important; background: transparent !important; border: none !important; box-shadow: none !important; border-bottom: 1px solid #e2e8f0 !important; border-radius: 0 !important; padding: 14px 4px 18px 4px !important; margin: 6px 0 !important; overflow-anchor: none !important; }" +
+            ".v122-gemini-bot-row { width: 100% !important; max-width: 100% !important; display: block !important; overflow-anchor: none !important; }" +
+            ".v118-wa-photo-box, .v122-ingredients-panel { overflow-anchor: none !important; }";
           document.head.appendChild(st);
         })();
 
-        window.__copyAndAttachMissingToOrderNotesV121 = function(btnEl, missingText, recipeTitle) {
+        function scrollToChatBottomSmoothV122() {
+          try {
+            if (document.body.textContent.indexOf("مساعد وشيف أورجنال الذكي") === -1) return;
+            var allUserAndBot = Array.from(document.querySelectorAll(".v122-gemini-user-bubble, .v122-gemini-bot-full"));
+            if (allUserAndBot.length === 0) return;
+            var lastEl = allUserAndBot[allUserAndBot.length - 1];
+            var sc = lastEl.parentElement;
+            while (sc && sc !== document.body) {
+              var oy = window.getComputedStyle(sc).overflowY;
+              if ((oy === "auto" || oy === "scroll") && sc.scrollHeight > sc.clientHeight + 20) {
+                sc.scrollTo({ top: sc.scrollHeight, behavior: "smooth" });
+                break;
+              }
+              sc = sc.parentElement;
+            }
+            lastEl.scrollIntoView({ behavior: "smooth", block: "end" });
+          } catch (e) {}
+        }
+
+        function bindChatInputScrollLockV122() {
+          if (document.body.textContent.indexOf("مساعد وشيف أورجنال الذكي") === -1) return;
+          var chatInputs = Array.from(document.querySelectorAll("input, textarea")).filter(function(inp) {
+            var ph = inp.getAttribute("placeholder") || "";
+            return ph.indexOf("اطلب سلة") !== -1 || ph.indexOf("وصفة") !== -1 || ph.indexOf("مقاضي") !== -1;
+          });
+          chatInputs.forEach(function(inp) {
+            if (inp.getAttribute("data-v122-scroll-bound") === "1") return;
+            inp.setAttribute("data-v122-scroll-bound", "1");
+            inp.addEventListener("keydown", function(ev) {
+              if (ev.key === "Enter") {
+                setTimeout(scrollToChatBottomSmoothV122, 60);
+                setTimeout(scrollToChatBottomSmoothV122, 250);
+                setTimeout(scrollToChatBottomSmoothV122, 600);
+              }
+            });
+            var sendBtn = inp.parentElement ? inp.parentElement.querySelector("button") : null;
+            if (sendBtn && sendBtn.getAttribute("data-v122-scroll-bound") !== "1") {
+              sendBtn.setAttribute("data-v122-scroll-bound", "1");
+              sendBtn.addEventListener("click", function() {
+                setTimeout(scrollToChatBottomSmoothV122, 60);
+                setTimeout(scrollToChatBottomSmoothV122, 250);
+                setTimeout(scrollToChatBottomSmoothV122, 600);
+              });
+            }
+          });
+        }
+
+        window.__copyAndAttachMissingToOrderNotesV122 = function(btnEl, missingText, recipeTitle) {
           var fullNote = "📋 مكونات إضافية مطلوبة (" + (recipeTitle || "وصفة الشيف") + "): " + missingText + " — يرجى إفادتي بحالة توفرها وإضافتها مع طلبي.";
           try {
-            localStorage.setItem("original_v121_order_note", fullNote);
+            localStorage.setItem("original_v122_order_note", fullNote);
           } catch (e) {}
           if (navigator.clipboard && navigator.clipboard.writeText) {
             navigator.clipboard.writeText(fullNote).catch(function() {});
@@ -257,7 +312,7 @@
               ta.remove();
             } catch (e) {}
           }
-          syncOrderNotesFieldV121();
+          syncOrderNotesFieldV122();
           fetch("/api/ai-studio/request-item", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -274,10 +329,10 @@
           }
         };
 
-        function syncOrderNotesFieldV121() {
+        function syncOrderNotesFieldV122() {
           var savedNote = "";
           try {
-            savedNote = localStorage.getItem("original_v121_order_note") || "";
+            savedNote = localStorage.getItem("original_v122_order_note") || localStorage.getItem("original_v121_order_note") || "";
           } catch (e) {}
           if (!savedNote) return;
 
@@ -295,7 +350,7 @@
           noteFields.forEach(function(field) {
             if (window.location.pathname.indexOf("/admin") !== -1) return;
             var curVal = field.value || "";
-            if (curVal.indexOf(savedNote) === -1 && field.getAttribute("data-v121-note-filled") !== savedNote) {
+            if (curVal.indexOf(savedNote) === -1 && field.getAttribute("data-v122-note-filled") !== savedNote) {
               var nextVal = curVal.trim() ? (curVal.trim() + "\n" + savedNote) : savedNote;
               try {
                 var proto = field.tagName === "TEXTAREA" ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
@@ -307,7 +362,7 @@
                 }
                 field.dispatchEvent(new Event("input", { bubbles: true }));
                 field.dispatchEvent(new Event("change", { bubbles: true }));
-                field.setAttribute("data-v121-note-filled", savedNote);
+                field.setAttribute("data-v122-note-filled", savedNote);
               } catch (e) {
                 field.value = nextVal;
               }
@@ -381,6 +436,7 @@
 
         function isDarkGreenBgV119(el) {
           if (!el || el === document.body) return false;
+          if (el.getAttribute && el.getAttribute("data-v122-role") === "user") return true;
           if (el.getAttribute && el.getAttribute("data-v121-role") === "user") return true;
           try {
             var cs = window.getComputedStyle(el);
@@ -399,24 +455,26 @@
         function isInsideDarkGreenUserBubbleV119(el) {
           var cur = el;
           for (var i = 0; i < 4 && cur && cur !== document.body; i++) {
-            if (cur.getAttribute && cur.getAttribute("data-v121-role") === "user") return true;
+            if (cur.getAttribute && (cur.getAttribute("data-v122-role") === "user" || cur.getAttribute("data-v121-role") === "user")) return true;
             if (isDarkGreenBgV119(cur)) return true;
             cur = cur.parentElement;
           }
           return false;
         }
 
-        function buildIngredientsTableHtmlV121(tableRows, missingItemsText, recipeTitle) {
+        function buildIngredientsTableHtmlV122(tableRows, missingItemsText, recipeTitle) {
           if (!Array.isArray(tableRows) || tableRows.length === 0) return "";
           var rowsHtml = tableRows.map(function(row) {
-            var statusHtml = row.available
-              ? '<span style="display:inline-block;background:#dcfce7;color:#15803d;padding:3px 9px;border-radius:99px;font-weight:800;font-size:0.76rem;">✅ متوفر بالمتجر (' + (row.price || 100) + ' ر.ي)</span>'
-              : '<span style="display:inline-block;background:#fef3c7;color:#b45309;padding:3px 9px;border-radius:99px;font-weight:800;font-size:0.76rem;">📌 غير ظاهر بالمتجر (يُطلب في الملاحظة)</span>';
+            var priceCell = row.available ? ((row.price || 100) + " ر.ي") : "—";
+            var statusCell = row.available
+              ? '<span style="color:#15803d;font-weight:800;white-space:nowrap;">متوفر ✅</span>'
+              : '<span style="color:#d97706;font-weight:800;white-space:nowrap;">يُطلب بالملاحظة 📌</span>';
             return (
               '<tr style="border-bottom:1px solid #e2e8f0;">' +
-              '<td style="padding:8px 10px;font-weight:800;color:#0f172a;font-size:0.84rem;">' + (row.name || "") + '</td>' +
-              '<td style="padding:8px 10px;color:#475569;font-size:0.82rem;font-weight:700;">' + (row.amount || "حسب الرغبة") + '</td>' +
-              '<td style="padding:8px 10px;">' + statusHtml + '</td>' +
+              '<td style="padding:10px 6px;font-weight:800;color:#0f172a;font-size:0.86rem;">' + (row.name || "") + '</td>' +
+              '<td style="padding:10px 6px;color:#475569;font-size:0.84rem;font-weight:700;white-space:nowrap;">' + (row.amount || "1 حبة") + '</td>' +
+              '<td style="padding:10px 6px;color:#0f172a;font-size:0.84rem;font-weight:800;white-space:nowrap;">' + priceCell + '</td>' +
+              '<td style="padding:10px 6px;font-size:0.82rem;white-space:nowrap;">' + statusCell + '</td>' +
               '</tr>'
             );
           }).join("");
@@ -427,34 +485,37 @@
           var missingActionHtml = "";
           if (missingItemsText) {
             missingActionHtml =
-              '<div style="margin-top:10px;padding:12px;background:#fffbeb;border:1.5px solid #f59e0b;border-radius:12px;">' +
-              '<div style="font-weight:900;color:#92400e;font-size:0.86rem;margin-bottom:4px;">📦 منتجات ومكونات إضافية قابلة للطلب مع فاتورتك:</div>' +
-              '<div style="font-size:0.82rem;color:#78350f;font-weight:700;margin-bottom:8px;">«' + missingItemsText + '»</div>' +
-              '<button type="button" class="v121-copy-notes-btn" data-missing="' + safeMissing + '" data-title="' + safeTitle + '" style="width:100%;padding:10px 14px;border-radius:10px;border:none;background:linear-gradient(135deg,#0d3825 0%,#165b3c 100%);color:#d4af37;font-weight:900;font-size:0.85rem;cursor:pointer;box-shadow:0 4px 12px rgba(13,56,37,0.2);">📋 نسخ المكونات غير المتوفرة ووضعها تلقائياً في ملاحظة الطلب</button>' +
-              '<div style="font-size:0.77rem;color:#475569;margin-top:7px;line-height:1.5;font-weight:700;">💡 <b>توضيح للزبون:</b> عند الضغط على الزر أعلاه، يتم نسخ هذه المكونات ووضعها تلقائياً في خانة (ملاحظة الطلب) لترسلها مع طلبك، وسيتواصل معك المتجر ويرد عليك فوراً حول حالة توفر المنتجات اللازمة أو الإضافية!</div>' +
+              '<div style="margin-top:12px;padding:12px 14px;background:#f8fafc;border-right:3.5px solid #0d3825;border-radius:10px;">' +
+              '<div style="font-weight:900;color:#0d3825;font-size:0.85rem;margin-bottom:4px;">📦 مكونات إضافية غير ظاهرة بالمتجر (قابلة للطلب مع فاتورتك):</div>' +
+              '<div style="font-size:0.82rem;color:#334155;font-weight:700;margin-bottom:10px;">' + missingItemsText + '</div>' +
+              '<button type="button" class="v122-copy-notes-btn" data-missing="' + safeMissing + '" data-title="' + safeTitle + '" style="width:100%;padding:10px 14px;border-radius:10px;border:none;background:#0d3825;color:#d4af37;font-weight:900;font-size:0.84rem;cursor:pointer;">📋 نسخ المكونات غير المتوفرة ووضعها تلقائياً في ملاحظة الطلب</button>' +
+              '<div style="font-size:0.76rem;color:#64748b;margin-top:6px;line-height:1.5;font-weight:700;">💡 عند الضغط على الزر سيتم نسخ هذه المكونات ووضعها تلقائياً في خانة (ملاحظة الطلب) عند إرسال طلبك، وسيرد عليك المتجر فوراً حول حالة توفرها!</div>' +
               '</div>';
           }
 
+          /* Flat, borderless ChatGPT-style table (exactly like 247755.jpg) */
           return (
-            '<div style="margin:12px 0;border:1.5px solid #cbd5e1;border-radius:14px;overflow:hidden;background:#ffffff;box-shadow:0 4px 14px rgba(15,23,42,0.05);direction:rtl;text-align:right;">' +
-            '<div style="background:#f8fafc;padding:10px 14px;border-bottom:1.5px solid #cbd5e1;font-weight:900;color:#0d3825;font-size:0.88rem;">📊 جدول مكونات الوصفة (المتوفر بالمتجر والمكونات الإضافية للطلب)</div>' +
+            '<div style="margin:14px 0;direction:rtl;text-align:right;">' +
+            '<div style="font-weight:900;color:#0f172a;font-size:0.92rem;margin-bottom:6px;">📊 جدول مقادير الوصفة وحالة التوفر:</div>' +
             '<div style="overflow-x:auto;">' +
             '<table style="width:100%;border-collapse:collapse;text-align:right;direction:rtl;">' +
-            '<thead><tr style="background:#f1f5f9;border-bottom:1.5px solid #cbd5e1;">' +
-            '<th style="padding:8px 10px;font-size:0.8rem;color:#334155;font-weight:900;">المكون / الصنف</th>' +
-            '<th style="padding:8px 10px;font-size:0.8rem;color:#334155;font-weight:900;">المقدار</th>' +
-            '<th style="padding:8px 10px;font-size:0.8rem;color:#334155;font-weight:900;">حالة التوفر في المتجر</th>' +
+            '<thead><tr style="border-bottom:1.5px solid #94a3b8;">' +
+            '<th style="padding:8px 6px;font-size:0.82rem;color:#475569;font-weight:900;">المكون</th>' +
+            '<th style="padding:8px 6px;font-size:0.82rem;color:#475569;font-weight:900;white-space:nowrap;">المقدار</th>' +
+            '<th style="padding:8px 6px;font-size:0.82rem;color:#475569;font-weight:900;white-space:nowrap;">السعر</th>' +
+            '<th style="padding:8px 6px;font-size:0.82rem;color:#475569;font-weight:900;white-space:nowrap;">الحالة</th>' +
             '</tr></thead>' +
             '<tbody>' + rowsHtml + '</tbody>' +
             '</table>' +
             '</div>' +
-            (missingActionHtml ? '<div style="padding:0 12px 12px 12px;">' + missingActionHtml + '</div>' : '') +
+            missingActionHtml +
             '</div>'
           );
         }
 
         function enhanceChatBubblesSafelyV117() {
-          syncOrderNotesFieldV121();
+          syncOrderNotesFieldV122();
+          bindChatInputScrollLockV122();
           if (document.body.textContent.indexOf("مساعد وشيف أورجنال الذكي") === -1) return;
 
           // 1. Clean up any accidental photo boxes inside user bubbles
@@ -464,7 +525,7 @@
             }
           });
 
-          // 2. Find all USER message bubbles and style them with clean white Gemini/ChatGPT bordered pill!
+          // 2. Find all USER message bubbles and style them with compact emerald ChatGPT pill!
           var allUserBubbles = Array.from(document.querySelectorAll("div, p, span")).filter(function(el) {
             if (!isDarkGreenBgV119(el)) return false;
             if (el.tagName === "BUTTON" || el.querySelector("button, input, textarea")) return false;
@@ -474,8 +535,9 @@
             if (t.indexOf("محادثة جديدة") !== -1 || t.indexOf("الأصناف والمقادير") !== -1) return false;
             if (t.length < 1 || t.length > 220) return false;
 
-            el.setAttribute("data-v121-role", "user");
-            el.classList.add("v121-gemini-user-bubble");
+            el.setAttribute("data-v122-role", "user");
+            el.classList.remove("v121-gemini-user-bubble");
+            el.classList.add("v122-gemini-user-bubble");
 
             if (t.indexOf("🍰") !== -1 && el.getAttribute("data-v119-orig-user")) {
               setLeafTextSafe(el, el.getAttribute("data-v119-orig-user"));
@@ -485,10 +547,10 @@
             return true;
           });
 
-          // 3. Find all AI Assistant reply paragraphs and style their container as full-width Gemini/ChatGPT layout!
+          // 3. Find all AI Assistant reply paragraphs and style their container as full-width ChatGPT layout!
           var allLeaves = Array.from(document.querySelectorAll("p, div")).filter(function(el) {
             if (el.children.length !== 0) return false;
-            if (el.closest && (el.closest(".v118-wa-photo-box") || el.closest(".v121-ingredients-panel") || el.closest(".v121-gemini-ai-header") || el.closest("button"))) return false;
+            if (el.closest && (el.closest(".v118-wa-photo-box") || el.closest(".v122-ingredients-panel") || el.closest(".v121-ingredients-panel") || el.closest(".v122-gemini-ai-header") || el.closest("button"))) return false;
             if (isInsideDarkGreenUserBubbleV119(el)) return false;
 
             var parentCard = el.parentElement;
@@ -527,14 +589,14 @@
             var assistantCard = replyLeaf.parentElement;
             if (!assistantCard || isInsideDarkGreenUserBubbleV119(assistantCard)) return;
 
-            assistantCard.classList.add("v121-gemini-bot-full");
+            assistantCard.classList.add("v122-gemini-bot-full");
             if (assistantCard.parentElement && assistantCard.parentElement.textContent.indexOf("محادثة جديدة") === -1) {
-              assistantCard.parentElement.classList.add("v121-gemini-bot-row");
+              assistantCard.parentElement.classList.add("v122-gemini-bot-row");
             }
 
-            if (!assistantCard.querySelector(".v121-gemini-ai-header")) {
+            if (!assistantCard.querySelector(".v122-gemini-ai-header") && !assistantCard.querySelector(".v121-gemini-ai-header")) {
               var aiHdr = document.createElement("div");
-              aiHdr.className = "v121-gemini-ai-header";
+              aiHdr.className = "v122-gemini-ai-header";
               aiHdr.style.cssText = "display:flex;align-items:center;gap:6px;margin-bottom:8px;font-weight:900;font-size:0.82rem;color:#0d3825;";
               aiHdr.innerHTML = "<span style='background:#0d3825;color:#d4af37;width:22px;height:22px;border-radius:99px;display:inline-flex;align-items:center;justify-content:center;font-size:0.72rem;'>✨</span><span>شيف ومساعد أورجنال الذكي</span>";
               assistantCard.insertBefore(aiHdr, assistantCard.firstChild);
@@ -556,10 +618,10 @@
             if (!userQueryTxt) return;
 
             var normQ = normalizeArabicClientV116(userQueryTxt);
-            var cachedSmart = window.__v121SmartDataByQuery[normQ];
+            var cachedSmart = window.__v122SmartDataByQuery[normQ];
 
-            if (!cachedSmart && !assistantCard.getAttribute("data-v121-fetched")) {
-              assistantCard.setAttribute("data-v121-fetched", "1");
+            if (!cachedSmart && !assistantCard.getAttribute("data-v122-fetched")) {
+              assistantCard.setAttribute("data-v122-fetched", "1");
               origFetch("/api/ai-studio/smart-chat", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -568,7 +630,7 @@
                 .then(function(r) { return r.json(); })
                 .then(function(sd) {
                   if (sd && sd.ok && sd.matchedOverride) {
-                    window.__v121SmartDataByQuery[normQ] = sd;
+                    window.__v122SmartDataByQuery[normQ] = sd;
                     enhanceChatBubblesSafelyV117();
                   }
                 })
@@ -602,10 +664,14 @@
                 setLeafTextSafe(replyLeaf, cachedSmart.reply);
               }
 
-              if (Array.isArray(cachedSmart.ingredientsTable) && cachedSmart.ingredientsTable.length > 0 && !assistantCard.querySelector(".v121-ingredients-panel")) {
+              // Remove old v121 boxed table if present and render flat ChatGPT-style v122 table
+              var oldV121Tbl = assistantCard.querySelector(".v121-ingredients-panel");
+              if (oldV121Tbl) oldV121Tbl.remove();
+
+              if (Array.isArray(cachedSmart.ingredientsTable) && cachedSmart.ingredientsTable.length > 0 && !assistantCard.querySelector(".v122-ingredients-panel")) {
                 var tblPanel = document.createElement("div");
-                tblPanel.className = "v121-ingredients-panel";
-                tblPanel.innerHTML = buildIngredientsTableHtmlV121(
+                tblPanel.className = "v122-ingredients-panel";
+                tblPanel.innerHTML = buildIngredientsTableHtmlV122(
                   cachedSmart.ingredientsTable,
                   cachedSmart.missingItemsText || "",
                   cachedSmart.recipeTitle || userQueryTxt
@@ -615,10 +681,10 @@
                 } else {
                   replyLeaf.parentNode.appendChild(tblPanel);
                 }
-                var copyBtn = tblPanel.querySelector(".v121-copy-notes-btn");
+                var copyBtn = tblPanel.querySelector(".v122-copy-notes-btn");
                 if (copyBtn) {
                   copyBtn.onclick = function() {
-                    window.__copyAndAttachMissingToOrderNotesV121(
+                    window.__copyAndAttachMissingToOrderNotesV122(
                       copyBtn,
                       copyBtn.getAttribute("data-missing") || "",
                       copyBtn.getAttribute("data-title") || ""
@@ -664,6 +730,16 @@
               setLeafTextSafe(replyLeaf, promoTxt);
             }
           });
+
+          var currentTotalBubbles = allUserBubbles.length + allLeaves.length;
+          if (currentTotalBubbles > window.__v122LastBubbleCount) {
+            var prevCount = window.__v122LastBubbleCount;
+            window.__v122LastBubbleCount = currentTotalBubbles;
+            if (prevCount > 0) {
+              setTimeout(scrollToChatBottomSmoothV122, 50);
+              setTimeout(scrollToChatBottomSmoothV122, 220);
+            }
+          }
         }
 
         var origFetch = window.fetch;
@@ -690,9 +766,11 @@
                     .then(function(smartData) {
                       if (!smartData || !smartData.ok || smartData.passThrough || !smartData.matchedOverride) return trpcRes;
                       return trpcRes.clone().json().then(function(trpcJson) {
-                        if (detectedMsg) { window.__v121SmartDataByQuery[normalizeArabicClientV116(detectedMsg)] = smartData; }
+                        if (detectedMsg) { window.__v122SmartDataByQuery[normalizeArabicClientV116(detectedMsg)] = smartData; }
                         replaceTrpcAiPayloadInPlaceV117(trpcJson, smartData);
                         setTimeout(enhanceChatBubblesSafelyV117, 120);
+                        setTimeout(scrollToChatBottomSmoothV122, 160);
+                        setTimeout(scrollToChatBottomSmoothV122, 400);
                         setTimeout(enhanceChatBubblesSafelyV117, 350);
                         return new Response(JSON.stringify(trpcJson), {
                           status: trpcRes.status,
