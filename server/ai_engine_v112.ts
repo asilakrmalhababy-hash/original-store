@@ -691,11 +691,7 @@ export function registerAiEngineV112(app: Express) {
             });
           }
         }
-        const replyMsg =
-          "يا غالي، جبت لك ألذ وأفخم وصفة تفتح النفس من مطبخ أورجنال: 😍🍫\n" +
-          "🍰 «" + matchedRecipe.title + "»\n\n" +
-          "📋 الوصفة وطريقة التحضير الكاملة:\n" +
-          matchedRecipe.steps;
+        const replyMsg = "🍰 " + matchedRecipe.title + "\n\n" + matchedRecipe.steps;
         const payload = {
           ok: true,
           zeroToken: true,

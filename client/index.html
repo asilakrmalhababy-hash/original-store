@@ -291,33 +291,40 @@
         function enhanceChatBubblesSafelyV117() {
           if (document.body.textContent.indexOf("مساعد وشيف أورجنال الذكي") === -1) return;
 
-          // Find all assistant reply paragraphs inside the chat area:
-          // In Home.tsx, every assistant reply bubble has a leaf <p> or <div> (children.length === 0) right above "الأصناف والمقادير المقترحة للسلة:" or inside a white assistant card!
+          // إزالة أي بانر قديم من النسخة السابقة فوراً
+          Array.from(document.querySelectorAll(".v117-recipe-photo-banner")).forEach(function(oldB) {
+            oldB.remove();
+          });
+
           var allLeaves = Array.from(document.querySelectorAll("p, div")).filter(function(el) {
             if (el.children.length !== 0) return false;
+            if (el.closest && (el.closest(".v118-wa-photo-box") || el.closest(".v117-recipe-photo-banner") || el.closest("button"))) return false;
+            var parentBubble = el.closest ? el.closest("[data-v118-bubble='1']") : null;
+            if (parentBubble && el.getAttribute("data-v118-reply") !== "1") return false;
             var t = (el.textContent || "").trim();
-            return t.length >= 25 && (t.indexOf("يا غالي") !== -1 || t.indexOf("حلى") !== -1 || t.indexOf("وصفة") !== -1 || t.indexOf("بسكويت") !== -1);
+            if (t.indexOf("الأصناف والمقادير") !== -1 || t.indexOf("الإجمالي:") !== -1 || t.indexOf("ر.ي (حبة)") !== -1) return false;
+            return t.length >= 18 && (t.indexOf("يا غالي") !== -1 || t.indexOf("حلى") !== -1 || t.indexOf("وصفة") !== -1 || t.indexOf("بسكويت") !== -1 || t.indexOf("🍰") !== -1);
           });
 
           allLeaves.forEach(function(replyLeaf) {
-            // Walk up at most 3 levels to find the single assistant bubble card (must NOT contain the chat header "مساعد وشيف أورجنال الذكي" or input box!)
             var assistantCard = replyLeaf.parentElement;
             if (!assistantCard) return;
             if (assistantCard.textContent.indexOf("محادثة جديدة") !== -1 || assistantCard.querySelector("input, textarea")) return;
 
-            // Find the preceding user message text by looking at previous siblings of the assistant message wrapper
             var userQueryTxt = "";
             var stepEl = assistantCard;
-            for (var up = 0; up < 3 && stepEl && stepEl.parentElement; up++) {
+            for (var up = 0; up < 4 && stepEl && stepEl.parentElement; up++) {
               if (stepEl.parentElement.textContent.indexOf("محادثة جديدة") !== -1) break;
               var prev = stepEl.previousElementSibling;
-              if (prev) {
+              while (prev) {
                 var pt = (prev.textContent || "").trim();
-                if (pt.length >= 2 && pt.length <= 160 && pt.indexOf("الأصناف والمقادير") === -1) {
+                if (pt.length >= 2 && pt.length <= 160 && pt.indexOf("الأصناف والمقادير") === -1 && pt.indexOf("الإجمالي:") === -1) {
                   userQueryTxt = pt;
                   break;
                 }
+                prev = prev.previousElementSibling;
               }
+              if (userQueryTxt) break;
               stepEl = stepEl.parentElement;
             }
 
@@ -328,52 +335,36 @@
             var matchedPromo = (!matchedRec && !matchedRule) ? matchPromoClientV116(userQueryTxt) : null;
 
             if (matchedRec) {
-              // 1. Update ONLY the leaf text node of replyLeaf (100% safe for React!)
-              var targetRecipeText =
-                "يا غالي، جبت لك ألذ وأفخم وصفة تفتح النفس من مطبخ أورجنال: 😍🍫\n" +
-                "🍰 «" + (matchedRec.title || "") + "»\n\n" +
-                "📋 الوصفة وطريقة التحضير الكاملة:\n" +
-                (matchedRec.steps || "");
-              replyLeaf.style.whiteSpace = "pre-line";
-              replyLeaf.style.lineHeight = "1.7";
-              setLeafTextSafe(replyLeaf, targetRecipeText);
+              assistantCard.setAttribute("data-v118-bubble", "1");
+              replyLeaf.setAttribute("data-v118-reply", "1");
 
-              // 2. Insert standalone Mouth-Watering Recipe Photo Banner right before replyLeaf (if not already inserted)
-              var photoBanner = assistantCard.querySelector(".v117-recipe-photo-banner");
-              if (matchedRec.imageUrl && !photoBanner) {
-                photoBanner = document.createElement("div");
-                photoBanner.className = "v117-recipe-photo-banner";
-                var safeTitle = String(matchedRec.title || "").replace(/"/g, "&quot;");
-                photoBanner.setAttribute("data-lb-title", safeTitle);
-                photoBanner.style.cssText = "position:relative;margin-bottom:12px;border-radius:16px;overflow:hidden;border:2.5px solid #d4af37;box-shadow:0 10px 24px rgba(13,56,37,0.18);background:#0b2b1d;cursor:pointer;direction:rtl;text-align:right;";
-                photoBanner.onclick = function() {
-                  var imgEl = photoBanner.querySelector("img");
-                  if (imgEl) window.__openRecipeImageLightboxV116(imgEl.src, photoBanner.getAttribute("data-lb-title") || "");
+              // 1. صورة صافية في أعلى الفقاعة تماماً مثل واتساب (بدون أي كتابة أو مربعات فوق الصورة!)
+              if (matchedRec.imageUrl && !assistantCard.querySelector(".v118-wa-photo-box")) {
+                var waBox = document.createElement("div");
+                waBox.className = "v118-wa-photo-box";
+                waBox.style.cssText = "margin:0 0 10px 0;border-radius:12px;overflow:hidden;background:#f1f5f9;cursor:pointer;";
+                var waImg = document.createElement("img");
+                waImg.src = matchedRec.imageUrl;
+                waImg.alt = String(matchedRec.title || "");
+                waImg.style.cssText = "width:100%;max-height:240px;object-fit:cover;display:block;border-radius:12px;";
+                waBox.onclick = function() {
+                  window.__openRecipeImageLightboxV116(matchedRec.imageUrl, matchedRec.title || "");
                 };
-                photoBanner.innerHTML =
-                  '<img src="' + matchedRec.imageUrl + '" alt="' + safeTitle + '" style="width:100%;max-height:250px;min-height:175px;object-fit:cover;display:block;" />' +
-                  '<div style="position:absolute;top:10px;right:10px;background:linear-gradient(135deg,#0d3825 0%,#165b3c 100%);color:#d4af37;border:1.5px solid #d4af37;padding:4px 12px;border-radius:99px;font-weight:900;font-size:0.76rem;box-shadow:0 4px 10px rgba(0,0,0,0.35);">✨ وصفة شيف أورجنال الشهية</div>' +
-                  '<div style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(to top,rgba(8,28,18,0.92) 0%,rgba(8,28,18,0.5) 65%,transparent 100%);padding:20px 12px 10px 12px;color:#ffffff;">' +
-                  '<div style="font-size:0.98rem;font-weight:900;color:#d4af37;">🍰 ' + (matchedRec.title || "") + '</div>' +
-                  '<div style="font-size:0.74rem;color:#e2f1ea;margin-top:2px;">🔍 اضغط على الصورة لتكبيرها بكامل الوضوح</div>' +
-                  '</div>';
-                replyLeaf.parentNode.insertBefore(photoBanner, replyLeaf);
+                waBox.appendChild(waImg);
+                replyLeaf.parentNode.insertBefore(waBox, replyLeaf);
               }
 
-              // 3. Update the native "الأصناف والمقادير المقترحة للسلة:" items inside assistantCard using setLeafTextSafe (preserving the native layout 100%!)
+              // 2. نص الوصفة (Caption) تحت الصورة مباشرة مثل واتساب
+              var targetRecipeText =
+                "🍰 " + (matchedRec.title || "") + "\n\n" +
+                (matchedRec.steps || "");
+              replyLeaf.style.whiteSpace = "pre-line";
+              replyLeaf.style.lineHeight = "1.65";
+              setLeafTextSafe(replyLeaf, targetRecipeText);
+
+              // 3. تحديث صندوق الأصناف المقترحة الأصلي تحت الوصفة
               var ings = Array.isArray(matchedRec.ingredients) ? matchedRec.ingredients : [];
               if (ings.length > 0) {
-                var firstIng = ings[0];
-                var cleanIngName = String(firstIng.name || "").replace(/\s*\([^()]*\)\s*$/g, "").trim();
-                var catProd = (window.__v114Catalog || []).find(function(cp) { return cp.name === cleanIngName; }) ||
-                  (window.__v114Catalog || []).find(function(cp) { return cp.name && cp.name.length >= 5 && cleanIngName.indexOf(cp.name) !== -1 && cp.name.length >= cleanIngName.length * 0.7; });
-                var ingPrice = Number(firstIng.price || (catProd && catProd.price) || 100);
-
-                var cardLeaves = Array.from(assistantCard.querySelectorAll("span, strong, p, div, button")).filter(function(x) {
-                  return x.children.length === 0 && x !== replyLeaf && !(photoBanner && photoBanner.contains(x));
-                });
-
-                // Find item rows inside the native green box (each white item row has "+ أضف بمفرده")
                 var singleAddBtns = Array.from(assistantCard.querySelectorAll("button")).filter(function(b) {
                   return (b.textContent || "").indexOf("أضف بمفرده") !== -1;
                 });
@@ -409,6 +400,9 @@
                   return acc + Number(g.price || (gc && gc.price) || 100);
                 }, 0);
 
+                var cardLeaves = Array.from(assistantCard.querySelectorAll("span, strong, p, div, button")).filter(function(x) {
+                  return x.children.length === 0 && x !== replyLeaf && !(x.closest && x.closest(".v118-wa-photo-box"));
+                });
                 cardLeaves.forEach(function(cl) {
                   var ct = (cl.textContent || "").trim();
                   if (ct.indexOf("الإجمالي:") !== -1) {
@@ -419,9 +413,13 @@
                 });
               }
             } else if (matchedRule) {
+              assistantCard.setAttribute("data-v118-bubble", "1");
+              replyLeaf.setAttribute("data-v118-reply", "1");
               replyLeaf.style.whiteSpace = "pre-line";
               setLeafTextSafe(replyLeaf, matchedRule.response || "");
             } else if (matchedPromo) {
+              assistantCard.setAttribute("data-v118-bubble", "1");
+              replyLeaf.setAttribute("data-v118-reply", "1");
               var promoTxt =
                 (matchedPromo.promoBadge ? matchedPromo.promoBadge + " — " : "⭐ ترشيح خاص لك: ") +
                 "«" + (matchedPromo.productName || "") + "»" +
