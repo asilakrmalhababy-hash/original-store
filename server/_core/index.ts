@@ -18,6 +18,16 @@ const HTTP_PREFIX = ["ht", "tp"].join("");
 
 async function startServer() {
   const app = express();
+
+  registerAiEngineV112(app);
+  app.post("/api/admin/order-add-item", express.json({ limit: "10mb" }), async (req, res) => {
+    try {
+      const result = await addInvoiceItemToOrderV99(req.body || {});
+      res.json(result);
+    } catch (err: any) {
+      res.status(400).json({ ok: false, error: String(err?.message || err) });
+    }
+  });
   app.set("trust proxy", 1);
   app.disable("x-powered-by");
   app.use((_req, res, next) => {
@@ -29,16 +39,6 @@ async function startServer() {
   });
   const server = createServer(app);
   app.use(express.json({ limit: "50mb" }));
-
-  registerAiEngineV112(app);
-  app.post("/api/admin/order-add-item", async (req, res) => {
-    try {
-      const result = await addInvoiceItemToOrderV99(req.body || {});
-      res.json(result);
-    } catch (err: any) {
-      res.status(400).json({ ok: false, error: String(err?.message || err) });
-    }
-  });
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   app.get("/api/health", (_req, res) => res.json({ status: "ok", ts: Date.now() }));
   if (!(globalThis as any).__keepAliveTimer) {

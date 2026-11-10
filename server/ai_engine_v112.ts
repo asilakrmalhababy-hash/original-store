@@ -1,9 +1,13 @@
+import express from "express";
+import fs from "fs";
+import path from "path";
+import { sql } from "drizzle-orm";
 import { getDb } from "./db";
 import { products } from "../drizzle/schema";
 
 export interface CustomInstructionV114 {
   id: string;
-  category: string; // e.g. "أسلوب الترحيب والكلام" | "عند عدم توفر منتج" | "الممنوعات والحدود" | "تعليمة عامة"
+  category: string;
   content: string;
   active: boolean;
 }
@@ -26,7 +30,7 @@ export interface PromotedProductV114 {
   productImage?: string;
   promoBadge: string;
   promoMessage: string;
-  triggerKeywords: string; // empty = promote generally when appropriate
+  triggerKeywords: string;
   active: boolean;
 }
 
@@ -69,7 +73,6 @@ export interface CustomerAiRequestV114 {
   createdAt: number;
 }
 
-// 100% EMPTY BY DEFAULT — The store owner fills everything they want!
 const EMPTY_STUDIO_CONFIG_V114: AiStudioConfigV114 = {
   generalSystemPrompt: "",
   instructions: [],
@@ -79,6 +82,8 @@ const EMPTY_STUDIO_CONFIG_V114: AiStudioConfigV114 = {
   productAiMap: {},
   ecoMode10k: true
 };
+
+const BACKUP_FILE_PATH = path.resolve(process.cwd(), "ai_studio_v115_backup.json");
 
 let studioConfigV114: AiStudioConfigV114 = JSON.parse(JSON.stringify(EMPTY_STUDIO_CONFIG_V114));
 let customerRequestsV114: CustomerAiRequestV114[] = [];
@@ -90,7 +95,69 @@ let tokenStatsV114 = {
 };
 let cachedCatalogV114: any[] = [];
 let lastCatalogTimeV114 = 0;
-let tableReadyV114 = false;
+let tableLoadedFromDbV115 = false;
+
+function normalizeStudioConfigV115(p: any): AiStudioConfigV114 {
+  if (!p || typeof p !== "object") {
+    return JSON.parse(JSON.stringify(EMPTY_STUDIO_CONFIG_V114));
+  }
+  return {
+    generalSystemPrompt: String(p.generalSystemPrompt || ""),
+    instructions: Array.isArray(p.instructions) ? p.instructions : [],
+    rules: Array.isArray(p.rules) ? p.rules : [],
+    promotedProducts: Array.isArray(p.promotedProducts) ? p.promotedProducts : [],
+    recipes: Array.isArray(p.recipes) ? p.recipes : [],
+    productAiMap: p.productAiMap && typeof p.productAiMap === "object" ? p.productAiMap : {},
+    ecoMode10k: p.ecoMode10k !== false
+  };
+}
+
+function loadDiskBackupV115() {
+  try {
+    if (fs.existsSync(BACKUP_FILE_PATH)) {
+      const raw = fs.readFileSync(BACKUP_FILE_PATH, "utf-8");
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.studio_config) {
+        studioConfigV114 = normalizeStudioConfigV115(parsed.studio_config);
+      }
+      if (parsed && Array.isArray(parsed.customer_requests)) {
+        customerRequestsV114 = parsed.customer_requests;
+      }
+    }
+  } catch {}
+}
+loadDiskBackupV115();
+
+function saveDiskBackupV115() {
+  try {
+    fs.writeFileSync(
+      BACKUP_FILE_PATH,
+      JSON.stringify({
+        studio_config: studioConfigV114,
+        customer_requests: customerRequestsV114,
+        updatedAt: Date.now()
+      }),
+      "utf-8"
+    );
+  } catch {}
+}
+
+async function runRawSqlV115(db: any, queryStr: string, params: any[] = []): Promise<any> {
+  const client = db?.$client || db?.session?.client;
+  if (client && typeof client.execute === "function") {
+    const [rows] = await client.execute(queryStr, params);
+    return rows;
+  }
+  if (client && typeof client.query === "function") {
+    const [rows] = await client.query(queryStr, params);
+    return rows;
+  }
+  const parts = queryStr.split("?");
+  const tpl: any = parts.slice();
+  tpl.raw = parts.slice();
+  const res: any = await db.execute(sql(tpl as TemplateStringsArray, ...params));
+  return Array.isArray(res) && Array.isArray(res[0]) ? res[0] : res;
+}
 
 async function getCatalogCachedV114(): Promise<any[]> {
   const now = Date.now();
@@ -108,54 +175,51 @@ async function getCatalogCachedV114(): Promise<any[]> {
 }
 
 async function ensureStudioTableV114() {
-  if (tableReadyV114) return;
+  if (tableLoadedFromDbV115) return;
   try {
     const db: any = await getDb();
-    if (!db || typeof db.execute !== "function") return;
-    await db.execute(
-      "CREATE TABLE IF NOT EXISTS ai_studio_v114 (" +
+    if (!db) return;
+    await runRawSqlV115(
+      db,
+      "CREATE TABLE IF NOT EXISTS ai_studio_v115 (" +
       "k VARCHAR(190) PRIMARY KEY, " +
       "v LONGTEXT NOT NULL, " +
       "updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP" +
       ")"
     );
-    tableReadyV114 = true;
+    tableLoadedFromDbV115 = true;
 
-    const [rows]: any = await db.execute("SELECT k, v FROM ai_studio_v114");
+    const rows: any = await runRawSqlV115(db, "SELECT k, v FROM ai_studio_v115");
     if (Array.isArray(rows)) {
       for (const r of rows) {
-        if (r.k === "studio_config" && r.v) {
+        if (r && r.k === "studio_config" && r.v) {
           try {
             const p = JSON.parse(String(r.v));
-            studioConfigV114 = {
-              generalSystemPrompt: String(p.generalSystemPrompt || ""),
-              instructions: Array.isArray(p.instructions) ? p.instructions : [],
-              rules: Array.isArray(p.rules) ? p.rules : [],
-              promotedProducts: Array.isArray(p.promotedProducts) ? p.promotedProducts : [],
-              recipes: Array.isArray(p.recipes) ? p.recipes : [],
-              productAiMap: p.productAiMap && typeof p.productAiMap === "object" ? p.productAiMap : {},
-              ecoMode10k: p.ecoMode10k !== false
-            };
+            studioConfigV114 = normalizeStudioConfigV115(p);
           } catch {}
-        } else if (r.k === "customer_requests" && r.v) {
+        } else if (r && r.k === "customer_requests" && r.v) {
           try {
             const pr = JSON.parse(String(r.v));
             if (Array.isArray(pr)) customerRequestsV114 = pr;
           } catch {}
         }
       }
+      saveDiskBackupV115();
     }
   } catch {}
 }
 
 async function saveStudioKeyV114(key: string, valObj: any) {
+  saveDiskBackupV115();
   try {
     await ensureStudioTableV114();
     const db: any = await getDb();
-    if (!db || typeof db.execute !== "function") return;
-    await db.execute(
-      "INSERT INTO ai_studio_v114 (k, v) VALUES (?, ?) ON DUPLICATE KEY UPDATE v = VALUES(v)",
-      [key, JSON.stringify(valObj)]
+    if (!db) return;
+    const jsonStr = JSON.stringify(valObj);
+    await runRawSqlV115(
+      db,
+      "INSERT INTO ai_studio_v115 (k, v) VALUES (?, ?) ON DUPLICATE KEY UPDATE v = VALUES(v)",
+      [key, jsonStr]
     );
   } catch {}
 }
@@ -191,10 +255,10 @@ export function classifyProductKindV112(name: string, categoryName = "", customA
   if (/(سجائر|سجاير|دخان|شملان|كمران|منظف|صابون|شامبو|مناديل|فحم|ولاعة|أكياس|اكياس)/.test(combined)) {
     return "non_food";
   }
-  if (/(بسكويت|بسكوت|ماري|أبو ولد|ابو ولد|نخالة|شاي|ديما|أوريو|اوريو|معمول|كليجا)/.test(combined)) {
+  if (/(بسكويت|بسكوت|ماري|أبو ولد|ابو ولد|نخالة|شاي|ديما|أوريو|اوريو|معمول|كليجا|توبس)/.test(combined)) {
     return "biscuit_dessert";
   }
-  if (/(شوكلات|شوكولات|بليلا|بريك|ويفر|علك|باطوق|حلاو|مصاص|شيبس|بطاط|فشار|كروسان|كيك|جالكسي|كتكات|سنكرز|توبي|سعيد|مارشملو|جيلي|كاكاو)/.test(combined)) {
+  if (/(شوكلات|شوكولات|شكلاته|شوكو|بلاتو|بليلا|بريك|ويفر|علك|باطوق|حلاو|مصاص|شيبس|بطاط|فشار|كروسان|كيك|جالكسي|كتكات|سنكرز|توبي|سعيد|مارشملو|جيلي|كاكاو)/.test(combined)) {
     return "chocolate_snack";
   }
   if (/(عصير|رواب|مشروب|مانجو|برتقال|جوافة|تفاح|حليب|لبن|زبادي|ماء|مياه|بيبسي|كوكاكولا|ميرندا|سفن|ردبول|جوي|نسكافيه|قهوة)/.test(combined)) {
@@ -212,13 +276,11 @@ export function buildSmartProductModalDataV112(productName: string, price: numbe
   const kind = classifyProductKindV112(cleanName, categoryName, customAi);
   const priceStr = price > 0 ? price.toLocaleString("en-US") + " ريال" : "";
 
-  // Check if the manager added a custom Recipe using this product!
   const matchedRecipe = (studioConfigV114.recipes || []).find(r =>
     (r.keywords && cleanName.includes(r.keywords.trim())) ||
-    (Array.isArray(r.ingredients) && r.ingredients.some(ing => ing.name && cleanName.includes(ing.name.trim())))
+    (Array.isArray(r.ingredients) && r.ingredients.some(ing => ing.name && (cleanName.includes(cleanProductNameV112(ing.name)) || cleanProductNameV112(ing.name).includes(cleanName))))
   );
 
-  // If the manager wrote custom AI info for this product, prioritize it!
   if (customAi && !customTopic) {
     const chips =
       kind === "chocolate_snack"
@@ -283,7 +345,7 @@ export function buildSmartProductModalDataV112(productName: string, price: numbe
     ];
     const text =
       "✨ معلومات وأفكار «" + cleanName + "»" + (priceStr ? " (السعر: " + priceStr + ")" : "") + ":\n" +
-      "• يصلح للتقديم مع الشاي والحليب، أو لعمل حلى بارد سريع بطبقات القشطة والكاكاو.\n" +
+      "• يصلح للتقديم مع الشاي والحليب، أو لعمل حلى بارد سريع بطبقات القشطة والشوكولاتة.\n" +
       "• السعرات الحرارية التقريبية: حوالي 25 – 35 سعرة حرارية للحبة الواحدة." +
       customNoteBlock +
       recipeBlock;
@@ -371,7 +433,6 @@ export async function handleSmartAiChatV112(input: {
     return replyCacheV114[cacheKey];
   }
 
-  // 1. Safety guard
   if (/(اباحي|إباحي|مايا خليفه|مايا خليفة|جنس|سكس|porn|xxx)/i.test(normMsg)) {
     return {
       reply: "حياك الله يا غالي، أنا مساعد متجر أورجنال، يسعدني دائماً خدمتك في كل ما يخص المنتجات والمعلومات الغذائية. كيف أقدر أخدمك اليوم؟",
@@ -381,7 +442,6 @@ export async function handleSmartAiChatV112(input: {
     };
   }
 
-  // 2. Customer confirming store contact -> Send real notification to Manager!
   const isConfirmingStoreContact =
     /(نعم|ايوه|أيوة|ايه|أيه|كلمهم|كلم المتجر|كلّم المتجر|تواصل معهم|ارسل لهم|أرسل لهم|ياريت|يا ريت|اكيد|أكيد|تواصل لك مع المتجر)/.test(normMsg) &&
     (normMsg.includes("المتجر") ||
@@ -418,7 +478,7 @@ export async function handleSmartAiChatV112(input: {
 
   const allProducts = await getCatalogCachedV114();
 
-  // 3. Check Manager's Custom Rules (القسم 2: قاموس التدريب والردود المخصصة)
+  // Check Manager's Custom Rules (القسم 2: قاموس الردود)
   for (const rule of studioConfigV114.rules || []) {
     const trig = String(rule.trigger || "").trim();
     if (trig && userMsg.includes(trig)) {
@@ -433,7 +493,7 @@ export async function handleSmartAiChatV112(input: {
             price: Math.round(Number(foundP.price || 0)),
             unit: foundP.unit || "حبة",
             quantity: 1,
-            url: rule.linkedProductUrl || ("/?product=" + encodeURIComponent(cleanProductNameV112(foundP.name)))
+            url: rule.linkedProductUrl || ("/?search=" + encodeURIComponent(cleanProductNameV112(foundP.name)))
           });
         }
       }
@@ -452,16 +512,23 @@ export async function handleSmartAiChatV112(input: {
     }
   }
 
-  // 4. Check Manager's Visual Recipes (القسم 4: استوديو الوصفات المصورة وروابط منتجاتها)
+  // Check Manager's Visual Recipes (القسم 4: الوصفات المصورة والمنتجات)
   for (const rec of studioConfigV114.recipes || []) {
     const kwList = String(rec.keywords || rec.title || "")
       .split(/[،,]+/)
       .map(s => s.trim())
       .filter(Boolean);
-    if ((rec.title && userMsg.includes(rec.title.trim())) || kwList.some(k => k.length >= 3 && userMsg.includes(k))) {
+    const titleWords = String(rec.title || "").split(/\s+/).filter(w => w.length >= 4);
+    const matchesRecipe =
+      (rec.title && userMsg.includes(rec.title.trim())) ||
+      kwList.some(k => k.length >= 3 && userMsg.includes(k)) ||
+      (titleWords.length >= 2 && titleWords.filter(w => userMsg.includes(w)).length >= 2);
+
+    if (matchesRecipe) {
       const recItems: any[] = [];
       for (const ing of rec.ingredients || []) {
-        const foundP = allProducts.find(p => cleanProductNameV112(p.name).includes(cleanProductNameV112(ing.name)));
+        const cleanIng = cleanProductNameV112(ing.name);
+        const foundP = allProducts.find(p => cleanProductNameV112(p.name).includes(cleanIng) || cleanIng.includes(cleanProductNameV112(p.name)));
         if (foundP) {
           recItems.push({
             productId: foundP.id,
@@ -470,24 +537,24 @@ export async function handleSmartAiChatV112(input: {
             price: Math.round(Number(foundP.price || 0)),
             unit: foundP.unit || "حبة",
             quantity: 1,
-            url: ing.url || ("/?product=" + encodeURIComponent(cleanProductNameV112(foundP.name)))
+            url: ing.url || ("/?search=" + encodeURIComponent(cleanProductNameV112(foundP.name)))
           });
         } else if (ing.name) {
           recItems.push({
             productId: 0,
             id: 0,
-            name: ing.name,
+            name: cleanIng || ing.name,
             price: Number(ing.price || 0),
             unit: "حبة",
             quantity: 1,
-            url: ing.url || ""
+            url: ing.url || ("/?search=" + encodeURIComponent(cleanIng || ing.name))
           });
         }
       }
       let recReply = "🍰 «" + rec.title + "»\n" + String(rec.steps || "");
       if (recItems.length > 0) {
         recReply += "\n\n🛒 المنتجات المستخدمة من المتجر:\n" +
-          recItems.map(it => "• " + it.name + (it.price ? " (" + it.price + " ر.ي)" : "") + (it.url ? " — " + it.url : "")).join("\n");
+          recItems.map(it => "• " + it.name + (it.price ? " (" + it.price + " ر.ي)" : "")).join("\n");
       }
       const resRec = {
         reply: recReply,
@@ -506,7 +573,7 @@ export async function handleSmartAiChatV112(input: {
     }
   }
 
-  // 5. Check Manager's Promoted Products (القسم 3: ترويج المنتجات بالرابط والصورة)
+  // Check Manager's Promoted Products (القسم 3: ترويج منتج برابطه)
   const activePromos = (studioConfigV114.promotedProducts || []).filter(p => p.active !== false && p.productName);
   const triggeredPromo = activePromos.find(p => {
     if (!p.triggerKeywords || !p.triggerKeywords.trim()) return false;
@@ -516,12 +583,11 @@ export async function handleSmartAiChatV112(input: {
   if (triggeredPromo) {
     const foundPromoProd = allProducts.find(p => cleanProductNameV112(p.name).includes(cleanProductNameV112(triggeredPromo.productName)));
     const pPrice = foundPromoProd ? Math.round(Number(foundPromoProd.price || 0)) : Number(triggeredPromo.productPrice || 0);
-    const pUrl = triggeredPromo.productUrl || ("/?product=" + encodeURIComponent(triggeredPromo.productName));
+    const pUrl = triggeredPromo.productUrl || ("/?search=" + encodeURIComponent(triggeredPromo.productName));
     const promoReply =
       (triggeredPromo.promoBadge ? triggeredPromo.promoBadge + " — " : "⭐ ترشيح خاص لك: ") +
       "«" + triggeredPromo.productName + "»" + (pPrice > 0 ? " (بسعر " + pPrice.toLocaleString("en-US") + " ر.ي)" : "") + "\n" +
-      (triggeredPromo.promoMessage || "") +
-      (pUrl ? "\n🔗 رابط المنتج المباشر: " + pUrl : "");
+      (triggeredPromo.promoMessage || "");
 
     return {
       reply: promoReply.trim(),
@@ -546,7 +612,6 @@ export async function handleSmartAiChatV112(input: {
     };
   }
 
-  // 6. Check if user is asking about a specific product in the store
   const matchedProducts = allProducts.filter(p => {
     const pName = cleanProductNameV112(p.name);
     if (!pName || pName.length < 3) return false;
@@ -569,7 +634,6 @@ export async function handleSmartAiChatV112(input: {
       };
     }
     if (/^(سلام|السلام عليكم|هلا|اهلا|أهلا|مرحبا|كيفك|كيف حالك|اخبارك|أخبارك|عادي|تمام|اورجنال|أورجنال)/i.test(userMsg)) {
-      // Check if manager configured a general greeting instruction or general promoted product
       const welcomeInst = (studioConfigV114.instructions || []).find(i => i.active !== false && i.category.includes("الترحيب") && i.content.trim());
       const generalPromo = activePromos.find(p => !p.triggerKeywords || !p.triggerKeywords.trim());
       let baseWelcome = welcomeInst
@@ -577,10 +641,17 @@ export async function handleSmartAiChatV112(input: {
         : "يا هلا ومليون غلا بك يا غالي! 😊 الحمد لله بخير دامك بخير. أنا معك لو حبيت تسأل عن أي منتج، سعراته الحرارية، أو حتى لو تدور على غرض معين وتبغاني أكلم لك المتجر يوفره لك. آمرني؟";
 
       if (generalPromo) {
-        baseWelcome += "\n\n" + (generalPromo.promoBadge || "⭐ لا يفوتك اليوم:") + " «" + generalPromo.productName + "» — " + (generalPromo.promoMessage || "") + (generalPromo.productUrl ? " (" + generalPromo.productUrl + ")" : "");
+        baseWelcome += "\n\n" + (generalPromo.promoBadge || "⭐ لا يفوتك اليوم:") + " «" + generalPromo.productName + "» — " + (generalPromo.promoMessage || "");
       }
       return {
         reply: baseWelcome,
+        promotedCard: generalPromo ? {
+          name: generalPromo.productName,
+          price: generalPromo.productPrice || 0,
+          url: generalPromo.productUrl || ("/?search=" + encodeURIComponent(generalPromo.productName)),
+          imageUrl: generalPromo.productImage || "",
+          badge: generalPromo.promoBadge || "⭐ عرض مميز"
+        } : undefined,
         suggestedItems: [],
         quickActions: [],
         canContactStore: false
@@ -626,7 +697,6 @@ export async function handleSmartAiChatV112(input: {
     return prodResult;
   }
 
-  // 7. Unavailable item -> Check Manager's custom instruction for unavailable items, offer genuine partial match + offer to contact store!
   const queryWords = userMsg
     .replace(/[؟?!.,،]/g, " ")
     .split(/\s+/)
@@ -676,6 +746,8 @@ export async function handleSmartAiChatV112(input: {
 }
 
 export function registerAiEngineV112(app: any) {
+  app.use("/api/ai-v112", express.json({ limit: "25mb" }));
+
   ensureStudioTableV114().catch(() => {});
 
   app.get("/api/ai-v112/config", async (_req: any, res: any) => {

@@ -246,6 +246,12 @@ var init_schema = __esm({
   }
 });
 
+// server/ai_engine_v112.ts
+import express from "express";
+import fs2 from "fs";
+import path from "path";
+import { sql } from "drizzle-orm";
+
 // server/db.ts
 init_schema();
 import fs from "node:fs";
@@ -556,6 +562,7 @@ var EMPTY_STUDIO_CONFIG_V114 = {
   productAiMap: {},
   ecoMode10k: true
 };
+var BACKUP_FILE_PATH = path.resolve(process.cwd(), "ai_studio_v115_backup.json");
 var studioConfigV114 = JSON.parse(JSON.stringify(EMPTY_STUDIO_CONFIG_V114));
 var customerRequestsV114 = [];
 var replyCacheV114 = {};
@@ -566,7 +573,67 @@ var tokenStatsV114 = {
 };
 var cachedCatalogV114 = [];
 var lastCatalogTimeV114 = 0;
-var tableReadyV114 = false;
+var tableLoadedFromDbV115 = false;
+function normalizeStudioConfigV115(p) {
+  if (!p || typeof p !== "object") {
+    return JSON.parse(JSON.stringify(EMPTY_STUDIO_CONFIG_V114));
+  }
+  return {
+    generalSystemPrompt: String(p.generalSystemPrompt || ""),
+    instructions: Array.isArray(p.instructions) ? p.instructions : [],
+    rules: Array.isArray(p.rules) ? p.rules : [],
+    promotedProducts: Array.isArray(p.promotedProducts) ? p.promotedProducts : [],
+    recipes: Array.isArray(p.recipes) ? p.recipes : [],
+    productAiMap: p.productAiMap && typeof p.productAiMap === "object" ? p.productAiMap : {},
+    ecoMode10k: p.ecoMode10k !== false
+  };
+}
+function loadDiskBackupV115() {
+  try {
+    if (fs2.existsSync(BACKUP_FILE_PATH)) {
+      const raw = fs2.readFileSync(BACKUP_FILE_PATH, "utf-8");
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.studio_config) {
+        studioConfigV114 = normalizeStudioConfigV115(parsed.studio_config);
+      }
+      if (parsed && Array.isArray(parsed.customer_requests)) {
+        customerRequestsV114 = parsed.customer_requests;
+      }
+    }
+  } catch {
+  }
+}
+loadDiskBackupV115();
+function saveDiskBackupV115() {
+  try {
+    fs2.writeFileSync(
+      BACKUP_FILE_PATH,
+      JSON.stringify({
+        studio_config: studioConfigV114,
+        customer_requests: customerRequestsV114,
+        updatedAt: Date.now()
+      }),
+      "utf-8"
+    );
+  } catch {
+  }
+}
+async function runRawSqlV115(db, queryStr, params = []) {
+  const client = db?.$client || db?.session?.client;
+  if (client && typeof client.execute === "function") {
+    const [rows] = await client.execute(queryStr, params);
+    return rows;
+  }
+  if (client && typeof client.query === "function") {
+    const [rows] = await client.query(queryStr, params);
+    return rows;
+  }
+  const parts = queryStr.split("?");
+  const tpl = parts.slice();
+  tpl.raw = parts.slice();
+  const res = await db.execute(sql(tpl, ...params));
+  return Array.isArray(res) && Array.isArray(res[0]) ? res[0] : res;
+}
 async function getCatalogCachedV114() {
   const now = Date.now();
   if (cachedCatalogV114.length > 0 && now - lastCatalogTimeV114 < 6e4) {
@@ -583,32 +650,25 @@ async function getCatalogCachedV114() {
   return cachedCatalogV114;
 }
 async function ensureStudioTableV114() {
-  if (tableReadyV114) return;
+  if (tableLoadedFromDbV115) return;
   try {
     const db = await getDb();
-    if (!db || typeof db.execute !== "function") return;
-    await db.execute(
-      "CREATE TABLE IF NOT EXISTS ai_studio_v114 (k VARCHAR(190) PRIMARY KEY, v LONGTEXT NOT NULL, updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)"
+    if (!db) return;
+    await runRawSqlV115(
+      db,
+      "CREATE TABLE IF NOT EXISTS ai_studio_v115 (k VARCHAR(190) PRIMARY KEY, v LONGTEXT NOT NULL, updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)"
     );
-    tableReadyV114 = true;
-    const [rows] = await db.execute("SELECT k, v FROM ai_studio_v114");
+    tableLoadedFromDbV115 = true;
+    const rows = await runRawSqlV115(db, "SELECT k, v FROM ai_studio_v115");
     if (Array.isArray(rows)) {
       for (const r of rows) {
-        if (r.k === "studio_config" && r.v) {
+        if (r && r.k === "studio_config" && r.v) {
           try {
             const p = JSON.parse(String(r.v));
-            studioConfigV114 = {
-              generalSystemPrompt: String(p.generalSystemPrompt || ""),
-              instructions: Array.isArray(p.instructions) ? p.instructions : [],
-              rules: Array.isArray(p.rules) ? p.rules : [],
-              promotedProducts: Array.isArray(p.promotedProducts) ? p.promotedProducts : [],
-              recipes: Array.isArray(p.recipes) ? p.recipes : [],
-              productAiMap: p.productAiMap && typeof p.productAiMap === "object" ? p.productAiMap : {},
-              ecoMode10k: p.ecoMode10k !== false
-            };
+            studioConfigV114 = normalizeStudioConfigV115(p);
           } catch {
           }
-        } else if (r.k === "customer_requests" && r.v) {
+        } else if (r && r.k === "customer_requests" && r.v) {
           try {
             const pr = JSON.parse(String(r.v));
             if (Array.isArray(pr)) customerRequestsV114 = pr;
@@ -616,18 +676,22 @@ async function ensureStudioTableV114() {
           }
         }
       }
+      saveDiskBackupV115();
     }
   } catch {
   }
 }
 async function saveStudioKeyV114(key, valObj) {
+  saveDiskBackupV115();
   try {
     await ensureStudioTableV114();
     const db = await getDb();
-    if (!db || typeof db.execute !== "function") return;
-    await db.execute(
-      "INSERT INTO ai_studio_v114 (k, v) VALUES (?, ?) ON DUPLICATE KEY UPDATE v = VALUES(v)",
-      [key, JSON.stringify(valObj)]
+    if (!db) return;
+    const jsonStr = JSON.stringify(valObj);
+    await runRawSqlV115(
+      db,
+      "INSERT INTO ai_studio_v115 (k, v) VALUES (?, ?) ON DUPLICATE KEY UPDATE v = VALUES(v)",
+      [key, jsonStr]
     );
   } catch {
   }
@@ -656,10 +720,10 @@ function classifyProductKindV112(name, categoryName = "", customAiInfo = "") {
   if (/(سجائر|سجاير|دخان|شملان|كمران|منظف|صابون|شامبو|مناديل|فحم|ولاعة|أكياس|اكياس)/.test(combined)) {
     return "non_food";
   }
-  if (/(بسكويت|بسكوت|ماري|أبو ولد|ابو ولد|نخالة|شاي|ديما|أوريو|اوريو|معمول|كليجا)/.test(combined)) {
+  if (/(بسكويت|بسكوت|ماري|أبو ولد|ابو ولد|نخالة|شاي|ديما|أوريو|اوريو|معمول|كليجا|توبس)/.test(combined)) {
     return "biscuit_dessert";
   }
-  if (/(شوكلات|شوكولات|بليلا|بريك|ويفر|علك|باطوق|حلاو|مصاص|شيبس|بطاط|فشار|كروسان|كيك|جالكسي|كتكات|سنكرز|توبي|سعيد|مارشملو|جيلي|كاكاو)/.test(combined)) {
+  if (/(شوكلات|شوكولات|شكلاته|شوكو|بلاتو|بليلا|بريك|ويفر|علك|باطوق|حلاو|مصاص|شيبس|بطاط|فشار|كروسان|كيك|جالكسي|كتكات|سنكرز|توبي|سعيد|مارشملو|جيلي|كاكاو)/.test(combined)) {
     return "chocolate_snack";
   }
   if (/(عصير|رواب|مشروب|مانجو|برتقال|جوافة|تفاح|حليب|لبن|زبادي|ماء|مياه|بيبسي|كوكاكولا|ميرندا|سفن|ردبول|جوي|نسكافيه|قهوة)/.test(combined)) {
@@ -675,7 +739,7 @@ function buildSmartProductModalDataV112(productName, price, unit, categoryName =
   const kind = classifyProductKindV112(cleanName, categoryName, customAi);
   const priceStr = price > 0 ? price.toLocaleString("en-US") + " \u0631\u064A\u0627\u0644" : "";
   const matchedRecipe = (studioConfigV114.recipes || []).find(
-    (r) => r.keywords && cleanName.includes(r.keywords.trim()) || Array.isArray(r.ingredients) && r.ingredients.some((ing) => ing.name && cleanName.includes(ing.name.trim()))
+    (r) => r.keywords && cleanName.includes(r.keywords.trim()) || Array.isArray(r.ingredients) && r.ingredients.some((ing) => ing.name && (cleanName.includes(cleanProductNameV112(ing.name)) || cleanProductNameV112(ing.name).includes(cleanName)))
   );
   if (customAi && !customTopic) {
     const chips2 = kind === "chocolate_snack" ? ["\u{1F525} \u0627\u0644\u0633\u0639\u0631\u0627\u062A \u0648\u0627\u0644\u0642\u064A\u0645\u0629 \u0627\u0644\u063A\u0630\u0627\u0626\u064A\u0629", "\u2139\uFE0F \u0645\u0639\u0644\u0648\u0645\u0627\u062A \u0627\u0644\u0645\u0646\u062A\u062C", "\u2615 \u0645\u0639 \u0625\u064A\u0634 \u064A\u064F\u0642\u062F\u0645\u061F"] : kind === "biscuit_dessert" ? ["\u{1F370} \u0641\u0643\u0631\u0629 \u062D\u0644\u0649 \u0628\u0647", "\u{1F525} \u0627\u0644\u0633\u0639\u0631\u0627\u062A \u0627\u0644\u062D\u0631\u0627\u0631\u064A\u0629", "\u2615 \u0645\u0639 \u0627\u0644\u0634\u0627\u064A \u0648\u0627\u0644\u062D\u0644\u064A\u0628"] : ["\u2139\uFE0F \u0645\u0639\u0644\u0648\u0645\u0627\u062A \u0627\u0644\u0645\u0646\u062A\u062C", "\u{1F525} \u0627\u0644\u0642\u064A\u0645\u0629 \u0627\u0644\u063A\u0630\u0627\u0626\u064A\u0629"];
@@ -721,7 +785,7 @@ function buildSmartProductModalDataV112(productName, price, unit, categoryName =
       "\u2615 \u0645\u0639 \u0627\u0644\u0634\u0627\u064A \u0648\u0627\u0644\u062D\u0644\u064A\u0628",
       "\u2139\uFE0F \u0645\u0639\u0644\u0648\u0645\u0627\u062A \u0639\u0646 \u0627\u0644\u0645\u0646\u062A\u062C"
     ];
-    const text3 = "\u2728 \u0645\u0639\u0644\u0648\u0645\u0627\u062A \u0648\u0623\u0641\u0643\u0627\u0631 \xAB" + cleanName + "\xBB" + (priceStr ? " (\u0627\u0644\u0633\u0639\u0631: " + priceStr + ")" : "") + ":\n\u2022 \u064A\u0635\u0644\u062D \u0644\u0644\u062A\u0642\u062F\u064A\u0645 \u0645\u0639 \u0627\u0644\u0634\u0627\u064A \u0648\u0627\u0644\u062D\u0644\u064A\u0628\u060C \u0623\u0648 \u0644\u0639\u0645\u0644 \u062D\u0644\u0649 \u0628\u0627\u0631\u062F \u0633\u0631\u064A\u0639 \u0628\u0637\u0628\u0642\u0627\u062A \u0627\u0644\u0642\u0634\u0637\u0629 \u0648\u0627\u0644\u0643\u0627\u0643\u0627\u0648.\n\u2022 \u0627\u0644\u0633\u0639\u0631\u0627\u062A \u0627\u0644\u062D\u0631\u0627\u0631\u064A\u0629 \u0627\u0644\u062A\u0642\u0631\u064A\u0628\u064A\u0629: \u062D\u0648\u0627\u0644\u064A 25 \u2013 35 \u0633\u0639\u0631\u0629 \u062D\u0631\u0627\u0631\u064A\u0629 \u0644\u0644\u062D\u0628\u0629 \u0627\u0644\u0648\u0627\u062D\u062F\u0629." + customNoteBlock + recipeBlock;
+    const text3 = "\u2728 \u0645\u0639\u0644\u0648\u0645\u0627\u062A \u0648\u0623\u0641\u0643\u0627\u0631 \xAB" + cleanName + "\xBB" + (priceStr ? " (\u0627\u0644\u0633\u0639\u0631: " + priceStr + ")" : "") + ":\n\u2022 \u064A\u0635\u0644\u062D \u0644\u0644\u062A\u0642\u062F\u064A\u0645 \u0645\u0639 \u0627\u0644\u0634\u0627\u064A \u0648\u0627\u0644\u062D\u0644\u064A\u0628\u060C \u0623\u0648 \u0644\u0639\u0645\u0644 \u062D\u0644\u0649 \u0628\u0627\u0631\u062F \u0633\u0631\u064A\u0639 \u0628\u0637\u0628\u0642\u0627\u062A \u0627\u0644\u0642\u0634\u0637\u0629 \u0648\u0627\u0644\u0634\u0648\u0643\u0648\u0644\u0627\u062A\u0629.\n\u2022 \u0627\u0644\u0633\u0639\u0631\u0627\u062A \u0627\u0644\u062D\u0631\u0627\u0631\u064A\u0629 \u0627\u0644\u062A\u0642\u0631\u064A\u0628\u064A\u0629: \u062D\u0648\u0627\u0644\u064A 25 \u2013 35 \u0633\u0639\u0631\u0629 \u062D\u0631\u0627\u0631\u064A\u0629 \u0644\u0644\u062D\u0628\u0629 \u0627\u0644\u0648\u0627\u062D\u062F\u0629." + customNoteBlock + recipeBlock;
     return {
       modalTitle: "\u2728 \u0645\u0639\u0644\u0648\u0645\u0627\u062A \u0648\u0623\u0641\u0643\u0627\u0631 \u062D\u0644\u0649: " + cleanName,
       chips: chips2,
@@ -831,7 +895,7 @@ async function handleSmartAiChatV112(input) {
             price: Math.round(Number(foundP.price || 0)),
             unit: foundP.unit || "\u062D\u0628\u0629",
             quantity: 1,
-            url: rule.linkedProductUrl || "/?product=" + encodeURIComponent(cleanProductNameV112(foundP.name))
+            url: rule.linkedProductUrl || "/?search=" + encodeURIComponent(cleanProductNameV112(foundP.name))
           });
         }
       }
@@ -851,10 +915,13 @@ async function handleSmartAiChatV112(input) {
   }
   for (const rec of studioConfigV114.recipes || []) {
     const kwList = String(rec.keywords || rec.title || "").split(/[،,]+/).map((s) => s.trim()).filter(Boolean);
-    if (rec.title && userMsg.includes(rec.title.trim()) || kwList.some((k) => k.length >= 3 && userMsg.includes(k))) {
+    const titleWords = String(rec.title || "").split(/\s+/).filter((w) => w.length >= 4);
+    const matchesRecipe = rec.title && userMsg.includes(rec.title.trim()) || kwList.some((k) => k.length >= 3 && userMsg.includes(k)) || titleWords.length >= 2 && titleWords.filter((w) => userMsg.includes(w)).length >= 2;
+    if (matchesRecipe) {
       const recItems = [];
       for (const ing of rec.ingredients || []) {
-        const foundP = allProducts.find((p) => cleanProductNameV112(p.name).includes(cleanProductNameV112(ing.name)));
+        const cleanIng = cleanProductNameV112(ing.name);
+        const foundP = allProducts.find((p) => cleanProductNameV112(p.name).includes(cleanIng) || cleanIng.includes(cleanProductNameV112(p.name)));
         if (foundP) {
           recItems.push({
             productId: foundP.id,
@@ -863,23 +930,23 @@ async function handleSmartAiChatV112(input) {
             price: Math.round(Number(foundP.price || 0)),
             unit: foundP.unit || "\u062D\u0628\u0629",
             quantity: 1,
-            url: ing.url || "/?product=" + encodeURIComponent(cleanProductNameV112(foundP.name))
+            url: ing.url || "/?search=" + encodeURIComponent(cleanProductNameV112(foundP.name))
           });
         } else if (ing.name) {
           recItems.push({
             productId: 0,
             id: 0,
-            name: ing.name,
+            name: cleanIng || ing.name,
             price: Number(ing.price || 0),
             unit: "\u062D\u0628\u0629",
             quantity: 1,
-            url: ing.url || ""
+            url: ing.url || "/?search=" + encodeURIComponent(cleanIng || ing.name)
           });
         }
       }
       let recReply = "\u{1F370} \xAB" + rec.title + "\xBB\n" + String(rec.steps || "");
       if (recItems.length > 0) {
-        recReply += "\n\n\u{1F6D2} \u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A \u0627\u0644\u0645\u0633\u062A\u062E\u062F\u0645\u0629 \u0645\u0646 \u0627\u0644\u0645\u062A\u062C\u0631:\n" + recItems.map((it) => "\u2022 " + it.name + (it.price ? " (" + it.price + " \u0631.\u064A)" : "") + (it.url ? " \u2014 " + it.url : "")).join("\n");
+        recReply += "\n\n\u{1F6D2} \u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A \u0627\u0644\u0645\u0633\u062A\u062E\u062F\u0645\u0629 \u0645\u0646 \u0627\u0644\u0645\u062A\u062C\u0631:\n" + recItems.map((it) => "\u2022 " + it.name + (it.price ? " (" + it.price + " \u0631.\u064A)" : "")).join("\n");
       }
       const resRec = {
         reply: recReply,
@@ -905,8 +972,8 @@ async function handleSmartAiChatV112(input) {
   if (triggeredPromo) {
     const foundPromoProd = allProducts.find((p) => cleanProductNameV112(p.name).includes(cleanProductNameV112(triggeredPromo.productName)));
     const pPrice = foundPromoProd ? Math.round(Number(foundPromoProd.price || 0)) : Number(triggeredPromo.productPrice || 0);
-    const pUrl = triggeredPromo.productUrl || "/?product=" + encodeURIComponent(triggeredPromo.productName);
-    const promoReply = (triggeredPromo.promoBadge ? triggeredPromo.promoBadge + " \u2014 " : "\u2B50 \u062A\u0631\u0634\u064A\u062D \u062E\u0627\u0635 \u0644\u0643: ") + "\xAB" + triggeredPromo.productName + "\xBB" + (pPrice > 0 ? " (\u0628\u0633\u0639\u0631 " + pPrice.toLocaleString("en-US") + " \u0631.\u064A)" : "") + "\n" + (triggeredPromo.promoMessage || "") + (pUrl ? "\n\u{1F517} \u0631\u0627\u0628\u0637 \u0627\u0644\u0645\u0646\u062A\u062C \u0627\u0644\u0645\u0628\u0627\u0634\u0631: " + pUrl : "");
+    const pUrl = triggeredPromo.productUrl || "/?search=" + encodeURIComponent(triggeredPromo.productName);
+    const promoReply = (triggeredPromo.promoBadge ? triggeredPromo.promoBadge + " \u2014 " : "\u2B50 \u062A\u0631\u0634\u064A\u062D \u062E\u0627\u0635 \u0644\u0643: ") + "\xAB" + triggeredPromo.productName + "\xBB" + (pPrice > 0 ? " (\u0628\u0633\u0639\u0631 " + pPrice.toLocaleString("en-US") + " \u0631.\u064A)" : "") + "\n" + (triggeredPromo.promoMessage || "");
     return {
       reply: promoReply.trim(),
       promotedCard: {
@@ -951,10 +1018,17 @@ async function handleSmartAiChatV112(input) {
       const generalPromo = activePromos.find((p) => !p.triggerKeywords || !p.triggerKeywords.trim());
       let baseWelcome = welcomeInst ? welcomeInst.content.trim() : "\u064A\u0627 \u0647\u0644\u0627 \u0648\u0645\u0644\u064A\u0648\u0646 \u063A\u0644\u0627 \u0628\u0643 \u064A\u0627 \u063A\u0627\u0644\u064A! \u{1F60A} \u0627\u0644\u062D\u0645\u062F \u0644\u0644\u0647 \u0628\u062E\u064A\u0631 \u062F\u0627\u0645\u0643 \u0628\u062E\u064A\u0631. \u0623\u0646\u0627 \u0645\u0639\u0643 \u0644\u0648 \u062D\u0628\u064A\u062A \u062A\u0633\u0623\u0644 \u0639\u0646 \u0623\u064A \u0645\u0646\u062A\u062C\u060C \u0633\u0639\u0631\u0627\u062A\u0647 \u0627\u0644\u062D\u0631\u0627\u0631\u064A\u0629\u060C \u0623\u0648 \u062D\u062A\u0649 \u0644\u0648 \u062A\u062F\u0648\u0631 \u0639\u0644\u0649 \u063A\u0631\u0636 \u0645\u0639\u064A\u0646 \u0648\u062A\u0628\u063A\u0627\u0646\u064A \u0623\u0643\u0644\u0645 \u0644\u0643 \u0627\u0644\u0645\u062A\u062C\u0631 \u064A\u0648\u0641\u0631\u0647 \u0644\u0643. \u0622\u0645\u0631\u0646\u064A\u061F";
       if (generalPromo) {
-        baseWelcome += "\n\n" + (generalPromo.promoBadge || "\u2B50 \u0644\u0627 \u064A\u0641\u0648\u062A\u0643 \u0627\u0644\u064A\u0648\u0645:") + " \xAB" + generalPromo.productName + "\xBB \u2014 " + (generalPromo.promoMessage || "") + (generalPromo.productUrl ? " (" + generalPromo.productUrl + ")" : "");
+        baseWelcome += "\n\n" + (generalPromo.promoBadge || "\u2B50 \u0644\u0627 \u064A\u0641\u0648\u062A\u0643 \u0627\u0644\u064A\u0648\u0645:") + " \xAB" + generalPromo.productName + "\xBB \u2014 " + (generalPromo.promoMessage || "");
       }
       return {
         reply: baseWelcome,
+        promotedCard: generalPromo ? {
+          name: generalPromo.productName,
+          price: generalPromo.productPrice || 0,
+          url: generalPromo.productUrl || "/?search=" + encodeURIComponent(generalPromo.productName),
+          imageUrl: generalPromo.productImage || "",
+          badge: generalPromo.promoBadge || "\u2B50 \u0639\u0631\u0636 \u0645\u0645\u064A\u0632"
+        } : void 0,
         suggestedItems: [],
         quickActions: [],
         canContactStore: false
@@ -1023,6 +1097,7 @@ async function handleSmartAiChatV112(input) {
   return finalRes;
 }
 function registerAiEngineV112(app) {
+  app.use("/api/ai-v112", express.json({ limit: "25mb" }));
   ensureStudioTableV114().catch(() => {
   });
   app.get("/api/ai-v112/config", async (_req, res) => {
@@ -1206,9 +1281,9 @@ function registerAiEngineV112(app) {
 }
 
 // server/commerce.ts
-import fs2 from "node:fs";
+import fs3 from "node:fs";
 import { createHash as createHash4 } from "node:crypto";
-import { and as and2, asc, desc, eq as eq3, gt, inArray, like, or, sql as sql2 } from "drizzle-orm";
+import { and as and2, asc, desc, eq as eq3, gt, inArray, like, or, sql as sql3 } from "drizzle-orm";
 import { z as z2 } from "zod";
 init_schema();
 init_schema();
@@ -1422,7 +1497,7 @@ import superjson from "superjson";
 
 // server/_core/adminAuth.ts
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
-import { sql } from "drizzle-orm";
+import { sql as sql2 } from "drizzle-orm";
 init_schema();
 var FORBIDDEN_WEAK_PASSWORDS = /* @__PURE__ */ new Set([
   "123456",
@@ -1441,30 +1516,30 @@ async function ensureRbacTables(dbInstance) {
   try {
     const db = dbInstance || await getDb();
     if (!db) return;
-    await db.execute(sql.raw("CREATE TABLE IF NOT EXISTS admin_staff (id int AUTO_INCREMENT NOT NULL, userId int NULL, username varchar(120) NOT NULL, displayName varchar(160) NOT NULL, passwordHash varchar(255) NOT NULL, roleKey varchar(40) NOT NULL DEFAULT 'staff', permissionsJson text NOT NULL, isActive boolean NOT NULL DEFAULT true, mustChangePassword boolean NOT NULL DEFAULT true, sessionVersion int NOT NULL DEFAULT 1, createdBy varchar(160) NULL, lastLoginAt timestamp NULL, createdAt timestamp NOT NULL DEFAULT (now()), updatedAt timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP, CONSTRAINT admin_staff_id PRIMARY KEY(id), CONSTRAINT admin_staff_username_uq UNIQUE(username))"));
-    await db.execute(sql.raw("CREATE TABLE IF NOT EXISTS admin_audit_logs (id int AUTO_INCREMENT NOT NULL, actorId int NULL, actorName varchar(160) NOT NULL, actorRole varchar(60) NOT NULL, action varchar(80) NOT NULL, targetName varchar(160) NULL, details text NULL, ipAddress varchar(80) NULL, createdAt timestamp NOT NULL DEFAULT (now()), CONSTRAINT admin_audit_logs_id PRIMARY KEY(id))"));
+    await db.execute(sql2.raw("CREATE TABLE IF NOT EXISTS admin_staff (id int AUTO_INCREMENT NOT NULL, userId int NULL, username varchar(120) NOT NULL, displayName varchar(160) NOT NULL, passwordHash varchar(255) NOT NULL, roleKey varchar(40) NOT NULL DEFAULT 'staff', permissionsJson text NOT NULL, isActive boolean NOT NULL DEFAULT true, mustChangePassword boolean NOT NULL DEFAULT true, sessionVersion int NOT NULL DEFAULT 1, createdBy varchar(160) NULL, lastLoginAt timestamp NULL, createdAt timestamp NOT NULL DEFAULT (now()), updatedAt timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP, CONSTRAINT admin_staff_id PRIMARY KEY(id), CONSTRAINT admin_staff_username_uq UNIQUE(username))"));
+    await db.execute(sql2.raw("CREATE TABLE IF NOT EXISTS admin_audit_logs (id int AUTO_INCREMENT NOT NULL, actorId int NULL, actorName varchar(160) NOT NULL, actorRole varchar(60) NOT NULL, action varchar(80) NOT NULL, targetName varchar(160) NULL, details text NULL, ipAddress varchar(80) NULL, createdAt timestamp NOT NULL DEFAULT (now()), CONSTRAINT admin_audit_logs_id PRIMARY KEY(id))"));
     try {
-      await db.execute(sql.raw("ALTER TABLE products MODIFY COLUMN imageUrl LONGTEXT NULL"));
+      await db.execute(sql2.raw("ALTER TABLE products MODIFY COLUMN imageUrl LONGTEXT NULL"));
     } catch {
     }
     try {
-      await db.execute(sql.raw("ALTER TABLE categories MODIFY COLUMN imageUrl LONGTEXT NULL"));
+      await db.execute(sql2.raw("ALTER TABLE categories MODIFY COLUMN imageUrl LONGTEXT NULL"));
     } catch {
     }
     try {
-      await db.execute(sql.raw("ALTER TABLE banners MODIFY COLUMN imageUrl LONGTEXT NULL"));
+      await db.execute(sql2.raw("ALTER TABLE banners MODIFY COLUMN imageUrl LONGTEXT NULL"));
     } catch {
     }
     try {
-      await db.execute(sql.raw("ALTER TABLE store_settings MODIFY COLUMN value LONGTEXT NOT NULL"));
+      await db.execute(sql2.raw("ALTER TABLE store_settings MODIFY COLUMN value LONGTEXT NOT NULL"));
     } catch {
     }
     try {
-      await db.execute(sql.raw("ALTER TABLE order_items MODIFY COLUMN productImage LONGTEXT NULL"));
+      await db.execute(sql2.raw("ALTER TABLE order_items MODIFY COLUMN productImage LONGTEXT NULL"));
     } catch {
     }
     try {
-      await db.execute(sql.raw("UPDATE order_items SET productImage = CONCAT('/api/fast-img/product/', productId) WHERE productId IS NOT NULL AND productImage LIKE 'data:image/%'"));
+      await db.execute(sql2.raw("UPDATE order_items SET productImage = CONCAT('/api/fast-img/product/', productId) WHERE productId IS NOT NULL AND productImage LIKE 'data:image/%'"));
     } catch {
     }
     __rbacTablesEnsured = true;
@@ -1598,7 +1673,7 @@ function getArabicRoleName(role, isOwner) {
   if (role && ROLE_DEFINITIONS[role]) return ROLE_DEFINITIONS[role].label;
   return "\u0645\u0634\u0631\u0641 \u0625\u062F\u0627\u0631\u064A";
 }
-function recordArabicAdminActivity(ctx, path3, type, rawInput) {
+function recordArabicAdminActivity(ctx, path4, type, rawInput) {
   try {
     const user = ctx.user;
     if (!user || user.role !== "admin") return;
@@ -1620,7 +1695,7 @@ function recordArabicAdminActivity(ctx, path3, type, rawInput) {
         "commerce.admin.users.list": { section: "users", target: "\u0642\u0633\u0645 \u0627\u0644\u0639\u0645\u0644\u0627\u0621", details: "\u062F\u062E\u0644 \u0642\u0633\u0645 \xAB\u0633\u062C\u0644 \u0627\u0644\u0639\u0645\u0644\u0627\u0621\xBB \u0648\u0634\u0627\u0647\u062F \u0628\u064A\u0627\u0646\u0627\u062A \u0648\u0639\u0646\u0627\u0648\u064A\u0646 \u0627\u0644\u0632\u0628\u0627\u0626\u0646" },
         "commerce.admin.settings.get": { section: "settings", target: "\u0642\u0633\u0645 \u0627\u0644\u0625\u0639\u062F\u0627\u062F\u0627\u062A", details: "\u062F\u062E\u0644 \u0642\u0633\u0645 \xAB\u0625\u0639\u062F\u0627\u062F\u0627\u062A \u0627\u0644\u0645\u062A\u062C\u0631\xBB \u0648\u0634\u0627\u0647\u062F \u0625\u0639\u062F\u0627\u062F\u0627\u062A \u0627\u0644\u062A\u0648\u0635\u064A\u0644 \u0648\u0627\u0644\u0645\u0643\u0627\u0641\u0622\u062A" }
       };
-      const v = viewMap[path3];
+      const v = viewMap[path4];
       if (v) {
         const actorKey = String(actorId || actorName);
         const prev = lastSectionViewMap.get(actorKey);
@@ -1641,83 +1716,83 @@ function recordArabicAdminActivity(ctx, path3, type, rawInput) {
       return;
     }
     if (type === "mutation") {
-      if (path3.startsWith("commerce.admin.staff.") || path3.startsWith("commerce.admin.notifications.")) return;
+      if (path4.startsWith("commerce.admin.staff.") || path4.startsWith("commerce.admin.notifications.")) return;
       let actionAr = "\u26A1 \u062A\u0646\u0641\u064A\u0630 \u0625\u062C\u0631\u0627\u0621 \u0625\u062F\u0627\u0631\u064A";
       let targetAr = "";
       let detailsAr = "";
-      if (path3 === "commerce.admin.products.bulkCreate") {
+      if (path4 === "commerce.admin.products.bulkCreate") {
         const items = Array.isArray(inp.items) ? inp.items : [];
         actionAr = "\u{1F680} \u0625\u0636\u0627\u0641\u0629 \u062C\u0645\u0627\u0639\u064A\u0629 \u0644\u0644\u0645\u0646\u062A\u062C\u0627\u062A";
         targetAr = "\u062F\u0641\u0639\u0629 \u0645\u0646 " + items.length + " \u0645\u0646\u062A\u062C";
         detailsAr = "\u0623\u0636\u0627\u0641 " + items.length + " \u0645\u0646\u062A\u062C\u0627\u064B \u062F\u0641\u0639\u0629 \u0648\u0627\u062D\u062F\u0629 (" + items.slice(0, 6).map((x) => x.name).join("\u060C ") + (items.length > 6 ? "..." : "") + ")";
-      } else if (path3 === "commerce.admin.products.create") {
+      } else if (path4 === "commerce.admin.products.create") {
         actionAr = "\u2795 \u0625\u0636\u0627\u0641\u0629 \u0645\u0646\u062A\u062C \u062C\u062F\u064A\u062F";
         targetAr = "\u0627\u0644\u0645\u0646\u062A\u062C: " + (inp.name || "");
         detailsAr = "\u0623\u0636\u0627\u0641 \u0645\u0646\u062A\u062C \u062C\u062F\u064A\u062F \xAB" + (inp.name || "") + "\xBB \u0628\u0633\u0639\u0631 " + (inp.price ?? 0) + " \u0631.\u064A (" + (inp.unit || "") + ")";
-      } else if (path3 === "commerce.admin.products.update") {
+      } else if (path4 === "commerce.admin.products.update") {
         actionAr = "\u270F\uFE0F \u062A\u0639\u062F\u064A\u0644 \u0645\u0646\u062A\u062C";
         const vals = inp.values || {};
         targetAr = vals.name ? "\u0627\u0644\u0645\u0646\u062A\u062C: " + vals.name : "\u0645\u0646\u062A\u062C \u0631\u0642\u0645 #" + inp.id;
         detailsAr = vals.name ? "\u0639\u062F\u0651\u0644 \u0628\u064A\u0627\u0646\u0627\u062A \u0627\u0644\u0645\u0646\u062A\u062C \xAB" + vals.name + "\xBB \u2014 \u0627\u0644\u0633\u0639\u0631: " + (vals.price ?? "") + " \u0631.\u064A" : "\u0639\u062F\u0651\u0644 \u062D\u0627\u0644\u0629/\u062A\u0648\u0641\u0631 \u0627\u0644\u0645\u0646\u062A\u062C \u0631\u0642\u0645 #" + inp.id;
-      } else if (path3 === "commerce.admin.products.delete" || path3 === "commerce.admin.products.archive") {
+      } else if (path4 === "commerce.admin.products.delete" || path4 === "commerce.admin.products.archive") {
         actionAr = "\u{1F5D1}\uFE0F \u062D\u0630\u0641 \u0645\u0646\u062A\u062C";
         targetAr = "\u0645\u0646\u062A\u062C \u0631\u0642\u0645 #" + inp.id;
         detailsAr = "\u0642\u0627\u0645 \u0628\u062D\u0630\u0641 \u0623\u0648 \u0625\u062E\u0641\u0627\u0621 \u0627\u0644\u0645\u0646\u062A\u062C \u0631\u0642\u0645 #" + inp.id;
-      } else if (path3 === "commerce.admin.products.setRecommendations") {
+      } else if (path4 === "commerce.admin.products.setRecommendations") {
         actionAr = "\u{1F517} \u0631\u0628\u0637 \u0645\u0646\u062A\u062C\u0627\u062A \u0645\u0642\u062A\u0631\u062D\u0629";
         targetAr = "\u0645\u0646\u062A\u062C \u0631\u0642\u0645 #" + inp.productId;
         detailsAr = "\u062D\u062F\u0651\u062B \u0642\u0627\u0626\u0645\u0629 \u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A \u0627\u0644\u0645\u0642\u062A\u0631\u062D\u0629 \u0627\u0644\u0645\u0631\u062A\u0628\u0637\u0629 \u0628\u0627\u0644\u0645\u0646\u062A\u062C \u0631\u0642\u0645 #" + inp.productId;
-      } else if (path3 === "commerce.admin.categories.create") {
+      } else if (path4 === "commerce.admin.categories.create") {
         actionAr = "\u{1F4C1} \u0625\u0636\u0627\u0641\u0629 \u0642\u0633\u0645 \u062C\u062F\u064A\u062F";
         targetAr = "\u0642\u0633\u0645: " + (inp.name || "");
         detailsAr = "\u0623\u0646\u0634\u0623 \u0642\u0633\u0645\u0627\u064B \u062C\u062F\u064A\u062F\u0627\u064B \u0628\u0627\u0633\u0645 \xAB" + (inp.name || "") + "\xBB";
-      } else if (path3 === "commerce.admin.categories.update") {
+      } else if (path4 === "commerce.admin.categories.update") {
         actionAr = "\u270F\uFE0F \u062A\u0639\u062F\u064A\u0644 \u0642\u0633\u0645";
         const vals = inp.values || {};
         targetAr = vals.name ? "\u0642\u0633\u0645: " + vals.name : "\u0642\u0633\u0645 \u0631\u0642\u0645 #" + inp.id;
         detailsAr = vals.name ? "\u0639\u062F\u0651\u0644 \u0628\u064A\u0627\u0646\u0627\u062A \u0627\u0644\u0642\u0633\u0645 \xAB" + vals.name + "\xBB" : "\u063A\u064A\u0651\u0631 \u062D\u0627\u0644\u0629 \u062A\u0641\u0639\u064A\u0644 \u0627\u0644\u0642\u0633\u0645 \u0631\u0642\u0645 #" + inp.id;
-      } else if (path3 === "commerce.admin.categories.delete" || path3 === "commerce.admin.categories.archive") {
+      } else if (path4 === "commerce.admin.categories.delete" || path4 === "commerce.admin.categories.archive") {
         actionAr = "\u{1F5D1}\uFE0F \u062D\u0630\u0641 \u0642\u0633\u0645";
         targetAr = "\u0642\u0633\u0645 \u0631\u0642\u0645 #" + inp.id;
         detailsAr = "\u0642\u0627\u0645 \u0628\u062D\u0630\u0641 \u0627\u0644\u0642\u0633\u0645 \u0631\u0642\u0645 #" + inp.id;
-      } else if (path3 === "commerce.admin.products.bulkAdjustPrices") {
+      } else if (path4 === "commerce.admin.products.bulkAdjustPrices") {
         actionAr = "\u{1F4B0} \u062A\u0639\u062F\u064A\u0644 \u062C\u0645\u0627\u0639\u064A \u0644\u0623\u0633\u0639\u0627\u0631 \u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A";
         targetAr = inp.categoryId ? "\u0642\u0633\u0645 \u0631\u0642\u0645 #" + inp.categoryId : "\u0643\u0644 \u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A";
         detailsAr = "\u0639\u062F\u0651\u0644 \u0627\u0644\u0623\u0633\u0639\u0627\u0631 \u062C\u0645\u0627\u0639\u064A\u0627\u064B (" + (inp.mode === "percent" ? inp.amount + "%" : inp.amount + " \u0631.\u064A") + ")";
-      } else if (path3 === "commerce.admin.orders.removeItem") {
+      } else if (path4 === "commerce.admin.orders.removeItem") {
         actionAr = "\u274C \u0625\u0644\u063A\u0627\u0621 \u0635\u0646\u0641 \u0645\u0646 \u0641\u0627\u062A\u0648\u0631\u0629 \u0637\u0644\u0628";
         targetAr = "\u0637\u0644\u0628 \u0631\u0642\u0645 #" + inp.orderId;
         detailsAr = "\u0623\u0644\u063A\u0649 \u0635\u0646\u0641\u0627\u064B \u063A\u064A\u0631 \u0645\u062A\u0648\u0641\u0631 \u0645\u0646 \u0627\u0644\u0637\u0644\u0628 \u0631\u0642\u0645 #" + inp.orderId + " \u2014 \u0627\u0644\u0633\u0628\u0628: " + (inp.reason || "");
-      } else if (path3 === "commerce.admin.orders.updateStatus" || path3 === "commerce.admin.orders.setStatus") {
+      } else if (path4 === "commerce.admin.orders.updateStatus" || path4 === "commerce.admin.orders.setStatus") {
         actionAr = "\u{1F4E6} \u062A\u062D\u062F\u064A\u062B \u062D\u0627\u0644\u0629 \u0637\u0644\u0628";
         const stAr = ORDER_STATUS_AR[inp.status] || inp.status || "";
         targetAr = "\u0637\u0644\u0628 \u0631\u0642\u0645 #" + inp.id;
         detailsAr = "\u063A\u064A\u0651\u0631 \u062D\u0627\u0644\u0629 \u0627\u0644\u0637\u0644\u0628 \u0631\u0642\u0645 #" + inp.id + " \u0625\u0644\u0649 \xAB" + stAr + "\xBB" + (inp.note ? " \u2014 \u0645\u0644\u0627\u062D\u0638\u0629: " + inp.note : "");
-      } else if (path3 === "commerce.admin.chats.reply") {
+      } else if (path4 === "commerce.admin.chats.reply") {
         actionAr = "\u{1F4AC} \u0631\u062F \u0645\u0628\u0627\u0634\u0631 \u0641\u064A \u0627\u0644\u0645\u062D\u0627\u062F\u062B\u0629";
         targetAr = "\u0645\u062D\u0627\u062F\u062B\u0629 \u0632\u0628\u0648\u0646";
         detailsAr = "\u0623\u0631\u0633\u0644 \u0631\u062F\u0627\u064B \u0645\u0628\u0627\u0634\u0631\u0627\u064B \u0644\u0644\u0632\u0628\u0648\u0646: \xAB" + String(inp.text || "").slice(0, 120) + "\xBB";
-      } else if (path3 === "commerce.admin.chats.toggleAi") {
+      } else if (path4 === "commerce.admin.chats.toggleAi") {
         actionAr = "\u{1F916} \u062A\u062D\u0643\u0645 \u0628\u0627\u0644\u0645\u0633\u0627\u0639\u062F \u0641\u064A \u0645\u062D\u0627\u062F\u062B\u0629";
         targetAr = "\u0645\u062D\u0627\u062F\u062B\u0629 \u0632\u0628\u0648\u0646";
         detailsAr = inp.aiPaused ? "\u0623\u0648\u0642\u0641 \u0627\u0644\u0631\u062F \u0627\u0644\u062A\u0644\u0642\u0627\u0626\u064A \u0644\u0644\u0630\u0643\u0627\u0621 \u0627\u0644\u0627\u0635\u0637\u0646\u0627\u0639\u064A \u0641\u064A \u0627\u0644\u0645\u062D\u0627\u062F\u062B\u0629 \u0644\u0644\u0631\u062F \u0628\u0646\u0641\u0633\u0647" : "\u0623\u0639\u0627\u062F \u062A\u0641\u0639\u064A\u0644 \u0627\u0644\u0631\u062F \u0627\u0644\u062A\u0644\u0642\u0627\u0626\u064A \u0644\u0644\u0630\u0643\u0627\u0621 \u0627\u0644\u0627\u0635\u0637\u0646\u0627\u0639\u064A \u0641\u064A \u0627\u0644\u0645\u062D\u0627\u062F\u062B\u0629";
-      } else if (path3 === "commerce.admin.chats.delete") {
+      } else if (path4 === "commerce.admin.chats.delete") {
         actionAr = "\u{1F5D1}\uFE0F \u062D\u0630\u0641 \u0645\u062D\u0627\u062F\u062B\u0629";
         targetAr = "\u0645\u062D\u0627\u062F\u062B\u0629 \u0632\u0628\u0648\u0646";
         detailsAr = "\u0642\u0627\u0645 \u0628\u062D\u0630\u0641 \u0633\u062C\u0644 \u0627\u0644\u0645\u062D\u0627\u062F\u062B\u0629";
-      } else if (path3.startsWith("commerce.admin.banners.")) {
-        const sub = path3.split(".").pop();
+      } else if (path4.startsWith("commerce.admin.banners.")) {
+        const sub = path4.split(".").pop();
         const vals = inp.values || inp;
         actionAr = sub === "create" ? "\u{1F5BC}\uFE0F \u0625\u0636\u0627\u0641\u0629 \u0628\u0646\u0631 \u0625\u0639\u0644\u0627\u0646\u064A" : sub === "delete" ? "\u{1F5D1}\uFE0F \u062D\u0630\u0641 \u0628\u0646\u0631 \u0625\u0639\u0644\u0627\u0646\u064A" : "\u270F\uFE0F \u062A\u0639\u062F\u064A\u0644 \u0628\u0646\u0631 \u0625\u0639\u0644\u0627\u0646\u064A";
         targetAr = vals.title ? "\u0628\u0646\u0631: " + vals.title : "\u0628\u0646\u0631 \u0631\u0642\u0645 #" + (inp.id || "");
         detailsAr = actionAr + (vals.title ? " \xAB" + vals.title + "\xBB" : "");
-      } else if (path3.startsWith("commerce.admin.offers.")) {
-        const sub = path3.split(".").pop();
+      } else if (path4.startsWith("commerce.admin.offers.")) {
+        const sub = path4.split(".").pop();
         const vals = inp.values || inp;
         actionAr = sub === "create" ? "\u{1F3F7}\uFE0F \u0625\u0636\u0627\u0641\u0629 \u0639\u0631\u0636 \u062E\u0635\u0645" : sub === "delete" ? "\u{1F5D1}\uFE0F \u062D\u0630\u0641 \u0639\u0631\u0636 \u062E\u0635\u0645" : "\u270F\uFE0F \u062A\u0639\u062F\u064A\u0644 \u0639\u0631\u0636 \u062E\u0635\u0645";
         targetAr = vals.title ? "\u0639\u0631\u0636: " + vals.title : "\u0639\u0631\u0636 \u0631\u0642\u0645 #" + (inp.id || "");
         detailsAr = actionAr + (vals.title ? " \xAB" + vals.title + "\xBB" : "") + (vals.code ? " (\u0643\u0648\u062F: " + vals.code + ")" : "");
-      } else if (path3 === "commerce.admin.settings.update") {
+      } else if (path4 === "commerce.admin.settings.update") {
         actionAr = "\u2699\uFE0F \u062A\u0639\u062F\u064A\u0644 \u0625\u0639\u062F\u0627\u062F\u0627\u062A \u0627\u0644\u0645\u062A\u062C\u0631";
         targetAr = "\u0627\u0644\u0625\u0639\u062F\u0627\u062F\u0627\u062A \u0627\u0644\u0639\u0627\u0645\u0629";
         detailsAr = "\u0642\u0627\u0645 \u0628\u062A\u0639\u062F\u064A\u0644 \u0648\u062D\u0641\u0638 \u0625\u0639\u062F\u0627\u062F\u0627\u062A \u0627\u0644\u0645\u062A\u062C\u0631 \u0648\u0627\u0644\u062A\u0648\u0635\u064A\u0644 \u0648\u0627\u0644\u0645\u0643\u0627\u0641\u0622\u062A";
@@ -1745,7 +1820,7 @@ var requireUser = t.middleware(async ({ ctx, next }) => {
 var protectedProcedure = t.procedure.use(requireUser);
 var adminProcedure = t.procedure.use(
   t.middleware(async (opts) => {
-    const { ctx, path: path3, type, next } = opts;
+    const { ctx, path: path4, type, next } = opts;
     let rawInput = opts.input;
     if (!rawInput && typeof opts.getRawInput === "function") {
       try {
@@ -1761,7 +1836,7 @@ var adminProcedure = t.procedure.use(
       throw new TRPCError({ code: "PRECONDITION_FAILED", message: "\u064A\u062C\u0628 \u062A\u063A\u064A\u064A\u0631 \u0643\u0644\u0645\u0629 \u0627\u0644\u0645\u0631\u0648\u0631 \u0627\u0644\u0645\u0624\u0642\u062A\u0629 \u0623\u0648\u0644\u0627\u064B \u0642\u0628\u0644 \u062A\u0646\u0641\u064A\u0630 \u0623\u064A \u0639\u0645\u0644\u064A\u0629 \u0625\u062F\u0627\u0631\u064A\u0629." });
     }
     const res = await next({ ctx: { ...ctx, user: ctx.user } });
-    recordArabicAdminActivity(ctx, path3, type, rawInput);
+    recordArabicAdminActivity(ctx, path4, type, rawInput);
     return res;
   })
 );
@@ -3056,9 +3131,9 @@ async function database() {
 var CACHE_FILE = ".catalog-cache.json";
 var __catalogCache = /* @__PURE__ */ new Map();
 try {
-  if (fs2.existsSync(CACHE_FILE)) {
+  if (fs3.existsSync(CACHE_FILE)) {
     const raw = JSON.parse(
-      fs2.readFileSync(CACHE_FILE, "utf8"),
+      fs3.readFileSync(CACHE_FILE, "utf8"),
       (k, val) => (k === "createdAt" || k === "updatedAt" || k === "startsAt" || k === "endsAt" || k === "lastOrderAt" || k === "lastSignedIn") && typeof val === "string" ? new Date(val) : val
     );
     for (const [k, v] of Object.entries(raw)) __catalogCache.set(k, { exp: 0, data: v, refreshing: false });
@@ -3069,7 +3144,7 @@ function saveDiskCache() {
   try {
     const obj = {};
     for (const [k, v] of __catalogCache.entries()) obj[k] = v.data;
-    fs2.writeFileSync(CACHE_FILE, JSON.stringify(obj));
+    fs3.writeFileSync(CACHE_FILE, JSON.stringify(obj));
   } catch {
   }
 }
@@ -3136,8 +3211,8 @@ function clearCatalogCache(removedProductId) {
 var AI_PRODUCT_CACHE_FILE = ".ai-product-recipes.json";
 var __aiProductRecipes = {};
 try {
-  if (fs2.existsSync(AI_PRODUCT_CACHE_FILE)) {
-    __aiProductRecipes = JSON.parse(fs2.readFileSync(AI_PRODUCT_CACHE_FILE, "utf8"));
+  if (fs3.existsSync(AI_PRODUCT_CACHE_FILE)) {
+    __aiProductRecipes = JSON.parse(fs3.readFileSync(AI_PRODUCT_CACHE_FILE, "utf8"));
   }
 } catch {
 }
@@ -3145,7 +3220,7 @@ function saveAiProductRecipe(cacheKey, output) {
   const key = cacheKey.trim().toLowerCase();
   __aiProductRecipes[key] = output;
   try {
-    fs2.writeFileSync(AI_PRODUCT_CACHE_FILE, JSON.stringify(__aiProductRecipes, null, 2));
+    fs3.writeFileSync(AI_PRODUCT_CACHE_FILE, JSON.stringify(__aiProductRecipes, null, 2));
   } catch {
   }
 }
@@ -3783,15 +3858,15 @@ async function ensureOrderItemsFastSchema(dbInstance) {
     if (!db) return;
     __orderItemsSchemaFixed = true;
     try {
-      await db.execute(sql2.raw("ALTER TABLE order_items MODIFY COLUMN productImage LONGTEXT NULL"));
+      await db.execute(sql3.raw("ALTER TABLE order_items MODIFY COLUMN productImage LONGTEXT NULL"));
       try {
-        await db.execute(sql2.raw("ALTER TABLE store_settings MODIFY COLUMN value LONGTEXT NOT NULL"));
+        await db.execute(sql3.raw("ALTER TABLE store_settings MODIFY COLUMN value LONGTEXT NOT NULL"));
       } catch {
       }
     } catch {
     }
     try {
-      await db.execute(sql2.raw("UPDATE order_items SET productImage = CONCAT('/api/fast-img/product/', productId) WHERE productId IS NOT NULL AND productImage LIKE 'data:image/%'"));
+      await db.execute(sql3.raw("UPDATE order_items SET productImage = CONCAT('/api/fast-img/product/', productId) WHERE productId IS NOT NULL AND productImage LIKE 'data:image/%'"));
     } catch {
     }
   } catch {
@@ -3868,7 +3943,7 @@ var fastProductColumns = {
   name: products.name,
   slug: products.slug,
   description: products.description,
-  imageUrl: sql2`CASE WHEN ${products.imageUrl} IS NULL OR ${products.imageUrl} = '' THEN NULL WHEN ${products.imageUrl} LIKE 'data:image/%' THEN CONCAT('/api/fast-img/product/', ${products.id}) ELSE ${products.imageUrl} END`,
+  imageUrl: sql3`CASE WHEN ${products.imageUrl} IS NULL OR ${products.imageUrl} = '' THEN NULL WHEN ${products.imageUrl} LIKE 'data:image/%' THEN CONCAT('/api/fast-img/product/', ${products.id}) ELSE ${products.imageUrl} END`,
   categoryId: products.categoryId,
   price: products.price,
   unit: products.unit,
@@ -3886,7 +3961,7 @@ var fastCategoryColumns = {
   name: categories.name,
   slug: categories.slug,
   description: categories.description,
-  imageUrl: sql2`CASE WHEN ${categories.imageUrl} IS NULL OR ${categories.imageUrl} = '' THEN NULL WHEN ${categories.imageUrl} LIKE 'data:image/%' THEN CONCAT('/api/fast-img/category/', ${categories.id}) ELSE ${categories.imageUrl} END`,
+  imageUrl: sql3`CASE WHEN ${categories.imageUrl} IS NULL OR ${categories.imageUrl} = '' THEN NULL WHEN ${categories.imageUrl} LIKE 'data:image/%' THEN CONCAT('/api/fast-img/category/', ${categories.id}) ELSE ${categories.imageUrl} END`,
   color: categories.color,
   isActive: categories.isActive,
   sortOrder: categories.sortOrder,
@@ -3896,7 +3971,7 @@ var fastBannerColumns = {
   id: banners.id,
   title: banners.title,
   body: banners.body,
-  imageUrl: sql2`CASE WHEN ${banners.imageUrl} IS NULL OR ${banners.imageUrl} = '' THEN NULL WHEN ${banners.imageUrl} LIKE 'data:image/%' THEN CONCAT('/api/fast-img/banner/', ${banners.id}) ELSE ${banners.imageUrl} END`,
+  imageUrl: sql3`CASE WHEN ${banners.imageUrl} IS NULL OR ${banners.imageUrl} = '' THEN NULL WHEN ${banners.imageUrl} LIKE 'data:image/%' THEN CONCAT('/api/fast-img/banner/', ${banners.id}) ELSE ${banners.imageUrl} END`,
   actionText: banners.actionText,
   actionUrl: banners.actionUrl,
   isActive: banners.isActive,
@@ -4236,7 +4311,7 @@ var commerceRouter = router({
       let appliedOffer = null;
       if (input.offerCode) {
         const activeDbOffer = db || await database();
-        appliedOffer = (await activeDbOffer.select().from(offers).where(and2(eq3(offers.code, input.offerCode.trim().toUpperCase()), eq3(offers.isActive, true), sql2`(${offers.startsAt} is null or ${offers.startsAt} <= now())`, sql2`(${offers.endsAt} is null or ${offers.endsAt} >= now())`)).limit(1))[0] ?? null;
+        appliedOffer = (await activeDbOffer.select().from(offers).where(and2(eq3(offers.code, input.offerCode.trim().toUpperCase()), eq3(offers.isActive, true), sql3`(${offers.startsAt} is null or ${offers.startsAt} <= now())`, sql3`(${offers.endsAt} is null or ${offers.endsAt} >= now())`)).limit(1))[0] ?? null;
         if (!appliedOffer) throw new TRPCError2({ code: "BAD_REQUEST", message: "\u0631\u0645\u0632 \u0627\u0644\u0639\u0631\u0636 \u063A\u064A\u0631 \u0635\u0627\u0644\u062D \u0623\u0648 \u063A\u064A\u0631 \u0646\u0634\u0637." });
       }
       const deliveryFee = deliveryFeeForCity(settings, input.city, input.district, input.phone, subtotal) ?? prelimFee;
@@ -4329,10 +4404,10 @@ var commerceRouter = router({
       const db = await database();
       const rows = await db.select().from(orders).where(eq3(orders.userId, ctx.user.id)).orderBy(desc(orders.createdAt)).limit(5e3);
       if (!rows.length) return [];
-      const orderIds = rows.map((row) => sql2`${row.id}`);
+      const orderIds = rows.map((row) => sql3`${row.id}`);
       const [items, events] = await Promise.all([
-        db.select().from(orderItems).where(sql2`${orderItems.orderId} in (${sql2.join(orderIds, sql2`, `)})`),
-        db.select().from(orderEvents).where(sql2`${orderEvents.orderId} in (${sql2.join(orderIds, sql2`, `)})`).orderBy(asc(orderEvents.createdAt))
+        db.select().from(orderItems).where(sql3`${orderItems.orderId} in (${sql3.join(orderIds, sql3`, `)})`),
+        db.select().from(orderEvents).where(sql3`${orderEvents.orderId} in (${sql3.join(orderIds, sql3`, `)})`).orderBy(asc(orderEvents.createdAt))
       ]);
       return rows.map((order) => ({ ...order, items: items.filter((item) => item.orderId === order.id), events: events.filter((event) => event.orderId === order.id) }));
     }),
@@ -4364,7 +4439,7 @@ var commerceRouter = router({
       let appliedOffer = null;
       if (input.offerCode) {
         const code = input.offerCode.trim().toUpperCase();
-        appliedOffer = (await db.select().from(offers).where(and2(eq3(offers.code, code), eq3(offers.isActive, true), sql2`(${offers.startsAt} is null or ${offers.startsAt} <= now())`, sql2`(${offers.endsAt} is null or ${offers.endsAt} >= now())`)).limit(1))[0] ?? null;
+        appliedOffer = (await db.select().from(offers).where(and2(eq3(offers.code, code), eq3(offers.isActive, true), sql3`(${offers.startsAt} is null or ${offers.startsAt} <= now())`, sql3`(${offers.endsAt} is null or ${offers.endsAt} >= now())`)).limit(1))[0] ?? null;
         if (!appliedOffer) throw new TRPCError2({ code: "BAD_REQUEST", message: "\u0631\u0645\u0632 \u0627\u0644\u0639\u0631\u0636 \u063A\u064A\u0631 \u0635\u0627\u0644\u062D \u0623\u0648 \u063A\u064A\u0631 \u0646\u0634\u0637." });
       }
       await ensureOrderItemsFastSchema(db);
@@ -5001,11 +5076,11 @@ var commerceRouter = router({
     overview: requirePermission("overview.view").query(async () => getCached("admin:overview", 3e4, async () => {
       const db = await database();
       const [productRows, categoryRows, orderRows, customerRows, orderMetrics, settings] = await Promise.all([
-        db.select({ count: sql2`count(*)` }).from(products),
-        db.select({ count: sql2`count(*)` }).from(categories),
-        db.select({ count: sql2`count(*)` }).from(orders),
-        db.select({ count: sql2`count(distinct ${orders.phone})` }).from(orders).where(sql2`${orders.phone} <> ''`),
-        db.select({ orderValue: sql2`coalesce(sum(case when ${orders.status} <> 'cancelled' then ${orders.total} else 0 end), 0)`, openOrders: sql2`coalesce(sum(case when ${orders.status} in ('new', 'preparing', 'ready', 'out_for_delivery') then 1 else 0 end), 0)` }).from(orders),
+        db.select({ count: sql3`count(*)` }).from(products),
+        db.select({ count: sql3`count(*)` }).from(categories),
+        db.select({ count: sql3`count(*)` }).from(orders),
+        db.select({ count: sql3`count(distinct ${orders.phone})` }).from(orders).where(sql3`${orders.phone} <> ''`),
+        db.select({ orderValue: sql3`coalesce(sum(case when ${orders.status} <> 'cancelled' then ${orders.total} else 0 end), 0)`, openOrders: sql3`coalesce(sum(case when ${orders.status} in ('new', 'preparing', 'ready', 'out_for_delivery') then 1 else 0 end), 0)` }).from(orders),
         readSettings(db)
       ]);
       const recentOrders = await db.select().from(orders).orderBy(desc(orders.createdAt)).limit(6);
@@ -5435,7 +5510,7 @@ var commerceRouter = router({
         const g = globalThis;
         if (!g.__savedSettingsMemory) g.__savedSettingsMemory = {};
         try {
-          await db.execute(sql2.raw("ALTER TABLE store_settings MODIFY COLUMN value LONGTEXT NOT NULL"));
+          await db.execute(sql3.raw("ALTER TABLE store_settings MODIFY COLUMN value LONGTEXT NOT NULL"));
         } catch {
         }
         const entriesToSave = [];
@@ -5513,10 +5588,10 @@ var commerceRouter = router({
         const db = await database();
         const rows = await db.select().from(orders).orderBy(desc(orders.createdAt)).limit(500);
         if (!rows.length) return [];
-        const ids = rows.map((order) => sql2`${order.id}`);
+        const ids = rows.map((order) => sql3`${order.id}`);
         const [items, events] = await Promise.all([
-          db.select().from(orderItems).where(sql2`${orderItems.orderId} in (${sql2.join(ids, sql2`, `)})`),
-          db.select().from(orderEvents).where(sql2`${orderEvents.orderId} in (${sql2.join(ids, sql2`, `)})`).orderBy(asc(orderEvents.createdAt))
+          db.select().from(orderItems).where(sql3`${orderItems.orderId} in (${sql3.join(ids, sql3`, `)})`),
+          db.select().from(orderEvents).where(sql3`${orderEvents.orderId} in (${sql3.join(ids, sql3`, `)})`).orderBy(asc(orderEvents.createdAt))
         ]);
         return rows.map((order) => ({ ...order, items: items.filter((item) => item.orderId === order.id), events: events.filter((event) => event.orderId === order.id) }));
       }),
@@ -5615,10 +5690,10 @@ var commerceRouter = router({
         const db = await database();
         return db.select({
           phone: orders.phone,
-          orderCount: sql2`count(*)`,
-          totalSpent: sql2`coalesce(sum(case when ${orders.status} <> 'cancelled' then ${orders.total} else 0 end), 0)`,
-          lastOrderAt: sql2`max(${orders.createdAt})`
-        }).from(orders).where(sql2`${orders.phone} <> ''`).groupBy(orders.phone).orderBy(desc(sql2`max(${orders.createdAt})`)).limit(500);
+          orderCount: sql3`count(*)`,
+          totalSpent: sql3`coalesce(sum(case when ${orders.status} <> 'cancelled' then ${orders.total} else 0 end), 0)`,
+          lastOrderAt: sql3`max(${orders.createdAt})`
+        }).from(orders).where(sql3`${orders.phone} <> ''`).groupBy(orders.phone).orderBy(desc(sql3`max(${orders.createdAt})`)).limit(500);
       })
     }),
     users: router({
@@ -5628,7 +5703,7 @@ var commerceRouter = router({
         if (!rows.length) return [];
         const ids = rows.map((user) => user.id);
         const [stats, savedAddresses] = await Promise.all([
-          db.select({ userId: orders.userId, orderCount: sql2`count(*)`, totalSpent: sql2`coalesce(sum(case when ${orders.status} <> 'cancelled' then ${orders.total} else 0 end), 0)` }).from(orders).where(inArray(orders.userId, ids)).groupBy(orders.userId),
+          db.select({ userId: orders.userId, orderCount: sql3`count(*)`, totalSpent: sql3`coalesce(sum(case when ${orders.status} <> 'cancelled' then ${orders.total} else 0 end), 0)` }).from(orders).where(inArray(orders.userId, ids)).groupBy(orders.userId),
           db.select({ userId: addresses.userId, id: addresses.id, label: addresses.label, recipientName: addresses.recipientName, phone: addresses.phone, city: addresses.city, district: addresses.district, details: addresses.details, isDefault: addresses.isDefault }).from(addresses).where(inArray(addresses.userId, ids)).orderBy(desc(addresses.isDefault), desc(addresses.id))
         ]);
         return rows.map((user) => {
@@ -5712,7 +5787,7 @@ async function addInvoiceItemToOrderV99(input) {
 
 // server/_core/index.ts
 import "dotenv/config";
-import express2 from "express";
+import express3 from "express";
 import { createServer } from "http";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 
@@ -6098,34 +6173,34 @@ async function createContext(opts) {
 
 // server/_core/vite.ts
 import zlib from "zlib";
-import express from "express";
-import fs4 from "fs";
+import express2 from "express";
+import fs5 from "fs";
 import { nanoid as nanoid2 } from "nanoid";
-import path2 from "path";
+import path3 from "path";
 import { createServer as createViteServer } from "vite";
 
 // vite.config.ts
 import { jsxLocPlugin } from "@builder.io/vite-plugin-jsx-loc";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
-import fs3 from "node:fs";
-import path from "node:path";
+import fs4 from "node:fs";
+import path2 from "node:path";
 import { defineConfig } from "vite";
 var PROJECT_ROOT = import.meta.dirname;
-var LOG_DIR = path.join(PROJECT_ROOT, ".manus-logs");
+var LOG_DIR = path2.join(PROJECT_ROOT, ".manus-logs");
 var MAX_LOG_SIZE_BYTES = 1 * 1024 * 1024;
 var TRIM_TARGET_BYTES = Math.floor(MAX_LOG_SIZE_BYTES * 0.6);
 function ensureLogDir() {
-  if (!fs3.existsSync(LOG_DIR)) {
-    fs3.mkdirSync(LOG_DIR, { recursive: true });
+  if (!fs4.existsSync(LOG_DIR)) {
+    fs4.mkdirSync(LOG_DIR, { recursive: true });
   }
 }
 function trimLogFile(logPath, maxSize) {
   try {
-    if (!fs3.existsSync(logPath) || fs3.statSync(logPath).size <= maxSize) {
+    if (!fs4.existsSync(logPath) || fs4.statSync(logPath).size <= maxSize) {
       return;
     }
-    const lines = fs3.readFileSync(logPath, "utf-8").split("\n");
+    const lines = fs4.readFileSync(logPath, "utf-8").split("\n");
     const keptLines = [];
     let keptBytes = 0;
     const targetSize = TRIM_TARGET_BYTES;
@@ -6136,19 +6211,19 @@ function trimLogFile(logPath, maxSize) {
       keptLines.unshift(lines[i]);
       keptBytes += lineBytes;
     }
-    fs3.writeFileSync(logPath, keptLines.join("\n"), "utf-8");
+    fs4.writeFileSync(logPath, keptLines.join("\n"), "utf-8");
   } catch {
   }
 }
 function writeToLogFile(source, entries) {
   if (entries.length === 0) return;
   ensureLogDir();
-  const logPath = path.join(LOG_DIR, `${source}.log`);
+  const logPath = path2.join(LOG_DIR, `${source}.log`);
   const lines = entries.map((entry) => {
     const ts = (/* @__PURE__ */ new Date()).toISOString();
     return `[${ts}] ${JSON.stringify(entry)}`;
   });
-  fs3.appendFileSync(logPath, `${lines.join("\n")}
+  fs4.appendFileSync(logPath, `${lines.join("\n")}
 `, "utf-8");
   trimLogFile(logPath, MAX_LOG_SIZE_BYTES);
 }
@@ -6237,16 +6312,16 @@ var vite_config_default = defineConfig({
   plugins,
   resolve: {
     alias: {
-      "@": path.resolve(import.meta.dirname, "client", "src"),
-      "@shared": path.resolve(import.meta.dirname, "shared"),
-      "@assets": path.resolve(import.meta.dirname, "attached_assets")
+      "@": path2.resolve(import.meta.dirname, "client", "src"),
+      "@shared": path2.resolve(import.meta.dirname, "shared"),
+      "@assets": path2.resolve(import.meta.dirname, "attached_assets")
     }
   },
-  envDir: path.resolve(import.meta.dirname),
-  root: path.resolve(import.meta.dirname, "client"),
-  publicDir: path.resolve(import.meta.dirname, "client", "public"),
+  envDir: path2.resolve(import.meta.dirname),
+  root: path2.resolve(import.meta.dirname, "client"),
+  publicDir: path2.resolve(import.meta.dirname, "client", "public"),
   build: {
-    outDir: path.resolve(import.meta.dirname, "dist/public"),
+    outDir: path2.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true
   },
   server: {
@@ -6284,13 +6359,13 @@ async function setupVite(app, server) {
   app.use("*", async (req, res, next) => {
     const url = req.originalUrl;
     try {
-      const clientTemplate = path2.resolve(
+      const clientTemplate = path3.resolve(
         import.meta.dirname,
         "../..",
         "client",
         "index.html"
       );
-      let template = await fs4.promises.readFile(clientTemplate, "utf-8");
+      let template = await fs5.promises.readFile(clientTemplate, "utf-8");
       template = template.replace(
         'src="/src/main.tsx"',
         'src="/src/main.tsx?v=' + nanoid2() + '"'
@@ -6304,22 +6379,22 @@ async function setupVite(app, server) {
   });
 }
 function serveStatic(app) {
-  const cand = path2.resolve(process.cwd(), "dist", "public");
-  const distPath = fs4.existsSync(cand) ? cand : path2.resolve(import.meta.dirname, "public");
-  const assetsDir = path2.join(distPath, "assets");
-  const indexPath = path2.resolve(distPath, "index.html");
+  const cand = path3.resolve(process.cwd(), "dist", "public");
+  const distPath = fs5.existsSync(cand) ? cand : path3.resolve(import.meta.dirname, "public");
+  const assetsDir = path3.join(distPath, "assets");
+  const indexPath = path3.resolve(distPath, "index.html");
   let cachedIndexGzip = null;
   let cachedIndexRaw = "";
   const gzipCache = /* @__PURE__ */ new Map();
   app.use("/assets", (req, res) => {
-    const reqBase = path2.basename(req.path);
-    let fp = path2.join(assetsDir, reqBase);
+    const reqBase = path3.basename(req.path);
+    let fp = path3.join(assetsDir, reqBase);
     let isFallback = false;
-    if (!fs4.existsSync(fp)) {
+    if (!fs5.existsSync(fp)) {
       const m = reqBase.match(/^([a-zA-Z0-9_]+)-[a-zA-Z0-9_-]+(\.(?:js|css))$/);
-      const found = m && fs4.existsSync(assetsDir) ? fs4.readdirSync(assetsDir).find((f) => f.startsWith(m[1] + "-") && f.endsWith(m[2])) : null;
+      const found = m && fs5.existsSync(assetsDir) ? fs5.readdirSync(assetsDir).find((f) => f.startsWith(m[1] + "-") && f.endsWith(m[2])) : null;
       if (!found) return res.status(404).end();
-      fp = path2.join(assetsDir, found);
+      fp = path3.join(assetsDir, found);
       isFallback = true;
     }
     const isJs = fp.endsWith(".js");
@@ -6333,7 +6408,7 @@ function serveStatic(app) {
     }
     let gz = gzipCache.get(fp);
     if (!gz) {
-      gz = zlib.gzipSync(fs4.readFileSync(fp), { level: zlib.constants.Z_BEST_SPEED });
+      gz = zlib.gzipSync(fs5.readFileSync(fp), { level: zlib.constants.Z_BEST_SPEED });
       gzipCache.set(fp, gz);
     }
     res.set({ "Content-Type": ct, "Content-Encoding": "gzip", "Cache-Control": cc, "Vary": "Accept-Encoding" });
@@ -6341,8 +6416,8 @@ function serveStatic(app) {
   });
   const sendFastIndex = (req, res) => {
     try {
-      if (!cachedIndexRaw && fs4.existsSync(indexPath)) {
-        cachedIndexRaw = fs4.readFileSync(indexPath, "utf-8");
+      if (!cachedIndexRaw && fs5.existsSync(indexPath)) {
+        cachedIndexRaw = fs5.readFileSync(indexPath, "utf-8");
         cachedIndexGzip = zlib.gzipSync(Buffer.from(cachedIndexRaw), { level: zlib.constants.Z_BEST_SPEED });
       }
       if (cachedIndexRaw) {
@@ -6359,7 +6434,7 @@ function serveStatic(app) {
   };
   app.get("/", sendFastIndex);
   app.get("/index.html", sendFastIndex);
-  app.use(express.static(distPath, { index: false, maxAge: "1y", immutable: true }));
+  app.use(express2.static(distPath, { index: false, maxAge: "1y", immutable: true }));
   app.use("*", sendFastIndex);
 }
 
@@ -6367,7 +6442,16 @@ function serveStatic(app) {
 var HTTPS_PREFIX = ["ht", "tps", "://"].join("");
 var HTTP_PREFIX = ["ht", "tp"].join("");
 async function startServer() {
-  const app = express2();
+  const app = express3();
+  registerAiEngineV112(app);
+  app.post("/api/admin/order-add-item", express3.json({ limit: "10mb" }), async (req, res) => {
+    try {
+      const result = await addInvoiceItemToOrderV99(req.body || {});
+      res.json(result);
+    } catch (err) {
+      res.status(400).json({ ok: false, error: String(err?.message || err) });
+    }
+  });
   app.set("trust proxy", 1);
   app.disable("x-powered-by");
   app.use((_req, res, next) => {
@@ -6378,17 +6462,8 @@ async function startServer() {
     next();
   });
   const server = createServer(app);
-  app.use(express2.json({ limit: "50mb" }));
-  registerAiEngineV112(app);
-  app.post("/api/admin/order-add-item", async (req, res) => {
-    try {
-      const result = await addInvoiceItemToOrderV99(req.body || {});
-      res.json(result);
-    } catch (err) {
-      res.status(400).json({ ok: false, error: String(err?.message || err) });
-    }
-  });
-  app.use(express2.urlencoded({ limit: "50mb", extended: true }));
+  app.use(express3.json({ limit: "50mb" }));
+  app.use(express3.urlencoded({ limit: "50mb", extended: true }));
   app.get("/api/health", (_req, res) => res.json({ status: "ok", ts: Date.now() }));
   if (!globalThis.__keepAliveTimer) {
     globalThis.__keepAliveTimer = setInterval(() => {
