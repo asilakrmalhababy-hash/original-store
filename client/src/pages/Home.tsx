@@ -121,9 +121,39 @@ function getStoredVariantTextV107(productId: any, productName?: any): string {
 
 function extractVariantPriceV104(rawText: any, fallbackPrice: any, productObj?: any): number {
   const base = Number(fallbackPrice ?? productObj?.price ?? 0);
+  const desc = String(
+    productObj?.description ||
+    (typeof rawText === "object" ? (rawText?.description || rawText?.product?.description) : "") ||
+    ""
+  );
+  const dbPriceMap: Record<string, number> = {};
+  let firstDbVariantPrice = 0;
+  const vMatch = desc.match(/\[\[variants:(\[[\s\S]*?\])\]\]/);
+  if (vMatch && vMatch[1]) {
+    try {
+      const arr: string[] = JSON.parse(vMatch[1]);
+      for (const rawEntry of arr) {
+        const subEntries = String(rawEntry || "").split(/[،,]+/);
+        for (const entry of subEntries) {
+          const colonIdx = entry.indexOf(":");
+          if (colonIdx !== -1) {
+            const oName = entry.slice(0, colonIdx).trim();
+            const oPrice = parseFloat(entry.slice(colonIdx + 1).trim());
+            if (oName && !isNaN(oPrice) && oPrice > 0) {
+              dbPriceMap[oName] = oPrice;
+              if (!firstDbVariantPrice) firstDbVariantPrice = oPrice;
+            }
+          }
+        }
+      }
+    } catch {}
+  }
+
   let combined = "";
   let pid: any = productObj?.id ?? productObj?.productId;
   let pname: any = productObj?.name;
+  const isCartOrOrderItem = typeof rawText === "object" && rawText !== null && (rawText.quantity !== undefined || rawText.productId !== undefined || rawText.lineTotal !== undefined || rawText.product !== undefined);
+
   if (typeof rawText === "object" && rawText !== null) {
     pid = rawText.productId ?? rawText.product?.id ?? rawText.id ?? pid;
     pname = rawText.product?.name ?? rawText.productName ?? rawText.name ?? pname;
@@ -142,41 +172,26 @@ function extractVariantPriceV104(rawText: any, fallbackPrice: any, productObj?: 
 
     if (/\([^()]*:\s*\d/.test(explicitFields) || explicitFields.includes(":")) {
       combined = explicitFields;
-    } else {
+    } else if (isCartOrOrderItem) {
       combined = [explicitFields, getStoredVariantTextV107(pid, pname)].filter(Boolean).join(" ");
+    } else {
+      const activeWinVar = typeof window !== "undefined" ? String((window as any).__v128ActiveVariant || "").trim() : "";
+      if (activeWinVar) {
+        const cleanAct = activeWinVar.split(":")[0].replace(/[✓✔]/g, "").trim();
+        if (cleanAct && dbPriceMap[cleanAct] !== undefined) {
+          return dbPriceMap[cleanAct];
+        }
+      }
+      combined = explicitFields;
     }
   } else if (rawText) {
     combined = String(rawText).trim();
-  } else {
+  } else if (isCartOrOrderItem) {
     combined = getStoredVariantTextV107(pid, pname);
   }
 
-  if (!combined) return base;
-
-  const dbPriceMap: Record<string, number> = {};
-  const desc = String(
-    productObj?.description ||
-    (typeof rawText === "object" ? (rawText?.description || rawText?.product?.description) : "") ||
-    ""
-  );
-  const vMatch = desc.match(/\[\[variants:(\[[\s\S]*?\])\]\]/);
-  if (vMatch && vMatch[1]) {
-    try {
-      const arr: string[] = JSON.parse(vMatch[1]);
-      for (const rawEntry of arr) {
-        const subEntries = String(rawEntry || "").split(/[،,]+/);
-        for (const entry of subEntries) {
-          const colonIdx = entry.indexOf(":");
-          if (colonIdx !== -1) {
-            const oName = entry.slice(0, colonIdx).trim();
-            const oPrice = parseFloat(entry.slice(colonIdx + 1).trim());
-            if (oName && !isNaN(oPrice) && oPrice > 0) {
-              dbPriceMap[oName] = oPrice;
-            }
-          }
-        }
-      }
-    } catch {}
+  if (!combined) {
+    return firstDbVariantPrice > 0 ? firstDbVariantPrice : base;
   }
 
   let targetStr = "";
@@ -216,6 +231,10 @@ function extractVariantPriceV104(rawText: any, fallbackPrice: any, productObj?: 
     if (oName && combined.includes(oName)) return oPrice;
   }
 
+  if (firstDbVariantPrice > 0) {
+    return firstDbVariantPrice;
+  }
+
   return base;
 }
 
@@ -227,20 +246,29 @@ function extractVariantLineTotalV107(item: any): number {
 }
 
 function extractCartSubtotalV107(cartOrOrder: any, fallbackSubtotal?: any): number {
-  const isOrderObj = Boolean(cartOrOrder?.orderNumber || cartOrOrder?.status);
-  if (!isOrderObj && typeof window !== "undefined" && Number((window as any).__v108ComputedCartSubtotal) > 0) {
-    return Number((window as any).__v108ComputedCartSubtotal);
+  const isOrderObj = cartOrOrder && typeof cartOrOrder === "object" && !Array.isArray(cartOrOrder) && (cartOrOrder.orderNumber !== undefined || cartOrOrder.status !== undefined || cartOrOrder.deliveryFee !== undefined || cartOrOrder.shippingFee !== undefined);
+  let arr: any[] | null = null;
+  if (Array.isArray(cartOrOrder)) arr = cartOrOrder;
+  else if (cartOrOrder && Array.isArray(cartOrOrder.items)) arr = cartOrOrder.items;
+  else if (cartOrOrder && Array.isArray(cartOrOrder.cartItems)) arr = cartOrOrder.cartItems;
+  else if (cartOrOrder && Array.isArray(cartOrOrder.lines)) arr = cartOrOrder.lines;
+  if (arr && arr.length > 0) {
+    let sum = 0;
+    for (const it of arr) {
+      sum += extractVariantLineTotalV107(it);
+    }
+    if (sum > 0) {
+      const rounded = Math.round(sum);
+      if (!isOrderObj && typeof window !== "undefined") {
+        (window as any).__v107LastCartSubtotal = rounded;
+        (window as any).__v107LastCartBaseSubtotal = Number(fallbackSubtotal ?? cartOrOrder?.subtotal ?? rounded);
+      }
+      return rounded;
+    }
   }
-  const rawItems = cartOrOrder?.items;
-  if (Array.isArray(rawItems) && rawItems.length > 0) {
-    const items = expandOrderItemsV110(rawItems);
-    const calcSub = Math.round(items.reduce((sum: number, it: any) => {
-      const q = Math.max(1, Number(it?.quantity || 1));
-      const up = extractVariantPriceV104(it, it?.unitPrice ?? it?.price ?? it?.product?.price, it?.product);
-      return sum + up * q;
-    }, 0));
-    if (!isOrderObj && typeof window !== "undefined") {
-      (window as any).__v107LastCartSubtotal = calcSub;
+  if (!isOrderObj && typeof window !== "undefined" && Number((window as any).__v108ComputedCartSubtotal) > 0) {
+    const calcSub = Number((window as any).__v108ComputedCartSubtotal);
+    if (fallbackSubtotal !== undefined || cartOrOrder?.subtotal !== undefined) {
       (window as any).__v107LastCartBaseSubtotal = Number(fallbackSubtotal ?? cartOrOrder?.subtotal ?? 0);
     }
     return calcSub;
@@ -894,7 +922,7 @@ function AiRecipeModal({ product, onClose }: { product: PublicProduct; onClose: 
         ? {
             role: 'assistant',
             text: data.message,
-            contextText: 'نتحدث عن المنتج المتوفر في المتجر: «' + product.name + '» بسعر ' + formatPrice(product.price),
+            contextText: 'نتحدث عن المنتج المتوفر في المتجر: «' + product.name + '» بسعر ' + formatPrice(Math.round(extractVariantPriceV104(product, (product as any)?.price, product))),
           }
         : null;
       const nextHistory = [...historyArr, userTurn, ...(assistantTurn ? [assistantTurn] : [])].slice(-32);
@@ -976,7 +1004,7 @@ function AiRecipeModal({ product, onClose }: { product: PublicProduct; onClose: 
               <div style={{ background: '#edf5f0', border: '1px solid #cde0d4', borderRadius: '14px', padding: '12px', marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                 <div>
                   <strong style={{ fontSize: '13px', color: '#143a28', display: 'block' }}>{product.name}</strong>
-                  <small style={{ color: '#4d6658', fontSize: '11.5px', fontWeight: 800 }}>{formatPrice(product.price)} / {product.unit}</small>
+                  <small style={{ color: '#4d6658', fontSize: '11.5px', fontWeight: 800 }}>{formatPrice(Math.round(extractVariantPriceV104(product, (product as any)?.price, product)))} / {product.unit}</small>
                 </div>
                 <button
                   type='button'
@@ -1089,7 +1117,7 @@ function VariantPickerModal({
   const [selected, setSelected] = useState<string>(initialVariant && variants.includes(initialVariant) ? initialVariant : (variants[0] || ""));
   const [qty, setQty] = useState<number>(initialQty || product.minQuantity || 1);
   const [buyMode, setBuyMode] = useState<"price" | "weight">("price");
-  const pricePerKg = Math.max(1, product.price);
+  const pricePerKg = Math.max(1, Math.round(extractVariantPriceV104(product, (product as any)?.price, product)));
   const effectiveMin = Math.min(minWeightAmount, Math.max(50, Math.round(pricePerKg * 0.125)));
   const defaultAmount = Math.max(effectiveMin, Math.round(pricePerKg * 0.25) || 200);
   const [amountStr, setAmountStr] = useState<string>(String(defaultAmount));
@@ -1147,7 +1175,7 @@ function VariantPickerModal({
             <div>
               <h2 style={{ fontSize: "16px", margin: "0 0 2px" }}>{product.name}</h2>
               <small style={{ color: "#174b36", fontWeight: 800 }}>
-                {weightEnabled ? ("سعر الكيلو: " + formatPrice(product.price)) : (formatPrice(product.price) + " / " + product.unit)}
+                {weightEnabled ? ("سعر الكيلو: " + formatPrice(Math.round(extractVariantPriceV104(product, (product as any)?.price, product)))) : (formatPrice(Math.round(extractVariantPriceV104(product, (product as any)?.price, product))) + " / " + product.unit)}
               </small>
             </div>
           </div>
@@ -1249,7 +1277,7 @@ function VariantPickerModal({
           <ShoppingCart size={17} />
           {weightEnabled
             ? ("تأكيد الإضافة (" + formatPrice(finalAmount) + ")")
-            : ("إضافة إلى السلة (" + formatPrice(product.price * qty) + ")")}
+            : ("إضافة إلى السلة (" + formatPrice(Math.round(extractVariantPriceV104(finalGrams || product, (product as any)?.price, product)) * qty) + ")")}
         </button>
       </section>
     </div>
@@ -1285,7 +1313,7 @@ function ProductCard({ product, onOpen, onAiRecipe, priority = false }: { produc
         {disabled && <span className="product-sold-out">غير متوفر</span>}
       </div>
       <button type="button" className="product-title-button" onClick={onOpen}><strong>{product.name}</strong><span>{product.unit}</span></button>
-      <div className="product-card-bottom"><div><b>{formatPrice(product.price)}</b><small> / {product.unit}</small></div><button type="button" className="add-button" disabled={disabled} onClick={e => handleAddClick(e)} aria-label={"إضافة " + product.name + " للسلة"}><Plus size={18} /></button></div>
+      <div className="product-card-bottom"><div><b>{formatPrice(Math.round(extractVariantPriceV104(product, (product as any)?.price, product)))}</b><small> / {product.unit}</small></div><button type="button" className="add-button" disabled={disabled} onClick={e => handleAddClick(e)} aria-label={"إضافة " + product.name + " للسلة"}><Plus size={18} /></button></div>
     </article>
     {pickerOpen && (
       <VariantPickerModal
@@ -1829,7 +1857,7 @@ function ProductDetail({ id, allProducts = [], onSelectProduct, onBack, onAiReci
               <small style={{ color: '#6b7d72', fontSize: '11.5px', fontWeight: 700 }}>الوحدة: {product.unit} · {product.stock === null ? 'متوفر في المتجر' : ('المتاح: ' + product.stock)}</small>
             </div>
             <div style={{ background: '#f2f8f4', border: '1px solid #d4e6da', padding: '6px 12px', borderRadius: '12px', textAlign: 'left', flexShrink: 0 }}>
-              <strong style={{ fontSize: '17px', fontWeight: 900, color: '#174b36' }}>{formatPrice(product.price)}</strong>
+              <strong style={{ fontSize: '17px', fontWeight: 900, color: '#174b36' }}>{formatPrice(Math.round(extractVariantPriceV104(product, (product as any)?.price, product)))}</strong>
               <small style={{ fontSize: '11px', color: '#5b7063', marginRight: '4px' }}>/ {product.unit}</small>
             </div>
           </div>

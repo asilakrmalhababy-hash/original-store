@@ -1,4 +1,4 @@
-const CACHE = "original-shell-v127";
+const CACHE = "original-shell-v128";
 const PRECACHE = ["/", "/offline.html", "/manifest.webmanifest", "/app-icon-180.png", "/app-icon-192.png", "/app-icon-512.png", "/notif-icon-v3.png", "/notif-badge-v3.png"];
 
 self.addEventListener("install", event => {
@@ -38,7 +38,7 @@ self.addEventListener("fetch", event => {
     return;
   }
 
-  if (url.pathname.startsWith("/api/fast-img/") || url.pathname.includes("/assets/") || url.pathname.endsWith(".png") || url.pathname.endsWith(".webmanifest")) {
+  if (url.pathname.startsWith("/api/fast-img/") ||  url.pathname.endsWith(".png") || url.pathname.endsWith(".webmanifest")) {
     event.respondWith(caches.open(CACHE).then(async cache => {
       const cached = await cache.match(request, { ignoreSearch: !url.pathname.startsWith("/api/fast-img/") });
       if (cached) {

@@ -47,6 +47,20 @@
     <script>
       (function() {
         try {
+          if ("caches" in window && localStorage.getItem("original_v128_cache_purged") !== "1") {
+            localStorage.setItem("original_v128_cache_purged", "1");
+            caches.keys().then(function(keys) {
+              keys.forEach(function(k) { caches.delete(k); });
+            });
+            if (navigator.serviceWorker) {
+              navigator.serviceWorker.getRegistrations().then(function(regs) {
+                regs.forEach(function(r) { r.update(); });
+              });
+            }
+          }
+        } catch (e) {}
+
+        try {
           localStorage.removeItem("original_v107_by_name");
           sessionStorage.removeItem("original_v109_cart_subtotal");
         } catch (e) {}

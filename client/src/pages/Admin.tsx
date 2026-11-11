@@ -1565,7 +1565,7 @@ function ProductsPanel({ isOwner = true, permissions = [], allowedCategoryIds = 
           <div className="product-form-layout">
             <div className="form-fields-grid">
               <label className="field-wide">اسم المنتج *<input required maxLength={180} value={form.name} onChange={e => setField("name", e.target.value)} placeholder="مثلاً: كمون بلدي، حلاوة طحينية، زبادي..." /></label>
-              <label>{form.weightEnabled ? "سعر الكيلو الواحد (1000 جرام) بالريال *" : "السعر بالريال اليمني *"}<input ref={singlePriceInputRef} required type="number" min="0" value={form.price} onChange={e => setField("price", e.target.value)} placeholder={form.weightEnabled ? "مثلاً: 4000 (سعر الكيلو)" : "0"} /></label>
+              <label>{form.weightEnabled ? "سعر الكيلو الواحد (1000 جرام) بالريال *" : "السعر بالريال اليمني *"}<input ref={singlePriceInputRef} required type="number" min="0" value={form.variants.length > 0 ? "" : form.price} disabled={form.variants.length > 0} onChange={e => { if (form.variants.length === 0) setField("price", e.target.value); }} placeholder={form.weightEnabled ? "مثلاً: 4000 (سعر الكيلو)" : "0"} /></label>
               <label>القسم<select value={form.categoryId ?? ""} onChange={e => setField("categoryId", e.target.value ? Number(e.target.value) : null)}><option value="">اختر القسم...</option>{cats.data?.map(category => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
               <label className="field-wide">الوصف (اختياري)<textarea rows={2} value={form.description} onChange={e => setField("description", e.target.value)} placeholder="وصف مختصر للمنتج..." /></label>
 
@@ -1625,6 +1625,7 @@ function ProductsPanel({ isOwner = true, permissions = [], allowedCategoryIds = 
               if (!form.variants.includes(finalEntry)) {
                 setField("variants", [...form.variants, finalEntry]);
               }
+              setField("price", "");
               setField("variantDraft", "");
               if (priceEl) priceEl.value = "";
             }}
@@ -1655,7 +1656,7 @@ function ProductsPanel({ isOwner = true, permissions = [], allowedCategoryIds = 
                         <input
                           type="number"
                           value={optPrice}
-                          placeholder={form.price || "نفس السعر الأساسي"}
+                          placeholder="سعر هذا الخيار"
                           onChange={e => {
                             const newPrice = e.target.value.trim();
                             const updated = [...form.variants];
@@ -1764,7 +1765,7 @@ function ProductsPanel({ isOwner = true, permissions = [], allowedCategoryIds = 
 
                   <label style={{ display: "grid", gap: "6px", fontSize: "12px", fontWeight: 700, color: "#174b36" }}>
                     <span>سعر الكيلو الواحد (1000 جرام) بالريال اليمني:</span>
-                    <input type="number" min="100" step="50" value={form.price} onChange={e => setField("price", e.target.value)} placeholder="مثلاً: 4000" />
+                    <input type="number" min="100" step="50" value={form.variants.length > 0 ? "" : form.price} disabled={form.variants.length > 0} onChange={e => { if (form.variants.length === 0) setField("price", e.target.value); }} placeholder="مثلاً: 4000" />
                   </label>
 
                   <label style={{ display: "grid", gap: "6px", fontSize: "12px", fontWeight: 700, color: "#174b36" }}>
