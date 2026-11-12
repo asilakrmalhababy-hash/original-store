@@ -1569,126 +1569,85 @@ function ProductsPanel({ isOwner = true, permissions = [], allowedCategoryIds = 
               <label>القسم<select value={form.categoryId ?? ""} onChange={e => setField("categoryId", e.target.value ? Number(e.target.value) : null)}><option value="">اختر القسم...</option>{cats.data?.map(category => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
               <label className="field-wide">الوصف (اختياري)<textarea rows={2} value={form.description} onChange={e => setField("description", e.target.value)} placeholder="وصف مختصر للمنتج..." /></label>
 
-              <div className="field-wide" style={{ background: "#f8fbf9", border: "2px solid #0d3825", borderRadius: "14px", padding: "14px", marginTop: "8px", marginBottom: "8px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px", flexWrap: "wrap", gap: "6px" }}>
-          <strong style={{ color: "#0d3825", fontSize: "0.95rem" }}>📦 جدول الخيارات والكميات والأسعار (حبة / باكيت / درزن / كرتون / نوع)</strong>
-          <span style={{ fontSize: "0.78rem", color: "#5c6f65", background: "#e8f2ec", padding: "3px 8px", borderRadius: "99px", fontWeight: 700 }}>
-            عدد الخيارات المضافة: {form.variants.length}
-          </span>
-        </div>
-
-        <div style={{ fontSize: "0.8rem", color: "#495a52", marginBottom: "8px" }}>
-          اضغط على نوع الكمية أو اكتب اسم الخيار، ثم ضع السعر المقابل له واضغط <strong>+ إضافة للجدول</strong>:
-        </div>
-
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "10px" }}>
-          {["حبة", "باكيت", "نصف درزن", "درزن", "نصف كرتون", "كرتون"].map(preset => (
-            <button
-              key={preset}
-              type="button"
-              className="small-button"
-              style={{ fontSize: "0.8rem", padding: "5px 12px", background: form.variantDraft === preset ? "#0d3825" : "#fff", color: form.variantDraft === preset ? "#d4af37" : "#0d3825", border: "1px solid #0d3825", borderRadius: "8px", fontWeight: 700 }}
-              onClick={() => {
-                setField("variantDraft", preset);
-                const pEl = document.getElementById("admin-inline-var-price") as HTMLInputElement | null;
-                if (pEl) pEl.focus();
-              }}
-            >
-              + {preset}
-            </button>
-          ))}
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr auto", gap: "8px", alignItems: "center", marginBottom: "12px" }}>
-          <input
-            value={form.variantDraft}
-            onChange={e => setField("variantDraft", e.target.value)}
-            placeholder="الكمية/الخيار (مثال: باكيت)"
-            style={{ background: "#fff", border: "1px solid #bdd0c6", borderRadius: "8px", padding: "9px 10px", fontSize: "0.88rem" }}
-          />
-          <input
-            id="admin-inline-var-price"
-            type="number"
-            placeholder="السعر (مثال: 1400)"
-            style={{ background: "#fff", border: "1px solid #bdd0c6", borderRadius: "8px", padding: "9px 10px", fontSize: "0.88rem" }}
-          />
-          <button
-            type="button"
-            className="primary-button"
-            style={{ padding: "9px 14px", fontSize: "0.86rem", whiteSpace: "nowrap", background: "#0d3825", color: "#d4af37", borderRadius: "8px" }}
-            onClick={() => {
-              const nameVal = form.variantDraft.trim();
-              if (!nameVal) return;
-              const priceEl = document.getElementById("admin-inline-var-price") as HTMLInputElement | null;
-              const priceVal = priceEl?.value ? priceEl.value.trim() : "";
-              const finalEntry = priceVal && !nameVal.includes(":") ? (nameVal + ":" + priceVal) : nameVal;
-              if (!form.variants.includes(finalEntry)) {
-                setField("variants", [...form.variants, finalEntry]);
-              }
-              setField("price", "");
-              setField("variantDraft", "");
-              if (priceEl) priceEl.value = "";
-            }}
-          >
-            + إضافة للجدول
-          </button>
-        </div>
-
-        {form.variants.length > 0 ? (
-          <div style={{ overflowX: "auto", background: "#fff", borderRadius: "10px", border: "1px solid #d5e2dc" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.86rem", textAlign: "right" }}>
-              <thead>
-                <tr style={{ background: "#0d3825", color: "#fff" }}>
-                  <th style={{ padding: "8px 10px", borderBottom: "1px solid #d5e2dc" }}>الكمية / الخيار</th>
-                  <th style={{ padding: "8px 10px", borderBottom: "1px solid #d5e2dc" }}>السعر مقابل الكمية (ر.ي)</th>
-                  <th style={{ padding: "8px 10px", borderBottom: "1px solid #d5e2dc", textAlign: "center", width: "70px" }}>حذف</th>
-                </tr>
-              </thead>
-              <tbody>
-                {form.variants.map((v, idx) => {
-                  const parts = v.split(":");
-                  const optName = parts[0]?.trim() || v;
-                  const optPrice = parts.length > 1 ? parts.slice(1).join(":").trim() : "";
-                  return (
-                    <tr key={idx} style={{ borderBottom: "1px solid #eef3f0" }}>
-                      <td style={{ padding: "8px 10px", fontWeight: 700, color: "#0d3825" }}>{optName}</td>
-                      <td style={{ padding: "6px 10px" }}>
-                        <input
-                          type="number"
-                          value={optPrice}
-                          placeholder="سعر هذا الخيار"
-                          onChange={e => {
-                            const newPrice = e.target.value.trim();
-                            const updated = [...form.variants];
-                            updated[idx] = newPrice ? (optName + ":" + newPrice) : optName;
-                            setField("variants", updated);
-                          }}
-                          style={{ width: "110px", padding: "5px 8px", border: "1px solid #c2d4ca", borderRadius: "6px", fontWeight: 700, color: "#0d3825", background: "#f9fcfb" }}
-                        />
-                        <span style={{ marginRight: "6px", fontSize: "0.78rem", color: "#5c6f65" }}>ر.ي</span>
-                      </td>
-                      <td style={{ padding: "6px 10px", textAlign: "center" }}>
-                        <button
-                          type="button"
-                          onClick={() => setField("variants", form.variants.filter((_, i) => i !== idx))}
-                          style={{ background: "#fee2e2", color: "#b91c1c", border: "none", borderRadius: "6px", padding: "4px 10px", cursor: "pointer", fontWeight: 700 }}
-                        >
-                          حذف
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <div style={{ textAlign: "center", padding: "10px", background: "#fff", borderRadius: "8px", border: "1px dashed #bdd0c6", color: "#687a71", fontSize: "0.82rem" }}>
-            لم تتم إضافة خيارات بعد — اختر مثلاً <strong>باكيت</strong> أو <strong>كرتون</strong> بالأعلى وضع سعره ليظهر في الجدول هنا.
-          </div>
-        )}
-      </div>
-
+        
+<div className="field-wide" style={{ background: "#f8fbf9", border: "2px solid #0d3825", borderRadius: "14px", padding: "14px", marginTop: "8px", marginBottom: "8px" }}>
+<div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px", flexWrap: "wrap", gap: "6px" }}>
+<strong style={{ color: "#0d3825", fontSize: "0.95rem" }}>📦 جدول الخيارات والنكهات والأسعار والعدد المتوفر</strong>
+<span style={{ fontSize: "0.78rem", color: "#5c6f65", background: "#e8f2ec", padding: "3px 8px", borderRadius: "99px", fontWeight: 700 }}>عدد الخيارات المضافة: {form.variants.length}</span>
+</div>
+<div style={{ fontSize: "0.8rem", color: "#495a52", marginBottom: "8px" }}>
+اكتب اسم الخيار أو النكهة (مثل: عنب، توت، باكيت) وحدد السعر والعدد المتوفر (ضع <strong>0</strong> في العدد ليظهر للزبون <strong>غير متوفر حالياً</strong>):
+</div>
+<div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "10px" }}>
+{["حبة", "باكيت", "نصف درزن", "درزن", "نصف كرتون", "كرتون"].map(preset => (
+<button key={preset} type="button" className="small-button" style={{ fontSize: "0.8rem", padding: "5px 12px", background: form.variantDraft === preset ? "#0d3825" : "#fff", color: form.variantDraft === preset ? "#d4af37" : "#0d3825", border: "1px solid #0d3825", borderRadius: "8px", fontWeight: 700 }} onClick={() => { setField("variantDraft", preset); const pEl = document.getElementById("admin-inline-var-price") as HTMLInputElement | null; if (pEl) pEl.focus(); }}>+ {preset}</button>
+))}
+</div>
+<div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: "8px", alignItems: "center", marginBottom: "12px" }}>
+<input value={form.variantDraft} onChange={e => setField("variantDraft", e.target.value)} placeholder="الخيار/النكهة (مثال: توت)" style={{ background: "#fff", border: "1px solid #bdd0c6", borderRadius: "8px", padding: "9px 10px", fontSize: "0.86rem" }} />
+<input id="admin-inline-var-price" type="number" placeholder="السعر (مثال: 250)" style={{ background: "#fff", border: "1px solid #bdd0c6", borderRadius: "8px", padding: "9px 10px", fontSize: "0.86rem" }} />
+<input id="admin-inline-var-stock" type="number" min="0" placeholder="العدد (فارغ=متوفر، 0=نفد)" style={{ background: "#fff", border: "1px solid #bdd0c6", borderRadius: "8px", padding: "9px 10px", fontSize: "0.86rem" }} />
+<button type="button" className="primary-button" style={{ padding: "9px 14px", fontSize: "0.86rem", whiteSpace: "nowrap", background: "#0d3825", color: "#d4af37", borderRadius: "8px" }} onClick={() => {
+const nameVal = form.variantDraft.trim();
+if (!nameVal) return;
+const priceEl = document.getElementById("admin-inline-var-price") as HTMLInputElement | null;
+const stockEl = document.getElementById("admin-inline-var-stock") as HTMLInputElement | null;
+const priceVal = priceEl?.value ? priceEl.value.trim() : "";
+const stockVal = stockEl?.value !== undefined ? stockEl.value.trim() : "";
+const finalEntry = nameVal.includes(":") ? nameVal : (stockVal !== "" ? (nameVal + ":" + (priceVal || form.price || "0") + ":" + stockVal) : (priceVal ? (nameVal + ":" + priceVal) : nameVal));
+if (!form.variants.includes(finalEntry)) { setField("variants", [...form.variants, finalEntry]); setField("price", ""); }
+setField("variantDraft", "");
+if (priceEl) priceEl.value = "";
+if (stockEl) stockEl.value = "";
+}}>+ إضافة للجدول</button>
+</div>
+{form.variants.length > 0 ? (
+<div style={{ overflowX: "auto", background: "#fff", borderRadius: "10px", border: "1px solid #d5e2dc" }}>
+<table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.84rem", textAlign: "right" }}>
+<thead>
+<tr style={{ background: "#0d3825", color: "#fff" }}>
+<th style={{ padding: "8px 10px", borderBottom: "1px solid #d5e2dc" }}>الخيار / النكهة</th>
+<th style={{ padding: "8px 10px", borderBottom: "1px solid #d5e2dc" }}>السعر (ر.ي)</th>
+<th style={{ padding: "8px 10px", borderBottom: "1px solid #d5e2dc" }}>العدد المتوفر / التوفر</th>
+<th style={{ padding: "8px 10px", borderBottom: "1px solid #d5e2dc", textAlign: "center", width: "65px" }}>حذف</th>
+</tr>
+</thead>
+<tbody>
+{form.variants.map((v, idx) => {
+const parts = v.split(":");
+const optName = parts[0]?.trim() || v;
+const optPrice = parts.length > 1 ? parts[1]?.trim() : "";
+const optStock = parts.length > 2 ? parts[2]?.trim() : "";
+const isOut = optStock !== "" && Number(optStock) <= 0;
+const buildEntry = (pVal: string, sVal: string) => sVal !== "" ? (optName + ":" + (pVal || form.price || "0") + ":" + sVal) : (pVal ? (optName + ":" + pVal) : optName);
+return (
+<tr key={idx} style={{ borderBottom: "1px solid #eef3f0", background: isOut ? "#fff5f5" : "#fff" }}>
+<td style={{ padding: "8px 10px", fontWeight: 800, color: "#0d3825" }}>
+<div>{optName}</div>
+<span style={{ display: "inline-block", marginTop: "3px", fontSize: "0.72rem", padding: "1px 7px", borderRadius: "99px", fontWeight: 800, background: isOut ? "#fee2e2" : "#dcfce7", color: isOut ? "#b91c1c" : "#166534" }}>{isOut ? "🚫 غير متوفر حالياً (0)" : (optStock !== "" ? "✅ متوفر (" + optStock + ")" : "✅ متوفر")}</span>
+</td>
+<td style={{ padding: "6px 8px" }}>
+<input type="number" value={optPrice} placeholder="السعر" onChange={e => { const updated = [...form.variants]; updated[idx] = buildEntry(e.target.value.trim(), optStock); setField("variants", updated); }} style={{ width: "85px", padding: "5px 7px", border: "1px solid #c2d4ca", borderRadius: "6px", fontWeight: 700, color: "#0d3825", background: "#f9fcfb" }} />
+</td>
+<td style={{ padding: "6px 8px" }}>
+<div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+<input type="number" min="0" value={optStock} placeholder="متوفر دائماً" onChange={e => { const updated = [...form.variants]; updated[idx] = buildEntry(optPrice, e.target.value.trim()); setField("variants", updated); }} style={{ width: "85px", padding: "5px 7px", border: isOut ? "1.5px solid #ef4444" : "1px solid #c2d4ca", borderRadius: "6px", fontWeight: 700, color: isOut ? "#b91c1c" : "#0d3825", background: "#f9fcfb" }} />
+<button type="button" onClick={() => { const updated = [...form.variants]; updated[idx] = buildEntry(optPrice, isOut ? "" : "0"); setField("variants", updated); }} style={{ background: isOut ? "#dcfce7" : "#fef3c7", color: isOut ? "#166534" : "#92400e", border: "1px solid " + (isOut ? "#86efac" : "#fcd34d"), borderRadius: "6px", padding: "4px 8px", cursor: "pointer", fontWeight: 800, fontSize: "0.75rem", whiteSpace: "nowrap" }}>{isOut ? "تفعيل التوفر ✓" : "نفد حالياً (0)"}</button>
+</div>
+</td>
+<td style={{ padding: "6px 8px", textAlign: "center" }}>
+<button type="button" onClick={() => setField("variants", form.variants.filter((_, i) => i !== idx))} style={{ background: "#fee2e2", color: "#b91c1c", border: "none", borderRadius: "6px", padding: "4px 10px", cursor: "pointer", fontWeight: 700 }}>حذف</button>
+</td>
+</tr>
+);
+})}
+</tbody>
+</table>
+</div>
+) : (
+<div style={{ textAlign: "center", padding: "10px", background: "#fff", borderRadius: "8px", border: "1px dashed #bdd0c6", color: "#687a71", fontSize: "0.82rem" }}>لم تتم إضافة خيارات بعد — اكتب اسم النكهة أو الحجم بالأعلى وضع سعره والعدد المتوفر ليظهر في الجدول هنا.</div>
+)}
+</div>
       <div className="field-wide" style={{ display: "flex", flexWrap: "wrap", gap: "8px", paddingTop: "4px" }}>
                 <button
                   type="button"

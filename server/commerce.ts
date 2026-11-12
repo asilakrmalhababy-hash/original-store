@@ -959,7 +959,7 @@ function resolveServerVariantOption(product: any, itemName?: string): { price: n
           const colonIdx = entry.indexOf(":");
           if (colonIdx !== -1) {
             const oName = entry.slice(0, colonIdx).trim();
-            const oPrice = Number(entry.slice(colonIdx + 1).trim());
+            const oPrice = parseFloat(entry.slice(colonIdx + 1).trim());
             if (oName && !isNaN(oPrice) && oPrice > 0) {
               dbPriceMap[oName] = Math.round(oPrice);
             }
@@ -993,7 +993,7 @@ function resolveServerVariantOption(product: any, itemName?: string): { price: n
       const cleanSeg = seg.replace(/[×xX*]\s*\d+.*$/, "").trim();
       const colonIdx = cleanSeg.indexOf(":");
       const optName = (colonIdx !== -1 ? cleanSeg.slice(0, colonIdx) : cleanSeg).replace(/—.*$/, "").trim();
-      const labelPriceRaw = colonIdx !== -1 ? Number(cleanSeg.slice(colonIdx + 1).trim()) : NaN;
+      const labelPriceRaw = colonIdx !== -1 ? parseFloat(cleanSeg.slice(colonIdx + 1).trim()) : NaN;
 
       let resolvedSegPrice = dbPriceMap[optName];
       if (resolvedSegPrice === undefined) {
