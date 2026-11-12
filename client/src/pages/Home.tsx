@@ -11,7 +11,7 @@ function getInstantLocalCatalog(): HomeData {
   return { categories: [], products: [], banners: [], offers: [], settings: {} };
 }
 
-import { useEffect, useMemo, useRef, useState as _origUseStateV130, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Link, useLocation, useSearch } from "wouter";
 import {
   ArrowDownWideNarrow, ArrowLeft, ArrowUpDown, BadgePercent, BellRing, Check, ChevronDown, ChevronLeft, ChevronRight, CircleUserRound, Copy,
@@ -417,20 +417,6 @@ setInterval(window.__runV129Sync, 180);
 }
 })();
 
-function useState<T = any>(init?: any): [T, any] {
-  const [val, setVal] = _origUseStateV130<T>(init as any);
-  try {
-    if (Array.isArray(val)) {
-      if (val.length > 0 && val[0] && typeof val[0] === "object" && "quantity" in val[0] && !("orderId" in val[0]) && !("orderNumber" in val[0])) {
-        (window as any).__v130CartArray = val;
-        (window as any).__v130SetCartArray = setVal;
-      } else if (val.length === 0 && (window as any).__v130SetCartArray === setVal) {
-        (window as any).__v130CartArray = val;
-      }
-    }
-  } catch {}
-  return [val, setVal];
-}
 
 // === V130_ENGINE_END ===
 
@@ -1715,7 +1701,7 @@ function ProductCard({ product, onOpen, onAiRecipe, priority = false }: { produc
   return <>
     <article className="product-card">
       <div className="product-visual" onClick={onOpen} role="button" tabIndex={0} onKeyDown={event => { if (event.key === "Enter") onOpen(); }}>
-        {product.imageUrl ? <img src={product.imageUrl} alt={product.name} loading="eager" fetchPriority={priority ? "high" : "auto"} decoding="async" /> : <div className="product-no-image"><Leaf size={27} strokeWidth={1.4} /><span>صورة المنتج</span></div>}
+        {product.imageUrl ? <img src={product.imageUrl} alt={product.name} loading={priority ? "eager" : "lazy"} fetchPriority={priority ? "high" : "auto"} decoding="async" /> : <div className="product-no-image"><Leaf size={27} strokeWidth={1.4} /><span>صورة المنتج</span></div>}
         <button type="button" className={"favorite-toggle " + (favorite ? "is-favorite" : "")} aria-label={favorite ? "إزالة من المفضلة" : "أضف للمفضلة"} aria-pressed={favorite} onClick={event => { event.stopPropagation(); toggleFavorite(product.id); toast.success(favorite ? "أُزيل من المفضلة" : "أُضيف إلى المفضلة على هذا الجهاز"); }}><Heart size={17} fill={favorite ? "currentColor" : "none"} /></button>
         {onAiRecipe && <button type="button" className="ai-recipe-toggle" aria-label="أفكار وتحضير بالذكاء الاصطناعي" title="أفكار ووصفات تحضير" onClick={event => { event.stopPropagation(); onAiRecipe(product); }}><Sparkles size={16} /></button>}
         {disabled && <span className="product-sold-out">غير متوفر</span>}
@@ -2375,10 +2361,10 @@ function CartPage({ minOrder = 0 }: { minOrder?: number }) {
           <div className="cart-list">
             {cart.map(line => (
               <CartRow
-                key={line.id}
+                key={line.variant ? `${line.id}::${line.variant}` : `${line.id}::${line.name}`}
                 line={line}
-                onQuantity={quantity => setQuantity(line.id, quantity)}
-                onRemove={() => remove(line.id)}
+                onQuantity={quantity => setQuantity(line.id, quantity, line.variant)}
+                onRemove={() => remove(line.id, line.variant)}
               />
             ))}
             <button className="text-link clear-cart" onClick={clear}>
@@ -2445,7 +2431,7 @@ function CartPage({ minOrder = 0 }: { minOrder?: number }) {
 }
 
 function CartRow({ line, onQuantity, onRemove }: { line: CartLine; onQuantity: (n: number) => void; onRemove: () => void }) {
-  return <article className="cart-row"><div className="cart-thumb">{line.imageUrl ? <img src={line.imageUrl} alt="" loading="lazy" decoding="async" /> : <Leaf size={22} />}</div><div className="cart-row-info"><strong>{line.name}</strong><small>{formatPrice(Math.round(extractVariantPriceV104(line, line?.unitPrice ?? line?.price ?? line?.product?.price, line?.product)))} / {line.unit}</small><div className="cart-row-tools"><div className="quantity-compact"><button aria-label="تقليل" onClick={() => onQuantity(line.quantity - (line.quantityStep || 1))}><Minus size={14} /></button><b>{line.quantity}</b><button aria-label="زيادة" disabled={line.stock !== null && line.stock !== undefined && line.quantity + (line.quantityStep || 1) > line.stock} onClick={() => onQuantity(line.quantity + (line.quantityStep || 1))}><Plus size={14} /></button></div><button className="remove-line" onClick={onRemove}><Trash2 size={14} /> إزالة</button></div></div><strong className="cart-line-total">{formatPrice(extractVariantLineTotalV107(line))}</strong></article>;
+  return <article className="cart-row"><div className="cart-thumb">{line.imageUrl ? <img src={line.imageUrl} alt="" loading="lazy" decoding="async" /> : <Leaf size={22} />}</div><div className="cart-row-info"><strong>{line.name}</strong><small>{formatPrice(Math.round(extractVariantPriceV104(line, line?.unitPrice ?? line?.price ?? line?.product?.price, line?.product)))} / {line.unit}</small><div className="cart-row-tools"><div className="quantity-compact"><button aria-label="تقليل" onClick={() => onQuantity(line.quantity - (line.quantityStep || 1))}><Minus size={14} /></button><b>{line.quantity}</b><button aria-label="زيادة" disabled={line.stock !== null && line.stock !== undefined && line.stock > 0 && line.quantity + (line.quantityStep || 1) > line.stock} onClick={() => onQuantity(line.quantity + (line.quantityStep || 1))}><Plus size={14} /></button></div><button className="remove-line" onClick={onRemove}><Trash2 size={14} /> إزالة</button></div></div><strong className="cart-line-total">{formatPrice(extractVariantLineTotalV107(line))}</strong></article>;
 }
 
 function getYemenCarrierName(phone: string): string {
@@ -4293,7 +4279,7 @@ function AssistantPage() {
 
   const pollQuery = trpc.commerce.assistant.pollMessages.useQuery(
     { sessionId },
-    { refetchInterval: 2500, staleTime: 0, refetchOnMount: "always", refetchOnWindowFocus: true, retry: false }
+    { refetchInterval: 25000, staleTime: 0, refetchOnMount: "always", refetchOnWindowFocus: true, retry: false }
   );
 
   useEffect(() => {

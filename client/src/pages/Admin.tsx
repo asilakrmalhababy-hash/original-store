@@ -4128,7 +4128,7 @@ function OwnerNotificationControl() {
     onSuccess: () => toast.success("أُرسل إشعار تجريبي لشريط جوالك الآن!"),
     onError: err => toast.error(err.message),
   });
-  const newOrders = trpc.commerce.admin.orders.createdAfter.useQuery({ afterId: cursor }, { retry: 1, staleTime: 0, refetchInterval: 10_000, refetchOnWindowFocus: true });
+  const newOrders = trpc.commerce.admin.orders.createdAfter.useQuery({ afterId: cursor }, { retry: 1, staleTime: 0, refetchInterval: 30_000, refetchOnWindowFocus: true });
 
   useEffect(() => {
     if (getPushPermissionState() !== "granted") return;
@@ -4592,7 +4592,7 @@ function AdminError({ message, retry }: { message: string; retry: () => void }) 
 
 function ChatsPanel() {
   const utils = trpc.useUtils();
-  const query = trpc.commerce.admin.chats.list.useQuery(undefined, { refetchInterval: 3000 });
+  const query = trpc.commerce.admin.chats.list.useQuery(undefined, { refetchInterval: 20000 });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [replyText, setReplyText] = useState("");
   const replyMutation = trpc.commerce.admin.chats.reply.useMutation({

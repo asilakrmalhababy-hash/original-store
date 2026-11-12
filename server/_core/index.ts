@@ -41,12 +41,7 @@ async function startServer() {
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   app.get("/api/health", (_req, res) => res.json({ status: "ok", ts: Date.now() }));
-  if (!(globalThis as any).__keepAliveTimer) {
-    (globalThis as any).__keepAliveTimer = setInterval(() => {
-      const extUrl = process.env.RENDER_EXTERNAL_URL || (HTTPS_PREFIX + "original-store-xmyf.onrender.com");
-      fetch(extUrl + "/api/health").catch(() => {});
-    }, 10 * 60 * 1000);
-  }
+  // keepAliveTimer disabled in v132 so server can idle when no users are active
 
   // --- FAST_IMG_ROUTE_START ---
   const ALLOWED_IMG_MIMES = new Set(["image/webp", "image/png", "image/jpeg", "image/jpg", "image/gif", "image/avif"]);
@@ -135,7 +130,7 @@ async function startServer() {
       await loadT("category", categories); await loadT("banner", banners); await loadT("product", products);
     } catch { __prewarmFastImgDone = false; }
   };
-  setTimeout(() => { void prewarmFastImages(); }, 1200);
+  // prewarmFastImages disabled on boot in v132 (lazy-cached per image request)
 
   let cachedBrand: { name: string; icon: string; time: number } | null = null;
   const publicBrand = async () => {

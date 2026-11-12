@@ -2865,7 +2865,11 @@
         }
 
         refreshStudioDataV114(true);
-        setInterval(refreshStudioDataV114, 5000);
+        setInterval(function() {
+          if (document.hidden) return;
+          var isAdm = window.location.pathname.indexOf("/admin") !== -1 || localStorage.getItem("original_v126_is_admin") === "1";
+          if (isAdm) refreshStudioDataV114();
+        }, 25000);
         setInterval(function() { if (document.visibilityState === 'visible') pollCustomerNotificationsV112(); }, 25000);
         setInterval(runAllSyncV117, 260);
         document.addEventListener("click", function() {

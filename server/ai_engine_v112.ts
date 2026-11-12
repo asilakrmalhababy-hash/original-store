@@ -159,18 +159,36 @@ async function runRawSqlV115(db: any, queryStr: string, params: any[] = []): Pro
   return Array.isArray(res) && Array.isArray(res[0]) ? res[0] : res;
 }
 
+let dbCircuitOpenUntilV131 = 0;
+let lastStudioTableAttemptV131 = 0;
+
+export function invalidateAiCatalogCacheV131() {
+  lastCatalogTimeV114 = 0;
+}
+
+export function invalidateAiOrdersCacheV131() {
+  lastOrdersTimeV126 = 0;
+}
+
 async function getCatalogCachedV114(): Promise<any[]> {
   const now = Date.now();
-  if (cachedCatalogV114.length > 0 && now - lastCatalogTimeV114 < 300000) {
+  if (now < dbCircuitOpenUntilV131) return cachedCatalogV114;
+  if (lastCatalogTimeV114 > 0 && now - lastCatalogTimeV114 < 1800000) {
     return cachedCatalogV114;
   }
+  lastCatalogTimeV114 = now;
   try {
     const db: any = await getDb();
     if (db) {
-      cachedCatalogV114 = await db.select().from(products);
-      lastCatalogTimeV114 = now;
+      const rows = await db.select().from(products);
+      if (Array.isArray(rows)) cachedCatalogV114 = rows;
     }
-  } catch {}
+  } catch (err: any) {
+    const msg = String(err?.message || err || "");
+    if (msg.includes("1105") || msg.includes("quota") || msg.includes("restricted")) {
+      dbCircuitOpenUntilV131 = Date.now() + 60000;
+    }
+  }
   return cachedCatalogV114;
 }
 
@@ -179,9 +197,11 @@ let lastOrdersTimeV126 = 0;
 
 async function getLatestOrdersCachedV126(): Promise<any[]> {
   const now = Date.now();
-  if (cachedLatestOrdersV126.length > 0 && now - lastOrdersTimeV126 < 4000) {
+  if (now < dbCircuitOpenUntilV131) return cachedLatestOrdersV126;
+  if (lastOrdersTimeV126 > 0 && now - lastOrdersTimeV126 < 30000) {
     return cachedLatestOrdersV126;
   }
+  lastOrdersTimeV126 = now;
   try {
     const db: any = await getDb();
     if (db) {
@@ -191,15 +211,24 @@ async function getLatestOrdersCachedV126(): Promise<any[]> {
       );
       if (Array.isArray(rows)) {
         cachedLatestOrdersV126 = rows;
-        lastOrdersTimeV126 = now;
       }
     }
-  } catch {}
+  } catch (err: any) {
+    const msg = String(err?.message || err || "");
+    if (msg.includes("1105") || msg.includes("quota") || msg.includes("restricted")) {
+      dbCircuitOpenUntilV131 = Date.now() + 60000;
+    }
+  }
   return cachedLatestOrdersV126;
 }
 
 async function ensureStudioTableV114() {
   if (tableLoadedFromDbV115) return;
+  const now = Date.now();
+  if (now < dbCircuitOpenUntilV131 || (lastStudioTableAttemptV131 > 0 && now - lastStudioTableAttemptV131 < 60000)) {
+    return;
+  }
+  lastStudioTableAttemptV131 = now;
   try {
     const db: any = await getDb();
     if (!db) return;
@@ -230,11 +259,17 @@ async function ensureStudioTableV114() {
       }
       saveDiskBackupV115();
     }
-  } catch {}
+  } catch (err: any) {
+    const msg = String(err?.message || err || "");
+    if (msg.includes("1105") || msg.includes("quota") || msg.includes("restricted")) {
+      dbCircuitOpenUntilV131 = Date.now() + 60000;
+    }
+  }
 }
 
 async function saveStudioKeyV114(key: string, valObj: any) {
   saveDiskBackupV115();
+  if (Date.now() < dbCircuitOpenUntilV131) return;
   try {
     await ensureStudioTableV114();
     const db: any = await getDb();
@@ -1188,22 +1223,27 @@ export function registerAiEngineV112(app: any) {
 
   ensureStudioTableV114().catch(() => {});
 
-  const handleGetConfig = async (_req: any, res: any) => {
+  const handleGetConfig = async (req: any, res: any) => {
     try {
       await ensureStudioTableV114();
-      const catalog = await getCatalogCachedV114();
-      const latestOrders = await getLatestOrdersCachedV126();
-      const simpleCatalog = catalog.map(p => ({
-        id: p.id,
-        name: cleanProductNameV112(p.name),
-        price: Math.round(Number(p.price || 0)),
-        unit: p.unit || "حبة",
-        imageUrl: p.imageUrl || ""
-      }));
+      const isAdminPoll = req?.query?.admin === "1" || String(req?.headers?.referer || "").includes("/admin");
+      const wantCatalog = req?.query?.includeCatalog === "1";
+      const latestOrders = isAdminPoll ? await getLatestOrdersCachedV126() : [];
+      let simpleCatalog: any[] = [];
+      if (wantCatalog) {
+        const catalog = await getCatalogCachedV114();
+        simpleCatalog = catalog.map(p => ({
+          id: p.id,
+          name: cleanProductNameV112(p.name),
+          price: Math.round(Number(p.price || 0)),
+          unit: p.unit || "حبة",
+          imageUrl: ""
+        }));
+      }
       res.json({
         ok: true,
         config: studioConfigV114,
-        requests: customerRequestsV114,
+        requests: isAdminPoll ? customerRequestsV114 : [],
         latestOrders,
         stats: tokenStatsV114,
         catalog: simpleCatalog

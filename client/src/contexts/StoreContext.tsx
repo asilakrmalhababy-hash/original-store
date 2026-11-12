@@ -40,7 +40,7 @@ function readCart(): CartLine[] {
     if (!value) return [];
     const parsed: unknown = JSON.parse(value);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter((item): item is CartLine => Boolean(item && Number.isInteger(item.id) && Number.isInteger(item.quantity) && item.quantity > 0 && typeof item.name === "string" && Number.isInteger(item.price)));
+    return parsed.filter((item): item is CartLine => Boolean(item && Number.isInteger(item.id) && Number.isInteger(item.quantity) && item.quantity > 0 && typeof item.name === "string" && (typeof item.price === 'number' && !Number.isNaN(item.price))));
   } catch { return []; }
 }
 
@@ -111,10 +111,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             }
             continue;
           }
-          const expectedName = line.variant ? fresh.name + " (" + line.variant + ")" : fresh.name;
-          if (fresh.price !== line.price || expectedName !== line.name || fresh.unit !== line.unit || fresh.imageUrl !== line.imageUrl || fresh.stock !== line.stock) {
+          const hasVarPrice = Boolean(line.variant || (line.name && line.name.includes(':')));
+          const keepPrice = hasVarPrice && line.price > 0 ? line.price : fresh.price;
+          const keepUnit = hasVarPrice && line.unit ? line.unit : fresh.unit;
+          const expectedName = line.variant && !line.name.includes('(') ? fresh.name + " (" + line.variant + ")" : (line.name || fresh.name);
+          if (keepPrice !== line.price || expectedName !== line.name || keepUnit !== line.unit || fresh.imageUrl !== line.imageUrl || fresh.stock !== line.stock) {
             changed = true;
-            next.push({ ...line, name: expectedName, price: fresh.price, unit: fresh.unit, imageUrl: fresh.imageUrl, stock: fresh.stock });
+            next.push({ ...line, name: expectedName, price: keepPrice, unit: keepUnit, imageUrl: fresh.imageUrl, stock: fresh.stock });
           } else {
             next.push(line);
           }

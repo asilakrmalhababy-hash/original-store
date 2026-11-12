@@ -162,13 +162,13 @@ function extractSqlString(arg: unknown): string {
 }
 
 function scheduleCloudSave(pool: mysql.Pool, sqlArg: unknown) {
-  if (isRestoring) return;
+  if (process.env.ENABLE_GITHUB_DB_SYNC !== "true" || isRestoring) return;
   const s = extractSqlString(sqlArg);
-  if (s && /^(select|show|set)\b/i.test(s)) return;
+  if (!s || !/^(insert|update|delete|replace)/i.test(s)) return;
   if (syncTimer) clearTimeout(syncTimer);
   syncTimer = setTimeout(() => {
     void saveToCloudNow(pool);
-  }, 400);
+  }, 600000);
 }
 
 export function resetDbPool() {
@@ -224,12 +224,7 @@ async function createLocalMariaPool(): Promise<mysql.Pool> {
     return conn;
   };
 
-  // Continuous background dirty-check every 5 seconds so no change is ever missed
-  setInterval(() => {
-    if (!isRestoring && !isSaving) {
-      void saveToCloudNow(pool);
-    }
-  }, 5000);
+  // Background 5s full-DB scan disabled in v132 to preserve TiDB RU quota
 
   return pool;
 }
@@ -270,7 +265,15 @@ async function initializeSchemaAndRestore(pool: mysql.Pool) {
     UNIQUE KEY customer_push_order_endpoint_uq (orderId, endpointHash)
   )`).catch(() => {});
 
-  // Temporarily disabled to protect existing TiDB data.
+  // Auto-restore from GitHub data-backup ONLY if products table is completely empty (e.g. fresh TiDB cluster)
+  try {
+    const [cntRows]: any = await pool.query("SELECT COUNT(*) AS cnt FROM products").catch(() => [[{ cnt: 0 }]]);
+    const currentProdCount = Number(cntRows?.[0]?.cnt ?? 0);
+    if (currentProdCount === 0) {
+      console.log("[CloudSync] Fresh/empty database detected (0 products). Restoring from GitHub data-backup...");
+      await restoreFromCloud(pool);
+    }
+  } catch {}
 
   isRestoring = true;
   await pool.query(

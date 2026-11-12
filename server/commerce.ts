@@ -88,8 +88,7 @@ async function withFastRetry<T>(fetcher: () => Promise<T>): Promise<T> {
       new Promise<T>((_, reject) => { timer = setTimeout(() => reject(new Error("QUERY_TIMEOUT")), 5500); }),
     ]);
   } catch (err) {
-    resetDbPool();
-    return await fetcher();
+    throw err;
   } finally {
     if (timer) clearTimeout(timer);
   }
@@ -886,7 +885,7 @@ async function ensureTenBatchProductsSeeded() {
     if (addedAny) (globalThis as any).__fastHomeData = null; (globalThis as any).__fastHomeTime = 0; await clearCatalogCache();
   } catch {}
 }
-setTimeout(() => { void ensureTenBatchProductsSeeded(); }, 2000);
+// ensureTenBatchProductsSeeded disabled on boot in v132
 const fastProductColumns = {
   id: products.id, name: products.name, slug: products.slug, description: products.description,
   imageUrl: sql<string | null>`CASE WHEN ${products.imageUrl} IS NULL OR ${products.imageUrl} = '' THEN NULL WHEN ${products.imageUrl} LIKE 'data:image/%' THEN CONCAT('/api/fast-img/product/', ${products.id}) ELSE ${products.imageUrl} END`,
@@ -936,7 +935,7 @@ async function refreshHomeCatalogCache() {
   return __refreshingHomePromise;
 }
 (globalThis as any).__loadCatalogHome = refreshHomeCatalogCache;
-setTimeout(() => { void refreshHomeCatalogCache().catch(() => {}); }, 80);
+// initial refreshHomeCatalogCache deferred to first visitor request in v132
 // --- FAST_IMG_HELPER_END ---
 function resolveServerVariantOption(product: any, itemName?: string): { price: number; unit: string; name: string } {
   const fallbackUnit = String(product?.unit || "حبة").trim() || "حبة";
@@ -1102,7 +1101,7 @@ export const commerceRouter = router({
 
       const limit = input?.limit ?? 5000;
       const offset = input?.offset ?? 0;
-      const rows = await db.select().from(products)
+      const rows = await db.select(fastProductColumns).from(products)
         .where(and(...filters))
         .orderBy(...ordering)
         .limit(limit)
@@ -2582,8 +2581,8 @@ async function __prewarmCatalog() {
     ]);
   } catch {}
 }
-setTimeout(__prewarmCatalog, 800);
-setInterval(__prewarmCatalog, 45000).unref();
+// setTimeout(__prewarmCatalog, 800) disabled in v132
+// setInterval(__prewarmCatalog, 45000) disabled in v132 to stop 24/7 TiDB RU drain
 
 
 export async function addInvoiceItemToOrderV99(input: { orderId?: number; orderNumber?: string; name: string; unitPrice: number; quantity: number; productId?: number }) {
