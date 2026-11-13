@@ -1,3 +1,4 @@
+import mysqlV138 from "mysql2/promise";
 import * as __dbStatusModV137 from "../db";
 import { registerAiEngineV112 } from "../ai_engine_v112";
 import { addInvoiceItemToOrderV99 } from "../commerce";
@@ -39,26 +40,46 @@ async function startServer() {
     next();
   });
   const server = createServer(app);
+  
   // === ORIGINAL_DB_STATUS_V137_START ===
   app.get("/api/db-status", async (req: any, res: any) => {
+    let tempConn: any = null;
     try {
-      const pool = (__dbStatusModV137 as any).getPool ? await (__dbStatusModV137 as any).getPool() : null;
-      if (!pool) {
-        return res.status(500).json({ ok: false, error: "قاعدة البيانات غير متصلة" });
+      let runner: any = null;
+      if ((__dbStatusModV137 as any).getPool) {
+        runner = await (__dbStatusModV137 as any).getPool();
       }
-      const [sizeRows]: any = await pool.query(
+      if (!runner && process.env.DATABASE_URL) {
+        const u = new URL(process.env.DATABASE_URL);
+        tempConn = await mysqlV138.createConnection({
+          host: u.hostname,
+          port: Number(u.port || 4000),
+          user: decodeURIComponent(u.username),
+          password: decodeURIComponent(u.password),
+          database: u.pathname.replace(/^\//, "") || "test",
+          ssl: { minVersion: "TLSv1.2", rejectUnauthorized: true },
+          connectTimeout: 10000
+        });
+        runner = tempConn;
+      }
+      if (!runner) {
+        return res.status(500).json({ ok: false, error: "لم يتم العثور على متغير DATABASE_URL في السيرفر" });
+      }
+
+      const [sizeRows]: any = await runner.query(
         "SELECT table_name AS name, ROUND((data_length + index_length) / 1024 / 1024, 4) AS size_mb FROM information_schema.tables WHERE table_schema = DATABASE()"
       );
       const sizeMap: Record<string, number> = {};
       let totalMb = 0;
       if (Array.isArray(sizeRows)) {
         for (const r of sizeRows) {
-          const tName = String(r.name || r.NAME || r.table_name || "");
+          const tName = String(r.name || r.NAME || r.table_name || "").toLowerCase();
           const mb = Number(r.size_mb || r.SIZE_MB || 0);
           sizeMap[tName] = mb;
           totalMb += mb;
         }
       }
+
       const tableDefs = [
         { key: "categories", label: "الأقسام (categories)" },
         { key: "products", label: "المنتجات (products)" },
@@ -69,10 +90,11 @@ async function startServer() {
         { key: "users", label: "المستخدمين (users)" },
         { key: "store_settings", label: "إعدادات المتجر (store_settings)" }
       ];
+
       const stats: any[] = [];
       for (const td of tableDefs) {
         try {
-          const [cnt]: any = await pool.query("SELECT COUNT(*) AS c FROM " + td.key);
+          const [cnt]: any = await runner.query("SELECT COUNT(*) AS c FROM " + td.key);
           const countVal = Number((cnt && cnt[0] && (cnt[0].c ?? cnt[0].C)) || 0);
           stats.push({
             table: td.key,
@@ -84,6 +106,12 @@ async function startServer() {
           stats.push({ table: td.key, label: td.label, rows: 0, sizeMb: 0 });
         }
       }
+
+      if (tempConn) {
+        try { await tempConn.end(); } catch (_e) {}
+        tempConn = null;
+      }
+
       const maxMb = 5120;
       const usedMb = Number(totalMb.toFixed(4));
       const remainMb = Number((maxMb - usedMb).toFixed(2));
@@ -143,6 +171,9 @@ async function startServer() {
       res.setHeader("Content-Type", "text/html; charset=utf-8");
       return res.send(pageHtml);
     } catch (err: any) {
+      if (tempConn) {
+        try { await tempConn.end(); } catch (_e) {}
+      }
       return res.status(500).json({ ok: false, error: err?.message || "DB status error" });
     }
   });
