@@ -73,8 +73,8 @@ self.addEventListener("push", event => {
       const isAdminUrl = url.startsWith("/admin");
       await self.registration.showNotification(title, {
         body,
-        icon: "/notif-icon-v3.png",
-        badge: "/notif-badge-v3.png",
+        icon: "/icon-orig-v139.png",
+        badge: "/icon-orig-v139.png",
         tag,
         renotify: true,
         requireInteraction: isAdminUrl,

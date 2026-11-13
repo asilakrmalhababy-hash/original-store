@@ -818,7 +818,7 @@ function buildVariantPayloadV126(variant: ChefRecipeVariantV126, allProducts: an
   const stepsFormatted = variant.steps.map((s, idx) => (idx + 1) + ". " + s).join("\n");
   const introLine = isAlternative
     ? "✨ ولا يهمك يا غالي! جبت لك طريقة ثانية ألذ وأحلى لتحضير «" + variant.title + "» (⏱️ " + variant.prepTime + "):"
-    : "👨‍🍳 أبشر يا غالي! إليك الطريقة الاحترافية لتحضير «" + variant.title + "» (⏱️ " + variant.prepTime + "):";
+    : " أبشر يا غالي! إليك الطريقة الاحترافية لتحضير «" + variant.title + "» (⏱️ " + variant.prepTime + "):";
 
   const replyText =
     introLine + "\n\n" +
@@ -1434,3 +1434,107 @@ export function registerAiEngineV112(app: any) {
 }
 
 export const registerAiStudioV112Routes = registerAiEngineV112;
+
+
+// === ORIGINAL_DB_PUSH_PERSIST_V139_START ===
+import * as __dbPushModV139 from "./db";
+import fsV139 from "fs";
+import pathV139 from "path";
+
+const __PUSH_FILES_V139 = [
+  ".ai-v112-store.json",
+  ".push-subscriptions.json",
+  ".vapid-keys.json",
+  "server/.ai-v112-store.json"
+];
+
+export async function syncPushStoreFromTiDBV139(): Promise<void> {
+  try {
+    const pool = (__dbPushModV139 as any).getPool ? await (__dbPushModV139 as any).getPool() : null;
+    if (!pool) return;
+    // تصحيح أي أرقام طلبات قديمة TEST- أو ORD- إلى 1، 2، 3...
+    try {
+      const [ordRows]: any = await pool.query("SELECT id, orderNumber FROM orders ORDER BY id ASC");
+      if (Array.isArray(ordRows)) {
+        let seq = 0;
+        for (const r of ordRows) {
+          seq += 1;
+          const exp = String(seq);
+          if (String(r.orderNumber || "").trim() !== exp) {
+            await pool.query("UPDATE orders SET orderNumber = ? WHERE id = ?", [exp, r.id]);
+          }
+        }
+      }
+    } catch (_e) {}
+
+    const [rows]: any = await pool.query(
+      "SELECT `key`, `value` FROM store_settings WHERE `key` LIKE 'v139_push_file_%'"
+    );
+    if (Array.isArray(rows)) {
+      for (const r of rows) {
+        const k = String(r.key || "").replace("v139_push_file_", "");
+        const val = String(r.value || "");
+        if (k && val && val.length > 2) {
+          const targetPath = pathV139.resolve(process.cwd(), k);
+          if (!fsV139.existsSync(targetPath)) {
+            fsV139.writeFileSync(targetPath, val, "utf-8");
+            console.log("[PushSyncV139] Restored push file from TiDB:", k);
+          } else {
+            // دمج اشتراكات المشرفين من القاعدة مع الملف المحلي حتى لا يضيع أي اشتراك بعد 12 ساعة
+            try {
+              const dbObj = JSON.parse(val);
+              const locObj = JSON.parse(fsV139.readFileSync(targetPath, "utf-8"));
+              let changed = false;
+              for (const prop of ["pushSubscriptions", "adminSubscriptions", "subscriptions", "customerSubscriptions"]) {
+                if (Array.isArray(dbObj[prop])) {
+                  locObj[prop] = Array.isArray(locObj[prop]) ? locObj[prop] : [];
+                  const existingEndpoints = new Set(locObj[prop].map((x: any) => x && (x.endpoint || (x.sub && x.sub.endpoint))));
+                  for (const item of dbObj[prop]) {
+                    const ep = item && (item.endpoint || (item.sub && item.sub.endpoint));
+                    if (ep && !existingEndpoints.has(ep)) {
+                      locObj[prop].push(item);
+                      existingEndpoints.add(ep);
+                      changed = true;
+                    }
+                  }
+                }
+              }
+              if (dbObj.vapidKeys && !locObj.vapidKeys) {
+                locObj.vapidKeys = dbObj.vapidKeys;
+                changed = true;
+              }
+              if (changed) {
+                fsV139.writeFileSync(targetPath, JSON.stringify(locObj, null, 2), "utf-8");
+              }
+            } catch (_e) {}
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("[PushSyncV139] Restore warning:", err);
+  }
+}
+
+export async function savePushStoreToTiDBV139(): Promise<void> {
+  try {
+    const pool = (__dbPushModV139 as any).getPool ? await (__dbPushModV139 as any).getPool() : null;
+    if (!pool) return;
+    for (const fname of __PUSH_FILES_V139) {
+      const fpath = pathV139.resolve(process.cwd(), fname);
+      if (fsV139.existsSync(fpath)) {
+        const raw = fsV139.readFileSync(fpath, "utf-8");
+        if (raw && raw.length > 2 && raw.length < 1500000) {
+          const settingKey = "v139_push_file_" + pathV139.basename(fname);
+          await pool.query(
+            "INSERT INTO store_settings (`key`, `value`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `value` = VALUES(`value`)",
+            [settingKey, raw]
+          );
+        }
+      }
+    }
+  } catch (_err) {}
+}
+
+setTimeout(() => { syncPushStoreFromTiDBV139(); }, 1500);
+// === ORIGINAL_DB_PUSH_PERSIST_V139_END ===
