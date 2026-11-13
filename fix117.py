@@ -1,0 +1,3777 @@
+import pathlib, os, re, subprocess
+
+print("=== بدء التحديث الشامل v117 (إصلاح واجهة المساعد بالكامل 100% + إدراج صورة الوصفة المغرية والوصفة الكاملة داخل فقاعة الرد الأصلية بدون المساس بتصميم الصفحة) ===")
+
+# 0. استعادة الملفات الأساسية لضمان نظافة الكود
+os.system("git checkout server/_core/index.ts server/commerce.ts client/src/pages/Admin.tsx client/src/pages/Home.tsx client/index.html client/public/sw.js 2>/dev/null")
+
+# ==============================================================================
+# 1. Create server/ai_engine_v112.ts:
+#    - 4-Layer Bulletproof Storage (Memory + Local File + TiDB MySQL + Client Backup)
+#    - Exact Product Name Match first so "بسكويت ديما كريمة بنكهة البرتقال" NEVER matches "البرتقال"!
+# ==============================================================================
+ai_engine_ts = """import type { Express } from "express";
+import fs from "fs";
+import path from "path";
+import { getDb } from "./db";
+import { products } from "../drizzle/schema";
+
+export interface CustomInstructionItemV114 {
+  id: string;
+  category: "welcome" | "missing_item" | "tone" | "general";
+  text: string;
+  active: boolean;
+  createdAt: string;
+}
+
+export interface CustomPromptRuleV112 {
+  id: string;
+  trigger: string;
+  response: string;
+  active: boolean;
+}
+
+export interface PromotedProductItemV114 {
+  id: string;
+  productId?: number;
+  productName: string;
+  productUrl: string;
+  productPrice?: number;
+  productImage?: string;
+  triggerKeywords: string;
+  promoPitch: string;
+  promoBadge: string;
+  active: boolean;
+}
+
+export interface CustomRecipeIngredientV114 {
+  productId?: number;
+  name: string;
+  url: string;
+  price?: number;
+}
+
+export interface CustomRecipeItemV112 {
+  id: string;
+  title: string;
+  keywords: string;
+  imageUrl: string;
+  steps: string;
+  ingredients: CustomRecipeIngredientV114[];
+}
+
+export interface ProductAiMetadataV112 {
+  usageType: "auto" | "recipe" | "snacks_and_drinks" | "calories_and_info" | "custom";
+  calories: string;
+  customInfo: string;
+  pairings: string;
+  prepIdeas: string;
+}
+
+export interface AiCustomerRequestV112 {
+  id: string;
+  sessionId: string;
+  customerName: string;
+  customerPhone: string;
+  requestedItem: string;
+  userMessage: string;
+  status: "pending" | "replied" | "available";
+  adminReply: string;
+  createdAt: string;
+  repliedAt?: string;
+}
+
+export interface AiStudioConfigV112 {
+  generalSystemPrompt: string;
+  instructions: CustomInstructionItemV114[];
+  rules: CustomPromptRuleV112[];
+  promotedProducts: PromotedProductItemV114[];
+  recipes: CustomRecipeItemV112[];
+  productAiMap: Record<string, ProductAiMetadataV112>;
+  ecoMode10k: boolean;
+}
+
+const DEFAULT_STUDIO_CONFIG: AiStudioConfigV112 = {
+  generalSystemPrompt: "",
+  instructions: [],
+  rules: [],
+  promotedProducts: [],
+  recipes: [],
+  productAiMap: {},
+  ecoMode10k: true
+};
+
+const LOCAL_BACKUP_FILE = path.join(process.cwd(), "ai_studio_v115_backup.json");
+
+let memoryConfig: AiStudioConfigV112 = JSON.parse(JSON.stringify(DEFAULT_STUDIO_CONFIG));
+let memoryRequests: AiCustomerRequestV112[] = [];
+let dbLoadedOnce = false;
+let dbTableCreated = false;
+
+const responseCache = new Map<string, { data: any; expiresAt: number }>();
+let zeroTokenCounter = 0;
+let cachedHitCounter = 0;
+
+function sanitizeConfigObject(parsed: any): AiStudioConfigV112 {
+  if (!parsed || typeof parsed !== "object") {
+    return JSON.parse(JSON.stringify(DEFAULT_STUDIO_CONFIG));
+  }
+  return {
+    generalSystemPrompt: typeof parsed.generalSystemPrompt === "string" ? parsed.generalSystemPrompt : "",
+    instructions: Array.isArray(parsed.instructions) ? parsed.instructions : [],
+    rules: Array.isArray(parsed.rules) ? parsed.rules : [],
+    promotedProducts: Array.isArray(parsed.promotedProducts) ? parsed.promotedProducts : [],
+    recipes: Array.isArray(parsed.recipes)
+      ? parsed.recipes.map((r: any) => ({
+          id: String(r?.id || "rec_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6)),
+          title: String(r?.title || ""),
+          keywords: String(r?.keywords || ""),
+          imageUrl: String(r?.imageUrl || ""),
+          steps: String(r?.steps || ""),
+          ingredients: Array.isArray(r?.ingredients)
+            ? r.ingredients.map((ing: any) =>
+                typeof ing === "string"
+                  ? { name: ing, url: "/products?search=" + encodeURIComponent(ing) }
+                  : {
+                      productId: ing?.productId ? Number(ing.productId) : undefined,
+                      name: String(ing?.name || ""),
+                      url: String(ing?.url || ("/products?search=" + encodeURIComponent(String(ing?.name || "")))),
+                      price: ing?.price ? Number(ing.price) : undefined
+                    }
+              )
+            : []
+        }))
+      : [],
+    productAiMap: parsed.productAiMap && typeof parsed.productAiMap === "object" ? parsed.productAiMap : {},
+    ecoMode10k: parsed.ecoMode10k !== false
+  };
+}
+
+function hasAnyStudioData(cfg: AiStudioConfigV112): boolean {
+  if (!cfg) return false;
+  return (
+    Boolean(cfg.generalSystemPrompt && cfg.generalSystemPrompt.trim()) ||
+    (Array.isArray(cfg.instructions) && cfg.instructions.length > 0) ||
+    (Array.isArray(cfg.rules) && cfg.rules.length > 0) ||
+    (Array.isArray(cfg.promotedProducts) && cfg.promotedProducts.length > 0) ||
+    (Array.isArray(cfg.recipes) && cfg.recipes.length > 0) ||
+    (cfg.productAiMap && Object.keys(cfg.productAiMap).length > 0)
+  );
+}
+
+function saveToLocalFileSync(cfg: AiStudioConfigV112, reqs: AiCustomerRequestV112[]) {
+  try {
+    fs.writeFileSync(
+      LOCAL_BACKUP_FILE,
+      JSON.stringify({ config: cfg, requests: reqs, updatedAt: Date.now() }),
+      "utf-8"
+    );
+  } catch {}
+}
+
+function loadFromLocalFileSync(): { config?: AiStudioConfigV112; requests?: AiCustomerRequestV112[] } | null {
+  try {
+    if (fs.existsSync(LOCAL_BACKUP_FILE)) {
+      const raw = fs.readFileSync(LOCAL_BACKUP_FILE, "utf-8");
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object") {
+        return {
+          config: parsed.config ? sanitizeConfigObject(parsed.config) : undefined,
+          requests: Array.isArray(parsed.requests) ? parsed.requests : undefined
+        };
+      }
+    }
+  } catch {}
+  return null;
+}
+
+const initialLocal = loadFromLocalFileSync();
+if (initialLocal?.config && hasAnyStudioData(initialLocal.config)) {
+  memoryConfig = initialLocal.config;
+}
+if (initialLocal?.requests && initialLocal.requests.length > 0) {
+  memoryRequests = initialLocal.requests;
+}
+
+async function runRawSqlV115(db: any, queryStr: string): Promise<any> {
+  if (!db) return null;
+  const sessionClient = (db as any)?.session?.client || (db as any)?.$client;
+  if (sessionClient && typeof sessionClient.execute === "function") {
+    return await sessionClient.execute(queryStr);
+  }
+  if (sessionClient && typeof sessionClient.query === "function") {
+    return await sessionClient.query(queryStr);
+  }
+  if (typeof (db as any).execute === "function") {
+    return await (db as any).execute(queryStr);
+  }
+  return null;
+}
+
+function extractRowsFromResultV115(res: any): any[] {
+  if (!res) return [];
+  if (Array.isArray(res)) {
+    if (Array.isArray(res[0])) return res[0];
+    return res;
+  }
+  if (Array.isArray(res.rows)) return res.rows;
+  return [];
+}
+
+function sqlEscapeHexOrBase64(jsonStr: string): string {
+  return Buffer.from(jsonStr, "utf-8").toString("base64");
+}
+
+function decodeStoredValueV115(rawVal: string): any {
+  if (!rawVal) return null;
+  const trimmed = String(rawVal).trim();
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    return JSON.parse(trimmed);
+  }
+  const decoded = Buffer.from(trimmed, "base64").toString("utf-8");
+  return JSON.parse(decoded);
+}
+
+async function ensureDbTableV115(db: any) {
+  if (dbTableCreated || !db) return;
+  try {
+    await runRawSqlV115(
+      db,
+      "CREATE TABLE IF NOT EXISTS ai_studio_v115 (id VARCHAR(64) PRIMARY KEY, payload LONGTEXT NOT NULL, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)"
+    );
+    dbTableCreated = true;
+  } catch {}
+}
+
+async function loadStateFromDbOnce() {
+  if (dbLoadedOnce) return;
+  try {
+    const db = await getDb();
+    if (!db) return;
+    await ensureDbTableV115(db);
+    const res = await runRawSqlV115(
+      db,
+      "SELECT id, payload FROM ai_studio_v115 WHERE id IN ('config_v115', 'requests_v115')"
+    );
+    const list = extractRowsFromResultV115(res);
+    for (const row of list) {
+      const rowId = row?.id || row?.ID;
+      const rowVal = row?.payload || row?.PAYLOAD;
+      if (rowId === "config_v115" && rowVal) {
+        try {
+          const parsed = decodeStoredValueV115(String(rowVal));
+          const sanitized = sanitizeConfigObject(parsed);
+          if (hasAnyStudioData(sanitized) || !hasAnyStudioData(memoryConfig)) {
+            memoryConfig = sanitized;
+          }
+        } catch {}
+      } else if (rowId === "requests_v115" && rowVal) {
+        try {
+          const parsed = decodeStoredValueV115(String(rowVal));
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            memoryRequests = parsed;
+          }
+        } catch {}
+      }
+    }
+    saveToLocalFileSync(memoryConfig, memoryRequests);
+    dbLoadedOnce = true;
+  } catch {}
+}
+
+async function persistConfigToDb(cfg: AiStudioConfigV112) {
+  memoryConfig = sanitizeConfigObject(cfg);
+  responseCache.clear();
+  saveToLocalFileSync(memoryConfig, memoryRequests);
+  try {
+    const db = await getDb();
+    if (!db) return;
+    await ensureDbTableV115(db);
+    const b64 = sqlEscapeHexOrBase64(JSON.stringify(memoryConfig));
+    await runRawSqlV115(
+      db,
+      "INSERT INTO ai_studio_v115 (id, payload) VALUES ('config_v115', '" + b64 + "') ON DUPLICATE KEY UPDATE payload = '" + b64 + "'"
+    );
+  } catch {}
+}
+
+async function persistRequestsToDb() {
+  saveToLocalFileSync(memoryConfig, memoryRequests);
+  try {
+    const db = await getDb();
+    if (!db) return;
+    await ensureDbTableV115(db);
+    const b64 = sqlEscapeHexOrBase64(JSON.stringify(memoryRequests.slice(0, 250)));
+    await runRawSqlV115(
+      db,
+      "INSERT INTO ai_studio_v115 (id, payload) VALUES ('requests_v115', '" + b64 + "') ON DUPLICATE KEY UPDATE payload = '" + b64 + "'"
+    );
+  } catch {}
+}
+
+function normalizeArabicV112(str: string): string {
+  return String(str || "")
+    .toLowerCase()
+    .replace(/[أإآ]/g, "ا")
+    .replace(/ة/g, "ه")
+    .replace(/ى/g, "ي")
+    .replace(/[؟?!.,،]/g, " ")
+    .replace(/\\s+/g, " ")
+    .trim();
+}
+
+export function cleanProductNameV112(rawName: string): string {
+  return String(rawName || "")
+    .replace(/\\(\\s*رقم\\s*\\d+\\s*\\)/g, "")
+    .replace(/\\[\\[variants:[\\s\\S]*?\\]\\]/g, "")
+    .replace(/\\s*\\([^()]*:\\s*\\d+[^()]*\\)\\s*/g, "")
+    .trim();
+}
+
+export function classifyProductSmartV112(productName: string, customMeta?: ProductAiMetadataV112): {
+  mode: "recipe" | "snacks_and_drinks" | "calories_and_info" | "custom";
+  chips: { icon: string; label: string; prompt: string }[];
+  defaultInfo: string;
+} {
+  const cleanName = cleanProductNameV112(productName);
+  const norm = normalizeArabicV112(cleanName);
+
+  if (customMeta && customMeta.usageType && customMeta.usageType !== "auto") {
+    if (customMeta.usageType === "custom" && customMeta.customInfo) {
+      return {
+        mode: "custom",
+        chips: [
+          { icon: "✨", label: "معلومات خاصة ومميزات المنتج", prompt: "اعطني معلومات ومميزات " + cleanName },
+          { icon: "🔥", label: "السعرات والقيمة الغذائية", prompt: "كم السعرات الحرارية والمعلومات الغذائية في " + cleanName },
+          { icon: "🛒", label: "أفضل الإضافات معه", prompt: "ايش افضل المنتجات اللي تناسب " + cleanName }
+        ],
+        defaultInfo: customMeta.customInfo
+      };
+    }
+    if (customMeta.usageType === "recipe") {
+      return {
+        mode: "recipe",
+        chips: [
+          { icon: "🍰", label: "حلى ووصفة سريعة به", prompt: "اعطني وصفة حلى او طريقة عمل لذيذة باستخدام " + cleanName },
+          { icon: "☕", label: "مشروب يناسبه", prompt: "ايش افضل مشروب يقدم مع " + cleanName },
+          { icon: "🔥", label: "السعرات والمعلومات", prompt: "كم السعرات الحرارية في " + cleanName }
+        ],
+        defaultInfo: customMeta.prepIdeas || ""
+      };
+    }
+    if (customMeta.usageType === "snacks_and_drinks") {
+      return {
+        mode: "snacks_and_drinks",
+        chips: [
+          { icon: "☕", label: "أفضل مشروب أو سناك معه", prompt: "ايش افضل مشروب او سناك يؤكل مع " + cleanName },
+          { icon: "🔥", label: "السعرات الحرارية والمعلومات", prompt: "كم السعرات الحرارية والمعلومات عن " + cleanName },
+          { icon: "⭐", label: "منتجات مشابهة بالمتجر", prompt: "اعطني منتجات مشابهة او بديلة لـ " + cleanName }
+        ],
+        defaultInfo: customMeta.pairings || ""
+      };
+    }
+    if (customMeta.usageType === "calories_and_info") {
+      return {
+        mode: "calories_and_info",
+        chips: [
+          { icon: "🔥", label: "السعرات والقيمة الغذائية", prompt: "كم السعرات الحرارية والمعلومات الغذائية لـ " + cleanName },
+          { icon: "💡", label: "معلومات وفوائد المنتج", prompt: "اعطني معلومات وفوائد " + cleanName },
+          { icon: "🛒", label: "منتجات تكمله في السلة", prompt: "ايش اضيف مع " + cleanName + " في السلة" }
+        ],
+        defaultInfo: customMeta.calories || ""
+      };
+    }
+  }
+
+  const isRecipeBiscuitOrBase = /(ماري|بسكويت شاي|سميد|شوفان|قشطه|قشطة|حليب مكثف|دقيق|طحين|توست|كريم كراميل|جيلي|جالكسي|اوريو|أوريو|ابو ولد|أبو ولد)/.test(norm);
+  if (isRecipeBiscuitOrBase) {
+    return {
+      mode: "recipe",
+      chips: [
+        { icon: "🍰", label: "طريقة عمل حلى سريع به", prompt: "اعطني وصفة حلى سريع ولذيذ باستخدام " + cleanName },
+        { icon: "☕", label: "تغميسة أو مشروب معه", prompt: "ايش افضل مشروب او تغميسة مع " + cleanName },
+        { icon: "🔥", label: "السعرات الحرارية والمعلومات", prompt: "كم السعرات الحرارية والمعلومات عن " + cleanName }
+      ],
+      defaultInfo: customMeta?.prepIdeas || "يدخل في تحضير ألذ الحلويات الباردة وطبقات البسكويت مع القشطة أو الحليب والشوكولاتة، كما يؤكل مباشرة مع الشاي أو القهوة."
+    };
+  }
+
+  const isReadyChocolateOrCandy = /(شوكلاته|شوكولاته|شوكولاتة|بليلا|ويفر|بريك|توبس|كيت كات|سنيكرز|مارس|باونتي|تويكس|كندر|حلاوه|حلاوة|مصاص|علك|لبان|شيبس|بطاطس|فشار|مكسرات|كيك|كرواسون|ديمه|ديما)/.test(norm);
+  if (isReadyChocolateOrCandy) {
+    return {
+      mode: "snacks_and_drinks",
+      chips: [
+        { icon: "☕", label: "أفضل مشروب معه (قهوة/عصير)", prompt: "ايش افضل مشروب يناسب " + cleanName },
+        { icon: "🔥", label: "السعرات الحرارية والمعلومات", prompt: "كم السعرات الحرارية والمعلومات الغذائية عن " + cleanName },
+        { icon: "🍫", label: "سناكات مشابهة في المتجر", prompt: "رشح لي سناكات او حلويات مشابهة لـ " + cleanName }
+      ],
+      defaultInfo: customMeta?.calories || "سناك جاهز للأكل مباشرة (لا يحتاج طبخ أو تحضير)، طعمه رائع مع القهوة العربية أو التركية أو العصائر الباردة، ويمد الجسم بطاقة سريعة."
+    };
+  }
+
+  const isBeverage = /(عصير|شراب|رواب|ماء|مياه|بيبسي|كولا|سفن|ميرندا|حليب|لبن|شاي|قهوه|قهوة|نسكافيه|كابتشينو)/.test(norm);
+  if (isBeverage) {
+    return {
+      mode: "snacks_and_drinks",
+      chips: [
+        { icon: "🥨", label: "أفضل سناك أو بسكويت معه", prompt: "ايش افضل سناك او بسكويت يؤكل مع " + cleanName },
+        { icon: "🧊", label: "أفضل طريقة تقديم ومنعشة", prompt: "كيف اقدم " + cleanName + " بطريقة منعشة ومميزة" },
+        { icon: "🔥", label: "السعرات والمعلومات الغذائية", prompt: "كم السعرات الحرارية والمعلومات عن " + cleanName }
+      ],
+      defaultInfo: customMeta?.calories || "مشروب منعش يفضل تقديمه بارداً، ويناسب جداً تناوله مع البسكويت أو الشوكولاتة الخفيفة أو المكسرات."
+    };
+  }
+
+  const isCookingIngredient = /(ارز|أرز|مكرونه|مكرونة|تونه|تونة|صلصه|صلصة|زيت|سمن|فول|فاصوليا|عدس|بازلاء|بهارات|ملح|سكر|مرقه|مرقة|ماجي|جبن|جبنه|جبنة|بيض|دجاج|لحم)/.test(norm);
+  if (isCookingIngredient) {
+    return {
+      mode: "recipe",
+      chips: [
+        { icon: "🍲", label: "وجبة سريعة واقتصادية به", prompt: "اعطني طريقة عمل وجبة سريعة ولذيذة باستخدام " + cleanName },
+        { icon: "🥗", label: "المكونات المكملة له للطبخ", prompt: "ايش المكونات اللي احتاجها عشان اطبخ " + cleanName },
+        { icon: "🔥", label: "القيمة الغذائية والسعرات", prompt: "ما هي القيمة الغذائية والسعرات في " + cleanName }
+      ],
+      defaultInfo: customMeta?.prepIdeas || "مكون أساسي للطبخ وتحضير الوجبات اليومية السريعة والاقتصادية."
+    };
+  }
+
+  return {
+    mode: "calories_and_info",
+    chips: [
+      { icon: "💡", label: "معلومات ومميزات المنتج", prompt: "اعطني معلومات ومميزات واستخدامات " + cleanName },
+      { icon: "🛒", label: "منتجات مشابهة أو مكملة", prompt: "ايش المنتجات المشابهة او المكملة لـ " + cleanName }
+    ],
+    defaultInfo: customMeta?.customInfo || "منتج أصلي متوفر في متجر أورجنال بجودة عالية وسعر منافس."
+  };
+}
+
+function findMatchingSavedRecipeV117(userMessage: string, recipes: CustomRecipeItemV112[]): CustomRecipeItemV112 | null {
+  if (!Array.isArray(recipes) || recipes.length === 0) return null;
+  const normMsg = normalizeArabicV112(userMessage);
+  if (!normMsg) return null;
+
+  const stopWords = new Set(["اريد", "ابغي", "اشتي", "هل", "عندكم", "ممكن", "كيف", "اسوي", "طريقه", "عمل", "وصفه", "حلو", "لذيذ", "سريع", "في", "من", "مع", "على", "عن"]);
+
+  for (const rec of recipes) {
+    const normTitle = normalizeArabicV112(rec.title || "");
+    const normKw = normalizeArabicV112(rec.keywords || "");
+
+    if (normTitle && (normMsg.includes(normTitle) || normTitle.includes(normMsg))) return rec;
+    if (normKw && (normMsg.includes(normKw) || normKw.includes(normMsg))) return rec;
+
+    const kwList = String(rec.keywords || "")
+      .split(/[،,]+/)
+      .map(s => normalizeArabicV112(s))
+      .filter(s => s.length >= 3);
+    for (const kw of kwList) {
+      if (normMsg.includes(kw) || kw.includes(normMsg)) return rec;
+    }
+
+    const combinedTarget = normTitle + " " + normKw;
+    const msgWords = normMsg.split(" ").filter(w => w.length >= 3 && !stopWords.has(w));
+    const matchedWords = msgWords.filter(w => combinedTarget.includes(w));
+    if (matchedWords.length >= 2) return rec;
+    if (matchedWords.length >= 1 && (normMsg.includes("حلي") || normMsg.includes("وصفه"))) return rec;
+  }
+  return null;
+}
+
+export function registerAiEngineV112(app: Express) {
+  app.get("/api/ai-studio/state", async (_req, res) => {
+    try {
+      await loadStateFromDbOnce();
+      const db = await getDb();
+      let allProds: any[] = [];
+      if (db) {
+        allProds = await db
+          .select({
+            id: products.id,
+            name: products.name,
+            price: products.price,
+            unit: products.unit,
+            description: products.description
+          })
+          .from(products);
+      }
+      const catalog = allProds.map(p => {
+        const pid = String(p.id);
+        const cleanName = cleanProductNameV112(p.name);
+        const meta = memoryConfig.productAiMap[pid] || memoryConfig.productAiMap[cleanName] || {
+          usageType: "auto",
+          calories: "",
+          customInfo: "",
+          pairings: "",
+          prepIdeas: ""
+        };
+        const smart = classifyProductSmartV112(cleanName, meta);
+        return {
+          id: p.id,
+          name: cleanName,
+          price: p.price,
+          unit: p.unit || "حبة",
+          url: "/products?search=" + encodeURIComponent(cleanName),
+          meta,
+          smartMode: smart.mode,
+          smartChips: smart.chips
+        };
+      });
+
+      res.json({
+        ok: true,
+        config: memoryConfig,
+        requests: memoryRequests,
+        catalog,
+        stats: {
+          zeroTokenMessages: zeroTokenCounter,
+          cachedHits: cachedHitCounter,
+          estimatedTokensSaved: (zeroTokenCounter + cachedHitCounter) * 450
+        }
+      });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  app.post("/api/ai-studio/save-config", async (req, res) => {
+    try {
+      await loadStateFromDbOnce();
+      const body = req.body || {};
+      const next: AiStudioConfigV112 = sanitizeConfigObject({
+        generalSystemPrompt:
+          typeof body.generalSystemPrompt === "string" ? body.generalSystemPrompt : memoryConfig.generalSystemPrompt,
+        instructions: Array.isArray(body.instructions) ? body.instructions : memoryConfig.instructions,
+        rules: Array.isArray(body.rules) ? body.rules : memoryConfig.rules,
+        promotedProducts: Array.isArray(body.promotedProducts) ? body.promotedProducts : memoryConfig.promotedProducts,
+        recipes: Array.isArray(body.recipes) ? body.recipes : memoryConfig.recipes,
+        productAiMap:
+          body.productAiMap && typeof body.productAiMap === "object" ? body.productAiMap : memoryConfig.productAiMap,
+        ecoMode10k: body.ecoMode10k !== undefined ? Boolean(body.ecoMode10k) : memoryConfig.ecoMode10k
+      });
+      await persistConfigToDb(next);
+      res.json({ ok: true, config: memoryConfig });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  app.post("/api/ai-studio/request-item", async (req, res) => {
+    try {
+      await loadStateFromDbOnce();
+      const body = req.body || {};
+      const requestedItem = String(body.requestedItem || "").trim();
+      if (!requestedItem) {
+        return res.status(400).json({ ok: false, error: "يرجى تحديد اسم المنتج المطلوب" });
+      }
+      const newReq: AiCustomerRequestV112 = {
+        id: "req_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6),
+        sessionId: String(body.sessionId || "guest"),
+        customerName: String(body.customerName || "زبون المتجر").trim(),
+        customerPhone: String(body.customerPhone || "").trim(),
+        requestedItem,
+        userMessage: String(body.userMessage || requestedItem).trim(),
+        status: "pending",
+        adminReply: "",
+        createdAt: new Date().toISOString()
+      };
+      memoryRequests.unshift(newReq);
+      await persistRequestsToDb();
+      res.json({ ok: true, request: newReq });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  app.post("/api/ai-studio/admin-reply", async (req, res) => {
+    try {
+      await loadStateFromDbOnce();
+      const body = req.body || {};
+      const reqId = String(body.requestId || "");
+      const replyText = String(body.adminReply || "").trim();
+      const status = body.status === "available" ? "available" : "replied";
+      const target = memoryRequests.find(r => r.id === reqId);
+      if (!target) {
+        return res.status(404).json({ ok: false, error: "الطلب غير موجود" });
+      }
+      target.adminReply = replyText;
+      target.status = status;
+      target.repliedAt = new Date().toISOString();
+      await persistRequestsToDb();
+      res.json({ ok: true, request: target });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  app.get("/api/ai-studio/customer-notifications", async (req, res) => {
+    try {
+      await loadStateFromDbOnce();
+      const sessionId = String(req.query.sessionId || "");
+      const matched = sessionId
+        ? memoryRequests.filter(r => r.sessionId === sessionId && r.adminReply)
+        : memoryRequests.filter(r => r.adminReply).slice(0, 5);
+      res.json({ ok: true, notifications: matched });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  app.post("/api/ai-studio/smart-chat", async (req, res) => {
+    try {
+      await loadStateFromDbOnce();
+      const body = req.body || {};
+      const userMessage = String(body.message || "").trim();
+      const productContextName = cleanProductNameV112(String(body.productName || ""));
+      const normMsg = normalizeArabicV112(userMessage);
+
+      if (!userMessage) {
+        return res.json({ ok: true, zeroToken: true, reply: "يا هلا بك يا غالي! آمرني، ايش تبحث عنه اليوم؟" });
+      }
+
+      const cacheKey = normMsg + "|" + normalizeArabicV112(productContextName);
+      const cached = responseCache.get(cacheKey);
+      if (cached && cached.expiresAt > Date.now()) {
+        cachedHitCounter++;
+        return res.json({ ...cached.data, fromCache: true });
+      }
+
+      const db = await getDb();
+      const allProds = db
+        ? await db
+            .select({
+              id: products.id,
+              name: products.name,
+              price: products.price,
+              unit: products.unit,
+              description: products.description
+            })
+            .from(products)
+        : [];
+
+      // 1. Check Custom Admin Rules first (0 Tokens)
+      for (const rule of memoryConfig.rules) {
+        if (!rule.active || !rule.trigger) continue;
+        const triggers = rule.trigger.split(/[،,|]+/).map(t => normalizeArabicV112(t)).filter(Boolean);
+        if (triggers.some(t => normMsg.includes(t))) {
+          zeroTokenCounter++;
+          const payload = {
+            ok: true,
+            zeroToken: true,
+            reply: rule.response,
+            suggestedItems: []
+          };
+          responseCache.set(cacheKey, { data: payload, expiresAt: Date.now() + 10 * 60 * 1000 });
+          return res.json(payload);
+        }
+      }
+
+      // 2. Check Custom Illustrated Recipes with Product Links (0 Tokens)
+      const matchedRecipe = findMatchingSavedRecipeV117(userMessage + " " + productContextName, memoryConfig.recipes);
+      if (matchedRecipe) {
+        zeroTokenCounter++;
+        const matchedItems: any[] = [];
+        for (const ing of matchedRecipe.ingredients || []) {
+          const ingObj = typeof ing === "string" ? { name: ing, url: "/products?search=" + encodeURIComponent(ing) } : ing;
+          const cleanIng = cleanProductNameV112(ingObj.name || "");
+          // Priority 1: Exact product ID or Exact product name match (prevents "بسكويت ديما كريمة بنكهة البرتقال" from matching "البرتقال"!)
+          const foundProd =
+            (ingObj.productId ? allProds.find(p => Number(p.id) === Number(ingObj.productId)) : undefined) ||
+            allProds.find(p => cleanProductNameV112(p.name) === cleanIng) ||
+            allProds.find(p => normalizeArabicV112(cleanProductNameV112(p.name)) === normalizeArabicV112(cleanIng)) ||
+            allProds.find(p => {
+              const cn = normalizeArabicV112(cleanProductNameV112(p.name));
+              const ci = normalizeArabicV112(cleanIng);
+              return cn.length >= 6 && ci.length >= 6 && (cn.includes(ci) || ci.includes(cn)) && Math.abs(cn.length - ci.length) <= 6;
+            });
+
+          if (foundProd) {
+            matchedItems.push({
+              id: foundProd.id,
+              productId: foundProd.id,
+              name: cleanProductNameV112(foundProd.name),
+              price: foundProd.price,
+              unit: foundProd.unit || "حبة",
+              url: ingObj.url || ("/products?search=" + encodeURIComponent(cleanProductNameV112(foundProd.name)))
+            });
+          } else if (ingObj.name) {
+            matchedItems.push({
+              id: ingObj.productId || 1,
+              productId: ingObj.productId || 1,
+              name: cleanIng,
+              price: ingObj.price || 100,
+              unit: "حبة",
+              url: ingObj.url || ("/products?search=" + encodeURIComponent(cleanIng))
+            });
+          }
+        }
+        const replyMsg =
+          "يا غالي، جبت لك ألذ وأفخم وصفة تفتح النفس من مطبخ أورجنال: 😍🍫\\n" +
+          "🍰 «" + matchedRecipe.title + "»\\n\\n" +
+          "📋 الوصفة وطريقة التحضير الكاملة:\\n" +
+          matchedRecipe.steps;
+        const payload = {
+          ok: true,
+          zeroToken: true,
+          reply: replyMsg,
+          recipeTitle: matchedRecipe.title,
+          recipeImage: matchedRecipe.imageUrl || "",
+          recipeSteps: matchedRecipe.steps || "",
+          suggestedItems: matchedItems
+        };
+        responseCache.set(cacheKey, { data: payload, expiresAt: Date.now() + 10 * 60 * 1000 });
+        return res.json(payload);
+      }
+
+      // 3. Check Promoted Products with Direct Links (0 Tokens)
+      for (const promo of memoryConfig.promotedProducts || []) {
+        if (!promo.active || !promo.triggerKeywords) continue;
+        const kws = promo.triggerKeywords.split(/[،,|]+/).map(s => normalizeArabicV112(s)).filter(Boolean);
+        if (kws.some(k => normMsg.includes(k) || normalizeArabicV112(productContextName).includes(k))) {
+          zeroTokenCounter++;
+          const foundProd = allProds.find(
+            p =>
+              (promo.productId && Number(p.id) === Number(promo.productId)) ||
+              cleanProductNameV112(p.name) === cleanProductNameV112(promo.productName)
+          );
+          const payload = {
+            ok: true,
+            zeroToken: true,
+            reply:
+              (promo.promoBadge ? promo.promoBadge + " — " : "⭐ ترشيح خاص لك: ") +
+              "«" + promo.productName + "»" +
+              (promo.productPrice ? " (" + promo.productPrice + " ر.ي)" : "") +
+              "\\n" + (promo.promoPitch || ""),
+            promotedProduct: promo,
+            suggestedItems: foundProd
+              ? [
+                  {
+                    id: foundProd.id,
+                    productId: foundProd.id,
+                    name: cleanProductNameV112(foundProd.name),
+                    price: foundProd.price,
+                    unit: foundProd.unit || "حبة",
+                    url: promo.productUrl || ("/products?search=" + encodeURIComponent(cleanProductNameV112(foundProd.name)))
+                  }
+                ]
+              : [
+                  {
+                    id: promo.productId || 1,
+                    productId: promo.productId || 1,
+                    name: promo.productName,
+                    price: promo.productPrice || 100,
+                    unit: "حبة",
+                    url: promo.productUrl || ("/products?search=" + encodeURIComponent(promo.productName))
+                  }
+                ]
+          };
+          responseCache.set(cacheKey, { data: payload, expiresAt: Date.now() + 10 * 60 * 1000 });
+          return res.json(payload);
+        }
+      }
+
+      // 4. Product Modal / Specific Product Question (0 Tokens)
+      const targetProd = allProds.find(p => {
+        const cn = normalizeArabicV112(cleanProductNameV112(p.name));
+        return cn && ((productContextName && cn === normalizeArabicV112(productContextName)) || (cn.length >= 4 && normMsg.includes(cn)));
+      });
+
+      if (targetProd) {
+        const cleanName = cleanProductNameV112(targetProd.name);
+        const pid = String(targetProd.id);
+        const meta = memoryConfig.productAiMap[pid] || memoryConfig.productAiMap[cleanName];
+        const smart = classifyProductSmartV112(cleanName, meta);
+
+        zeroTokenCounter++;
+        let replyText = "";
+        if (meta && (meta.customInfo || meta.calories || meta.pairings || meta.prepIdeas)) {
+          const parts: string[] = [];
+          parts.push("يا غالي، بخصوص «" + cleanName + "» (سعره " + targetProd.price + " ر.ي):");
+          if (meta.customInfo) parts.push("✨ معلومات المنتج: " + meta.customInfo);
+          if (meta.calories) parts.push("🔥 السعرات والقيمة الغذائية: " + meta.calories);
+          if (meta.pairings) parts.push("☕ أفضل ما يؤكل أو يشرب معه: " + meta.pairings);
+          if (meta.prepIdeas) parts.push("🍰 أفكار ووصفات به: " + meta.prepIdeas);
+          replyText = parts.join("\\n");
+        } else if (smart.mode === "snacks_and_drinks") {
+          replyText =
+            "يا غالي، «" + cleanName + "» متوفر بسعر " + targetProd.price + " ر.ي فقط! 😍\\n" +
+            "💡 معلومات عنه: " + smart.defaultInfo + "\\n" +
+            "✨ نصيحة سريعة: جربه مع قهوة ساخنة أو عصير بارد من المتجر واستمتع بالطعم الأصلي.";
+        } else if (smart.mode === "recipe") {
+          replyText =
+            "يا هلا بك يا غالي! «" + cleanName + "» (سعره " + targetProd.price + " ر.ي) ممتاز جداً للتحضير:\\n" +
+            "🍰 فكرة سريعة ولذيذة: " + smart.defaultInfo;
+        } else {
+          replyText =
+            "حياك الله يا غالي! «" + cleanName + "» متوفر في المتجر بسعر " + targetProd.price + " ر.ي.\\n" +
+            "💡 " + smart.defaultInfo;
+        }
+
+        const payload = {
+          ok: true,
+          zeroToken: true,
+          reply: replyText,
+          smartChips: smart.chips,
+          suggestedItems: [
+            {
+              id: targetProd.id,
+              productId: targetProd.id,
+              name: cleanName,
+              price: targetProd.price,
+              unit: targetProd.unit || "حبة",
+              url: "/products?search=" + encodeURIComponent(cleanName)
+            }
+          ]
+        };
+        responseCache.set(cacheKey, { data: payload, expiresAt: Date.now() + 10 * 60 * 1000 });
+        return res.json(payload);
+      }
+
+      // 5. Missing item friendly offer
+      const stopWords = new Set(["هل", "عندكم", "في", "متوفر", "اريد", "ابغي", "اشتي", "بكم", "سعر", "وين", "وش", "ايش", "كيف", "طريقه", "عمل", "وصفه", "معلومات", "سعرات"]);
+      const words = normMsg.split(" ").filter(w => w.length >= 3 && !stopWords.has(w));
+      const matchedProds = allProds.filter(p => {
+        const cn = normalizeArabicV112(cleanProductNameV112(p.name));
+        return words.some(w => cn.includes(w));
+      });
+
+      const asksAvailability = /(عندكم|متوفر|تبيعون|احصل|القي|اشتي|ابغي|اريد|موجود)/.test(normMsg);
+      if (asksAvailability && matchedProds.length === 0 && words.length > 0) {
+        zeroTokenCounter++;
+        const requestedName = words.join(" ");
+        const customMissingInst = (memoryConfig.instructions || []).find(i => i.active && i.category === "missing_item");
+        const friendlyReply = customMissingInst?.text
+          ? customMissingInst.text.replace(/\{المنتج\}/g, requestedName)
+          : "فهمتك يا غالي! تقصد «" + requestedName + "».. حلو حلو 👌 حالياً هذا الصنف مو ظاهر قدامي على الرف، بس ولا يهمك! إذا تريده أقدر أتواصل لك مع إدارة المتجر فوراً وأرسل لهم إشعار لهاتفهم يسجلوه لك أو يشوفون لو متوفر بالمخزن. هل تريد أكلم المتجر يوفرونه لك؟ اضغط الزر بالأسفل ويوصلهم طلبك فوراً 👇";
+        const payload = {
+          ok: true,
+          zeroToken: true,
+          missingItemOffer: true,
+          requestedItemName: requestedName,
+          reply: friendlyReply,
+          suggestedItems: []
+        };
+        return res.json(payload);
+      }
+
+      zeroTokenCounter++;
+      const topMatches = matchedProds.slice(0, 3).map(p => ({
+        id: p.id,
+        productId: p.id,
+        name: cleanProductNameV112(p.name),
+        price: p.price,
+        unit: p.unit || "حبة",
+        url: "/products?search=" + encodeURIComponent(cleanProductNameV112(p.name))
+      }));
+
+      if (topMatches.length > 0) {
+        const namesList = topMatches.map(m => "«" + m.name + "» (" + m.price + " ر.ي)").join("، و");
+        const payload = {
+          ok: true,
+          zeroToken: true,
+          reply: "أبشر يا غالي! فهمت طلبك، وهذي أفضل الأصناف المتوفرة عندنا وتناسبك تماماً: " + namesList + ". تقدر تضيفها للسلة بضغطة زر، وإذا كنت تقصد صنف ثاني غيرها تقدر تطلب مني أكلم المتجر يوفره لك فوراً! ❤️",
+          suggestedItems: topMatches,
+          canRequestCustomItem: true,
+          requestedItemName: userMessage
+        };
+        responseCache.set(cacheKey, { data: payload, expiresAt: Date.now() + 10 * 60 * 1000 });
+        return res.json(payload);
+      }
+
+      const customWelcomeInst = (memoryConfig.instructions || []).find(i => i.active && i.category === "welcome");
+      const fallbackPayload = {
+        ok: true,
+        zeroToken: true,
+        missingItemOffer: true,
+        requestedItemName: userMessage,
+        reply: customWelcomeInst?.text
+          ? customWelcomeInst.text
+          : "حياك الله يا غالي! فهمتك تماماً 👌 بخصوص «" + userMessage + "»، إذا كنت تبحث عن منتج معين غير ظاهر بالمتجر، أقدر أتواصل لك مع إدارة المتجر الآن وأرسل إشعار مباشر لهاتفهم عشان يوفرونه لك ويردون عليك هنا بالمحادثة! هل تريد أكلم المتجر لك؟ 👇",
+        suggestedItems: []
+      };
+      return res.json(fallbackPayload);
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+}
+"""
+
+pathlib.Path("server/ai_engine_v112.ts").write_text(ai_engine_ts, encoding="utf-8")
+print("1. Created server/ai_engine_v112.ts (v117 Engine)!")
+
+# ==============================================================================
+# 2. Register registerAiEngineV112(app) & /api/admin/order-add-item in server/_core/index.ts
+# ==============================================================================
+srv_index = pathlib.Path("server/_core/index.ts")
+if srv_index.exists():
+    si = srv_index.read_text(encoding="utf-8")
+    si = re.sub(r'express\.json\(\s*\)', 'express.json({ limit: "50mb" })', si)
+    imports_to_add = 'import { registerAiEngineV112 } from "../ai_engine_v112";\nimport { addInvoiceItemToOrderV99 } from "../commerce";\n'
+    if "registerAiEngineV112" not in si:
+        si = imports_to_add + si
+        route_hook = """
+  registerAiEngineV112(app);
+  app.post("/api/admin/order-add-item", express.json({ limit: "10mb" }), async (req, res) => {
+    try {
+      const result = await addInvoiceItemToOrderV99(req.body || {});
+      res.json(result);
+    } catch (err: any) {
+      res.status(400).json({ ok: false, error: String(err?.message || err) });
+    }
+  });
+"""
+        idx_app = si.find("const app = express()")
+        if idx_app != -1:
+            line_end = si.find("\n", idx_app)
+            si = si[:line_end+1] + route_hook + si[line_end+1:]
+        elif "app.use(" in si:
+            idx_use = si.find("app.use(")
+            si = si[:idx_use] + route_hook + "\n  " + si[idx_use:]
+        srv_index.write_text(si, encoding="utf-8")
+        print("2. Registered AI Studio v117 and 50mb JSON limit in server/_core/index.ts!")
+
+# ==============================================================================
+# 3. Update server/commerce.ts:
+# ==============================================================================
+comm_path = pathlib.Path("server/commerce.ts")
+if comm_path.exists():
+    cc = comm_path.read_text(encoding="utf-8")
+
+    cc = re.sub(r'\(\s*رقم\s*\$\{[^}]+\}\s*\)', '', cc)
+    cc = re.sub(r'max_tokens:\s*(?:800|1000|1200|1500|2000)', 'max_tokens: 180', cc)
+
+    def add_desc_to_select(m):
+        block = m.group(0)
+        if "description:" not in block and "products.unit" in block:
+            return block.replace("unit: products.unit,", "unit: products.unit, description: products.description,")
+        return block
+
+    cc = re.sub(r'\.select\(\{[\s\S]*?\}\)', add_desc_to_select, cc)
+
+    secure_resolve_fn = """function resolveServerVariantOption(product: any, itemName?: string): { price: number; unit: string; name: string } {
+  const fallbackUnit = String(product?.unit || "حبة").trim() || "حبة";
+  const fallbackPrice = Math.max(0, Math.round(Number(product?.price || 0)));
+  const rawItemName = String(itemName || product?.name || "").trim();
+  if (!rawItemName) {
+    return { price: fallbackPrice, unit: fallbackUnit, name: String(product?.name || "") };
+  }
+
+  const dbPriceMap: Record<string, number> = {};
+  const desc = String(product?.description || "");
+  const vMatch = desc.match(/\\[\\[variants:(\\[[\\s\\S]*?\\])\\]\\]/);
+  if (vMatch && vMatch[1]) {
+    try {
+      const arr: string[] = JSON.parse(vMatch[1]);
+      for (const rawEntry of arr) {
+        const subEntries = String(rawEntry || "").split(/[،,]+/);
+        for (const entry of subEntries) {
+          const colonIdx = entry.indexOf(":");
+          if (colonIdx !== -1) {
+            const oName = entry.slice(0, colonIdx).trim();
+            const oPrice = parseFloat(entry.slice(colonIdx + 1).trim());
+            if (oName && !isNaN(oPrice) && oPrice > 0) {
+              dbPriceMap[oName] = Math.round(oPrice);
+            }
+          }
+        }
+      }
+    } catch {}
+  }
+
+  let targetStr = "";
+  const parenMatches = Array.from(rawItemName.matchAll(/\\(([^()]+)\\)/g));
+  if (parenMatches.length > 0) {
+    targetStr = parenMatches.map(m => m[1].trim()).filter(s => s.includes(":")).join("، ");
+  } else if (rawItemName.includes(":")) {
+    targetStr = rawItemName;
+  }
+
+  if (targetStr && targetStr.includes(":")) {
+    const segments = targetStr.split(/[،,+]+/).map(s => s.trim()).filter(Boolean);
+    let totalW = 0;
+    let totalQ = 0;
+    const labels: string[] = [];
+    for (const seg of segments) {
+      let sQty = 1;
+      const mm = seg.match(/[×xX*]\\s*(\\d+)/);
+      if (mm && mm[1]) sQty = Math.max(1, parseInt(mm[1], 10));
+      const cleanSeg = seg.replace(/[×xX*]\\s*\\d+.*$/, "").trim();
+      const cIdx = cleanSeg.indexOf(":");
+      if (cIdx !== -1) {
+        const oName = cleanSeg.slice(0, cIdx).trim();
+        const lPrice = parseFloat(cleanSeg.slice(cIdx + 1).trim());
+        const verifiedPrice = dbPriceMap[oName] ?? (!isNaN(lPrice) && lPrice > 0 ? Math.round(lPrice) : 0);
+        if (verifiedPrice > 0) {
+          totalW += verifiedPrice * sQty;
+          totalQ += sQty;
+          labels.push(sQty > 1 ? oName + " × " + sQty : oName);
+        }
+      }
+    }
+    if (totalQ > 0 && totalW > 0) {
+      return {
+        price: Math.round(totalW / totalQ),
+        unit: labels.join(" + ") || fallbackUnit,
+        name: rawItemName
+      };
+    }
+  }
+
+  for (const [oName, oPrice] of Object.entries(dbPriceMap)) {
+    if (oName && rawItemName.includes(oName)) {
+      return { price: oPrice, unit: oName, name: rawItemName };
+    }
+  }
+
+  return { price: fallbackPrice, unit: fallbackUnit, name: rawItemName };
+}
+"""
+
+    last_import = cc.rfind("\nimport ")
+    if last_import != -1:
+        end_of_import = cc.find("\n", last_import + 1)
+        cc = cc[:end_of_import + 1] + "\n" + secure_resolve_fn + "\n" + cc[end_of_import + 1:]
+    else:
+        cc = secure_resolve_fn + "\n" + cc
+
+    cc = re.sub(
+        r'const\s+unitPrice\s*=\s*(?:Number\()?\s*product\.price\s*(?:\)\s*\|\|\s*0)?;',
+        'const resolvedVariant = resolveServerVariantOption(product, (item as any)?.name || (item as any)?.productName || (item as any)?.unit);\n      const unitPrice = resolvedVariant.price;',
+        cc
+    )
+    cc = re.sub(
+        r'unitPrice:\s*product\.price\s*,',
+        'unitPrice: resolveServerVariantOption(product, (item as any)?.name || (item as any)?.productName || (item as any)?.unit).price,',
+        cc
+    )
+    cc = re.sub(
+        r'price:\s*product\.price\s*,',
+        'price: resolveServerVariantOption(product, (item as any)?.name || (item as any)?.productName || (item as any)?.unit).price,',
+        cc
+    )
+    cc = re.sub(
+        r'productName:\s*product\.name\s*,',
+        'productName: ((item as any)?.name && String((item as any).name).includes(":")) ? String((item as any).name) : product.name,',
+        cc
+    )
+    cc = re.sub(
+        r'unit:\s*product\.unit\s*,',
+        'unit: resolveServerVariantOption(product, (item as any)?.name || (item as any)?.productName || (item as any)?.unit).unit,',
+        cc
+    )
+
+    add_item_fn = """
+export async function addInvoiceItemToOrderV99(input: {
+  orderId: number;
+  productId?: number;
+  customName?: string;
+  unit?: string;
+  quantity: number;
+  unitPrice?: number;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("قاعدة البيانات غير متوفرة");
+
+  const orderId = Number(input.orderId || 0);
+  const qty = Math.max(1, Number(input.quantity || 1));
+  if (!orderId) throw new Error("رقم الطلب غير صحيح");
+
+  const existingOrders = await db.select().from(orders).where(eq(orders.id, orderId));
+  const ord = existingOrders[0];
+  if (!ord) throw new Error("الطلب غير موجود");
+
+  let finalProductId = Number(input.productId || 0);
+  let finalName = String(input.customName || "").trim();
+  let finalUnit = String(input.unit || "حبة").trim() || "حبة";
+  let finalUnitPrice = Math.max(0, Math.round(Number(input.unitPrice ?? 0)));
+
+  if (finalProductId > 0) {
+    const prods = await db.select().from(products).where(eq(products.id, finalProductId));
+    const p = prods[0];
+    if (p) {
+      const resolved = resolveServerVariantOption(p, finalName || finalUnit);
+      if (!finalName) finalName = resolved.name || p.name;
+      if (!input.unit) finalUnit = resolved.unit || p.unit || "حبة";
+      if (input.unitPrice === undefined || input.unitPrice === null || Number(input.unitPrice) <= 0) {
+        finalUnitPrice = resolved.price;
+      }
+    }
+  } else {
+    const anyProds = await db.select().from(products);
+    finalProductId = anyProds[0]?.id || 1;
+    if (!finalName) finalName = "صنف إضافي";
+  }
+
+  const lineTotal = Math.round(finalUnitPrice * qty);
+
+  await db.insert(orderItems).values({
+    orderId,
+    productId: finalProductId,
+    productName: finalName,
+    unit: finalUnit,
+    quantity: qty,
+    unitPrice: finalUnitPrice,
+    lineTotal,
+  } as any);
+
+  const allItems = await db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
+  const newSubtotal = allItems.reduce((sum, it: any) => {
+    const lt = Number(it.lineTotal ?? (Number(it.unitPrice || 0) * Number(it.quantity || 1)));
+    return sum + lt;
+  }, 0);
+  const oldSubtotal = Number((ord as any).subtotal || 0);
+  const oldTotal = Number((ord as any).total || 0);
+  const diff = oldTotal - oldSubtotal;
+  const newTotal = Math.max(0, newSubtotal + diff);
+
+  await db.update(orders).set({
+    subtotal: newSubtotal,
+    total: newTotal,
+  } as any).where(eq(orders.id, orderId));
+
+  return { ok: true, orderId, newSubtotal, newTotal, addedName: finalName, lineTotal };
+}
+"""
+    if "addInvoiceItemToOrderV99" not in cc:
+        cc = cc + "\n" + add_item_fn
+
+    comm_path.write_text(cc, encoding="utf-8")
+    print("3. Updated server/commerce.ts!")
+
+# ==============================================================================
+# 4. Patch client/src/pages/Home.tsx for multi-option splitting & variant prices
+# ==============================================================================
+home_path = pathlib.Path("client/src/pages/Home.tsx")
+if home_path.exists():
+    hc = home_path.read_text(encoding="utf-8")
+
+    hc = re.sub(
+        r'\b([a-zA-Z_]\w*)\.product\.price\b(?!\s*=(?!=))',
+        r'extractVariantPriceV104(\1, \1.product.price, \1.product)',
+        hc
+    )
+    hc = re.sub(
+        r'\b([a-zA-Z_]\w*)\.unitPrice\b(?!\s*=(?!=)|\s*:)',
+        r'extractVariantPriceV104(\1, \1.unitPrice, \1?.product)',
+        hc
+    )
+    hc = re.sub(
+        r'\b([a-zA-Z_]\w*)\.lineTotal\b(?!\s*=(?!=)|\s*:)',
+        r'extractVariantLineTotalV107(\1)',
+        hc
+    )
+    hc = re.sub(
+        r'\b([a-zA-Z_]\w*(?:\??\.[a-zA-Z_]\w*)*)\??\.subtotal\b(?!\s*=(?!=)|\s*:)',
+        r'extractCartSubtotalV107(\1, \1?.subtotal)',
+        hc
+    )
+    hc = re.sub(
+        r'\b([a-zA-Z_]\w*(?:\??\.[a-zA-Z_]\w*)*)\??\.total\b(?!\s*=(?!=)|\s*:)',
+        r'extractOrderTotalV107(\1, \1?.total)',
+        hc
+    )
+    hc = re.sub(
+        r'\b([a-zA-Z_]\w*(?:\??\.[a-zA-Z_]\w*)*\??\.items)\??\.map\(',
+        r'expandOrderItemsV110(\1).map(',
+        hc
+    )
+    hc = re.sub(
+        r'\b([a-zA-Z_]\w*(?:\??\.[a-zA-Z_]\w*)*\??\.items)\.length\b(?!\s*=(?!=))',
+        r'expandOrderItemsV110(\1).length',
+        hc
+    )
+
+    v111_helpers = """function expandOrderItemsV110(items: any): any[] {
+  if (!Array.isArray(items)) return [];
+  const result: any[] = [];
+  for (const it of items) {
+    if (!it || typeof it !== "object") {
+      result.push(it);
+      continue;
+    }
+    const rawName = String(it.productName || it.name || it.product?.name || "").trim();
+    const parenMatches = Array.from(rawName.matchAll(/\\(([^()]+)\\)/g));
+    if (parenMatches.length > 0) {
+      const inner = parenMatches.map(m => m[1].trim()).filter(s => s.includes(":")).join("، ");
+      const segments = inner.split(/[،,+]+/).map(s => s.trim()).filter(Boolean);
+      if (segments.length > 1) {
+        const baseTitle = rawName.replace(/\\s*\\([^()]*\\)\\s*$/g, "").trim() || rawName;
+        let expandedAny = false;
+        segments.forEach((seg, idx) => {
+          let sQty = 1;
+          const mm = seg.match(/[×xX*]\\s*(\\d+)/);
+          if (mm && mm[1]) sQty = Math.max(1, parseInt(mm[1], 10));
+          const cleanSeg = seg.replace(/[×xX*]\\s*\\d+.*$/, "").trim();
+          const cIdx = cleanSeg.indexOf(":");
+          if (cIdx !== -1) {
+            const oName = cleanSeg.slice(0, cIdx).trim();
+            const oPrice = parseFloat(cleanSeg.slice(cIdx + 1).trim());
+            if (oName && !isNaN(oPrice) && oPrice > 0) {
+              expandedAny = true;
+              const segFullTitle = baseTitle + " (" + oName + ":" + Math.round(oPrice) + ")";
+              result.push({
+                ...it,
+                id: String(it.id ?? "") + "_v" + idx,
+                name: segFullTitle,
+                productName: segFullTitle,
+                unit: oName,
+                quantity: sQty,
+                price: Math.round(oPrice),
+                unitPrice: Math.round(oPrice),
+                lineTotal: Math.round(oPrice * sQty),
+              });
+            }
+          }
+        });
+        if (expandedAny) continue;
+      }
+    }
+    result.push(it);
+  }
+  return result;
+}
+
+function getStoredVariantTextV107(productId: any, productName?: any): string {
+  try {
+    if (productName && typeof window !== "undefined") {
+      const cleanPName = String(productName).replace(/\\s*\\([^()]*\\)\\s*$/, "").trim();
+      const reord = (window as any).__v111ReorderedVariants;
+      if (reord && reord[cleanPName] && reord[cleanPName].raw) {
+        return String(reord[cleanPName].raw);
+      }
+    }
+    if (productId !== undefined && productId !== null) {
+      const pidStr = String(productId);
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (!k || k.indexOf("v107") !== -1 || k.indexOf("v109") !== -1) continue;
+        const raw = localStorage.getItem(k);
+        if (!raw || (raw[0] !== "{" && raw[0] !== "[")) continue;
+        try {
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && parsed[pidStr] !== undefined) {
+            const val = parsed[pidStr];
+            if (typeof val === "string" && val.includes(":")) return val;
+            if (Array.isArray(val)) {
+              const s = val.map((x: any) => typeof x === "string" ? x : (x?.label || x?.variant || x?.name || "")).filter(Boolean).join("، ");
+              if (s.includes(":")) return s;
+            }
+            if (val && typeof val === "object") {
+              const parts: string[] = [];
+              for (const [vk, vv] of Object.entries(val)) {
+                if (vk.includes(":") && Number(vv) > 0) {
+                  parts.push(Number(vv) > 1 ? vk + " × " + vv : vk);
+                }
+              }
+              if (parts.length > 0) return parts.join("، ");
+            }
+          }
+        } catch {}
+      }
+    }
+  } catch {}
+  return "";
+}
+
+function extractVariantPriceV104(rawText: any, fallbackPrice: any, productObj?: any): number {
+  const base = Number(fallbackPrice ?? productObj?.price ?? 0);
+  let combined = "";
+  let pid: any = productObj?.id ?? productObj?.productId;
+  let pname: any = productObj?.name;
+  if (typeof rawText === "object" && rawText !== null) {
+    pid = rawText.productId ?? rawText.product?.id ?? rawText.id ?? pid;
+    pname = rawText.product?.name ?? rawText.productName ?? rawText.name ?? pname;
+    const explicitFields = [
+      rawText.name,
+      rawText.productName,
+      rawText.displayName,
+      rawText.customName,
+      rawText.variant,
+      rawText.selectedVariant,
+      rawText.variantLabel,
+      rawText.option,
+      rawText.unit,
+      rawText.label
+    ].filter(v => typeof v === "string" && v.trim().length > 0).join(" ");
+
+    if (/\\([^()]*:\\s*\\d/.test(explicitFields) || explicitFields.includes(":")) {
+      combined = explicitFields;
+    } else {
+      combined = [explicitFields, getStoredVariantTextV107(pid, pname)].filter(Boolean).join(" ");
+    }
+  } else if (rawText) {
+    combined = String(rawText).trim();
+  } else {
+    combined = getStoredVariantTextV107(pid, pname);
+  }
+
+  if (!combined) return base;
+
+  const dbPriceMap: Record<string, number> = {};
+  const desc = String(
+    productObj?.description ||
+    (typeof rawText === "object" ? (rawText?.description || rawText?.product?.description) : "") ||
+    ""
+  );
+  const vMatch = desc.match(/\\[\\[variants:(\\[[\\s\\S]*?\\])\\]\\]/);
+  if (vMatch && vMatch[1]) {
+    try {
+      const arr: string[] = JSON.parse(vMatch[1]);
+      for (const rawEntry of arr) {
+        const subEntries = String(rawEntry || "").split(/[،,]+/);
+        for (const entry of subEntries) {
+          const colonIdx = entry.indexOf(":");
+          if (colonIdx !== -1) {
+            const oName = entry.slice(0, colonIdx).trim();
+            const oPrice = parseFloat(entry.slice(colonIdx + 1).trim());
+            if (oName && !isNaN(oPrice) && oPrice > 0) {
+              dbPriceMap[oName] = oPrice;
+            }
+          }
+        }
+      }
+    } catch {}
+  }
+
+  let targetStr = "";
+  const parenMatches = Array.from(combined.matchAll(/\\(([^()]+)\\)/g));
+  if (parenMatches.length > 0) {
+    targetStr = parenMatches.map(m => m[1].trim()).filter(s => s.includes(":")).join("، ");
+  } else if (combined.includes(":")) {
+    targetStr = combined;
+  }
+
+  if (targetStr && targetStr.includes(":")) {
+    const segments = targetStr.split(/[،,+]+/).map(s => s.trim()).filter(Boolean);
+    let totalW = 0;
+    let totalQ = 0;
+    for (const seg of segments) {
+      let sQty = 1;
+      const mm = seg.match(/[×xX*]\\s*(\\d+)/);
+      if (mm && mm[1]) sQty = Math.max(1, parseInt(mm[1], 10));
+      const cleanSeg = seg.replace(/[×xX*]\\s*\\d+.*$/, "").trim();
+      const cIdx = cleanSeg.indexOf(":");
+      if (cIdx !== -1) {
+        const oName = cleanSeg.slice(0, cIdx).trim();
+        const lPrice = parseFloat(cleanSeg.slice(cIdx + 1).trim());
+        const finalP = dbPriceMap[oName] ?? (!isNaN(lPrice) && lPrice > 0 ? lPrice : 0);
+        if (finalP > 0) {
+          totalW += finalP * sQty;
+          totalQ += sQty;
+        }
+      }
+    }
+    if (totalQ > 0 && totalW > 0) {
+      return totalW / totalQ;
+    }
+  }
+
+  for (const [oName, oPrice] of Object.entries(dbPriceMap)) {
+    if (oName && combined.includes(oName)) return oPrice;
+  }
+
+  return base;
+}
+
+function extractVariantLineTotalV107(item: any): number {
+  if (!item) return 0;
+  const qty = Math.max(1, Number(item.quantity || 1));
+  const unitP = extractVariantPriceV104(item, item?.unitPrice ?? item?.price ?? item?.product?.price, item?.product);
+  return Math.round(unitP * qty);
+}
+
+function extractCartSubtotalV107(cartOrOrder: any, fallbackSubtotal?: any): number {
+  const isOrderObj = Boolean(cartOrOrder?.orderNumber || cartOrOrder?.status);
+  if (!isOrderObj && typeof window !== "undefined" && Number((window as any).__v108ComputedCartSubtotal) > 0) {
+    return Number((window as any).__v108ComputedCartSubtotal);
+  }
+  const rawItems = cartOrOrder?.items;
+  if (Array.isArray(rawItems) && rawItems.length > 0) {
+    const items = expandOrderItemsV110(rawItems);
+    const calcSub = Math.round(items.reduce((sum: number, it: any) => {
+      const q = Math.max(1, Number(it?.quantity || 1));
+      const up = extractVariantPriceV104(it, it?.unitPrice ?? it?.price ?? it?.product?.price, it?.product);
+      return sum + up * q;
+    }, 0));
+    if (!isOrderObj && typeof window !== "undefined") {
+      (window as any).__v107LastCartSubtotal = calcSub;
+      (window as any).__v107LastCartBaseSubtotal = Number(fallbackSubtotal ?? cartOrOrder?.subtotal ?? 0);
+    }
+    return calcSub;
+  }
+  const fb = Number(fallbackSubtotal ?? cartOrOrder?.subtotal ?? 0);
+  if (!isOrderObj && typeof window !== "undefined" && (window as any).__v107LastCartSubtotal && fb > 0) {
+    return Number((window as any).__v107LastCartSubtotal);
+  }
+  return fb;
+}
+
+function extractOrderTotalV107(cartOrOrder: any, fallbackTotal?: any): number {
+  const oldTot = Number(fallbackTotal ?? cartOrOrder?.total ?? 0);
+  const oldSub = Number(cartOrOrder?.subtotal ?? oldTot);
+  const newSub = extractCartSubtotalV107(cartOrOrder, oldSub);
+  if (newSub > 0 && newSub !== oldSub) {
+    return Math.max(0, oldTot - oldSub + newSub);
+  }
+  return oldTot;
+}"""
+
+    last_imp = hc.rfind("\nimport ", 0, 3000)
+    end_imp = hc.find("\n", last_imp + 1) if last_imp != -1 else 0
+    hc = hc[:end_imp + 1] + "\n" + v111_helpers + "\n" + hc[end_imp + 1:]
+    home_path.write_text(hc, encoding="utf-8")
+    print("4. Updated client/src/pages/Home.tsx!")
+
+# ==============================================================================
+# 5. Update client/index.html:
+#    - 100% NON-DESTRUCTIVE surgical upgrade for AI Assistant bubbles:
+#      NEVER overwrites .innerHTML of any React container!
+#      Preserves the exact native AI Assistant layout (header, scrollable chat, native "الأصناف والمقادير المقترحة للسلة" box, bottom input bar)
+#      Inserts ONLY the standalone Mouth-Watering Recipe Photo Banner right before the reply text paragraph inside the bubble, and updates the reply text & native item row via setLeafTextSafe!
+# ==============================================================================
+html_path = pathlib.Path("client/index.html")
+if html_path.exists():
+    ht = html_path.read_text(encoding="utf-8")
+    ht = re.sub(r'<script>\s*\(function\(\)\s*\{[\s\S]*?syncVariantModalPrice[\s\S]*?</script>', '', ht)
+
+    v117_master_script = """
+    <script>
+      (function() {
+        try {
+          localStorage.removeItem("original_v107_by_name");
+          sessionStorage.removeItem("original_v109_cart_subtotal");
+        } catch (e) {}
+
+        window.__v108ComputedCartSubtotal = 0;
+        window.__v111ReorderedVariants = {};
+        window.__v114StudioConfig = {
+          generalSystemPrompt: "",
+          instructions: [],
+          rules: [],
+          promotedProducts: [],
+          recipes: [],
+          productAiMap: {},
+          ecoMode10k: true
+        };
+        window.__v115InitialConfigLoaded = false;
+        window.__v115LastSaveTime = 0;
+        window.__v115BannerMsg = "";
+        window.__v114Requests = [];
+        window.__v114Catalog = [];
+        window.__v114Stats = { zeroTokenMessages: 0, cachedHits: 0, estimatedTokensSaved: 0 };
+        window.__v112DeliveredReplyIds = {};
+        window.__v112NotifiedReqIds = {};
+        window.__v114StudioOpen = false;
+        window.__v114ActiveSubTab = "inst";
+        window.__v114DraftIngredients = [];
+        window.__v114DraftRecipeImg = "";
+        window.__v112SessionId = localStorage.getItem("original_v112_session_id") || ("sess_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7));
+
+        function hasAnyStudioItemsV115(c) {
+          if (!c || typeof c !== "object") return false;
+          return (
+            (Array.isArray(c.instructions) && c.instructions.length > 0) ||
+            (Array.isArray(c.rules) && c.rules.length > 0) ||
+            (Array.isArray(c.promotedProducts) && c.promotedProducts.length > 0) ||
+            (Array.isArray(c.recipes) && c.recipes.length > 0) ||
+            (c.productAiMap && Object.keys(c.productAiMap).length > 0)
+          );
+        }
+
+        function saveLocalBackupV115() {
+          try {
+            localStorage.setItem("original_v115_studio_backup", JSON.stringify(window.__v114StudioConfig));
+          } catch (e) {}
+        }
+
+        try {
+          localStorage.setItem("original_v112_session_id", window.__v112SessionId);
+          var savedReord = sessionStorage.getItem("original_v111_reordered_variants");
+          if (savedReord) window.__v111ReorderedVariants = JSON.parse(savedReord) || {};
+          var savedDeliv = localStorage.getItem("original_v112_delivered_replies");
+          if (savedDeliv) window.__v112DeliveredReplyIds = JSON.parse(savedDeliv) || {};
+          var localCfg = localStorage.getItem("original_v115_studio_backup");
+          if (localCfg) {
+            var parsedLocal = JSON.parse(localCfg);
+            if (parsedLocal && typeof parsedLocal === "object") {
+              window.__v114StudioConfig = {
+                generalSystemPrompt: String(parsedLocal.generalSystemPrompt || ""),
+                instructions: Array.isArray(parsedLocal.instructions) ? parsedLocal.instructions : [],
+                rules: Array.isArray(parsedLocal.rules) ? parsedLocal.rules : [],
+                promotedProducts: Array.isArray(parsedLocal.promotedProducts) ? parsedLocal.promotedProducts : [],
+                recipes: Array.isArray(parsedLocal.recipes) ? parsedLocal.recipes : [],
+                productAiMap: parsedLocal.productAiMap && typeof parsedLocal.productAiMap === "object" ? parsedLocal.productAiMap : {},
+                ecoMode10k: true
+              };
+            }
+          }
+        } catch (e) {}
+
+        function normalizeArabicClientV116(str) {
+          return String(str || "")
+            .toLowerCase()
+            .replace(/[أإآ]/g, "ا")
+            .replace(/ة/g, "ه")
+            .replace(/ى/g, "ي")
+            .replace(/[؟?!.,،]/g, " ")
+            .replace(/\\s+/g, " ")
+            .trim();
+        }
+
+        function matchRecipeClientV116(userText) {
+          var list = (window.__v114StudioConfig && window.__v114StudioConfig.recipes) || [];
+          if (!Array.isArray(list) || list.length === 0) return null;
+          var normUser = normalizeArabicClientV116(userText);
+          if (!normUser || normUser.length < 3) return null;
+          var stopWords = ["اريد", "ابغي", "اشتي", "هل", "عندكم", "ممكن", "كيف", "اسوي", "طريقه", "عمل", "وصفه", "حلو", "لذيذ", "سريع", "في", "من", "مع", "على", "عن"];
+
+          for (var i = 0; i < list.length; i++) {
+            var rec = list[i];
+            var normTitle = normalizeArabicClientV116(rec.title || "");
+            var normKw = normalizeArabicClientV116(rec.keywords || "");
+            if (normTitle && (normUser.indexOf(normTitle) !== -1 || normTitle.indexOf(normUser) !== -1)) return rec;
+            if (normKw && (normUser.indexOf(normKw) !== -1 || normKw.indexOf(normUser) !== -1)) return rec;
+
+            var kwParts = String(rec.keywords || "").split(/[،,]+/).map(function(s) { return normalizeArabicClientV116(s); }).filter(function(s) { return s.length >= 3; });
+            for (var kIdx = 0; kIdx < kwParts.length; kIdx++) {
+              if (normUser.indexOf(kwParts[kIdx]) !== -1 || kwParts[kIdx].indexOf(normUser) !== -1) return rec;
+            }
+
+            var combinedTarget = normTitle + " " + normKw;
+            var userWords = normUser.split(" ").filter(function(w) { return w.length >= 3 && stopWords.indexOf(w) === -1; });
+            var matchedWords = userWords.filter(function(w) { return combinedTarget.indexOf(w) !== -1; });
+            if (matchedWords.length >= 2) return rec;
+            if (matchedWords.length >= 1 && (normUser.indexOf("حلي") !== -1 || normUser.indexOf("وصفه") !== -1)) return rec;
+          }
+          return null;
+        }
+
+        function matchRuleClientV116(userText) {
+          var rules = (window.__v114StudioConfig && window.__v114StudioConfig.rules) || [];
+          if (!Array.isArray(rules) || rules.length === 0) return null;
+          var normUser = normalizeArabicClientV116(userText);
+          if (!normUser) return null;
+          for (var i = 0; i < rules.length; i++) {
+            var trig = normalizeArabicClientV116(rules[i].trigger || "");
+            if (trig && normUser.indexOf(trig) !== -1) return rules[i];
+          }
+          return null;
+        }
+
+        function matchPromoClientV116(userText) {
+          var promos = (window.__v114StudioConfig && window.__v114StudioConfig.promotedProducts) || [];
+          if (!Array.isArray(promos) || promos.length === 0) return null;
+          var normUser = normalizeArabicClientV116(userText);
+          if (!normUser) return null;
+          for (var i = 0; i < promos.length; i++) {
+            var p = promos[i];
+            if (p.active === false || !p.triggerKeywords) continue;
+            var kws = String(p.triggerKeywords).split(/[،,]+/).map(function(s) { return normalizeArabicClientV116(s); }).filter(Boolean);
+            for (var j = 0; j < kws.length; j++) {
+              if (normUser.indexOf(kws[j]) !== -1) return p;
+            }
+          }
+          return null;
+        }
+
+        function extractAnyUserTextFromJsonBodyV116(rawBody) {
+          try {
+            var parsed = JSON.parse(rawBody);
+            var found = "";
+            function walkObj(o) {
+              if (found || !o) return;
+              if (typeof o === "string") {
+                var s = o.trim();
+                if (s.length >= 2 && s.length <= 300 && !/^(user|assistant|system|sess_)/i.test(s)) {
+                  found = s;
+                }
+                return;
+              }
+              if (Array.isArray(o)) {
+                for (var i = o.length - 1; i >= 0; i--) walkObj(o[i]);
+                return;
+              }
+              if (typeof o === "object") {
+                var priorityKeys = ["message", "prompt", "query", "text", "userMessage", "question", "content", "input"];
+                for (var k = 0; k < priorityKeys.length; k++) {
+                  var pk = priorityKeys[k];
+                  if (typeof o[pk] === "string" && o[pk].trim().length >= 2) {
+                    found = o[pk].trim();
+                    return;
+                  }
+                }
+                if (o.json) walkObj(o.json);
+                if (o["0"]) walkObj(o["0"]);
+                Object.keys(o).forEach(function(key) {
+                  if (key !== "meta" && key !== "sessionId") walkObj(o[key]);
+                });
+              }
+            }
+            walkObj(parsed);
+            return found;
+          } catch (e) {
+            return "";
+          }
+        }
+
+        // Lightbox for full-screen recipe photo viewing
+        window.__openRecipeImageLightboxV116 = function(src, title) {
+          if (!src) return;
+          var lb = document.createElement("div");
+          lb.style.cssText = "position:fixed;inset:0;z-index:999999;background:rgba(8,28,18,0.92);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:18px;direction:rtl;";
+          lb.onclick = function() { lb.remove(); };
+          lb.innerHTML =
+            '<div style="max-width:520px;width:100%;text-align:center;">' +
+            '<img src="' + src + '" style="width:100%;max-height:75vh;object-fit:contain;border-radius:20px;border:3px solid #d4af37;box-shadow:0 18px 50px rgba(0,0,0,0.6);" />' +
+            '<div style="color:#d4af37;font-weight:900;font-size:1.05rem;margin-top:12px;">🍰 ' + (title || "") + '</div>' +
+            '<button type="button" style="margin-top:12px;background:#ffffff;color:#0d3825;border:none;border-radius:99px;padding:8px 24px;font-weight:800;font-size:0.88rem;cursor:pointer;">✕ إغلاق الصورة</button>' +
+            '</div>';
+          document.body.appendChild(lb);
+        };
+
+        // Mutate tRPC JSON response in-place so Home.tsx renders the recipe & linked items using its own native components!
+        function replaceTrpcAiPayloadInPlaceV117(trpcObj, smartData) {
+          if (!trpcObj || typeof trpcObj !== "object") return;
+          function walkPayload(node) {
+            if (!node || typeof node !== "object") return;
+            if (Array.isArray(node)) {
+              node.forEach(walkPayload);
+              return;
+            }
+            var textKeys = ["reply", "message", "answer", "content", "text", "response"];
+            textKeys.forEach(function(tk) {
+              if (typeof node[tk] === "string" && node[tk].length > 5 && smartData.reply) {
+                node[tk] = smartData.reply;
+              }
+            });
+            var itemKeys = ["items", "suggestedItems", "products", "recommendations", "basket"];
+            itemKeys.forEach(function(ik) {
+              if (Array.isArray(node[ik]) && Array.isArray(smartData.suggestedItems) && smartData.suggestedItems.length > 0) {
+                var templateItem = node[ik][0] || {};
+                node[ik] = smartData.suggestedItems.map(function(si) {
+                  return Object.assign({}, templateItem, {
+                    id: si.id || si.productId || 1,
+                    productId: si.productId || si.id || 1,
+                    name: si.name,
+                    productName: si.name,
+                    price: si.price || 100,
+                    unitPrice: si.price || 100,
+                    unit: si.unit || "حبة",
+                    quantity: 1,
+                    lineTotal: si.price || 100
+                  });
+                });
+              }
+            });
+            if (typeof node.total === "number" && Array.isArray(smartData.suggestedItems) && smartData.suggestedItems.length > 0) {
+              node.total = smartData.suggestedItems.reduce(function(s, x) { return s + Number(x.price || 0); }, 0);
+            }
+            Object.keys(node).forEach(function(k) {
+              if (k !== "items" && k !== "suggestedItems" && typeof node[k] === "object") {
+                walkPayload(node[k]);
+              }
+            });
+          }
+          walkPayload(trpcObj);
+        }
+
+        // 100% NON-DESTRUCTIVE Surgical Chat Enhancer:
+        // NEVER overwrites .innerHTML of any React container!
+        // Only locates the leaf <p> inside an assistant reply bubble, updates its text node via setLeafTextSafe,
+        // inserts a standalone photo card before that <p>, and updates the native item row text inside "الأصناف والمقادير المقترحة للسلة:"!
+        function enhanceChatBubblesSafelyV117() {
+          if (document.body.textContent.indexOf("مساعد وشيف أورجنال الذكي") === -1) return;
+
+          // Find all assistant reply paragraphs inside the chat area:
+          // In Home.tsx, every assistant reply bubble has a leaf <p> or <div> (children.length === 0) right above "الأصناف والمقادير المقترحة للسلة:" or inside a white assistant card!
+          var allLeaves = Array.from(document.querySelectorAll("p, div")).filter(function(el) {
+            if (el.children.length !== 0) return false;
+            var t = (el.textContent || "").trim();
+            return t.length >= 25 && (t.indexOf("يا غالي") !== -1 || t.indexOf("حلى") !== -1 || t.indexOf("وصفة") !== -1 || t.indexOf("بسكويت") !== -1);
+          });
+
+          allLeaves.forEach(function(replyLeaf) {
+            // Walk up at most 3 levels to find the single assistant bubble card (must NOT contain the chat header "مساعد وشيف أورجنال الذكي" or input box!)
+            var assistantCard = replyLeaf.parentElement;
+            if (!assistantCard) return;
+            if (assistantCard.textContent.indexOf("محادثة جديدة") !== -1 || assistantCard.querySelector("input, textarea")) return;
+
+            // Find the preceding user message text by looking at previous siblings of the assistant message wrapper
+            var userQueryTxt = "";
+            var stepEl = assistantCard;
+            for (var up = 0; up < 3 && stepEl && stepEl.parentElement; up++) {
+              if (stepEl.parentElement.textContent.indexOf("محادثة جديدة") !== -1) break;
+              var prev = stepEl.previousElementSibling;
+              if (prev) {
+                var pt = (prev.textContent || "").trim();
+                if (pt.length >= 2 && pt.length <= 160 && pt.indexOf("الأصناف والمقادير") === -1) {
+                  userQueryTxt = pt;
+                  break;
+                }
+              }
+              stepEl = stepEl.parentElement;
+            }
+
+            if (!userQueryTxt) return;
+
+            var matchedRec = matchRecipeClientV116(userQueryTxt);
+            var matchedRule = !matchedRec ? matchRuleClientV116(userQueryTxt) : null;
+            var matchedPromo = (!matchedRec && !matchedRule) ? matchPromoClientV116(userQueryTxt) : null;
+
+            if (matchedRec) {
+              // 1. Update ONLY the leaf text node of replyLeaf (100% safe for React!)
+              var targetRecipeText =
+                "يا غالي، جبت لك ألذ وأفخم وصفة تفتح النفس من مطبخ أورجنال: 😍🍫\\n" +
+                "🍰 «" + (matchedRec.title || "") + "»\\n\\n" +
+                "📋 الوصفة وطريقة التحضير الكاملة:\\n" +
+                (matchedRec.steps || "");
+              replyLeaf.style.whiteSpace = "pre-line";
+              replyLeaf.style.lineHeight = "1.7";
+              setLeafTextSafe(replyLeaf, targetRecipeText);
+
+              // 2. Insert standalone Mouth-Watering Recipe Photo Banner right before replyLeaf (if not already inserted)
+              var photoBanner = assistantCard.querySelector(".v117-recipe-photo-banner");
+              if (matchedRec.imageUrl && !photoBanner) {
+                photoBanner = document.createElement("div");
+                photoBanner.className = "v117-recipe-photo-banner";
+                var safeTitle = String(matchedRec.title || "").replace(/"/g, "&quot;");
+                photoBanner.setAttribute("data-lb-title", safeTitle);
+                photoBanner.style.cssText = "position:relative;margin-bottom:12px;border-radius:16px;overflow:hidden;border:2.5px solid #d4af37;box-shadow:0 10px 24px rgba(13,56,37,0.18);background:#0b2b1d;cursor:pointer;direction:rtl;text-align:right;";
+                photoBanner.onclick = function() {
+                  var imgEl = photoBanner.querySelector("img");
+                  if (imgEl) window.__openRecipeImageLightboxV116(imgEl.src, photoBanner.getAttribute("data-lb-title") || "");
+                };
+                photoBanner.innerHTML =
+                  '<img src="' + matchedRec.imageUrl + '" alt="' + safeTitle + '" style="width:100%;max-height:250px;min-height:175px;object-fit:cover;display:block;" />' +
+                  '<div style="position:absolute;top:10px;right:10px;background:linear-gradient(135deg,#0d3825 0%,#165b3c 100%);color:#d4af37;border:1.5px solid #d4af37;padding:4px 12px;border-radius:99px;font-weight:900;font-size:0.76rem;box-shadow:0 4px 10px rgba(0,0,0,0.35);">✨ وصفة شيف أورجنال الشهية</div>' +
+                  '<div style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(to top,rgba(8,28,18,0.92) 0%,rgba(8,28,18,0.5) 65%,transparent 100%);padding:20px 12px 10px 12px;color:#ffffff;">' +
+                  '<div style="font-size:0.98rem;font-weight:900;color:#d4af37;">🍰 ' + (matchedRec.title || "") + '</div>' +
+                  '<div style="font-size:0.74rem;color:#e2f1ea;margin-top:2px;">🔍 اضغط على الصورة لتكبيرها بكامل الوضوح</div>' +
+                  '</div>';
+                replyLeaf.parentNode.insertBefore(photoBanner, replyLeaf);
+              }
+
+              // 3. Update the native "الأصناف والمقادير المقترحة للسلة:" items inside assistantCard using setLeafTextSafe (preserving the native layout 100%!)
+              var ings = Array.isArray(matchedRec.ingredients) ? matchedRec.ingredients : [];
+              if (ings.length > 0) {
+                var firstIng = ings[0];
+                var cleanIngName = String(firstIng.name || "").replace(/\\s*\\([^()]*\\)\\s*$/g, "").trim();
+                var catProd = (window.__v114Catalog || []).find(function(cp) { return cp.name === cleanIngName; }) ||
+                  (window.__v114Catalog || []).find(function(cp) { return cp.name && cp.name.length >= 5 && cleanIngName.indexOf(cp.name) !== -1 && cp.name.length >= cleanIngName.length * 0.7; });
+                var ingPrice = Number(firstIng.price || (catProd && catProd.price) || 100);
+
+                var cardLeaves = Array.from(assistantCard.querySelectorAll("span, strong, p, div, button")).filter(function(x) {
+                  return x.children.length === 0 && x !== replyLeaf && !(photoBanner && photoBanner.contains(x));
+                });
+
+                // Find item rows inside the native green box (each white item row has "+ أضف بمفرده")
+                var singleAddBtns = Array.from(assistantCard.querySelectorAll("button")).filter(function(b) {
+                  return (b.textContent || "").indexOf("أضف بمفرده") !== -1;
+                });
+
+                singleAddBtns.forEach(function(sBtn, sIdx) {
+                  var itemRow = sBtn.parentElement;
+                  if (!itemRow) return;
+                  var targetIng = ings[sIdx];
+                  if (!targetIng) {
+                    if (sIdx > 0) itemRow.style.display = "none";
+                    return;
+                  }
+                  var tName = String(targetIng.name || "").replace(/\\s*\\([^()]*\\)\\s*$/g, "").trim();
+                  var tCat = (window.__v114Catalog || []).find(function(cp) { return cp.name === tName; });
+                  var tPrice = Number(targetIng.price || (tCat && tCat.price) || 100);
+
+                  var rowLeaves = Array.from(itemRow.querySelectorAll("span, strong, p, div")).filter(function(rl) {
+                    return rl.children.length === 0 && rl.tagName !== "BUTTON" && !sBtn.contains(rl);
+                  });
+                  rowLeaves.forEach(function(rl) {
+                    var rt = (rl.textContent || "").trim();
+                    if (rt.indexOf("ر.ي") !== -1 && /\\d/.test(rt)) {
+                      setLeafTextSafe(rl, "1 × " + tPrice.toLocaleString("en-US") + " ر.ي (حبة)");
+                    } else if (rt.length >= 3 && rt.indexOf("أضف") === -1) {
+                      setLeafTextSafe(rl, tName);
+                    }
+                  });
+                });
+
+                var totalSum = ings.reduce(function(acc, g) {
+                  var gn = String(g.name || "").replace(/\\s*\\([^()]*\\)\\s*$/g, "").trim();
+                  var gc = (window.__v114Catalog || []).find(function(cp) { return cp.name === gn; });
+                  return acc + Number(g.price || (gc && gc.price) || 100);
+                }, 0);
+
+                cardLeaves.forEach(function(cl) {
+                  var ct = (cl.textContent || "").trim();
+                  if (ct.indexOf("الإجمالي:") !== -1) {
+                    setLeafTextSafe(cl, "الإجمالي: " + totalSum.toLocaleString("en-US") + " ر.ي");
+                  } else if (ct.indexOf("اعتمد وإضافة الكل للسلة") !== -1) {
+                    setLeafTextSafe(cl, "✅ اعتمد وإضافة الكل للسلة (" + totalSum.toLocaleString("en-US") + " ر.ي)");
+                  }
+                });
+              }
+            } else if (matchedRule) {
+              replyLeaf.style.whiteSpace = "pre-line";
+              setLeafTextSafe(replyLeaf, matchedRule.response || "");
+            } else if (matchedPromo) {
+              var promoTxt =
+                (matchedPromo.promoBadge ? matchedPromo.promoBadge + " — " : "⭐ ترشيح خاص لك: ") +
+                "«" + (matchedPromo.productName || "") + "»" +
+                (matchedPromo.productPrice ? " (" + matchedPromo.productPrice + " ر.ي)" : "") +
+                "\\n" + (matchedPromo.promoPitch || "");
+              replyLeaf.style.whiteSpace = "pre-line";
+              setLeafTextSafe(replyLeaf, promoTxt);
+            }
+          });
+        }
+
+        var origFetch = window.fetch;
+        if (origFetch && !window.__v108FetchWrapped) {
+          window.__v108FetchWrapped = true;
+          window.fetch = function(input, init) {
+            var urlStr = typeof input === "string" ? input : (input && input.url ? input.url : "");
+
+            // Intercept tRPC POST requests that carry AI chat messages and upgrade response in-place
+            if (urlStr.indexOf("/api/trpc/") !== -1 && init && init.method === "POST" && typeof init.body === "string") {
+              var detectedMsg = extractAnyUserTextFromJsonBodyV116(init.body);
+              var isAiCall = /ai|chat|assistant|chef|recipe|ask|suggest|message|prompt/i.test(urlStr) ||
+                Boolean(matchRecipeClientV116(detectedMsg) || matchRuleClientV116(detectedMsg) || matchPromoClientV116(detectedMsg));
+
+              if (detectedMsg && isAiCall) {
+                return origFetch.apply(this, arguments).then(function(trpcRes) {
+                  return origFetch("/api/ai-studio/smart-chat", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ message: detectedMsg, sessionId: window.__v112SessionId })
+                  })
+                    .then(function(r) { return r.json(); })
+                    .then(function(smartData) {
+                      if (!smartData || !smartData.ok) return trpcRes;
+                      return trpcRes.clone().json().then(function(trpcJson) {
+                        replaceTrpcAiPayloadInPlaceV117(trpcJson, smartData);
+                        setTimeout(enhanceChatBubblesSafelyV117, 120);
+                        setTimeout(enhanceChatBubblesSafelyV117, 350);
+                        return new Response(JSON.stringify(trpcJson), {
+                          status: trpcRes.status,
+                          statusText: trpcRes.statusText,
+                          headers: trpcRes.headers
+                        });
+                      }).catch(function() { return trpcRes; });
+                    })
+                    .catch(function() { return trpcRes; });
+                });
+              }
+            }
+
+            if (init && typeof init.body === "string" && urlStr.indexOf("/api/ai-studio") === -1) {
+              try {
+                var reord = window.__v111ReorderedVariants || {};
+                var keys = Object.keys(reord);
+                if (keys.length > 0 && init.body.indexOf(":") !== -1) {
+                  var parsed = JSON.parse(init.body);
+                  var changed = false;
+                  function walkAndReplace(obj) {
+                    if (!obj || typeof obj !== "object") return;
+                    Object.keys(obj).forEach(function(k) {
+                      var val = obj[k];
+                      if (typeof val === "string" && val.indexOf(":") !== -1) {
+                        keys.forEach(function(basePName) {
+                          if (val.indexOf(basePName) !== -1 && reord[basePName] && reord[basePName].raw) {
+                            var newTitle = basePName + " (" + reord[basePName].raw + ")";
+                            if (val !== newTitle) {
+                              obj[k] = newTitle;
+                              changed = true;
+                            }
+                          }
+                        });
+                      } else if (typeof val === "object") {
+                        walkAndReplace(val);
+                      }
+                    });
+                  }
+                  walkAndReplace(parsed);
+                  if (changed) {
+                    init = Object.assign({}, init, { body: JSON.stringify(parsed) });
+                  }
+                }
+              } catch (e) {}
+            }
+            return origFetch.call(this, input, init);
+          };
+        }
+
+        function refreshStudioDataV114(forceOverwrite) {
+          if (!forceOverwrite && (Date.now() - (window.__v115LastSaveTime || 0) < 12000)) {
+            return;
+          }
+          fetch("/api/ai-studio/state")
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+              if (!d || !d.ok) return;
+              if (d.config) {
+                var serverHasData = hasAnyStudioItemsV115(d.config);
+                var localHasData = hasAnyStudioItemsV115(window.__v114StudioConfig);
+
+                if (forceOverwrite || !window.__v115InitialConfigLoaded) {
+                  if (serverHasData || !localHasData) {
+                    window.__v114StudioConfig = d.config;
+                    saveLocalBackupV115();
+                  } else if (localHasData && !serverHasData) {
+                    origFetch("/api/ai-studio/save-config", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify(window.__v114StudioConfig)
+                    }).catch(function() {});
+                  }
+                  window.__v115InitialConfigLoaded = true;
+                }
+              }
+              if (Array.isArray(d.catalog)) window.__v114Catalog = d.catalog;
+              if (d.stats) window.__v114Stats = d.stats;
+              if (Array.isArray(d.requests)) {
+                var oldReqs = window.__v114Requests || [];
+                d.requests.forEach(function(nr) {
+                  if (nr.status === "pending" && !window.__v112NotifiedReqIds[nr.id]) {
+                    window.__v112NotifiedReqIds[nr.id] = true;
+                    if (oldReqs.length > 0 && window.location.pathname.indexOf("/admin") !== -1) {
+                      triggerAdminPhoneNotificationV112(nr);
+                    }
+                  }
+                });
+                window.__v114Requests = d.requests;
+              }
+              if (window.__v114StudioOpen) {
+                updateStudioHeaderBadgesOnlyV115();
+              }
+              enhanceChatBubblesSafelyV117();
+            })
+            .catch(function() {});
+        }
+
+        function showSaveSuccessBannerV115(msg) {
+          window.__v115BannerMsg = msg;
+          var bannerEl = document.getElementById("v115-save-banner");
+          if (bannerEl) {
+            bannerEl.textContent = msg;
+            bannerEl.style.display = "block";
+          }
+        }
+
+        function saveStudioConfigToServerV114(successMsg, cb) {
+          window.__v115LastSaveTime = Date.now();
+          saveLocalBackupV115();
+          if (successMsg) showSaveSuccessBannerV115(successMsg);
+          renderAiStudioDedicatedPageV114();
+
+          fetch("/api/ai-studio/save-config", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(window.__v114StudioConfig)
+          })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+              if (d && d.ok && d.config) {
+                window.__v114StudioConfig = d.config;
+                saveLocalBackupV115();
+              }
+              if (cb) cb(d);
+              renderAiStudioDedicatedPageV114();
+            })
+            .catch(function() {
+              renderAiStudioDedicatedPageV114();
+            });
+        }
+
+        function compressRecipeImageFileV115(file, callback) {
+          if (!file) return;
+          var reader = new FileReader();
+          reader.onload = function(ev) {
+            var rawDataUrl = String(ev.target.result || "");
+            var img = new Image();
+            img.onload = function() {
+              try {
+                var maxDim = 750;
+                var w = img.width || 600;
+                var h = img.height || 600;
+                if (w > maxDim || h > maxDim) {
+                  if (w > h) {
+                    h = Math.round((h * maxDim) / w);
+                    w = maxDim;
+                  } else {
+                    w = Math.round((w * maxDim) / h);
+                    h = maxDim;
+                  }
+                }
+                var canvas = document.createElement("canvas");
+                canvas.width = w;
+                canvas.height = h;
+                var ctx = canvas.getContext("2d");
+                ctx.drawImage(img, 0, 0, w, h);
+                var compressed = canvas.toDataURL("image/jpeg", 0.78);
+                callback(compressed);
+              } catch (err) {
+                callback(rawDataUrl);
+              }
+            };
+            img.onerror = function() {
+              callback(rawDataUrl);
+            };
+            img.src = rawDataUrl;
+          };
+          reader.readAsDataURL(file);
+        }
+
+        function triggerAdminPhoneNotificationV112(reqObj) {
+          try {
+            var ctx = new (window.AudioContext || window.webkitAudioContext)();
+            var osc = ctx.createOscillator();
+            var gain = ctx.createGain();
+            osc.type = "sine";
+            osc.frequency.setValueAtTime(880, ctx.currentTime);
+            gain.gain.setValueAtTime(0.25, ctx.currentTime);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start();
+            osc.stop(ctx.currentTime + 0.35);
+          } catch (e) {}
+
+          if ("Notification" in window && Notification.permission === "granted") {
+            try {
+              new Notification("🔔 طلب توفير منتج جديد في أورجنال!", {
+                body: "الزبون يطلب: " + reqObj.requestedItem,
+                icon: "/favicon.ico"
+              });
+            } catch (e) {}
+          }
+
+          var toast = document.createElement("div");
+          toast.style.cssText = "position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:999999;background:#0d3825;color:#ffffff;border:2px solid #d4af37;border-radius:16px;padding:12px 18px;box-shadow:0 12px 32px rgba(0,0,0,0.35);font-weight:800;font-size:0.9rem;direction:rtl;max-width:92vw;text-align:right;";
+          toast.innerHTML = "<div style='color:#d4af37;margin-bottom:4px;'>🔔 إشعار فوري من الذكاء الاصطناعي</div><div>زبون يطلب توفير: <b>«" + reqObj.requestedItem + "»</b></div>";
+          document.body.appendChild(toast);
+          setTimeout(function() { toast.remove(); }, 7000);
+        }
+
+        function pollCustomerNotificationsV112() {
+          if (window.location.pathname.indexOf("/admin") !== -1) return;
+          fetch("/api/ai-studio/customer-notifications?sessionId=" + encodeURIComponent(window.__v112SessionId))
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+              if (!d || !Array.isArray(d.notifications)) return;
+              d.notifications.forEach(function(n) {
+                var key = n.id + "_" + (n.repliedAt || "");
+                if (window.__v112DeliveredReplyIds[key]) return;
+                window.__v112DeliveredReplyIds[key] = true;
+                try {
+                  localStorage.setItem("original_v112_delivered_replies", JSON.stringify(window.__v112DeliveredReplyIds));
+                } catch (e) {}
+                showCustomerAdminReplyPopupV112(n);
+              });
+            })
+            .catch(function() {});
+        }
+
+        function showCustomerAdminReplyPopupV112(notif) {
+          var box = document.createElement("div");
+          box.style.cssText = "position:fixed;bottom:85px;right:14px;left:14px;max-width:440px;margin:0 auto;z-index:999998;background:#ffffff;border:2.5px solid #0d3825;border-radius:18px;padding:14px 16px;box-shadow:0 16px 40px rgba(13,56,37,0.28);direction:rtl;text-align:right;";
+          box.innerHTML =
+            "<div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;'>" +
+            "<strong style='color:#0d3825;font-size:0.95rem;'>💬 رد مباشر من إدارة متجر أورجنال</strong>" +
+            "<button type='button' style='background:none;border:none;font-size:1.1rem;cursor:pointer;color:#64748b;' onclick='this.parentElement.parentElement.remove()'>✕</button>" +
+            "</div>" +
+            "<div style='font-size:0.82rem;color:#475569;margin-bottom:6px;'>بخصوص طلبك: <b>«" + notif.requestedItem + "»</b></div>" +
+            "<div style='background:#f2f9f5;border:1px solid #bbe3ce;border-radius:12px;padding:10px 12px;color:#0d3825;font-weight:700;font-size:0.9rem;line-height:1.5;'>" + notif.adminReply + "</div>";
+          document.body.appendChild(box);
+        }
+
+        function cleanProductIdNumberInDom() {
+          var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+          var node;
+          while ((node = walker.nextNode())) {
+            if (node.nodeValue && node.nodeValue.indexOf("(رقم ") !== -1) {
+              node.nodeValue = node.nodeValue.replace(/\\(\\s*رقم\\s*\\d+\\s*\\)/g, "");
+            }
+          }
+        }
+
+        function upgradeProductSmartModalV112() {
+          var modals = Array.from(document.querySelectorAll("div")).filter(function(d) {
+            var txt = d.textContent || "";
+            return txt.indexOf("أفكار وطرق:") !== -1 && txt.indexOf("المساعد والشيف الذكي") !== -1;
+          });
+          if (modals.length === 0) return;
+
+          var modal = modals[modals.length - 1];
+          if (modal.getAttribute("data-v112-upgraded") === "1") return;
+
+          var titleEl = Array.from(modal.querySelectorAll("h1, h2, h3, h4, div, span")).find(function(el) {
+            return el.children.length === 0 && (el.textContent || "").trim().indexOf("أفكار وطرق:") === 0;
+          });
+          if (!titleEl) return;
+
+          var rawProdName = (titleEl.textContent || "").replace("أفكار وطرق:", "").trim();
+          var cleanName = rawProdName.replace(/\\(\\s*رقم\\s*\\d+\\s*\\)/g, "").trim();
+          if (!cleanName) return;
+
+          modal.setAttribute("data-v112-upgraded", "1");
+
+          fetch("/api/ai-studio/smart-chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              message: "معلومات وافكار عن " + cleanName,
+              productName: cleanName,
+              sessionId: window.__v112SessionId
+            })
+          })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+              if (!d || !d.ok) return;
+
+              var chipBtns = Array.from(modal.querySelectorAll("button")).filter(function(b) {
+                var t = (b.textContent || "").trim();
+                return (
+                  t.indexOf("وصفة اقتصادية") !== -1 ||
+                  t.indexOf("بدون توابل") !== -1 ||
+                  t.indexOf("وصفة يمنية") !== -1 ||
+                  t.indexOf("وجبة صحية") !== -1 ||
+                  t.indexOf("تقديم بارد") !== -1 ||
+                  t.indexOf("خلطة موكيتل") !== -1 ||
+                  t.indexOf("أفضل سناك") !== -1 ||
+                  t.indexOf("أفضل وقت") !== -1
+                );
+              });
+
+              var smartChips = Array.isArray(d.smartChips) ? d.smartChips : [];
+              chipBtns.forEach(function(btn, idx) {
+                if (smartChips[idx]) {
+                  btn.textContent = smartChips[idx].icon + " " + smartChips[idx].label;
+                  btn.onclick = function(ev) {
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                    requestCustomPromptInModalV112(modal, cleanName, smartChips[idx].prompt);
+                  };
+                } else {
+                  btn.style.display = "none";
+                }
+              });
+
+              updateModalReplyBoxV112(modal, d.reply, d.recipeImage);
+            })
+            .catch(function() {});
+        }
+
+        function updateModalReplyBoxV112(modal, replyText, recipeImg) {
+          if (!replyText) return;
+          var textBoxes = Array.from(modal.querySelectorAll("div, p")).filter(function(el) {
+            var t = (el.textContent || "").trim();
+            return (
+              t.length > 35 &&
+              (t.indexOf("أهلاً بك في أورجنال") !== -1 ||
+                t.indexOf("متوفر الآن") !== -1 ||
+                t.indexOf("متوفرة الآن") !== -1 ||
+                el.getAttribute("data-v112-replybox") === "1")
+            );
+          });
+          if (textBoxes.length > 0) {
+            var targetBox = textBoxes[textBoxes.length - 1];
+            targetBox.setAttribute("data-v112-replybox", "1");
+            targetBox.style.whiteSpace = "pre-line";
+            targetBox.style.lineHeight = "1.65";
+            targetBox.innerHTML = "";
+            if (recipeImg) {
+              var img = document.createElement("img");
+              img.src = recipeImg;
+              img.style.cssText = "width:100%;max-height:190px;object-fit:cover;border-radius:14px;margin-bottom:10px;border:2px solid #d4af37;";
+              targetBox.appendChild(img);
+            }
+            var txtNode = document.createElement("div");
+            txtNode.textContent = replyText;
+            targetBox.appendChild(txtNode);
+          }
+        }
+
+        function requestCustomPromptInModalV112(modal, prodName, promptStr) {
+          fetch("/api/ai-studio/smart-chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              message: promptStr,
+              productName: prodName,
+              sessionId: window.__v112SessionId
+            })
+          })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+              if (d && d.ok) {
+                updateModalReplyBoxV112(modal, d.reply, d.recipeImage);
+              }
+            })
+            .catch(function() {});
+        }
+
+        // ====================================================================
+        // DEDICATED AI CUSTOMIZATION SECTION IN ADMIN SIDEBAR (v115/v117)
+        // ====================================================================
+        function ensureDedicatedAiSidebarItemV114() {
+          if (window.location.pathname.indexOf("/admin") === -1) return;
+
+          var allClickables = Array.from(document.querySelectorAll("button, a, div[role='button'], li"));
+          var aiAssistantTab = allClickables.find(function(el) {
+            var t = (el.textContent || "").trim();
+            return (t.indexOf("المساعد الذكي") !== -1 || t.indexOf("إعدادات الشيف") !== -1) && el.id !== "v114-dedicated-ai-nav-btn";
+          });
+
+          if (aiAssistantTab && aiAssistantTab.parentElement && !document.getElementById("v114-dedicated-ai-nav-btn")) {
+            var navBtn = document.createElement("button");
+            navBtn.id = "v114-dedicated-ai-nav-btn";
+            navBtn.type = "button";
+            var pendingCount = (window.__v114Requests || []).filter(function(r) { return r.status === "pending"; }).length;
+            navBtn.style.cssText = "width:100%;display:flex;align-items:center;justify-content:space-between;padding:11px 14px;margin:6px 0;border-radius:12px;border:2px solid #d4af37;background:linear-gradient(135deg,#0d3825 0%,#165b3c 100%);color:#ffffff;font-weight:900;font-size:0.92rem;cursor:pointer;box-shadow:0 6px 16px rgba(13,56,37,0.22);direction:rtl;text-align:right;";
+            navBtn.innerHTML =
+              "<span style='display:flex;align-items:center;gap:8px;'><span>🤖</span><span>تخصيص الذكاء الاصطناعي</span></span>" +
+              (pendingCount > 0
+                ? "<span style='background:#ef4444;color:#fff;border-radius:99px;padding:2px 8px;font-size:0.75rem;font-weight:900;'>" + pendingCount + "</span>"
+                : "<span style='background:#d4af37;color:#0d3825;border-radius:99px;padding:2px 8px;font-size:0.72rem;font-weight:900;'>جديد</span>");
+
+            navBtn.onclick = function(ev) {
+              ev.preventDefault();
+              ev.stopPropagation();
+              window.__v114StudioOpen = true;
+              refreshStudioDataV114(false);
+              renderAiStudioDedicatedPageV114();
+            };
+
+            aiAssistantTab.parentElement.insertBefore(navBtn, aiAssistantTab.nextSibling);
+
+            allClickables.forEach(function(otherEl) {
+              if (otherEl === navBtn || otherEl.getAttribute("data-v114-nav-bound") === "1") return;
+              var ot = (otherEl.textContent || "").trim();
+              if (
+                ot.indexOf("الرئيسية") !== -1 ||
+                ot.indexOf("المنتجات") !== -1 ||
+                ot.indexOf("الأقسام") !== -1 ||
+                ot.indexOf("الطلبات") !== -1 ||
+                ot.indexOf("الكوبونات") !== -1 ||
+                ot.indexOf("المساعد الذكي") !== -1
+              ) {
+                otherEl.setAttribute("data-v114-nav-bound", "1");
+                otherEl.addEventListener("click", function() {
+                  if (window.__v114StudioOpen) {
+                    window.__v114StudioOpen = false;
+                    var studioPage = document.getElementById("v114-dedicated-studio-page");
+                    if (studioPage) studioPage.style.display = "none";
+                  }
+                });
+              }
+            });
+          }
+        }
+
+        function updateStudioHeaderBadgesOnlyV115() {
+          var cfg = window.__v114StudioConfig || {};
+          var instCount = (cfg.instructions || []).length;
+          var rulesCount = (cfg.rules || []).length;
+          var promoCount = (cfg.promotedProducts || []).length;
+          var recCount = (cfg.recipes || []).length;
+          var prodInfoCount = Object.keys(cfg.productAiMap || {}).length;
+          var pendingCount = (window.__v114Requests || []).filter(function(r) { return r.status === "pending"; }).length;
+
+          var bInst = document.querySelector("[data-v114-subtab='inst']");
+          if (bInst) bInst.textContent = "1️⃣ التعليمات والشخصية (" + instCount + ")";
+          var bRules = document.querySelector("[data-v114-subtab='rules']");
+          if (bRules) bRules.textContent = "2️⃣ قاموس الردود (" + rulesCount + ")";
+          var bPromo = document.querySelector("[data-v114-subtab='promo']");
+          if (bPromo) bPromo.textContent = "3️⃣ ترويج منتج برابطه (" + promoCount + ")";
+          var bRec = document.querySelector("[data-v114-subtab='recipes']");
+          if (bRec) bRec.textContent = "4️⃣ الوصفات المصورة والمنتجات (" + recCount + ")";
+          var bProd = document.querySelector("[data-v114-subtab='prodinfo']");
+          if (bProd) bProd.textContent = "5️⃣ معلومات المنتجات (" + prodInfoCount + ")";
+          var bReq = document.querySelector("[data-v114-subtab='requests']");
+          if (bReq) bReq.textContent = "6️⃣ الإشعارات وطلبات الزبائن (" + pendingCount + ")";
+        }
+
+        function renderAiStudioDedicatedPageV114() {
+          if (window.location.pathname.indexOf("/admin") === -1) return;
+
+          var studioPage = document.getElementById("v114-dedicated-studio-page");
+          if (!window.__v114StudioOpen) {
+            if (studioPage) studioPage.style.display = "none";
+            return;
+          }
+
+          var mainContainer =
+            document.querySelector("main") ||
+            document.querySelector("[class*='content']") ||
+            document.body;
+
+          if (!studioPage) {
+            studioPage = document.createElement("div");
+            studioPage.id = "v114-dedicated-studio-page";
+            studioPage.style.cssText = "position:relative;z-index:50;margin:14px;padding:18px;border:2.5px solid #0d3825;border-radius:20px;background:#ffffff;direction:rtl;text-align:right;box-shadow:0 14px 36px rgba(13,56,37,0.12);";
+            mainContainer.insertBefore(studioPage, mainContainer.firstChild);
+          }
+          studioPage.style.display = "block";
+
+          var cfg = window.__v114StudioConfig || {};
+          var instructions = Array.isArray(cfg.instructions) ? cfg.instructions : [];
+          var rules = Array.isArray(cfg.rules) ? cfg.rules : [];
+          var promos = Array.isArray(cfg.promotedProducts) ? cfg.promotedProducts : [];
+          var recipes = Array.isArray(cfg.recipes) ? cfg.recipes : [];
+          var reqs = Array.isArray(window.__v114Requests) ? window.__v114Requests : [];
+          var catalog = Array.isArray(window.__v114Catalog) ? window.__v114Catalog : [];
+          var activeTab = window.__v114ActiveSubTab || "inst";
+
+          var pendingCount = reqs.filter(function(r) { return r.status === "pending"; }).length;
+
+          var catalogOptionsHtml = '<option value="">-- اختر منتجاً من المتجر لملء بياناته ورابطه تلقائياً --</option>';
+          catalog.forEach(function(cp) {
+            var safeName = String(cp.name || "").replace(/"/g, "&quot;");
+            catalogOptionsHtml += '<option value="' + cp.id + '" data-name="' + safeName + '" data-url="' + (cp.url || "") + '" data-price="' + (cp.price || 0) + '">' + cp.name + ' (' + cp.price + ' ر.ي)</option>';
+          });
+
+          function tabBtnStyle(tabId) {
+            var isAct = activeTab === tabId;
+            return "padding:9px 13px;border-radius:12px;border:1.5px solid #0d3825;font-weight:900;font-size:0.83rem;cursor:pointer;" +
+              (isAct ? "background:#0d3825;color:#d4af37;" : "background:#f4fbf7;color:#0d3825;");
+          }
+
+          var bodyHtml = "";
+
+          // TAB 1: INSTRUCTIONS & PERSONALITY
+          if (activeTab === "inst") {
+            var instListHtml = instructions.length === 0
+              ? '<div style="color:#64748b;font-size:0.84rem;padding:12px;background:#f8fafc;border-radius:10px;border:1px dashed #cbd5e1;">القسم فارغ حالياً — أضف تعليماتك الخاصة بالأسفل بالترتيب الذي تريده.</div>'
+              : instructions.map(function(item, idx) {
+                  var catLabel =
+                    item.category === "welcome" ? "👋 أسلوب الترحيب والكلام كصديق" :
+                    item.category === "missing_item" ? "📦 التصرف عند طلب منتج غير متوفر" :
+                    item.category === "tone" ? "🧠 الذكاء ومنع الاقتراحات العشوائية" : "📌 تعليمة عامة";
+                  return (
+                    '<div style="background:#ffffff;border:1.5px solid #cdeadf;border-radius:12px;padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">' +
+                    '<div>' +
+                    '<span style="display:inline-block;background:#e6f5ee;color:#0d3825;font-weight:800;font-size:0.74rem;padding:2px 8px;border-radius:99px;margin-bottom:4px;">' + catLabel + '</span>' +
+                    '<div style="font-size:0.86rem;color:#1e293b;font-weight:700;line-height:1.5;">' + item.text + '</div>' +
+                    '</div>' +
+                    '<button type="button" data-del-inst="' + idx + '" style="background:#fee2e2;color:#b91c1c;border:none;border-radius:8px;padding:5px 10px;font-weight:800;cursor:pointer;font-size:0.75rem;flex-shrink:0;">حذف</button>' +
+                    '</div>'
+                  );
+                }).join("");
+
+            bodyHtml =
+              '<div style="background:#f2f9f5;border:1.5px solid #bbe3ce;border-radius:14px;padding:14px;margin-bottom:14px;">' +
+              '<div style="font-weight:900;color:#0d3825;font-size:0.95rem;margin-bottom:8px;">➕ إضافة تعليمة جديدة للذكاء الاصطناعي:</div>' +
+              '<select id="v114-inst-cat" style="width:100%;padding:9px 10px;border:1.5px solid #94a3b8;border-radius:10px;margin-bottom:8px;font-weight:800;font-size:0.84rem;background:#fff;">' +
+              '<option value="welcome">🗣️ أسلوب الترحيب والكلام مع الزبون (مثال: تكلم كصديق، قل له فهمتك، حلو حلو...)</option>' +
+              '<option value="missing_item">📦 عند السؤال عن منتج غير متوفر (مثال: اعرض التواصل مع المتجر وإرسال إشعار لهاتفي)</option>' +
+              '<option value="tone">🧠 قواعد الذكاء والاقتراحات (مثال: لا تقترح طبخ للشوكولاتة، ركز على السعرات أو المشروبات)</option>' +
+              '<option value="general">📌 تعليمة عامة أخرى</option>' +
+              '</select>' +
+              '<textarea id="v114-inst-text" rows="3" placeholder="اكتب التعليمة هنا بالتفصيل (مثال: رحب بالزبون كصديق، وإذا طلب منتج غير متوفر اعرض عليه التواصل مع المتجر)..." style="width:100%;padding:10px;border:1.5px solid #94a3b8;border-radius:10px;font-size:0.85rem;margin-bottom:8px;"></textarea>' +
+              '<button type="button" id="v114-add-inst-btn" style="background:#0d3825;color:#d4af37;border:none;border-radius:10px;padding:9px 18px;font-weight:900;font-size:0.86rem;cursor:pointer;">+ إضافة وحفظ التعليمة</button>' +
+              '</div>' +
+              '<div style="font-weight:900;color:#0d3825;margin-bottom:8px;">📋 التعليمات المضافة حالياً (' + instructions.length + '):</div>' +
+              instListHtml;
+          }
+
+          // TAB 2: CUSTOM TRIGGER -> RESPONSE DICTIONARY
+          else if (activeTab === "rules") {
+            var rulesListHtml = rules.length === 0
+              ? '<div style="color:#64748b;font-size:0.84rem;padding:12px;background:#f8fafc;border-radius:10px;border:1px dashed #cbd5e1;">قاموس الردود فارغ حالياً — أضف أي كلمة مفتاحية والرد المخصص لها بالأسفل.</div>'
+              : rules.map(function(r, idx) {
+                  return (
+                    '<div style="background:#ffffff;border:1.5px solid #cdeadf;border-radius:12px;padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">' +
+                    '<div>' +
+                    '<div style="font-weight:900;color:#0d3825;font-size:0.85rem;">🔑 إذا قال الزبون: «' + r.trigger + '»</div>' +
+                    '<div style="color:#334155;font-size:0.83rem;margin-top:4px;">💬 يرد الذكاء: ' + r.response + '</div>' +
+                    '</div>' +
+                    '<button type="button" data-del-rule="' + idx + '" style="background:#fee2e2;color:#b91c1c;border:none;border-radius:8px;padding:5px 10px;font-weight:800;cursor:pointer;font-size:0.75rem;flex-shrink:0;">حذف</button>' +
+                    '</div>'
+                  );
+                }).join("");
+
+            bodyHtml =
+              '<div style="background:#f2f9f5;border:1.5px solid #bbe3ce;border-radius:14px;padding:14px;margin-bottom:14px;">' +
+              '<div style="font-weight:900;color:#0d3825;font-size:0.95rem;margin-bottom:8px;">➕ إضافة رد مخصص فوري (يستهلك 0 توكن):</div>' +
+              '<input id="v114-rule-trig" type="text" placeholder="إذا سأل الزبون عن (مثال: التوصيل، الدفع، العنوان، خصم)..." style="width:100%;padding:9px 10px;border:1.5px solid #94a3b8;border-radius:10px;margin-bottom:8px;font-size:0.85rem;" />' +
+              '<textarea id="v114-rule-resp" rows="2" placeholder="الرد الذي يرسله الذكاء الاصطناعي فوراً..." style="width:100%;padding:9px 10px;border:1.5px solid #94a3b8;border-radius:10px;margin-bottom:8px;font-size:0.85rem;"></textarea>' +
+              '<button type="button" id="v114-add-rule-btn" style="background:#0d3825;color:#d4af37;border:none;border-radius:10px;padding:9px 18px;font-weight:900;font-size:0.86rem;cursor:pointer;">+ إضافة وحفظ الرد</button>' +
+              '</div>' +
+              '<div style="font-weight:900;color:#0d3825;margin-bottom:8px;">📋 الردود المضافة (' + rules.length + '):</div>' +
+              rulesListHtml;
+          }
+
+          // TAB 3: PROMOTED PRODUCTS WITH DIRECT LINKS
+          else if (activeTab === "promo") {
+            var promoListHtml = promos.length === 0
+              ? '<div style="color:#64748b;font-size:0.84rem;padding:12px;background:#f8fafc;border-radius:10px;border:1px dashed #cbd5e1;">لا توجد منتجات مروجة حالياً — اختر منتجاً أو ضع رابطه بالأسفل ليقترحه الذكاء للزبائن.</div>'
+              : promos.map(function(p, idx) {
+                  return (
+                    '<div style="background:#ffffff;border:1.5px solid #cdeadf;border-radius:12px;padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">' +
+                    '<div>' +
+                    '<span style="background:#fef3c7;color:#92400e;font-weight:900;font-size:0.74rem;padding:2px 8px;border-radius:99px;">' + (p.promoBadge || "⭐ عرض مميز") + '</span> ' +
+                    '<strong style="color:#0d3825;font-size:0.88rem;">' + p.productName + '</strong>' +
+                    '<div style="font-size:0.78rem;color:#475569;margin-top:3px;">🔗 الرابط: <a href="' + p.productUrl + '" target="_blank" style="color:#0d3825;text-decoration:underline;">' + p.productUrl + '</a></div>' +
+                    '<div style="font-size:0.8rem;color:#1e293b;margin-top:3px;">🔑 يظهر عند البحث عن: ' + p.triggerKeywords + '</div>' +
+                    '<div style="font-size:0.82rem;color:#0f5132;margin-top:3px;">💬 رسالة الترويج: ' + p.promoPitch + '</div>' +
+                    '</div>' +
+                    '<button type="button" data-del-promo="' + idx + '" style="background:#fee2e2;color:#b91c1c;border:none;border-radius:8px;padding:5px 10px;font-weight:800;cursor:pointer;font-size:0.75rem;flex-shrink:0;">حذف</button>' +
+                    '</div>'
+                  );
+                }).join("");
+
+            bodyHtml =
+              '<div style="background:#f2f9f5;border:1.5px solid #bbe3ce;border-radius:14px;padding:14px;margin-bottom:14px;">' +
+              '<div style="font-weight:900;color:#0d3825;font-size:0.95rem;margin-bottom:8px;">🚀 إضافة منتج مروج مع رابطه المباشر ليقترحه الذكاء الاصطناعي:</div>' +
+              '<select id="v114-promo-select" style="width:100%;padding:9px 10px;border:1.5px solid #0d3825;border-radius:10px;margin-bottom:8px;font-weight:800;font-size:0.83rem;background:#fff;">' +
+              catalogOptionsHtml +
+              '</select>' +
+              '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">' +
+              '<input id="v114-promo-name" type="text" placeholder="اسم المنتج المراد ترويجه..." style="padding:9px 10px;border:1.5px solid #94a3b8;border-radius:10px;font-size:0.84rem;" />' +
+              '<input id="v114-promo-url" type="text" placeholder="رابط المنتج (مثال: /products?search=...)" style="padding:9px 10px;border:1.5px solid #94a3b8;border-radius:10px;font-size:0.84rem;" />' +
+              '</div>' +
+              '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">' +
+              '<input id="v114-promo-kws" type="text" placeholder="متى يقترحه؟ (مثال: قهوة، حلى، سناك، عرض)..." style="padding:9px 10px;border:1.5px solid #94a3b8;border-radius:10px;font-size:0.84rem;" />' +
+              '<input id="v114-promo-badge" type="text" placeholder="شارة العرض (مثال: 🔥 الأكثر مبيعاً / عرض خاص)" style="padding:9px 10px;border:1.5px solid #94a3b8;border-radius:10px;font-size:0.84rem;" />' +
+              '</div>' +
+              '<textarea id="v114-promo-pitch" rows="2" placeholder="جملة الترويج التي يقولها الذكاء للزبون عن هذا المنتج..." style="width:100%;padding:9px 10px;border:1.5px solid #94a3b8;border-radius:10px;margin-bottom:8px;font-size:0.84rem;"></textarea>' +
+              '<button type="button" id="v114-add-promo-btn" style="background:#0d3825;color:#d4af37;border:none;border-radius:10px;padding:9px 18px;font-weight:900;font-size:0.86rem;cursor:pointer;">+ إضافة وحفظ الترويج</button>' +
+              '</div>' +
+              '<div style="font-weight:900;color:#0d3825;margin-bottom:8px;">📋 المنتجات المروجة حالياً (' + promos.length + '):</div>' +
+              promoListHtml;
+          }
+
+          // TAB 4: ILLUSTRATED RECIPES + LINKED PRODUCTS
+          else if (activeTab === "recipes") {
+            var draftIngs = window.__v114DraftIngredients || [];
+            var draftIngsHtml = draftIngs.length === 0
+              ? '<div style="font-size:0.78rem;color:#64748b;margin-top:4px;">لم يتم ربط منتجات بعد — اختر أي منتج من القائمة المنسدلة أعلاه لربطه تلقائياً، أو اضغط "+ ربط المنتج بالوصفة".</div>'
+              : '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;">' +
+                draftIngs.map(function(ing, idx) {
+                  return (
+                    '<span style="background:#e6f5ee;border:1px solid #0d3825;color:#0d3825;border-radius:99px;padding:4px 10px;font-size:0.78rem;font-weight:800;display:inline-flex;align-items:center;gap:6px;">' +
+                    '<span>🛒 ' + ing.name + (ing.price ? ' (' + ing.price + ' ر.ي)' : '') + '</span>' +
+                    '<button type="button" data-del-draft-ing="' + idx + '" style="background:none;border:none;color:#b91c1c;font-weight:900;cursor:pointer;">✕</button>' +
+                    '</span>'
+                  );
+                }).join("") +
+                '</div>';
+
+            var draftImgPreviewHtml = window.__v114DraftRecipeImg
+              ? '<div style="margin-top:8px;display:flex;align-items:center;gap:10px;background:#e6f5ee;padding:8px 12px;border-radius:10px;border:1px solid #0d3825;">' +
+                '<img src="' + window.__v114DraftRecipeImg + '" style="width:60px;height:60px;object-fit:cover;border-radius:8px;border:1.5px solid #d4af37;" />' +
+                '<div style="font-size:0.8rem;color:#0d3825;font-weight:800;">✅ تم تجهيز صورة الوصفة بنجاح وجاهزة للحفظ!</div>' +
+                '<button type="button" id="v115-clear-draft-img" style="margin-right:auto;background:#fee2e2;color:#b91c1c;border:none;border-radius:8px;padding:4px 8px;font-size:0.75rem;font-weight:800;cursor:pointer;">إزالة الصورة</button>' +
+                '</div>'
+              : '';
+
+            var recListHtml = recipes.length === 0
+              ? '<div style="color:#64748b;font-size:0.84rem;padding:12px;background:#f8fafc;border-radius:10px;border:1px dashed #cbd5e1;">لا توجد وصفات مضافة بعد — أضف وصفة مع صورتها والمنتجات المستخدمة فيها بالأعلى ليقترحها الذكاء الاصطناعي للزبائن.</div>'
+              : recipes.map(function(rec, idx) {
+                  var ingLinks = (rec.ingredients || []).map(function(g) {
+                    return '<a href="' + (g.url || "#") + '" target="_blank" style="display:inline-block;background:#e6f5ee;color:#0d3825;padding:3px 9px;border-radius:99px;font-size:0.76rem;font-weight:800;margin:2px;text-decoration:underline;border:1px solid #bbe3ce;">🔗 ' + g.name + (g.price ? ' (' + g.price + ' ر.ي)' : '') + '</a>';
+                  }).join(" ");
+                  return (
+                    '<div style="background:#ffffff;border:1.5px solid #cdeadf;border-radius:12px;padding:12px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">' +
+                    '<div style="display:flex;gap:12px;align-items:flex-start;flex:1;">' +
+                    (rec.imageUrl ? '<img src="' + rec.imageUrl + '" style="width:74px;height:74px;object-fit:cover;border-radius:12px;border:2px solid #d4af37;flex-shrink:0;" />' : '') +
+                    '<div style="flex:1;">' +
+                    '<div style="font-weight:900;color:#0d3825;font-size:0.92rem;">🍰 ' + rec.title + '</div>' +
+                    '<div style="font-size:0.78rem;color:#64748b;margin-top:2px;">🔍 كلمات البحث: ' + rec.keywords + '</div>' +
+                    '<div style="font-size:0.82rem;color:#1e293b;margin-top:5px;white-space:pre-line;line-height:1.5;">' + rec.steps + '</div>' +
+                    '<div style="margin-top:6px;">' + (ingLinks || '<span style="font-size:0.75rem;color:#94a3b8;">بدون منتجات مربوطة</span>') + '</div>' +
+                    '</div>' +
+                    '</div>' +
+                    '<button type="button" data-del-rec="' + idx + '" style="background:#fee2e2;color:#b91c1c;border:none;border-radius:8px;padding:5px 10px;font-weight:800;cursor:pointer;font-size:0.75rem;flex-shrink:0;">حذف</button>' +
+                    '</div>'
+                  );
+                }).join("");
+
+            bodyHtml =
+              '<div style="background:#f2f9f5;border:1.5px solid #bbe3ce;border-radius:14px;padding:14px;margin-bottom:14px;">' +
+              '<div style="font-weight:900;color:#0d3825;font-size:0.95rem;margin-bottom:8px;">🍰 إضافة وصفة مصورة مع روابط المنتجات المستخدمة ليقترحها الذكاء الاصطناعي:</div>' +
+              '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">' +
+              '<input id="v114-rec-title" type="text" placeholder="اسم الوصفة (مثال: حلى بسكويت أبو ولد بالحليب والشوكولاتة)..." style="padding:9px 10px;border:1.5px solid #94a3b8;border-radius:10px;font-size:0.84rem;" />' +
+              '<input id="v114-rec-kws" type="text" placeholder="متى يقترحها؟ (مثال: اريد حلى بسكويت حلو، حلى سريع)..." style="padding:9px 10px;border:1.5px solid #94a3b8;border-radius:10px;font-size:0.84rem;" />' +
+              '</div>' +
+              '<div style="background:#ffffff;border:1px dashed #0d3825;border-radius:10px;padding:10px;margin-bottom:8px;">' +
+              '<div style="font-size:0.82rem;font-weight:800;color:#0d3825;margin-bottom:6px;">📸 صورة الوصفة (ارفع صورة من هاتفك مباشرة أو ضع رابط صورة):</div>' +
+              '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">' +
+              '<input id="v114-rec-file" type="file" accept="image/*" style="font-size:0.8rem;" />' +
+              '<input id="v114-rec-img" type="text" placeholder="أو ضع رابط الصورة هنا اختيارياً..." value="' + (window.__v114DraftRecipeImg && window.__v114DraftRecipeImg.indexOf("data:") !== 0 ? window.__v114DraftRecipeImg : "") + '" style="flex:1;min-width:180px;padding:7px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:0.82rem;" />' +
+              '</div>' +
+              draftImgPreviewHtml +
+              '</div>' +
+              '<textarea id="v114-rec-steps" rows="3" placeholder="طريقة التحضير والخطوات بالتفصيل..." style="width:100%;padding:9px 10px;border:1.5px solid #94a3b8;border-radius:10px;margin-bottom:10px;font-size:0.84rem;"></textarea>' +
+              '<div style="background:#ffffff;border:1.5px solid #cdeadf;border-radius:12px;padding:10px;margin-bottom:10px;">' +
+              '<div style="font-weight:900;color:#0d3825;font-size:0.85rem;margin-bottom:6px;">🛒 ربط المنتجات المستخدمة في الوصفة (بمجرد اختيار المنتج من القائمة يرتبط تلقائياً!):</div>' +
+              '<select id="v114-rec-prod-select" style="width:100%;padding:8px 10px;border:1.5px solid #0d3825;border-radius:9px;margin-bottom:6px;font-weight:800;font-size:0.82rem;background:#fff;">' +
+              catalogOptionsHtml +
+              '</select>' +
+              '<div style="display:flex;gap:6px;flex-wrap:wrap;">' +
+              '<input id="v114-rec-ing-name" type="text" placeholder="اسم المنتج..." style="flex:1;min-width:140px;padding:7px 9px;border:1px solid #94a3b8;border-radius:8px;font-size:0.82rem;" />' +
+              '<input id="v114-rec-ing-url" type="text" placeholder="رابط المنتج..." style="flex:1;min-width:140px;padding:7px 9px;border:1px solid #94a3b8;border-radius:8px;font-size:0.82rem;" />' +
+              '<button type="button" id="v114-add-rec-ing-btn" style="background:#e6f5ee;color:#0d3825;border:1.5px solid #0d3825;border-radius:8px;padding:7px 14px;font-weight:900;font-size:0.8rem;cursor:pointer;">+ ربط المنتج بالوصفة</button>' +
+              '</div>' +
+              draftIngsHtml +
+              '</div>' +
+              '<button type="button" id="v114-save-rec-btn" style="background:#0d3825;color:#d4af37;border:none;border-radius:10px;padding:10px 20px;font-weight:900;font-size:0.88rem;cursor:pointer;width:100%;">💾 حفظ الوصفة المصورة ومنتجاتها</button>' +
+              '</div>' +
+              '<div style="font-weight:900;color:#0d3825;margin-bottom:8px;">📋 الوصفات المصورة المضافة (' + recipes.length + '):</div>' +
+              recListHtml;
+          }
+
+          // TAB 5: PER-PRODUCT AI METADATA
+          else if (activeTab === "prodinfo") {
+            var prodMap = cfg.productAiMap || {};
+            var configuredKeys = Object.keys(prodMap);
+            var configuredHtml = configuredKeys.length === 0
+              ? '<div style="color:#64748b;font-size:0.84rem;padding:12px;background:#f8fafc;border-radius:10px;border:1px dashed #cbd5e1;">لم تقم بتخصيص معلومات إضافية لمنتج بعد — اختر أي منتج بالأعلى لإضافة سعراته الحرارية أو نصائحه الخاصة.</div>'
+              : configuredKeys.map(function(k) {
+                  var m = prodMap[k];
+                  var foundP = catalog.find(function(x) { return String(x.id) === String(k) || x.name === k; });
+                  var labelName = foundP ? foundP.name : k;
+                  return (
+                    '<div style="background:#ffffff;border:1.5px solid #cdeadf;border-radius:12px;padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">' +
+                    '<div>' +
+                    '<strong style="color:#0d3825;font-size:0.88rem;">🏷️ ' + labelName + '</strong>' +
+                    (m.calories ? '<div style="font-size:0.8rem;color:#334155;margin-top:3px;">🔥 السعرات: ' + m.calories + '</div>' : '') +
+                    (m.pairings ? '<div style="font-size:0.8rem;color:#334155;margin-top:2px;">☕ يقدم مع: ' + m.pairings + '</div>' : '') +
+                    (m.prepIdeas ? '<div style="font-size:0.8rem;color:#334155;margin-top:2px;">🍰 أفكار تحضير: ' + m.prepIdeas + '</div>' : '') +
+                    (m.customInfo ? '<div style="font-size:0.8rem;color:#334155;margin-top:2px;">✨ معلومات إضافية: ' + m.customInfo + '</div>' : '') +
+                    '</div>' +
+                    '<button type="button" data-del-prodmeta="' + k + '" style="background:#fee2e2;color:#b91c1c;border:none;border-radius:8px;padding:5px 10px;font-weight:800;cursor:pointer;font-size:0.75rem;flex-shrink:0;">حذف</button>' +
+                    '</div>'
+                  );
+                }).join("");
+
+            bodyHtml =
+              '<div style="background:#f2f9f5;border:1.5px solid #bbe3ce;border-radius:14px;padding:14px;margin-bottom:14px;">' +
+              '<div style="font-weight:900;color:#0d3825;font-size:0.95rem;margin-bottom:8px;">🏷️ تخصيص معلومات الذكاء الاصطناعي لمنتج معين (سعرات، مشروبات تناسبه، أو وصفات):</div>' +
+              '<select id="v114-pm-select" style="width:100%;padding:9px 10px;border:1.5px solid #0d3825;border-radius:10px;margin-bottom:8px;font-weight:800;font-size:0.84rem;background:#fff;">' +
+              catalogOptionsHtml +
+              '</select>' +
+              '<select id="v114-pm-type" style="width:100%;padding:9px 10px;border:1.5px solid #94a3b8;border-radius:10px;margin-bottom:8px;font-weight:800;font-size:0.83rem;background:#fff;">' +
+              '<option value="auto">🤖 تصنيف ذكي تلقائي (يميز الشوكولاتة الجاهزة عن البسكويت والطبخ)</option>' +
+              '<option value="snacks_and_drinks">🍫 سناك جاهز للأكل (اعرض السعرات والمشروبات المناسبة فقط بدون طبخ)</option>' +
+              '<option value="recipe">🍰 يدخل في وصفات وحلويات (اعرض طرق عمل حلى أو طبخات به)</option>' +
+              '<option value="calories_and_info">🔥 معلومات غذائية وسعرات حرارية فقط</option>' +
+              '<option value="custom">✨ معلومات مخصصة بالكامل</option>' +
+              '</select>' +
+              '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">' +
+              '<input id="v114-pm-cal" type="text" placeholder="🔥 السعرات والقيمة الغذائية..." style="padding:8px 10px;border:1.5px solid #94a3b8;border-radius:10px;font-size:0.83rem;" />' +
+              '<input id="v114-pm-pair" type="text" placeholder="☕ أفضل مشروب أو سناك يؤكل معه..." style="padding:8px 10px;border:1.5px solid #94a3b8;border-radius:10px;font-size:0.83rem;" />' +
+              '</div>' +
+              '<input id="v114-pm-prep" type="text" placeholder="🍰 أفكار حلى أو تحضير (إن وجد)..." style="width:100%;padding:8px 10px;border:1.5px solid #94a3b8;border-radius:10px;margin-bottom:8px;font-size:0.83rem;" />' +
+              '<textarea id="v114-pm-info" rows="2" placeholder="✨ معلومات إضافية للذكاء الاصطناعي عن هذا المنتج..." style="width:100%;padding:8px 10px;border:1.5px solid #94a3b8;border-radius:10px;margin-bottom:8px;font-size:0.83rem;"></textarea>' +
+              '<button type="button" id="v114-save-pm-btn" style="background:#0d3825;color:#d4af37;border:none;border-radius:10px;padding:9px 18px;font-weight:900;font-size:0.86rem;cursor:pointer;">💾 حفظ معلومات المنتج للذكاء</button>' +
+              '</div>' +
+              '<div style="font-weight:900;color:#0d3825;margin-bottom:8px;">📋 المنتجات المخصصة حالياً (' + configuredKeys.length + '):</div>' +
+              configuredHtml;
+          }
+
+          // TAB 6: CUSTOMER NOTIFICATIONS & REQUESTS
+          else if (activeTab === "requests") {
+            var reqListHtml = reqs.length === 0
+              ? '<div style="color:#64748b;font-size:0.84rem;padding:12px;background:#f8fafc;border-radius:10px;border:1px dashed #cbd5e1;">لا توجد طلبات توفير منتجات من الزبائن حالياً.</div>'
+              : reqs.slice(0, 30).map(function(r) {
+                  var badge = r.status === "pending"
+                    ? '<span style="background:#fef3c7;color:#b45309;padding:2px 8px;border-radius:99px;font-size:0.74rem;font-weight:800;">⏳ بانتظار ردك</span>'
+                    : '<span style="background:#dcfce7;color:#15803d;padding:2px 8px;border-radius:99px;font-size:0.74rem;font-weight:800;">✅ تم الرد على الزبون</span>';
+                  return (
+                    '<div style="border:1.5px solid #cdeadf;border-radius:12px;padding:12px;margin-bottom:8px;background:#fff;">' +
+                    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">' +
+                    '<strong style="color:#0d3825;font-size:0.9rem;">📦 المنتج المطلوب: «' + r.requestedItem + '»</strong>' +
+                    badge +
+                    '</div>' +
+                    '<div style="font-size:0.8rem;color:#475569;margin-bottom:8px;">رسالة الزبون: "' + r.userMessage + '"</div>' +
+                    '<div style="display:flex;gap:6px;flex-wrap:wrap;">' +
+                    '<input type="text" data-reply-input="' + r.id + '" value="' + (r.adminReply || "").replace(/"/g, "&quot;") + '" placeholder="اكتب ردك للزبون هنا (مثال: أبشر وفرناه لك اليوم بالمتجر بسعر ممتاز!)..." style="flex:1;min-width:200px;padding:8px 10px;border:1.5px solid #94a3b8;border-radius:9px;font-size:0.83rem;" />' +
+                    '<button type="button" data-send-reply="' + r.id + '" style="background:#0d3825;color:#d4af37;border:none;border-radius:9px;padding:8px 14px;font-weight:900;font-size:0.82rem;cursor:pointer;">إرسال الرد للزبون 💬</button>' +
+                    '</div>' +
+                    '</div>'
+                  );
+                }).join("");
+
+            bodyHtml =
+              '<div style="background:#f2f9f5;border:1.5px solid #bbe3ce;border-radius:14px;padding:12px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">' +
+              '<div>' +
+              '<div style="font-weight:900;color:#0d3825;font-size:0.92rem;">🔔 إشعارات الهاتف وطلبات توفير المنتجات من الزبائن</div>' +
+              '<div style="font-size:0.78rem;color:#475569;">عندما يطلب الزبون منتجاً غير متوفر، يصلك تنبيه صوتي وإشعار لهاتفك وتستطيع الرد عليه ليظهر الرد فوراً في شاشته.</div>' +
+              '</div>' +
+              '<button type="button" id="v114-enable-notif-btn" style="background:#0d3825;color:#d4af37;border:none;border-radius:10px;padding:8px 14px;font-weight:900;font-size:0.8rem;cursor:pointer;">🔔 تفعيل وتجربة إشعار الهاتف</button>' +
+              '</div>' +
+              reqListHtml;
+          }
+
+          var bannerDisplay = window.__v115BannerMsg ? "block" : "none";
+
+          studioPage.innerHTML =
+            '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;border-bottom:2px solid #e2f1ea;padding-bottom:12px;margin-bottom:14px;">' +
+            '<div>' +
+            '<h2 style="margin:0;color:#0d3825;font-size:1.18rem;font-weight:900;">🤖 قسم تخصيص وإدارة الذكاء الاصطناعي الشامل</h2>' +
+            '<div style="font-size:0.8rem;color:#15803d;font-weight:700;margin-top:3px;">تحكم كامل في تعليمات الذكاء، ترويج المنتجات بالروابط، الوصفات المصورة، والإشعارات الفورية (استهلاك 0 توكن يكفي +10,000 رسالة يومياً)</div>' +
+            '</div>' +
+            '<div style="display:flex;gap:8px;">' +
+            '<button type="button" id="v114-test-notif-top" style="background:#e6f5ee;color:#0d3825;border:1.5px solid #0d3825;border-radius:10px;padding:7px 12px;font-weight:900;font-size:0.78rem;cursor:pointer;">🔔 تفعيل إشعارات الهاتف وتجربتها</button>' +
+            '<button type="button" id="v114-close-studio-btn" style="background:#fee2e2;color:#991b1b;border:none;border-radius:10px;padding:7px 14px;font-weight:900;font-size:0.8rem;cursor:pointer;">↩ رجوع للقسم السابق</button>' +
+            '</div>' +
+            '</div>' +
+            '<div id="v115-save-banner" style="display:' + bannerDisplay + ';background:#dcfce7;color:#166534;border:1.5px solid #15803d;border-radius:12px;padding:10px 14px;margin-bottom:12px;font-weight:900;font-size:0.88rem;text-align:center;">' + (window.__v115BannerMsg || "") + '</div>' +
+            '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;">' +
+            '<button type="button" data-v114-subtab="inst" style="' + tabBtnStyle("inst") + '">1️⃣ التعليمات والشخصية (' + instructions.length + ')</button>' +
+            '<button type="button" data-v114-subtab="rules" style="' + tabBtnStyle("rules") + '">2️⃣ قاموس الردود (' + rules.length + ')</button>' +
+            '<button type="button" data-v114-subtab="promo" style="' + tabBtnStyle("promo") + '">3️⃣ ترويج منتج برابطه (' + promos.length + ')</button>' +
+            '<button type="button" data-v114-subtab="recipes" style="' + tabBtnStyle("recipes") + '">4️⃣ الوصفات المصورة والمنتجات (' + recipes.length + ')</button>' +
+            '<button type="button" data-v114-subtab="prodinfo" style="' + tabBtnStyle("prodinfo") + '">5️⃣ معلومات المنتجات (' + Object.keys(cfg.productAiMap || {}).length + ')</button>' +
+            '<button type="button" data-v114-subtab="requests" style="' + tabBtnStyle("requests") + '">6️⃣ الإشعارات وطلبات الزبائن (' + pendingCount + ')</button>' +
+            '</div>' +
+            '<div>' + bodyHtml + '</div>';
+
+          // Bind Top Buttons
+          var closeBtn = document.getElementById("v114-close-studio-btn");
+          if (closeBtn) {
+            closeBtn.onclick = function() {
+              window.__v114StudioOpen = false;
+              studioPage.style.display = "none";
+            };
+          }
+
+          var notifTopBtn = document.getElementById("v114-test-notif-top");
+          if (notifTopBtn) {
+            notifTopBtn.onclick = function() {
+              if ("Notification" in window) Notification.requestPermission();
+              triggerAdminPhoneNotificationV112({ requestedItem: "تجربة إشعار فوري ناجحة ✅" });
+            };
+          }
+
+          // Bind Sub-tab navigation
+          Array.from(studioPage.querySelectorAll("[data-v114-subtab]")).forEach(function(btn) {
+            btn.onclick = function() {
+              window.__v115BannerMsg = "";
+              window.__v114ActiveSubTab = btn.getAttribute("data-v114-subtab") || "inst";
+              renderAiStudioDedicatedPageV114();
+            };
+          });
+
+          // Bind Tab 1: Instructions
+          var addInstBtn = document.getElementById("v114-add-inst-btn");
+          if (addInstBtn) {
+            addInstBtn.onclick = function() {
+              var cat = (document.getElementById("v114-inst-cat") || {}).value || "general";
+              var txt = ((document.getElementById("v114-inst-text") || {}).value || "").trim();
+              if (!txt) {
+                alert("يرجى كتابة نص التعليمة أولاً");
+                return;
+              }
+              window.__v114StudioConfig.instructions = window.__v114StudioConfig.instructions || [];
+              window.__v114StudioConfig.instructions.push({
+                id: "inst_" + Date.now(),
+                category: cat,
+                text: txt,
+                active: true,
+                createdAt: new Date().toISOString()
+              });
+              saveStudioConfigToServerV114("✅ تم حفظ التعليمة بنجاح في الذكاء الاصطناعي!");
+            };
+          }
+          Array.from(studioPage.querySelectorAll("[data-del-inst]")).forEach(function(b) {
+            b.onclick = function() {
+              var idx = parseInt(b.getAttribute("data-del-inst"), 10);
+              window.__v114StudioConfig.instructions.splice(idx, 1);
+              saveStudioConfigToServerV114("🗑️ تم حذف التعليمة وحفظ التعديل.");
+            };
+          });
+
+          // Bind Tab 2: Dictionary Rules
+          var addRuleBtn = document.getElementById("v114-add-rule-btn");
+          if (addRuleBtn) {
+            addRuleBtn.onclick = function() {
+              var trig = ((document.getElementById("v114-rule-trig") || {}).value || "").trim();
+              var resp = ((document.getElementById("v114-rule-resp") || {}).value || "").trim();
+              if (!trig || !resp) {
+                alert("يرجى كتابة الكلمة المفتاحية والرد المخصص أولاً");
+                return;
+              }
+              window.__v114StudioConfig.rules = window.__v114StudioConfig.rules || [];
+              window.__v114StudioConfig.rules.push({
+                id: "rule_" + Date.now(),
+                trigger: trig,
+                response: resp,
+                active: true
+              });
+              saveStudioConfigToServerV114("✅ تم حفظ الرد المخصص بنجاح!");
+            };
+          }
+          Array.from(studioPage.querySelectorAll("[data-del-rule]")).forEach(function(b) {
+            b.onclick = function() {
+              var idx = parseInt(b.getAttribute("data-del-rule"), 10);
+              window.__v114StudioConfig.rules.splice(idx, 1);
+              saveStudioConfigToServerV114("🗑️ تم حذف الرد وحفظ التعديل.");
+            };
+          });
+
+          // Bind Tab 3: Promoted Products
+          var promoSel = document.getElementById("v114-promo-select");
+          if (promoSel) {
+            promoSel.onchange = function() {
+              var opt = promoSel.options[promoSel.selectedIndex];
+              if (!opt || !opt.value) return;
+              var pNameEl = document.getElementById("v114-promo-name");
+              var pUrlEl = document.getElementById("v114-promo-url");
+              if (pNameEl) pNameEl.value = opt.getAttribute("data-name") || "";
+              if (pUrlEl) pUrlEl.value = opt.getAttribute("data-url") || "";
+            };
+          }
+          var addPromoBtn = document.getElementById("v114-add-promo-btn");
+          if (addPromoBtn) {
+            addPromoBtn.onclick = function() {
+              var selEl = document.getElementById("v114-promo-select");
+              var selOpt = selEl && selEl.options ? selEl.options[selEl.selectedIndex] : null;
+              var pId = selOpt && selOpt.value ? Number(selOpt.value) : undefined;
+              var pPrice = selOpt && selOpt.getAttribute("data-price") ? Number(selOpt.getAttribute("data-price")) : undefined;
+              var pName = ((document.getElementById("v114-promo-name") || {}).value || "").trim() || (selOpt ? selOpt.getAttribute("data-name") || "" : "");
+              var pUrl = ((document.getElementById("v114-promo-url") || {}).value || "").trim() || ("/products?search=" + encodeURIComponent(pName));
+              var pKws = ((document.getElementById("v114-promo-kws") || {}).value || "").trim() || pName;
+              var pBadge = ((document.getElementById("v114-promo-badge") || {}).value || "").trim() || "🔥 عرض خاص";
+              var pPitch = ((document.getElementById("v114-promo-pitch") || {}).value || "").trim();
+              if (!pName) {
+                alert("يرجى اختيار منتج أو كتابة اسمه أولاً");
+                return;
+              }
+              window.__v114StudioConfig.promotedProducts = window.__v114StudioConfig.promotedProducts || [];
+              window.__v114StudioConfig.promotedProducts.push({
+                id: "promo_" + Date.now(),
+                productId: pId,
+                productName: pName,
+                productUrl: pUrl,
+                productPrice: pPrice,
+                triggerKeywords: pKws,
+                promoBadge: pBadge,
+                promoPitch: pPitch,
+                active: true
+              });
+              saveStudioConfigToServerV114("✅ تم حفظ ترويج المنتج برابطه بنجاح!");
+            };
+          }
+          Array.from(studioPage.querySelectorAll("[data-del-promo]")).forEach(function(b) {
+            b.onclick = function() {
+              var idx = parseInt(b.getAttribute("data-del-promo"), 10);
+              window.__v114StudioConfig.promotedProducts.splice(idx, 1);
+              saveStudioConfigToServerV114("🗑️ تم حذف الترويج وحفظ التعديل.");
+            };
+          });
+
+          // Bind Tab 4: Recipes + Image Compression + Auto-linked Ingredients
+          var recFileEl = document.getElementById("v114-rec-file");
+          if (recFileEl) {
+            recFileEl.onchange = function() {
+              var f = recFileEl.files && recFileEl.files[0];
+              if (!f) return;
+              var savedTitle = ((document.getElementById("v114-rec-title") || {}).value || "");
+              var savedKws = ((document.getElementById("v114-rec-kws") || {}).value || "");
+              var savedSteps = ((document.getElementById("v114-rec-steps") || {}).value || "");
+              compressRecipeImageFileV115(f, function(compressedDataUrl) {
+                window.__v114DraftRecipeImg = compressedDataUrl;
+                renderAiStudioDedicatedPageV114();
+                var tEl = document.getElementById("v114-rec-title");
+                var kEl = document.getElementById("v114-rec-kws");
+                var sEl = document.getElementById("v114-rec-steps");
+                if (tEl) tEl.value = savedTitle;
+                if (kEl) kEl.value = savedKws;
+                if (sEl) sEl.value = savedSteps;
+              });
+            };
+          }
+
+          var clearImgBtn = document.getElementById("v115-clear-draft-img");
+          if (clearImgBtn) {
+            clearImgBtn.onclick = function() {
+              var savedTitle = ((document.getElementById("v114-rec-title") || {}).value || "");
+              var savedKws = ((document.getElementById("v114-rec-kws") || {}).value || "");
+              var savedSteps = ((document.getElementById("v114-rec-steps") || {}).value || "");
+              window.__v114DraftRecipeImg = "";
+              renderAiStudioDedicatedPageV114();
+              var tEl = document.getElementById("v114-rec-title");
+              var kEl = document.getElementById("v114-rec-kws");
+              var sEl = document.getElementById("v114-rec-steps");
+              if (tEl) tEl.value = savedTitle;
+              if (kEl) kEl.value = savedKws;
+              if (sEl) sEl.value = savedSteps;
+            };
+          }
+
+          var recProdSel = document.getElementById("v114-rec-prod-select");
+          if (recProdSel) {
+            recProdSel.onchange = function() {
+              var opt = recProdSel.options[recProdSel.selectedIndex];
+              if (!opt || !opt.value) return;
+              var pName = opt.getAttribute("data-name") || "";
+              var pUrl = opt.getAttribute("data-url") || ("/products?search=" + encodeURIComponent(pName));
+              var pPrice = opt.getAttribute("data-price") ? Number(opt.getAttribute("data-price")) : undefined;
+              var pId = Number(opt.value);
+
+              var savedTitle = ((document.getElementById("v114-rec-title") || {}).value || "");
+              var savedKws = ((document.getElementById("v114-rec-kws") || {}).value || "");
+              var savedSteps = ((document.getElementById("v114-rec-steps") || {}).value || "");
+
+              window.__v114DraftIngredients = window.__v114DraftIngredients || [];
+              var already = window.__v114DraftIngredients.some(function(x) { return x.name === pName; });
+              if (!already && pName) {
+                window.__v114DraftIngredients.push({
+                  productId: pId,
+                  name: pName,
+                  url: pUrl,
+                  price: pPrice
+                });
+              }
+              renderAiStudioDedicatedPageV114();
+              var tEl = document.getElementById("v114-rec-title");
+              var kEl = document.getElementById("v114-rec-kws");
+              var sEl = document.getElementById("v114-rec-steps");
+              if (tEl) tEl.value = savedTitle;
+              if (kEl) kEl.value = savedKws;
+              if (sEl) sEl.value = savedSteps;
+            };
+          }
+
+          var addRecIngBtn = document.getElementById("v114-add-rec-ing-btn");
+          if (addRecIngBtn) {
+            addRecIngBtn.onclick = function() {
+              var selEl = document.getElementById("v114-rec-prod-select");
+              var selOpt = selEl && selEl.options ? selEl.options[selEl.selectedIndex] : null;
+              var pId = selOpt && selOpt.value ? Number(selOpt.value) : undefined;
+              var pPrice = selOpt && selOpt.getAttribute("data-price") ? Number(selOpt.getAttribute("data-price")) : undefined;
+              var ingName = ((document.getElementById("v114-rec-ing-name") || {}).value || "").trim() || (selOpt ? selOpt.getAttribute("data-name") || "" : "");
+              var ingUrl = ((document.getElementById("v114-rec-ing-url") || {}).value || "").trim() || ("/products?search=" + encodeURIComponent(ingName));
+              if (!ingName) {
+                alert("يرجى اختيار منتج من القائمة أو كتابة اسمه أولاً");
+                return;
+              }
+              var savedTitle = ((document.getElementById("v114-rec-title") || {}).value || "");
+              var savedKws = ((document.getElementById("v114-rec-kws") || {}).value || "");
+              var savedSteps = ((document.getElementById("v114-rec-steps") || {}).value || "");
+
+              window.__v114DraftIngredients = window.__v114DraftIngredients || [];
+              window.__v114DraftIngredients.push({
+                productId: pId,
+                name: ingName,
+                url: ingUrl,
+                price: pPrice
+              });
+              renderAiStudioDedicatedPageV114();
+              var tEl = document.getElementById("v114-rec-title");
+              var kEl = document.getElementById("v114-rec-kws");
+              var sEl = document.getElementById("v114-rec-steps");
+              if (tEl) tEl.value = savedTitle;
+              if (kEl) kEl.value = savedKws;
+              if (sEl) sEl.value = savedSteps;
+            };
+          }
+
+          Array.from(studioPage.querySelectorAll("[data-del-draft-ing]")).forEach(function(b) {
+            b.onclick = function() {
+              var savedTitle = ((document.getElementById("v114-rec-title") || {}).value || "");
+              var savedKws = ((document.getElementById("v114-rec-kws") || {}).value || "");
+              var savedSteps = ((document.getElementById("v114-rec-steps") || {}).value || "");
+              var idx = parseInt(b.getAttribute("data-del-draft-ing"), 10);
+              window.__v114DraftIngredients.splice(idx, 1);
+              renderAiStudioDedicatedPageV114();
+              var tEl = document.getElementById("v114-rec-title");
+              var kEl = document.getElementById("v114-rec-kws");
+              var sEl = document.getElementById("v114-rec-steps");
+              if (tEl) tEl.value = savedTitle;
+              if (kEl) kEl.value = savedKws;
+              if (sEl) sEl.value = savedSteps;
+            };
+          });
+
+          var saveRecBtn = document.getElementById("v114-save-rec-btn");
+          if (saveRecBtn) {
+            saveRecBtn.onclick = function() {
+              var title = ((document.getElementById("v114-rec-title") || {}).value || "").trim();
+              var kws = ((document.getElementById("v114-rec-kws") || {}).value || "").trim() || title;
+              var urlInputVal = ((document.getElementById("v114-rec-img") || {}).value || "").trim();
+              var imgUrl = window.__v114DraftRecipeImg || urlInputVal;
+              var steps = ((document.getElementById("v114-rec-steps") || {}).value || "").trim();
+              if (!title || !steps) {
+                alert("يرجى كتابة اسم الوصفة وطريقة التحضير أولاً");
+                return;
+              }
+
+              var pendingIngName = ((document.getElementById("v114-rec-ing-name") || {}).value || "").trim();
+              var pendingIngUrl = ((document.getElementById("v114-rec-ing-url") || {}).value || "").trim();
+              if (pendingIngName) {
+                window.__v114DraftIngredients = window.__v114DraftIngredients || [];
+                var exists = window.__v114DraftIngredients.some(function(x) { return x.name === pendingIngName; });
+                if (!exists) {
+                  window.__v114DraftIngredients.push({
+                    name: pendingIngName,
+                    url: pendingIngUrl || ("/products?search=" + encodeURIComponent(pendingIngName))
+                  });
+                }
+              }
+
+              window.__v114StudioConfig.recipes = window.__v114StudioConfig.recipes || [];
+              window.__v114StudioConfig.recipes.push({
+                id: "rec_" + Date.now(),
+                title: title,
+                keywords: kws,
+                imageUrl: imgUrl,
+                steps: steps,
+                ingredients: (window.__v114DraftIngredients || []).slice()
+              });
+              window.__v114DraftIngredients = [];
+              window.__v114DraftRecipeImg = "";
+              saveStudioConfigToServerV114("✅ تم حفظ الوصفة المصورة ومنتجاتها بنجاح!");
+            };
+          }
+
+          Array.from(studioPage.querySelectorAll("[data-del-rec]")).forEach(function(b) {
+            b.onclick = function() {
+              var idx = parseInt(b.getAttribute("data-del-rec"), 10);
+              window.__v114StudioConfig.recipes.splice(idx, 1);
+              saveStudioConfigToServerV114("🗑️ تم حذف الوصفة وحفظ التعديل.");
+            };
+          });
+
+          // Bind Tab 5: Per-Product Metadata
+          var pmSel = document.getElementById("v114-pm-select");
+          if (pmSel) {
+            pmSel.onchange = function() {
+              var pid = pmSel.value;
+              var opt = pmSel.options[pmSel.selectedIndex];
+              var pname = opt ? opt.getAttribute("data-name") : "";
+              var existing = (window.__v114StudioConfig.productAiMap || {})[pid] || (window.__v114StudioConfig.productAiMap || {})[pname] || {};
+              var tEl = document.getElementById("v114-pm-type");
+              var cEl = document.getElementById("v114-pm-cal");
+              var pEl = document.getElementById("v114-pm-pair");
+              var prEl = document.getElementById("v114-pm-prep");
+              var iEl = document.getElementById("v114-pm-info");
+              if (tEl) tEl.value = existing.usageType || "auto";
+              if (cEl) cEl.value = existing.calories || "";
+              if (pEl) pEl.value = existing.pairings || "";
+              if (prEl) prEl.value = existing.prepIdeas || "";
+              if (iEl) iEl.value = existing.customInfo || "";
+            };
+          }
+          var savePmBtn = document.getElementById("v114-save-pm-btn");
+          if (savePmBtn) {
+            savePmBtn.onclick = function() {
+              var sel = document.getElementById("v114-pm-select");
+              if (!sel || !sel.value) {
+                alert("يرجى اختيار المنتج من القائمة أولاً");
+                return;
+              }
+              var pid = sel.value;
+              var opt = sel.options[sel.selectedIndex];
+              var pname = opt ? opt.getAttribute("data-name") : pid;
+              var metaObj = {
+                usageType: (document.getElementById("v114-pm-type") || {}).value || "auto",
+                calories: ((document.getElementById("v114-pm-cal") || {}).value || "").trim(),
+                pairings: ((document.getElementById("v114-pm-pair") || {}).value || "").trim(),
+                prepIdeas: ((document.getElementById("v114-pm-prep") || {}).value || "").trim(),
+                customInfo: ((document.getElementById("v114-pm-info") || {}).value || "").trim()
+              };
+              window.__v114StudioConfig.productAiMap = window.__v114StudioConfig.productAiMap || {};
+              window.__v114StudioConfig.productAiMap[pid] = metaObj;
+              if (pname) window.__v114StudioConfig.productAiMap[pname] = metaObj;
+              saveStudioConfigToServerV114("✅ تم حفظ معلومات المنتج للذكاء الاصطناعي بنجاح!");
+            };
+          }
+          Array.from(studioPage.querySelectorAll("[data-del-prodmeta]")).forEach(function(b) {
+            b.onclick = function() {
+              var k = b.getAttribute("data-del-prodmeta");
+              if (k && window.__v114StudioConfig.productAiMap) {
+                delete window.__v114StudioConfig.productAiMap[k];
+                saveStudioConfigToServerV114("🗑️ تم حذف تخصيص المنتج.");
+              }
+            };
+          });
+
+          // Bind Tab 6: Customer Requests & Notifications
+          var enNotifBtn = document.getElementById("v114-enable-notif-btn");
+          if (enNotifBtn) {
+            enNotifBtn.onclick = function() {
+              if ("Notification" in window) Notification.requestPermission();
+              triggerAdminPhoneNotificationV112({ requestedItem: "تجربة إشعار الهاتف بنجاح ✅" });
+            };
+          }
+          Array.from(studioPage.querySelectorAll("[data-send-reply]")).forEach(function(btn) {
+            btn.onclick = function() {
+              var reqId = btn.getAttribute("data-send-reply");
+              var inp = studioPage.querySelector("[data-reply-input='" + reqId + "']");
+              var replyTxt = inp ? inp.value.trim() : "";
+              if (!replyTxt) {
+                alert("يرجى كتابة الرد للزبون أولاً");
+                return;
+              }
+              btn.textContent = "جاري الإرسال...";
+              fetch("/api/ai-studio/admin-reply", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ requestId: reqId, adminReply: replyTxt, status: "available" })
+              })
+                .then(function(r) { return r.json(); })
+                .then(function() {
+                  showSaveSuccessBannerV115("✅ تم إرسال الرد للزبون بنجاح!");
+                  refreshStudioDataV114(true);
+                });
+            };
+          });
+        }
+
+        function attachProductModalAiFieldsV112() {
+          if (window.location.pathname.indexOf("/admin") === -1) return;
+          var descInput = Array.from(document.querySelectorAll("textarea, input")).find(function(el) {
+            var ph = (el.getAttribute("placeholder") || "") + " " + (el.getAttribute("name") || "");
+            return ph.indexOf("وصف") !== -1 || ph.indexOf("description") !== -1;
+          });
+          if (!descInput || !descInput.parentElement) return;
+          if (document.getElementById("v112-prod-ai-box")) return;
+
+          var nameInput = Array.from(document.querySelectorAll("input")).find(function(el) {
+            var ph = (el.getAttribute("placeholder") || "") + " " + (el.getAttribute("name") || "");
+            return ph.indexOf("اسم المنتج") !== -1 || ph.indexOf("name") !== -1;
+          });
+          var prodName = nameInput ? nameInput.value.trim() : "";
+          var existingMeta = (window.__v114StudioConfig.productAiMap || {})[prodName] || {
+            usageType: "auto",
+            calories: "",
+            customInfo: "",
+            pairings: "",
+            prepIdeas: ""
+          };
+
+          var box = document.createElement("div");
+          box.id = "v112-prod-ai-box";
+          box.style.cssText = "margin-top:10px;padding:12px;border:2px solid #0d3825;border-radius:12px;background:#f2f9f5;direction:rtl;text-align:right;";
+          box.innerHTML =
+            '<div style="font-weight:900;color:#0d3825;font-size:0.88rem;margin-bottom:8px;">🤖 معلومات إضافية للذكاء الاصطناعي عن هذا المنتج (اختياري):</div>' +
+            '<select id="v112-pm-type" style="width:100%;padding:7px;border:1px solid #0d3825;border-radius:8px;margin-bottom:6px;font-size:0.8rem;font-weight:700;background:#fff;">' +
+            '<option value="auto"' + (existingMeta.usageType === "auto" ? " selected" : "") + '>🤖 ذكي تلقائي (يميز الشوكولاتة السناك عن منتجات الوصفات)</option>' +
+            '<option value="snacks_and_drinks"' + (existingMeta.usageType === "snacks_and_drinks" ? " selected" : "") + '>🍫 سناك/مشروب جاهز (سعرات ومشروبات بدون طبخ)</option>' +
+            '<option value="recipe"' + (existingMeta.usageType === "recipe" ? " selected" : "") + '>🍰 يدخل في حلى ووصفات (مثل بسكويت ماري)</option>' +
+            '<option value="calories_and_info"' + (existingMeta.usageType === "calories_and_info" ? " selected" : "") + '>🔥 سعرات حرارية ومعلومات غذائية فقط</option>' +
+            '</select>' +
+            '<input id="v112-pm-cal" type="text" placeholder="🔥 السعرات والمعلومات الغذائية (مثال: 120 سعرة حرارية)..." value="' + (existingMeta.calories || "").replace(/"/g, "&quot;") + '" style="width:100%;padding:7px;border:1px solid #cbd5e1;border-radius:8px;margin-bottom:6px;font-size:0.8rem;" />' +
+            '<input id="v112-pm-pair" type="text" placeholder="☕ أفضل مشروب أو إضافة معه..." value="' + (existingMeta.pairings || "").replace(/"/g, "&quot;") + '" style="width:100%;padding:7px;border:1px solid #cbd5e1;border-radius:8px;margin-bottom:6px;font-size:0.8rem;" />' +
+            '<input id="v112-pm-prep" type="text" placeholder="🍰 فكرة حلى أو تحضير (إن وجد)..." value="' + (existingMeta.prepIdeas || "").replace(/"/g, "&quot;") + '" style="width:100%;padding:7px;border:1px solid #cbd5e1;border-radius:8px;margin-bottom:6px;font-size:0.8rem;" />' +
+            '<button type="button" id="v112-pm-save" style="background:#0d3825;color:#d4af37;border:none;border-radius:8px;padding:7px 14px;font-weight:900;font-size:0.8rem;cursor:pointer;width:100%;">💾 حفظ معلومات الذكاء لهذا المنتج</button>';
+
+          descInput.parentElement.appendChild(box);
+
+          var saveBtn = document.getElementById("v112-pm-save");
+          if (saveBtn) {
+            saveBtn.onclick = function() {
+              var currentName = nameInput ? nameInput.value.trim() : prodName;
+              if (!currentName) {
+                alert("يرجى كتابة اسم المنتج أولاً");
+                return;
+              }
+              window.__v114StudioConfig.productAiMap = window.__v114StudioConfig.productAiMap || {};
+              window.__v114StudioConfig.productAiMap[currentName] = {
+                usageType: (document.getElementById("v112-pm-type") || {}).value || "auto",
+                calories: (document.getElementById("v112-pm-cal") || {}).value || "",
+                pairings: (document.getElementById("v112-pm-pair") || {}).value || "",
+                prepIdeas: (document.getElementById("v112-pm-prep") || {}).value || "",
+                customInfo: ""
+              };
+              saveBtn.textContent = "✅ تم الحفظ!";
+              saveStudioConfigToServerV114("✅ تم حفظ معلومات المنتج!", function() {
+                setTimeout(function() { saveBtn.textContent = "💾 حفظ معلومات الذكاء لهذا المنتج"; }, 1200);
+              });
+            };
+          }
+        }
+
+        // ====================================================================
+        // PRESERVED v107-v111 CART & VARIANT PRICE ENGINE
+        // ====================================================================
+        function parseVariantSegmentsFromText(text) {
+          if (!text) return [];
+          var parenMatches = Array.from(String(text).matchAll(/\\(([^()]+)\\)/g));
+          var inner = "";
+          if (parenMatches.length > 0) {
+            inner = parenMatches.map(function(m) { return m[1].trim(); }).filter(function(s) { return s.indexOf(":") !== -1; }).join("، ");
+          } else if (String(text).indexOf(":") !== -1) {
+            inner = String(text);
+          }
+          if (!inner) return [];
+          var segments = inner.split(/[،,+]+/).map(function(s) { return s.trim(); }).filter(Boolean);
+          var out = [];
+          segments.forEach(function(seg) {
+            var sQty = 1;
+            var mm = seg.match(/[×xX*]\\s*(\\d+)/);
+            if (mm && mm[1]) sQty = Math.max(1, parseInt(mm[1], 10));
+            var cleanSeg = seg.replace(/[×xX*]\\s*\\d+.*$/, "").trim();
+            var cIdx = cleanSeg.indexOf(":");
+            if (cIdx !== -1) {
+              var oName = cleanSeg.slice(0, cIdx).trim();
+              var oPrice = parseFloat(cleanSeg.slice(cIdx + 1).trim());
+              if (oName && !isNaN(oPrice) && oPrice > 0) {
+                out.push({ name: oName, price: Math.round(oPrice), qty: sQty });
+              }
+            }
+          });
+          return out;
+        }
+
+        function setLeafTextSafe(el, newStr) {
+          if (!el) return;
+          if (el.children.length === 0) {
+            if ((el.textContent || "").trim() !== newStr.trim()) {
+              el.textContent = newStr;
+            }
+            return;
+          }
+          for (var i = 0; i < el.childNodes.length; i++) {
+            var n = el.childNodes[i];
+            if (n.nodeType === 3 && n.nodeValue && /\\d/.test(n.nodeValue)) {
+              n.nodeValue = newStr;
+              return;
+            }
+          }
+        }
+
+        function syncVariantModalPrice() {
+          var headings = Array.from(document.querySelectorAll("h1, h2, h3, h4, p, div, span"));
+          var modalTitle = headings.find(function(el) {
+            return el.children.length === 0 && (el.textContent || "").trim().indexOf("اختر النوع أو الحجم") !== -1;
+          });
+          if (!modalTitle) return;
+
+          var modalContainer = modalTitle.parentElement;
+          while (
+            modalContainer &&
+            modalContainer !== document.body &&
+            modalContainer.querySelectorAll("button").length < 2
+          ) {
+            modalContainer = modalContainer.parentElement;
+          }
+          if (!modalContainer) return;
+
+          var prodNameEl = Array.from(modalContainer.querySelectorAll("h2, h3, h4, strong, p, div")).find(function(el) {
+            if (el.children.length > 0) return false;
+            var t = (el.textContent || "").trim();
+            return (
+              t.length >= 3 &&
+              t.indexOf("اختر النوع") === -1 &&
+              t.indexOf("يمكنك اختيار") === -1 &&
+              t.indexOf("الإجمالي") === -1 &&
+              t.indexOf("ر.ي") === -1 &&
+              t.indexOf("إضافة للسلة") === -1 &&
+              t.indexOf("إلغاء") === -1
+            );
+          });
+          var currentModalProdName = prodNameEl ? (prodNameEl.textContent || "").trim() : "";
+
+          var allElements = Array.from(modalContainer.querySelectorAll("button, div, label, li"));
+          var optionRows = [];
+          allElements.forEach(function(el) {
+            var txt = (el.textContent || "").trim();
+            if (
+              txt.indexOf(":") !== -1 &&
+              txt.indexOf("اختر النوع") === -1 &&
+              txt.indexOf("إضافة للسلة") === -1 &&
+              txt.length < 95
+            ) {
+              var hasChildWithColon = Array.from(el.children).some(function(c) {
+                var ct = (c.textContent || "").trim();
+                return ct.indexOf(":") !== -1 && ct.indexOf("ر.ي") !== -1 && ct.length < 80;
+              });
+              if (!hasChildWithColon) {
+                optionRows.push(el);
+              }
+            }
+          });
+
+          if (currentModalProdName && optionRows.length > 0 && !modalContainer.getAttribute("data-v111-order-bound")) {
+            modalContainer.setAttribute("data-v111-order-bound", "1");
+            modalContainer.addEventListener("click", function(ev) {
+              var target = ev.target;
+              while (target && target !== modalContainer) {
+                var rowIdx = optionRows.indexOf(target);
+                if (rowIdx !== -1) {
+                  var rTxt = (target.textContent || "").trim();
+                  var mOpt = rTxt.match(/([^:\\n]+):\\s*(\\d+(?:\\.\\d+)?)/);
+                  if (mOpt) {
+                    var oName = mOpt[1].replace(/[✓✔]/g, "").trim();
+                    var oPrice = Math.round(parseFloat(mOpt[2]));
+                    window.__v111ClickOrder = window.__v111ClickOrder || {};
+                    var list = window.__v111ClickOrder[currentModalProdName] || [];
+                    setTimeout(function() {
+                      var isNowSel = isOptionRowSelected(target);
+                      if (isNowSel) {
+                        var existing = list.find(function(x) { return x.name === oName; });
+                        if (!existing) {
+                          list.push({ name: oName, price: oPrice, qty: getRowSpinQty(target) });
+                        } else {
+                          existing.qty = getRowSpinQty(target);
+                        }
+                      } else {
+                        list = list.filter(function(x) { return x.name !== oName; });
+                      }
+                      window.__v111ClickOrder[currentModalProdName] = list;
+                    }, 20);
+                  }
+                  break;
+                }
+                target = target.parentElement;
+              }
+            }, true);
+          }
+
+          function isOptionRowSelected(row) {
+            var cls = (row.className || "") + " " + (row.parentElement ? row.parentElement.className || "" : "");
+            var styleAttr = (row.getAttribute("style") || "") + " " + (row.parentElement ? row.parentElement.getAttribute("style") || "" : "");
+            var ariaChecked = row.getAttribute("aria-checked") === "true" || row.getAttribute("aria-pressed") === "true" || row.getAttribute("data-state") === "checked";
+            var hasCheckInput = false;
+            var inp = row.querySelector("input[type='checkbox'], input[type='radio']");
+            if (inp && inp.checked) hasCheckInput = true;
+            var hasCheckIcon = (row.textContent || "").indexOf("✓") !== -1 || (row.textContent || "").indexOf("✔") !== -1;
+
+            var bg = "";
+            var borderCol = "";
+            try {
+              var cs = window.getComputedStyle(row);
+              bg = cs.backgroundColor || "";
+              borderCol = cs.borderColor || "";
+            } catch (e) {}
+
+            var isGreenBg =
+              bg.indexOf("22, 101, 52") !== -1 ||
+              bg.indexOf("20, 83, 45") !== -1 ||
+              bg.indexOf("220, 252, 231") !== -1 ||
+              bg.indexOf("240, 253, 244") !== -1 ||
+              bg.indexOf("16, 185, 129") !== -1 ||
+              bg.indexOf("5, 150, 105") !== -1 ||
+              bg.indexOf("13, 56, 37") !== -1;
+
+            var isGreenBorder =
+              borderCol.indexOf("22, 101, 52") !== -1 ||
+              borderCol.indexOf("20, 83, 45") !== -1 ||
+              borderCol.indexOf("16, 185, 129") !== -1 ||
+              borderCol.indexOf("5, 150, 105") !== -1 ||
+              borderCol.indexOf("13, 56, 37") !== -1;
+
+            var hasActiveClass =
+              cls.indexOf("emerald") !== -1 ||
+              cls.indexOf("green") !== -1 ||
+              cls.indexOf("selected") !== -1 ||
+              cls.indexOf("ring-") !== -1 ||
+              cls.indexOf("bg-primary") !== -1 ||
+              styleAttr.indexOf("#0d3825") !== -1 ||
+              styleAttr.indexOf("rgb(13, 56, 37)") !== -1;
+
+            var hasSpinButtons = row.querySelectorAll("button").length >= 2;
+            return ariaChecked || hasCheckInput || hasCheckIcon || isGreenBg || isGreenBorder || hasActiveClass || hasSpinButtons;
+          }
+
+          function getRowSpinQty(row) {
+            var q = 1;
+            var spinBtns = Array.from(row.querySelectorAll("button"));
+            if (spinBtns.length >= 2) {
+              var qtEl = Array.from(row.querySelectorAll("span, div, strong")).find(function(s) {
+                if (s.children.length > 0) return false;
+                var v = (s.textContent || "").trim();
+                return /^\\d+$/.test(v) && parseInt(v, 10) >= 1 && parseInt(v, 10) < 100;
+              });
+              if (qtEl) q = parseInt((qtEl.textContent || "1").trim(), 10) || 1;
+            }
+            return q;
+          }
+
+          var selectedSum = 0;
+          var selectedCount = 0;
+          var currentSelectedMap = {};
+
+          optionRows.forEach(function(row) {
+            var txt = (row.textContent || "").trim();
+            var m = txt.match(/([^:\\n]+):\\s*(\\d+(?:\\.\\d+)?)/);
+            if (!m) return;
+            var optName = m[1].replace(/[✓✔]/g, "").trim();
+            var optPrice = Math.round(parseFloat(m[2]));
+            if (!optPrice || isNaN(optPrice)) return;
+
+            if (isOptionRowSelected(row)) {
+              var q = getRowSpinQty(row);
+              selectedSum += optPrice * q;
+              selectedCount += q;
+              currentSelectedMap[optName] = { name: optName, price: optPrice, qty: q };
+            }
+          });
+
+          if (currentModalProdName && selectedCount > 0) {
+            window.__v111ClickOrder = window.__v111ClickOrder || {};
+            var prevOrder = window.__v111ClickOrder[currentModalProdName] || [];
+            var finalOrdered = [];
+            prevOrder.forEach(function(po) {
+              if (currentSelectedMap[po.name]) {
+                finalOrdered.push(currentSelectedMap[po.name]);
+                delete currentSelectedMap[po.name];
+              }
+            });
+            Object.keys(currentSelectedMap).forEach(function(k) {
+              finalOrdered.push(currentSelectedMap[k]);
+            });
+            window.__v111ClickOrder[currentModalProdName] = finalOrdered;
+
+            var rawOrderedStr = finalOrdered.map(function(x) {
+              return x.name + ":" + x.price + (x.qty > 1 ? " × " + x.qty : "");
+            }).join("، ");
+
+            window.__v111ReorderedVariants[currentModalProdName] = {
+              ordered: finalOrdered,
+              raw: rawOrderedStr,
+              totalSum: selectedSum
+            };
+            try {
+              sessionStorage.setItem("original_v111_reordered_variants", JSON.stringify(window.__v111ReorderedVariants));
+            } catch (e) {}
+          }
+
+          if (selectedCount > 0 && selectedSum > 0) {
+            var formattedSum = selectedSum.toLocaleString("en-US");
+            var allLeafNodes = Array.from(modalContainer.querySelectorAll("span, strong, b, p, div, button")).filter(function(el) {
+              return el.children.length === 0;
+            });
+
+            allLeafNodes.forEach(function(el) {
+              var t = (el.textContent || "").trim();
+              if (t.indexOf(":") !== -1 && optionRows.some(function(r) { return r.contains(el); })) {
+                return;
+              }
+              if (t.indexOf("إضافة للسلة") !== -1 && /\\d/.test(t)) {
+                el.textContent = t.replace(/[\\d,]+(?=\\s*ر\\.ي)/, formattedSum);
+                return;
+              }
+              if (t.indexOf("ر.ي") !== -1 && /\\d/.test(t)) {
+                var parentTxt = el.parentElement ? (el.parentElement.textContent || "") : "";
+                if (parentTxt.indexOf("الإجمالي") !== -1 || parentTxt.indexOf("السعر") !== -1 || el.tagName === "BUTTON") {
+                  el.textContent = t.replace(/[\\d,]+(?=\\s*ر\\.ي)/, formattedSum);
+                }
+              }
+            });
+          }
+        }
+
+        function syncCartDrawerPricesAndTotals() {
+          var allTitles = Array.from(document.querySelectorAll("h3, h4, strong, p, span, div")).filter(function(el) {
+            if (el.children.length > 0) return false;
+            var t = (el.textContent || "").trim();
+            return (
+              t.indexOf(":") !== -1 &&
+              t.indexOf("(") !== -1 &&
+              t.indexOf(")") !== -1 &&
+              t.indexOf("اختر النوع") === -1 &&
+              t.indexOf("الإجمالي") === -1 &&
+              t.length < 140
+            );
+          });
+
+          if (allTitles.length > 0) {
+            var computedSubtotal = 0;
+            var processedRows = [];
+
+            allTitles.forEach(function(titleEl) {
+              var titleTxt = (titleEl.textContent || "").trim();
+              var basePName = titleTxt.replace(/\\s*\\([^()]*\\)\\s*$/g, "").trim();
+
+              var reordInfo = window.__v111ReorderedVariants && window.__v111ReorderedVariants[basePName];
+              if (reordInfo && reordInfo.raw && titleTxt.indexOf("،") !== -1) {
+                var desiredFullTitle = basePName + " (" + reordInfo.raw + ")";
+                if (titleTxt !== desiredFullTitle) {
+                  titleEl.textContent = desiredFullTitle;
+                  titleTxt = desiredFullTitle;
+                }
+              }
+
+              var segments = parseVariantSegmentsFromText(titleTxt);
+              if (segments.length === 0) return;
+
+              var card = titleEl.parentElement;
+              while (
+                card &&
+                card !== document.body &&
+                (card.textContent || "").indexOf("ر.ي") === -1
+              ) {
+                card = card.parentElement;
+              }
+              if (!card || processedRows.indexOf(card) !== -1) return;
+              processedRows.push(card);
+
+              var qty = 1;
+              var cardSpans = Array.from(card.querySelectorAll("span, div, strong")).filter(function(s) {
+                if (s.children.length > 0) return false;
+                var v = (s.textContent || "").trim();
+                return /^\\d+$/.test(v) && parseInt(v, 10) >= 1 && parseInt(v, 10) < 500;
+              });
+              if (cardSpans.length > 0) {
+                qty = parseInt((cardSpans[0].textContent || "1").trim(), 10) || 1;
+              }
+
+              var singleSetPrice = segments.reduce(function(acc, s) {
+                return acc + (s.price * (s.qty || 1));
+              }, 0);
+
+              var hasExplicitMulti = segments.some(function(s) { return s.qty > 1; });
+              var rowTotal = hasExplicitMulti ? singleSetPrice : (singleSetPrice * qty);
+              var unitDisplayPrice = hasExplicitMulti ? singleSetPrice : segments[0].price;
+
+              if (segments.length > 1 && !card.getAttribute("data-v111-split-done")) {
+                var existingBreakdown = card.querySelector(".v111-split-lines");
+                var breakdownHtml = segments.map(function(s, idx) {
+                  var sTot = s.price * (s.qty || 1);
+                  return '<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 8px;margin-top:3px;background:#f2f9f5;border:1px solid #ccebd9;border-radius:8px;font-size:0.78rem;color:#0d3825;font-weight:700;">' +
+                    '<span>' + (idx + 1) + '. ' + basePName + ' (' + s.name + (s.qty > 1 ? ' × ' + s.qty : '') + ')</span>' +
+                    '<span>' + sTot.toLocaleString("en-US") + ' ر.ي</span>' +
+                    '</div>';
+                }).join("");
+
+                if (!existingBreakdown) {
+                  var bdDiv = document.createElement("div");
+                  bdDiv.className = "v111-split-lines";
+                  bdDiv.style.cssText = "width:100%;margin-top:6px;direction:rtl;";
+                  bdDiv.innerHTML = breakdownHtml;
+                  titleEl.parentElement.appendChild(bdDiv);
+                } else if (existingBreakdown.innerHTML !== breakdownHtml) {
+                  existingBreakdown.innerHTML = breakdownHtml;
+                }
+              }
+
+              var priceLeaves = Array.from(card.querySelectorAll("span, strong, b, p, div")).filter(function(el) {
+                if (el.children.length > 0 || el === titleEl) return false;
+                if (el.closest && el.closest(".v111-split-lines")) return false;
+                var t = (el.textContent || "").trim();
+                return t.indexOf("ر.ي") !== -1 && /\\d/.test(t);
+              });
+
+              if (priceLeaves.length === 1) {
+                var pTxt = (priceLeaves[0].textContent || "").trim();
+                var newPTxt = pTxt.replace(/[\\d,]+(?=\\s*ر\\.ي)/, rowTotal.toLocaleString("en-US"));
+                setLeafTextSafe(priceLeaves[0], newPTxt);
+              } else if (priceLeaves.length >= 2) {
+                var uTxt = (priceLeaves[0].textContent || "").trim();
+                setLeafTextSafe(priceLeaves[0], uTxt.replace(/[\\d,]+(?=\\s*ر\\.ي)/, unitDisplayPrice.toLocaleString("en-US")));
+                var totEl = priceLeaves[priceLeaves.length - 1];
+                var tTxt = (totEl.textContent || "").trim();
+                setLeafTextSafe(totEl, tTxt.replace(/[\\d,]+(?=\\s*ر\\.ي)/, rowTotal.toLocaleString("en-US")));
+              }
+            });
+
+            var cartRoot = processedRows[0] ? processedRows[0].parentElement : null;
+            while (
+              cartRoot &&
+              cartRoot !== document.body &&
+              (cartRoot.textContent || "").indexOf("الإجمالي") === -1 &&
+              (cartRoot.textContent || "").indexOf("المجموع") === -1
+            ) {
+              cartRoot = cartRoot.parentElement;
+            }
+
+            if (cartRoot) {
+              var allItemRows = Array.from(cartRoot.children[0] ? cartRoot.children[0].children : []);
+              if (allItemRows.length === 0) allItemRows = processedRows;
+
+              computedSubtotal = 0;
+              var countedCards = [];
+              Array.from(cartRoot.querySelectorAll("div, li")).forEach(function(rowEl) {
+                if (countedCards.some(function(c) { return c.contains(rowEl) || rowEl.contains(c); })) return;
+                if (rowEl.closest && rowEl.closest(".v111-split-lines")) return;
+                var rText = (rowEl.textContent || "").trim();
+                if (
+                  rText.indexOf("الإجمالي") !== -1 ||
+                  rText.indexOf("المجموع") !== -1 ||
+                  rText.indexOf("التوصيل") !== -1 ||
+                  rText.indexOf("إتمام الطلب") !== -1
+                ) {
+                  return;
+                }
+                var priceNodes = Array.from(rowEl.querySelectorAll("span, strong, b, p, div")).filter(function(el) {
+                  if (el.children.length > 0) return false;
+                  if (el.closest && el.closest(".v111-split-lines")) return false;
+                  var t = (el.textContent || "").trim();
+                  return t.indexOf("ر.ي") !== -1 && /\\d/.test(t) && t.indexOf(":") === -1;
+                });
+                var hasQtyButtons = rowEl.querySelectorAll("button").length >= 2;
+                if (hasQtyButtons && priceNodes.length > 0 && rText.length < 350) {
+                  var lastP = (priceNodes[priceNodes.length - 1].textContent || "").trim();
+                  var mNum = lastP.match(/([\\d,]+)\\s*ر\\.ي/);
+                  if (mNum && mNum[1]) {
+                    var val = parseInt(mNum[1].replace(/,/g, ""), 10);
+                    if (!isNaN(val) && val > 0) {
+                      computedSubtotal += val;
+                      countedCards.push(rowEl);
+                    }
+                  }
+                }
+              });
+
+              if (computedSubtotal > 0) {
+                window.__v108ComputedCartSubtotal = computedSubtotal;
+              }
+            }
+          }
+
+          var savedSub = Number(window.__v108ComputedCartSubtotal || 0);
+          if (savedSub > 0) {
+            updateSummaryTotalsOnPage(savedSub);
+          }
+        }
+
+        function updateSummaryTotalsOnPage(correctSubtotal) {
+          var fmtSub = correctSubtotal.toLocaleString("en-US");
+          var deliveryFee = 0;
+
+          var allContainers = Array.from(document.querySelectorAll("div, li, p, section"));
+          allContainers.forEach(function(c) {
+            var txt = (c.textContent || "").trim();
+            if ((txt.indexOf("رسوم التوصيل") !== -1 || txt.indexOf("سعر التوصيل") !== -1) && txt.length < 90) {
+              var mDel = txt.match(/([\\d,]+)\\s*ر\\.ي/);
+              if (mDel && mDel[1]) {
+                var dVal = parseInt(mDel[1].replace(/,/g, ""), 10);
+                if (!isNaN(dVal) && dVal >= 0 && dVal < 10000) {
+                  deliveryFee = dVal;
+                }
+              }
+            }
+          });
+
+          allContainers.forEach(function(c) {
+            if (c.children.length > 5) return;
+            var txt = (c.textContent || "").trim();
+            if (txt.length > 110 || txt.indexOf("ر.ي") === -1) return;
+
+            var isSubtotalRow =
+              txt.indexOf("المجموع الفرعي") !== -1 ||
+              txt.indexOf("مجموع المنتجات") !== -1 ||
+              txt.indexOf("قيمة المنتجات") !== -1 ||
+              txt.indexOf("إجمالي السلة") !== -1 ||
+              (txt.indexOf("المجموع") !== -1 && txt.indexOf("الكلي") === -1 && txt.indexOf("النهائي") === -1);
+
+            var isGrandTotalRow =
+              txt.indexOf("الإجمالي الكلي") !== -1 ||
+              txt.indexOf("الإجمالي النهائي") !== -1 ||
+              txt.indexOf("المبلغ الإجمالي") !== -1 ||
+              (txt.indexOf("الإجمالي") !== -1 && txt.indexOf("سلة") === -1 && txt.indexOf("منتجات") === -1);
+
+            if (isSubtotalRow || isGrandTotalRow) {
+              var targetVal = isGrandTotalRow && deliveryFee > 0 ? (correctSubtotal + deliveryFee) : correctSubtotal;
+              var fmtTarget = targetVal.toLocaleString("en-US");
+
+              var priceLeaves = Array.from(c.querySelectorAll("span, strong, b, p, div")).filter(function(el) {
+                if (el.children.length > 0) return false;
+                var t = (el.textContent || "").trim();
+                return t.indexOf("ر.ي") !== -1 && /\\d/.test(t);
+              });
+
+              priceLeaves.forEach(function(pEl) {
+                var oldT = (pEl.textContent || "").trim();
+                var newT = oldT.replace(/[\\d,]+(?=\\s*ر\\.ي)/, fmtTarget);
+                setLeafTextSafe(pEl, newT);
+              });
+            }
+          });
+
+          var buttons = Array.from(document.querySelectorAll("button, a"));
+          buttons.forEach(function(btn) {
+            var bTxt = (btn.textContent || "").trim();
+            if (
+              (bTxt.indexOf("إتمام الطلب") !== -1 ||
+                bTxt.indexOf("تأكيد الطلب") !== -1 ||
+                bTxt.indexOf("عرض السلة") !== -1 ||
+                bTxt.indexOf("الدفع") !== -1) &&
+              bTxt.indexOf("ر.ي") !== -1 &&
+              /\\d/.test(bTxt)
+            ) {
+              var targetBtnVal = (bTxt.indexOf("تأكيد") !== -1 && deliveryFee > 0)
+                ? (correctSubtotal + deliveryFee)
+                : correctSubtotal;
+              var fmtBtn = targetBtnVal.toLocaleString("en-US");
+
+              var btnLeaves = Array.from(btn.querySelectorAll("span, strong, b, div")).filter(function(el) {
+                return el.children.length === 0 && (el.textContent || "").indexOf("ر.ي") !== -1 && /\\d/.test(el.textContent || "");
+              });
+              if (btnLeaves.length > 0) {
+                btnLeaves.forEach(function(l) {
+                  setLeafTextSafe(l, (l.textContent || "").replace(/[\\d,]+(?=\\s*ر\\.ي)/, fmtBtn));
+                });
+              } else if (btn.children.length === 0) {
+                setLeafTextSafe(btn, bTxt.replace(/[\\d,]+(?=\\s*ر\\.ي)/, fmtBtn));
+              }
+            }
+          });
+        }
+
+        function attachAdminAddInvoiceItemV99() {
+          if (window.location.pathname.indexOf("/admin") === -1) return;
+          var tables = Array.from(document.querySelectorAll("table"));
+          tables.forEach(function(tbl) {
+            var headers = (tbl.textContent || "");
+            if (headers.indexOf("الصنف") === -1 && headers.indexOf("المنتج") === -1) return;
+
+            var rows = Array.from(tbl.querySelectorAll("tbody tr"));
+            rows.forEach(function(tr) {
+              if (tr.getAttribute("data-v111-split") === "1") return;
+              var cells = Array.from(tr.querySelectorAll("td"));
+              if (cells.length < 3) return;
+              var nameCell = cells[0];
+              var rawName = (nameCell.textContent || "").trim();
+              var segments = parseVariantSegmentsFromText(rawName);
+              if (segments.length > 1) {
+                tr.setAttribute("data-v111-split", "1");
+                var baseTitle = rawName.replace(/\\s*\\([^()]*\\)\\s*$/g, "").trim() || rawName;
+                segments.forEach(function(seg, sIdx) {
+                  var segTitle = baseTitle + " (" + seg.name + ":" + seg.price + ")";
+                  var segTotal = seg.price * (seg.qty || 1);
+                  if (sIdx === 0) {
+                    nameCell.textContent = segTitle;
+                    cells.forEach(function(c, cIdx) {
+                      if (cIdx === 0) return;
+                      var ct = (c.textContent || "").trim();
+                      if (/^\\d+$/.test(ct)) c.textContent = String(seg.qty || 1);
+                      else if (ct.indexOf("ر.ي") !== -1) c.textContent = segTotal.toLocaleString("en-US") + " ر.ي";
+                    });
+                  } else {
+                    var cloneTr = tr.cloneNode(true);
+                    var cloneCells = Array.from(cloneTr.querySelectorAll("td"));
+                    if (cloneCells[0]) cloneCells[0].textContent = segTitle;
+                    cloneCells.forEach(function(c, cIdx) {
+                      if (cIdx === 0) return;
+                      var ct = (c.textContent || "").trim();
+                      if (/^\\d+$/.test(ct)) c.textContent = String(seg.qty || 1);
+                      else if (ct.indexOf("ر.ي") !== -1) c.textContent = segTotal.toLocaleString("en-US") + " ر.ي";
+                    });
+                    tr.parentElement.insertBefore(cloneTr, tr.nextSibling);
+                  }
+                });
+              }
+            });
+
+            if (tbl.parentElement && tbl.parentElement.querySelector(".v99-add-item-box")) return;
+            var container = tbl.parentElement;
+            if (!container) return;
+
+            var pageText = document.body.textContent || "";
+            var orderIdMatch = pageText.match(/طلب\\s*#?\\s*(\\d+)/) || pageText.match(/#(\\d+)/);
+            if (!orderIdMatch) return;
+            var currentOrderId = parseInt(orderIdMatch[1], 10);
+            if (!currentOrderId) return;
+
+            var box = document.createElement("div");
+            box.className = "v99-add-item-box";
+            box.style.cssText = "margin-top:12px;padding:12px;border:2px dashed #15803d;border-radius:12px;background:#f0fdf4;direction:rtl;";
+            box.innerHTML =
+              '<div style="font-weight:800;color:#14532d;margin-bottom:8px;font-size:0.9rem;">➕ إضافة صنف جديد لهذه الفاتورة (طلب #' + currentOrderId + ')</div>' +
+              '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">' +
+              '<input type="text" class="v99-item-name" placeholder="اسم الصنف (مثال: لبن المراعي (كبير:1000))" style="flex:2;min-width:160px;padding:8px 10px;border:1px solid #86efac;border-radius:8px;font-size:0.85rem;" />' +
+              '<input type="number" class="v99-item-qty" placeholder="الكمية" value="1" min="1" style="width:75px;padding:8px;border:1px solid #86efac;border-radius:8px;font-size:0.85rem;" />' +
+              '<input type="number" class="v99-item-price" placeholder="السعر (ر.ي)" style="width:110px;padding:8px;border:1px solid #86efac;border-radius:8px;font-size:0.85rem;" />' +
+              '<button type="button" class="v99-item-submit" style="padding:8px 16px;background:#15803d;color:#fff;border:none;border-radius:8px;font-weight:800;cursor:pointer;font-size:0.85rem;">إضافة للفاتورة</button>' +
+              '</div>';
+
+            container.appendChild(box);
+            var btn = box.querySelector(".v99-item-submit");
+            btn.addEventListener("click", function() {
+              var customName = box.querySelector(".v99-item-name").value.trim();
+              var qty = parseInt(box.querySelector(".v99-item-qty").value || "1", 10);
+              var price = parseFloat(box.querySelector(".v99-item-price").value || "0");
+              if (!customName) {
+                alert("يرجى كتابة اسم الصنف");
+                return;
+              }
+              btn.disabled = true;
+              btn.textContent = "جاري الإضافة...";
+              fetch("/api/admin/order-add-item", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  orderId: currentOrderId,
+                  customName: customName,
+                  quantity: Math.max(1, qty),
+                  unitPrice: Math.max(0, price)
+                })
+              })
+                .then(function(r) { return r.json(); })
+                .then(function(res) {
+                  if (res && res.ok) {
+                    window.location.reload();
+                  } else {
+                    alert("حدث خطأ: " + (res && res.error ? res.error : "تعذر الحفظ"));
+                    btn.disabled = false;
+                    btn.textContent = "إضافة للفاتورة";
+                  }
+                })
+                .catch(function() {
+                  btn.disabled = false;
+                  btn.textContent = "إضافة للفاتورة";
+                });
+            });
+          });
+        }
+
+        function runAllSyncV117() {
+          try {
+            cleanProductIdNumberInDom();
+            syncVariantModalPrice();
+            syncCartDrawerPricesAndTotals();
+            attachAdminAddInvoiceItemV99();
+            upgradeProductSmartModalV112();
+            enhanceChatBubblesSafelyV117();
+            ensureDedicatedAiSidebarItemV114();
+            attachProductModalAiFieldsV112();
+          } catch (e) {}
+        }
+
+        refreshStudioDataV114(true);
+        setInterval(function() { refreshStudioDataV114(false); }, 6000);
+        setInterval(pollCustomerNotificationsV112, 6500);
+        setInterval(runAllSyncV117, 260);
+        document.addEventListener("click", function() {
+          setTimeout(runAllSyncV117, 40);
+          setTimeout(runAllSyncV117, 180);
+          setTimeout(runAllSyncV117, 450);
+        }, true);
+      })();
+    </script>
+"""
+    if "</body>" in ht:
+        ht = ht.replace("</body>", v117_master_script + "\n  </body>")
+    else:
+        ht = ht + v117_master_script
+    html_path.write_text(ht, encoding="utf-8")
+    print("5. Updated client/index.html with v117 Non-Destructive Surgical Chat Enhancer!")
+
+# ==============================================================================
+# 6. Bump Service Worker cache version to v117
+# ==============================================================================
+sw_path = pathlib.Path("client/public/sw.js")
+if sw_path.exists():
+    sw_txt = sw_path.read_text(encoding="utf-8")
+    sw_txt = re.sub(r'v10\d|v11\d|v9\d', 'v117', sw_txt)
+    sw_path.write_text(sw_txt, encoding="utf-8")
+    print("6. Bumped Service Worker cache to v117!")
+
+# ==============================================================================
+# 7. Verify TypeScript/esbuild Compilation for Server + Client before git push
+# ==============================================================================
+print("7. Verifying build with esbuild...")
+res_srv = subprocess.run(
+    "npx esbuild server/_core/index.ts --bundle --platform=node --packages=external --outfile=/tmp/test_srv_v117.js",
+    shell=True, capture_output=True, text=True
+)
+res_cli = subprocess.run(
+    "npx esbuild client/src/pages/Admin.tsx client/src/pages/Home.tsx --bundle --platform=browser --packages=external --outdir=/tmp/test_cli_v117",
+    shell=True, capture_output=True, text=True
+)
+
+if res_srv.returncode != 0 or res_cli.returncode != 0:
+    print("❌ Build check failed:")
+    if res_srv.returncode != 0:
+        print(res_srv.stderr)
+    if res_cli.returncode != 0:
+        print(res_cli.stderr)
+else:
+    print("✅ Build check passed 100% (Server + Admin.tsx + Home.tsx)!")
+    os.system("git add server/ai_engine_v112.ts server/_core/index.ts server/commerce.ts client/src/pages/Home.tsx client/index.html client/public/sw.js")
+    os.system('git commit -m "Fix v117: restore 100% clean AI Assistant UI and non-destructively insert recipe photo banner and linked items"')
+    os.system("git push origin main")
+    print("🚀 تم الرفع بنجاح إلى Render (v117)!")

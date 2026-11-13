@@ -1,0 +1,3269 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#174b36" />
+    <meta name="description" content="ORIGINAL – أورجنال، احتياجات يومك على اختيارك." />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="أورجنال" />
+    <link rel="manifest" href="/manifest.webmanifest?v=85" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/app-icon-192.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/app-icon-192.png" />
+    <title>ORIGINAL – أورجنال</title>
+  </head>
+  <body style="background:#f8f9fa;margin:0;font-family:system-ui,-apple-system,sans-serif;-webkit-tap-highlight-color:transparent">
+    <div id="root">
+      <div style="background:linear-gradient(180deg,#174b36 0%,#0f3525 100%);color:#fff;padding:12px 16px 14px;box-shadow:0 4px 20px rgba(15,53,37,0.15)">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;max-width:600px;margin:0 auto">
+          <div style="display:flex;align-items:center;gap:10px">
+            <img src="/app-icon-192.png" alt="ORIGINAL" style="width:40px;height:40px;border-radius:12px;border:1.5px solid #d4af37;box-shadow:0 3px 10px rgba(0,0,0,0.2);display:block" />
+            <div><strong style="font-size:15px;letter-spacing:0.5px;color:#fff;display:block;line-height:1.2">ORIGINAL</strong><small style="font-size:11px;color:#d8b454;font-weight:700">أورجنال · سوبرماركت</small></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <div style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,0.12);display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px">🛒</div>
+          </div>
+        </div>
+        <div style="margin-top:12px;max-width:600px;margin-left:auto;margin-right:auto">
+          <div style="background:#fff;border-radius:14px;padding:10px 14px;display:flex;align-items:center;gap:9px;color:#8a9a90;font-size:13px;box-shadow:0 3px 10px rgba(0,0,0,0.06)"><span>🔍</span><span>ابحث عن احتياجاتك اليومية...</span></div>
+        </div>
+      </div>
+      <div style="max-width:600px;margin:16px auto;padding:0 14px">
+        <div style="height:105px;border-radius:18px;background:linear-gradient(135deg,#13462f 0%,#0b2b1d 100%);border:1.5px solid #d4af37;display:flex;align-items:center;justify-content:center;color:#fff;box-shadow:0 6px 18px rgba(17,58,40,0.12)">
+          <div style="text-align:center">
+            <div style="font-size:14px;font-weight:800;color:#f3d17c;margin-bottom:4px">🌿 مرحباً بك في أورجنال</div>
+            <div style="font-size:11px;color:#e0ece4">توصيل مقاضيك لباب بيتك في صنعاء</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.tsx"></script>
+  
+    
+
+  
+    <script>
+      (function() {
+        try {
+          if ("caches" in window && localStorage.getItem("original_v128_cache_purged") !== "1") {
+            localStorage.setItem("original_v128_cache_purged", "1");
+            caches.keys().then(function(keys) {
+              keys.forEach(function(k) { caches.delete(k); });
+            });
+            if (navigator.serviceWorker) {
+              navigator.serviceWorker.getRegistrations().then(function(regs) {
+                regs.forEach(function(r) { r.update(); });
+              });
+            }
+          }
+        } catch (e) {}
+
+        try {
+          localStorage.removeItem("original_v107_by_name");
+          sessionStorage.removeItem("original_v109_cart_subtotal");
+        } catch (e) {}
+
+        window.__v108ComputedCartSubtotal = 0;
+        window.__v111ReorderedVariants = {};
+        window.__v114StudioConfig = {
+          generalSystemPrompt: "",
+          instructions: [],
+          rules: [],
+          promotedProducts: [],
+          recipes: [],
+          productAiMap: {},
+          ecoMode10k: true
+        };
+        window.__v115InitialConfigLoaded = false;
+        window.__v115LastSaveTime = 0;
+        window.__v115BannerMsg = "";
+        window.__v114Requests = [];
+        window.__v114Catalog = [];
+        window.__v114Stats = { zeroTokenMessages: 0, cachedHits: 0, estimatedTokensSaved: 0 };
+        window.__v112DeliveredReplyIds = {};
+        window.__v112NotifiedReqIds = {};
+        window.__v114StudioOpen = false;
+        window.__v114ActiveSubTab = "inst";
+        window.__v114DraftIngredients = [];
+        window.__v114DraftRecipeImg = "";
+        window.__v112SessionId = localStorage.getItem("original_v112_session_id") || ("sess_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7));
+
+        function hasAnyStudioItemsV115(c) {
+          if (!c || typeof c !== "object") return false;
+          return (
+            (Array.isArray(c.instructions) && c.instructions.length > 0) ||
+            (Array.isArray(c.rules) && c.rules.length > 0) ||
+            (Array.isArray(c.promotedProducts) && c.promotedProducts.length > 0) ||
+            (Array.isArray(c.recipes) && c.recipes.length > 0) ||
+            (c.productAiMap && Object.keys(c.productAiMap).length > 0)
+          );
+        }
+
+        function saveLocalBackupV115() {
+          try {
+            localStorage.setItem("original_v115_studio_backup", JSON.stringify(window.__v114StudioConfig));
+          } catch (e) {}
+        }
+
+        try {
+          localStorage.setItem("original_v112_session_id", window.__v112SessionId);
+          var savedReord = sessionStorage.getItem("original_v111_reordered_variants");
+          if (savedReord) window.__v111ReorderedVariants = JSON.parse(savedReord) || {};
+          var savedDeliv = localStorage.getItem("original_v112_delivered_replies");
+          if (savedDeliv) window.__v112DeliveredReplyIds = JSON.parse(savedDeliv) || {};
+          var localCfg = localStorage.getItem("original_v115_studio_backup");
+          if (localCfg) {
+            var parsedLocal = JSON.parse(localCfg);
+            if (parsedLocal && typeof parsedLocal === "object") {
+              window.__v114StudioConfig = {
+                generalSystemPrompt: String(parsedLocal.generalSystemPrompt || ""),
+                instructions: Array.isArray(parsedLocal.instructions) ? parsedLocal.instructions : [],
+                rules: Array.isArray(parsedLocal.rules) ? parsedLocal.rules : [],
+                promotedProducts: Array.isArray(parsedLocal.promotedProducts) ? parsedLocal.promotedProducts : [],
+                recipes: Array.isArray(parsedLocal.recipes) ? parsedLocal.recipes : [],
+                productAiMap: parsedLocal.productAiMap && typeof parsedLocal.productAiMap === "object" ? parsedLocal.productAiMap : {},
+                ecoMode10k: true
+              };
+            }
+          }
+        } catch (e) {}
+
+        function normalizeArabicClientV116(str) {
+          return String(str || "")
+            .toLowerCase()
+            .replace(/[أإآ]/g, "ا")
+            .replace(/ة/g, "ه")
+            .replace(/ى/g, "ي")
+            .replace(/[؟?!.,،]/g, " ")
+            .replace(/\s+/g, " ")
+            .trim();
+        }
+
+        function matchRecipeClientV116(userText) {
+          var list = (window.__v114StudioConfig && window.__v114StudioConfig.recipes) || [];
+          if (!Array.isArray(list) || list.length === 0) return null;
+          var normUser = normalizeArabicClientV116(userText);
+          if (!normUser || normUser.length < 3) return null;
+          var stopWords = ["اريد", "ابغي", "اشتي", "هل", "عندكم", "ممكن", "كيف", "اسوي", "طريقه", "عمل", "وصفه", "حلو", "لذيذ", "سريع", "في", "من", "مع", "على", "عن"];
+
+          for (var i = 0; i < list.length; i++) {
+            var rec = list[i];
+            var normTitle = normalizeArabicClientV116(rec.title || "");
+            var normKw = normalizeArabicClientV116(rec.keywords || "");
+            if (normTitle && (normUser.indexOf(normTitle) !== -1 || normTitle.indexOf(normUser) !== -1)) return rec;
+            if (normKw && (normUser.indexOf(normKw) !== -1 || normKw.indexOf(normUser) !== -1)) return rec;
+
+            var kwParts = String(rec.keywords || "").split(/[،,]+/).map(function(s) { return normalizeArabicClientV116(s); }).filter(function(s) { return s.length >= 3; });
+            for (var kIdx = 0; kIdx < kwParts.length; kIdx++) {
+              if (normUser.indexOf(kwParts[kIdx]) !== -1 || kwParts[kIdx].indexOf(normUser) !== -1) return rec;
+            }
+
+            var combinedTarget = normTitle + " " + normKw;
+            var userWords = normUser.split(" ").filter(function(w) { return w.length >= 3 && stopWords.indexOf(w) === -1; });
+            var matchedWords = userWords.filter(function(w) { return combinedTarget.indexOf(w) !== -1; });
+            if (matchedWords.length >= 2) return rec;
+            if (matchedWords.length >= 1 && (normUser.indexOf("حلي") !== -1 || normUser.indexOf("وصفه") !== -1)) return rec;
+          }
+          return null;
+        }
+
+        function matchRuleClientV116(userText) {
+          var rules = (window.__v114StudioConfig && window.__v114StudioConfig.rules) || [];
+          if (!Array.isArray(rules) || rules.length === 0) return null;
+          var normUser = normalizeArabicClientV116(userText);
+          if (!normUser) return null;
+          for (var i = 0; i < rules.length; i++) {
+            var trig = normalizeArabicClientV116(rules[i].trigger || "");
+            if (trig && normUser.indexOf(trig) !== -1) return rules[i];
+          }
+          return null;
+        }
+
+        function matchPromoClientV116(userText) {
+          var promos = (window.__v114StudioConfig && window.__v114StudioConfig.promotedProducts) || [];
+          if (!Array.isArray(promos) || promos.length === 0) return null;
+          var normUser = normalizeArabicClientV116(userText);
+          if (!normUser) return null;
+          for (var i = 0; i < promos.length; i++) {
+            var p = promos[i];
+            if (p.active === false || !p.triggerKeywords) continue;
+            var kws = String(p.triggerKeywords).split(/[،,]+/).map(function(s) { return normalizeArabicClientV116(s); }).filter(Boolean);
+            for (var j = 0; j < kws.length; j++) {
+              if (normUser.indexOf(kws[j]) !== -1) return p;
+            }
+          }
+          return null;
+        }
+
+        function extractAnyUserTextFromJsonBodyV116(rawBody) {
+          try {
+            var parsed = JSON.parse(rawBody);
+            var found = "";
+            function walkObj(o) {
+              if (found || !o) return;
+              if (typeof o === "string") {
+                var s = o.trim();
+                if (s.length >= 2 && s.length <= 300 && !/^(user|assistant|system|sess_)/i.test(s)) {
+                  found = s;
+                }
+                return;
+              }
+              if (Array.isArray(o)) {
+                for (var i = o.length - 1; i >= 0; i--) walkObj(o[i]);
+                return;
+              }
+              if (typeof o === "object") {
+                var priorityKeys = ["message", "prompt", "query", "text", "userMessage", "question", "content", "input"];
+                for (var k = 0; k < priorityKeys.length; k++) {
+                  var pk = priorityKeys[k];
+                  if (typeof o[pk] === "string" && o[pk].trim().length >= 2) {
+                    found = o[pk].trim();
+                    return;
+                  }
+                }
+                if (o.json) walkObj(o.json);
+                if (o["0"]) walkObj(o["0"]);
+                Object.keys(o).forEach(function(key) {
+                  if (key !== "meta" && key !== "sessionId") walkObj(o[key]);
+                });
+              }
+            }
+            walkObj(parsed);
+            return found;
+          } catch (e) {
+            return "";
+          }
+        }
+
+        window.__v126SmartDataByQuery = window.__v126SmartDataByQuery || {};
+        window.__v126PreviousUserMsg = "";
+        window.__v126LastBubbleCount = 0;
+        window.__v126GlideRafId = null;
+        window.__v126UserTouching = false;
+        window.__v126PinBottomUntil = 0;
+        window.__v126LastValidScrollTop = 0;
+        window.__v126NotifiedOrderIds = {};
+        window.__v126OrdersSeededOnce = false;
+
+        try {
+          if (window.location.pathname.indexOf("/admin") !== -1) {
+            localStorage.setItem("original_v126_is_admin", "1");
+          }
+          var savedOrdIds = localStorage.getItem("original_v126_notified_orders");
+          if (savedOrdIds) {
+            window.__v126NotifiedOrderIds = JSON.parse(savedOrdIds) || {};
+            window.__v126OrdersSeededOnce = true;
+          }
+        } catch (e) {}
+
+        (function injectScopedChatStylesV126() {
+          var oldIds = ["v121-gemini-chat-styles", "v122-gemini-chat-styles", "v123-gemini-chat-styles", "v124-gemini-chat-styles", "v125-gemini-chat-styles", "v126-gemini-chat-styles"];
+          oldIds.forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el) el.remove();
+          });
+          var st = document.createElement("style");
+          st.id = "v126-gemini-chat-styles";
+          st.textContent =
+            "[data-v126-chat-messages='1'], [data-v126-chat-messages='1'] * { overflow-anchor: none !important; }" +
+            "[data-v126-chat-messages='1'] .v126-user-row-left { display: flex !important; flex-direction: row !important; justify-content: flex-start !important; align-items: flex-start !important; direction: ltr !important; width: 100% !important; margin: 6px 0 !important; }" +
+            "[data-v126-chat-messages='1'] .v126-user-bubble { background: #0d3825 !important; color: #ffffff !important; border: 1.5px solid #165b3c !important; border-radius: 20px 20px 20px 4px !important; padding: 9px 16px !important; box-shadow: 0 3px 10px rgba(13,56,37,0.15) !important; font-weight: 800 !important; font-size: 0.92rem !important; width: fit-content !important; max-width: 82% !important; display: inline-block !important; direction: rtl !important; text-align: right !important; margin-left: 0 !important; margin-right: auto !important; }" +
+            "[data-v126-chat-messages='1'] .v126-user-bubble * { color: #ffffff !important; direction: rtl !important; text-align: right !important; }" +
+            "[data-v126-chat-messages='1'] .v126-bot-full { width: 100% !important; max-width: 100% !important; background: transparent !important; border: none !important; box-shadow: none !important; border-bottom: 1px solid #e2e8f0 !important; border-radius: 0 !important; padding: 12px 2px 18px 2px !important; margin: 4px 0 !important; direction: rtl !important; text-align: right !important; }" +
+            "[data-v126-chat-messages='1'] .v126-bot-row { width: 100% !important; max-width: 100% !important; display: block !important; }";
+          document.head.appendChild(st);
+        })();
+
+        function getStrictlyActiveAiChatBoxV126() {
+          if (window.location.pathname.indexOf("/admin") !== -1) return null;
+          var chatInput = Array.from(document.querySelectorAll("input, textarea")).find(function(inp) {
+            var ph = inp.getAttribute("placeholder") || "";
+            return ph.indexOf("اطلب سلة الصباح") !== -1 || ph.indexOf("وصفة اقتصادية") !== -1 || ph.indexOf("مقاضي المطبخ") !== -1;
+          });
+          if (!chatInput || chatInput.offsetParent === null) return null;
+
+          var cur = chatInput.parentElement;
+          var chatCard = null;
+          while (cur && cur !== document.body) {
+            var txt = cur.textContent || "";
+            if (
+              txt.indexOf("طلبك بين يديك") !== -1 ||
+              txt.indexOf("حالة تجهيز وتوصيل الطلب") !== -1 ||
+              txt.indexOf("تسوق الخضار") !== -1 ||
+              txt.indexOf("اكتشف الفواكه") !== -1 ||
+              txt.indexOf("منتجات المتجر") !== -1
+            ) {
+              break;
+            }
+            if (txt.indexOf("مساعد وشيف أورجنال الذكي") !== -1 && txt.indexOf("محادثة جديدة") !== -1) {
+              chatCard = cur;
+              break;
+            }
+            cur = cur.parentElement;
+          }
+          if (!chatCard) return null;
+
+          var divs = Array.from(chatCard.querySelectorAll("div"));
+          var messagesBox = null;
+          for (var i = 0; i < divs.length; i++) {
+            var d = divs[i];
+            if (d.contains(chatInput)) continue;
+            if ((d.textContent || "").indexOf("محادثة جديدة") !== -1) continue;
+            try {
+              var cs = window.getComputedStyle(d);
+              if ((cs.overflowY === "auto" || cs.overflowY === "scroll") && d.clientHeight > 80) {
+                messagesBox = d;
+                break;
+              }
+            } catch (e) {}
+          }
+          if (!messagesBox) {
+            var inpWrapper = chatInput.parentElement;
+            while (inpWrapper && inpWrapper.parentElement !== chatCard) {
+              inpWrapper = inpWrapper.parentElement;
+            }
+            if (inpWrapper && inpWrapper.previousElementSibling) {
+              messagesBox = inpWrapper.previousElementSibling;
+            }
+          }
+          if (!messagesBox) return null;
+
+          messagesBox.setAttribute("data-v126-chat-messages", "1");
+          return { card: chatCard, messagesBox: messagesBox, input: chatInput };
+        }
+
+        function stopGlideAnimationV126() {
+          if (window.__v126GlideRafId) {
+            cancelAnimationFrame(window.__v126GlideRafId);
+            window.__v126GlideRafId = null;
+          }
+        }
+
+        function startChatGptProgressiveGlideV126(sc, targetEndTop, durationMs) {
+          if (!sc) return;
+          stopGlideAnimationV126();
+          var startTop = sc.scrollTop;
+          var dist = targetEndTop - startTop;
+          if (dist <= 8) {
+            sc.scrollTop = targetEndTop;
+            window.__v126LastValidScrollTop = sc.scrollTop;
+            return;
+          }
+          var startTime = performance.now();
+          var dur = durationMs || 1400;
+          function step(now) {
+            if (window.__v126UserTouching) {
+              stopGlideAnimationV126();
+              return;
+            }
+            var p = Math.min(1, (now - startTime) / dur);
+            var eased = 1 - Math.pow(1 - p, 2.2);
+            sc.scrollTop = Math.round(startTop + dist * eased);
+            window.__v126LastValidScrollTop = sc.scrollTop;
+            if (p < 1) {
+              window.__v126GlideRafId = requestAnimationFrame(step);
+            } else {
+              window.__v126GlideRafId = null;
+            }
+          }
+          window.__v126GlideRafId = requestAnimationFrame(step);
+        }
+
+        function scrollToNewReplyStartAndGlideV126() {
+          try {
+            var ctx = getStrictlyActiveAiChatBoxV126();
+            if (!ctx || !ctx.messagesBox) return;
+            var sc = ctx.messagesBox;
+            var botCards = Array.from(sc.querySelectorAll(".v126-bot-full"));
+            var userBubbles = Array.from(sc.querySelectorAll(".v126-user-bubble"));
+            if (botCards.length > 0) {
+              var lastBot = botCards[botCards.length - 1];
+              var lastUser = userBubbles.length > 0 ? userBubbles[userBubbles.length - 1] : null;
+              var anchorEl = lastUser || lastBot;
+              var scRect = sc.getBoundingClientRect();
+              var anchorRect = anchorEl.getBoundingClientRect();
+              var targetStart = sc.scrollTop + (anchorRect.top - scRect.top) - 10;
+              if (targetStart > 0) {
+                sc.scrollTop = targetStart;
+                window.__v126LastValidScrollTop = sc.scrollTop;
+              }
+              var endScroll = sc.scrollHeight - sc.clientHeight;
+              if (endScroll > sc.scrollTop + 15) {
+                setTimeout(function() {
+                  startChatGptProgressiveGlideV126(sc, sc.scrollHeight - sc.clientHeight, 1450);
+                }, 150);
+              }
+            } else {
+              sc.scrollTop = sc.scrollHeight;
+              window.__v126LastValidScrollTop = sc.scrollTop;
+            }
+          } catch (e) {}
+        }
+
+        function lockChatScrollAtBottomOnSendV126() {
+          try {
+            var ctx = getStrictlyActiveAiChatBoxV126();
+            if (!ctx || !ctx.messagesBox) return;
+            var sc = ctx.messagesBox;
+            sc.scrollTop = sc.scrollHeight;
+            window.__v126LastValidScrollTop = sc.scrollTop;
+          } catch (e) {}
+        }
+
+        function bindChatScrollProtectionV126(ctx) {
+          if (!ctx || !ctx.messagesBox || !ctx.input) return;
+          var sc = ctx.messagesBox;
+          var inp = ctx.input;
+
+          if (!sc.getAttribute("data-v126-scroll-bound")) {
+            sc.setAttribute("data-v126-scroll-bound", "1");
+            sc.addEventListener("touchstart", function() {
+              window.__v126UserTouching = true;
+              stopGlideAnimationV126();
+            }, { passive: true });
+            sc.addEventListener("touchend", function() {
+              if (sc.scrollTop > 20) window.__v126LastValidScrollTop = sc.scrollTop;
+              setTimeout(function() { window.__v126UserTouching = false; }, 250);
+            }, { passive: true });
+            sc.addEventListener("wheel", function() {
+              window.__v126UserTouching = true;
+              stopGlideAnimationV126();
+              setTimeout(function() { window.__v126UserTouching = false; }, 300);
+            }, { passive: true });
+            sc.addEventListener("scroll", function() {
+              if (window.__v126UserTouching) {
+                window.__v126LastValidScrollTop = sc.scrollTop;
+                return;
+              }
+              if (window.__v126PinBottomUntil && Date.now() < window.__v126PinBottomUntil) {
+                if (sc.scrollTop < 35 && window.__v126LastValidScrollTop > 55) {
+                  sc.scrollTop = window.__v126LastValidScrollTop;
+                }
+              } else if (sc.scrollTop > 35) {
+                window.__v126LastValidScrollTop = sc.scrollTop;
+              }
+            }, { passive: true });
+          }
+
+          if (!inp.getAttribute("data-v126-inp-bound")) {
+            inp.setAttribute("data-v126-inp-bound", "1");
+            function onSendAction() {
+              stopGlideAnimationV126();
+              var savedWinY = window.scrollY;
+              if (sc.scrollTop > 30) window.__v126LastValidScrollTop = sc.scrollTop;
+              window.__v126PinBottomUntil = Date.now() + 6000;
+              setTimeout(function() {
+                lockChatScrollAtBottomOnSendV126();
+                if (Math.abs(window.scrollY - savedWinY) > 40) window.scrollTo(0, savedWinY);
+              }, 20);
+              setTimeout(function() {
+                lockChatScrollAtBottomOnSendV126();
+              }, 90);
+              setTimeout(function() {
+                lockChatScrollAtBottomOnSendV126();
+                enhanceChatBubblesSafelyV117();
+              }, 240);
+            }
+            inp.addEventListener("keydown", function(e) {
+              if (e.key === "Enter") onSendAction();
+            });
+            var row = inp.parentElement;
+            if (row) {
+              Array.from(row.querySelectorAll("button")).forEach(function(b) {
+                b.addEventListener("click", onSendAction);
+              });
+            }
+          }
+        }
+
+        function setReactInputValueNativeV126(el, val) {
+          try {
+            var proto = el.tagName === "TEXTAREA" ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+            var desc = Object.getOwnPropertyDescriptor(proto, "value");
+            if (desc && desc.set) {
+              desc.set.call(el, val);
+            } else {
+              el.value = val;
+            }
+            el.dispatchEvent(new Event("input", { bubbles: true }));
+            el.dispatchEvent(new Event("change", { bubbles: true }));
+          } catch (e) {
+            el.value = val;
+          }
+        }
+
+        window.__copyAndAttachMissingToOrderNotesV126 = function(btnEl, missingText, recipeTitle) {
+          var noteLine = "📌 طلب توفير إضافي مع الطلب (" + (recipeTitle || "وصفة الشيف") + "): " + missingText;
+          try {
+            var existing = localStorage.getItem("original_ai_extra_order_notes") || "";
+            var updated = existing ? (existing.indexOf(missingText) !== -1 ? existing : existing + " | " + noteLine) : noteLine;
+            localStorage.setItem("original_ai_extra_order_notes", updated);
+          } catch (e) {}
+
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(noteLine).catch(function() {});
+          }
+
+          var noteInputs = Array.from(document.querySelectorAll("textarea, input[type='text']")).filter(function(inp) {
+            var ph = (inp.getAttribute("placeholder") || "") + " " + (inp.getAttribute("name") || "") + " " + (inp.id || "");
+            return ph.indexOf("ملاحظ") !== -1 || ph.indexOf("note") !== -1 || ph.indexOf("تفاصيل") !== -1 || ph.indexOf("اضافي") !== -1;
+          });
+          noteInputs.forEach(function(inp) {
+            var curVal = inp.value || "";
+            var nextVal = curVal ? (curVal.indexOf(missingText) !== -1 ? curVal : curVal + "\n" + noteLine) : noteLine;
+            setReactInputValueNativeV126(inp, nextVal);
+          });
+
+          origFetchV112("/api/ai-v112/request-store", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              sessionId: window.__v112SessionId || "guest",
+              requestedItem: missingText,
+              customerMessage: noteLine
+            })
+          }).catch(function() {});
+
+          if (btnEl) {
+            btnEl.innerHTML = "✅ تم النسخ والإضافة لملاحظة طلبك تلقائياً! سيرد عليك المتجر فوراً";
+            btnEl.style.background = "#16a34a";
+            btnEl.style.color = "#ffffff";
+          }
+        };
+
+        function syncOrderNotesFieldV126() {
+          try {
+            if (window.location.pathname.indexOf("/admin") !== -1) return;
+            var savedNote = localStorage.getItem("original_ai_extra_order_notes") || "";
+            if (!savedNote) return;
+            var noteInputs = Array.from(document.querySelectorAll("textarea, input[type='text']")).filter(function(inp) {
+              var ph = (inp.getAttribute("placeholder") || "") + " " + (inp.getAttribute("name") || "") + " " + (inp.id || "");
+              return ph.indexOf("ملاحظ") !== -1 || ph.indexOf("note") !== -1;
+            });
+            noteInputs.forEach(function(inp) {
+              if (!inp.value && !inp.getAttribute("data-v126-note-filled")) {
+                inp.setAttribute("data-v126-note-filled", "1");
+                setReactInputValueNativeV126(inp, savedNote);
+              }
+            });
+          } catch (e) {}
+        }
+
+        function buildIngredientsTableHtmlV126(rows, missingItemsText, recipeTitle) {
+          if (!Array.isArray(rows) || rows.length === 0) return "";
+          var rowsHtml = rows.map(function(r) {
+            var badge = r.available
+              ? '<span style="color:#15803d;font-weight:900;font-size:0.75rem;white-space:nowrap;">✅ متوفر</span>'
+              : '<span style="color:#d97706;font-weight:800;font-size:0.74rem;white-space:nowrap;">اطلبه بالملاحظة</span>';
+            var priceCell = (r.available && r.price)
+              ? '<span style="color:#0f172a;font-weight:800;font-size:0.76rem;white-space:nowrap;">' + r.price + ' ر.ي</span>'
+              : '<span style="color:#94a3b8;font-size:0.75rem;">—</span>';
+            return (
+              '<tr style="border-bottom:1px solid #e2e8f0;">' +
+              '<td style="padding:8px 6px;font-weight:800;color:#0f172a;font-size:0.8rem;text-align:right;line-height:1.35;">' + (r.name || "") + '</td>' +
+              '<td style="padding:8px 6px;color:#475569;font-size:0.77rem;font-weight:700;text-align:center;white-space:nowrap;">' + (r.amount || "حسب الرغبة") + '</td>' +
+              '<td style="padding:8px 6px;text-align:center;white-space:nowrap;">' + priceCell + '</td>' +
+              '<td style="padding:8px 6px;text-align:left;white-space:nowrap;">' + badge + '</td>' +
+              '</tr>'
+            );
+          }).join("");
+
+          var missingActionHtml = "";
+          if (missingItemsText && missingItemsText.length > 0) {
+            var safeMissing = String(missingItemsText).replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+            var safeTitle = String(recipeTitle || "الوصفة").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+            missingActionHtml =
+              '<div style="margin-top:10px;padding:10px 12px;background:#f8fafc;border:1px dashed #cbd5e1;border-radius:12px;">' +
+              '<div style="font-weight:800;color:#334155;font-size:0.77rem;margin-bottom:6px;">📦 مكونات غير ظاهرة بالمتجر (تُضاف لملاحظة طلبك بضغطة زر): <span style="color:#0d3825;">' + missingItemsText + '</span></div>' +
+              '<button type="button" class="v126-copy-notes-btn" data-missing="' + safeMissing + '" data-title="' + safeTitle + '" style="width:100%;background:#0d3825;color:#ffffff;border:none;border-radius:10px;padding:9px 12px;font-weight:800;font-size:0.78rem;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;">' +
+              '📋 نسخ وإضافة تلقائياً في ملاحظة الطلب (ليرد عليك المتجر حول توفرها)' +
+              '</button>' +
+              '</div>';
+          }
+
+          return (
+            '<div class="v126-ingredients-panel" style="margin:12px 0 8px 0;padding:4px 0;direction:rtl;text-align:right;width:100%;overflow-x:auto;">' +
+            '<div style="font-weight:900;color:#0d3825;font-size:0.84rem;margin-bottom:6px;">📊 جدول مقادير الوصفة وحالة التوفر:</div>' +
+            '<table style="width:100%;border-collapse:collapse;table-layout:auto;">' +
+            '<thead><tr style="border-bottom:2px solid #cbd5e1;color:#475569;font-size:0.75rem;">' +
+            '<th style="padding:6px;text-align:right;font-weight:900;">المكون</th>' +
+            '<th style="padding:6px;text-align:center;font-weight:900;white-space:nowrap;">المقدار</th>' +
+            '<th style="padding:6px;text-align:center;font-weight:900;white-space:nowrap;">السعر</th>' +
+            '<th style="padding:6px;text-align:left;font-weight:900;white-space:nowrap;">الحالة</th>' +
+            '</tr></thead>' +
+            '<tbody>' + rowsHtml + '</tbody>' +
+            '</table>' +
+            missingActionHtml +
+            '</div>'
+          );
+        }
+
+        function syncNativeGreenCartBoxV126(assistantCard, availItems) {
+          if (!assistantCard || !Array.isArray(availItems)) return;
+          var singleAddBtns = Array.from(assistantCard.querySelectorAll("button")).filter(function(b) {
+            return (b.textContent || "").indexOf("أضف بمفرده") !== -1;
+          });
+          if (singleAddBtns.length === 0) return;
+
+          var greenBox = singleAddBtns[0].parentElement ? singleAddBtns[0].parentElement.parentElement : null;
+          if (availItems.length === 0) {
+            if (greenBox && (greenBox.textContent || "").indexOf("الأصناف والمقادير") !== -1) {
+              greenBox.style.display = "none";
+            }
+            return;
+          }
+          if (greenBox) greenBox.style.display = "";
+
+          singleAddBtns.forEach(function(sBtn, sIdx) {
+            var itemRow = sBtn.parentElement;
+            if (!itemRow) return;
+            var targetIng = availItems[sIdx];
+            if (!targetIng) {
+              itemRow.style.display = "none";
+              return;
+            }
+            itemRow.style.display = "";
+            var tName = String(targetIng.name || "").replace(/\s*\([^()]*\)\s*$/g, "").trim();
+            var tPrice = Number(targetIng.price || 100);
+            var tUnit = String(targetIng.unit || "حبة");
+
+            var rowLeaves = Array.from(itemRow.querySelectorAll("span, strong, p, div")).filter(function(rl) {
+              return rl.children.length === 0 && rl.tagName !== "BUTTON" && !sBtn.contains(rl);
+            });
+            rowLeaves.forEach(function(rl) {
+              var rt = (rl.textContent || "").trim();
+              if (rt.indexOf("ر.ي") !== -1 && /\d/.test(rt)) {
+                setLeafTextSafe(rl, "1 × " + tPrice.toLocaleString("en-US") + " ر.ي (" + tUnit + ")");
+              } else if (rt.length >= 2 && rt.indexOf("أضف") === -1) {
+                setLeafTextSafe(rl, tName);
+              }
+            });
+          });
+
+          var totalSum = availItems.slice(0, singleAddBtns.length).reduce(function(acc, g) {
+            return acc + Number(g.price || 100);
+          }, 0);
+
+          var cardLeaves = Array.from(assistantCard.querySelectorAll("span, strong, p, div, button")).filter(function(x) {
+            return x.children.length === 0 && !(x.closest && x.closest(".v126-ingredients-panel"));
+          });
+          cardLeaves.forEach(function(cl) {
+            var ct = (cl.textContent || "").trim();
+            if (ct.indexOf("الإجمالي:") !== -1) {
+              setLeafTextSafe(cl, "الإجمالي: " + totalSum.toLocaleString("en-US") + " ر.ي");
+            } else if (ct.indexOf("اعتمد وإضافة") !== -1 || ct.indexOf("نعم، اعتمد") !== -1) {
+              setLeafTextSafe(cl, "✅ اعتمد وإضافة الكل للسلة (" + totalSum.toLocaleString("en-US") + " ر.ي)");
+            }
+          });
+        }
+
+        function isStrictlyChatUserBubbleV126(el, messagesBox) {
+          if (!el || !messagesBox || !messagesBox.contains(el)) return false;
+          if (el.closest && (el.closest(".v126-bot-full") || el.closest(".v126-ai-header") || el.closest("button"))) return false;
+          if (el.tagName === "BUTTON" || el.tagName === "IMG" || el.tagName === "SVG" || el.querySelector("button, input, textarea, img, svg")) return false;
+          var t = (el.textContent || "").trim();
+          if (t === "✓" || t === "✔" || t === "✨" || /^\d+$/.test(t)) return false;
+          if (t.length < 2 || t.length > 220) return false;
+          if (t.indexOf("الأصناف والمقادير") !== -1 || t.indexOf("محادثة جديدة") !== -1 || t.indexOf("شيف ومساعد") !== -1) return false;
+          try {
+            var cs = window.getComputedStyle(el);
+            var bg = cs.backgroundColor || "";
+            var m = bg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+            if (m) {
+              var r = parseInt(m[1], 10);
+              var g = parseInt(m[2], 10);
+              var b = parseInt(m[3], 10);
+              if (r < 45 && g > 35 && g < 115 && b > 20 && b < 85) return true;
+            }
+          } catch (e) {}
+          return false;
+        }
+
+        window.__openRecipeImageLightboxV116 = function(src, title) {
+          if (!src) return;
+          var lb = document.createElement("div");
+          lb.style.cssText = "position:fixed;inset:0;z-index:999999;background:rgba(8,28,18,0.92);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:18px;direction:rtl;";
+          lb.onclick = function() { lb.remove(); };
+          lb.innerHTML =
+            '<div style="max-width:520px;width:100%;text-align:center;">' +
+            '<img src="' + src + '" style="width:100%;max-height:75vh;object-fit:contain;border-radius:20px;border:3px solid #d4af37;box-shadow:0 18px 50px rgba(0,0,0,0.6);" />' +
+            '<div style="color:#d4af37;font-weight:900;font-size:1.05rem;margin-top:12px;">🍰 ' + (title || "") + '</div>' +
+            '<button type="button" style="margin-top:12px;background:#ffffff;color:#0d3825;border:none;border-radius:99px;padding:8px 24px;font-weight:800;font-size:0.88rem;cursor:pointer;">✕ إغلاق الصورة</button>' +
+            '</div>';
+          document.body.appendChild(lb);
+        };
+
+        function replaceTrpcAiPayloadInPlaceV117(trpcObj, smartData) {
+          if (!trpcObj || typeof trpcObj !== "object") return;
+          function walkPayload(node) {
+            if (!node || typeof node !== "object") return;
+            if (Array.isArray(node)) {
+              node.forEach(walkPayload);
+              return;
+            }
+            var textKeys = ["reply", "message", "answer", "content", "text", "response"];
+            textKeys.forEach(function(tk) {
+              if (typeof node[tk] === "string" && node[tk].length > 5 && smartData.reply) {
+                node[tk] = smartData.reply;
+              }
+            });
+            var itemKeys = ["items", "suggestedItems", "products", "recommendations", "basket"];
+            itemKeys.forEach(function(ik) {
+              if (Array.isArray(node[ik]) && Array.isArray(smartData.suggestedItems) && smartData.suggestedItems.length > 0) {
+                var templateItem = node[ik][0] || {};
+                node[ik] = smartData.suggestedItems.map(function(si) {
+                  return Object.assign({}, templateItem, {
+                    id: si.id || si.productId || 1,
+                    productId: si.productId || si.id || 1,
+                    name: si.name,
+                    productName: si.name,
+                    price: si.price || 100,
+                    unitPrice: si.price || 100,
+                    unit: si.unit || "حبة",
+                    quantity: 1,
+                    lineTotal: si.price || 100
+                  });
+                });
+              }
+            });
+            if (typeof node.total === "number" && Array.isArray(smartData.suggestedItems) && smartData.suggestedItems.length > 0) {
+              node.total = smartData.suggestedItems.reduce(function(s, x) { return s + Number(x.price || 0); }, 0);
+            }
+            Object.keys(node).forEach(function(k) {
+              if (k !== "items" && k !== "suggestedItems" && typeof node[k] === "object") {
+                walkPayload(node[k]);
+              }
+            });
+          }
+          walkPayload(trpcObj);
+        }
+
+        function enhanceChatBubblesSafelyV117() {
+          syncOrderNotesFieldV126();
+
+          var ctx = getStrictlyActiveAiChatBoxV126();
+          if (!ctx || !ctx.messagesBox) return;
+          var messagesBox = ctx.messagesBox;
+          bindChatScrollProtectionV126(ctx);
+
+          var allUserBubbles = Array.from(messagesBox.querySelectorAll("div, p, span")).filter(function(el) {
+            if (!isStrictlyChatUserBubbleV126(el, messagesBox)) return false;
+            var hasChildMatch = Array.from(el.children).some(function(c) {
+              return isStrictlyChatUserBubbleV126(c, messagesBox);
+            });
+            if (hasChildMatch) return false;
+
+            if (!el.classList.contains("v126-user-bubble")) {
+              el.classList.add("v126-user-bubble");
+              if (el.parentElement && el.parentElement !== messagesBox) {
+                el.parentElement.classList.add("v126-user-row-left");
+              }
+            }
+            var t = (el.textContent || "").trim();
+            if (!el.getAttribute("data-v126-orig-user")) {
+              el.setAttribute("data-v126-orig-user", t);
+            }
+            return true;
+          });
+
+          var allLeaves = Array.from(messagesBox.querySelectorAll("p, div")).filter(function(el) {
+            if (el.children.length !== 0) return false;
+            if (el.closest && (el.closest(".v126-user-bubble") || el.closest(".v126-ingredients-panel") || el.closest(".v126-ai-header") || el.closest(".v118-wa-photo-box") || el.closest("button"))) return false;
+            var parentCard = el.parentElement;
+            if (!parentCard || parentCard === messagesBox) return false;
+            var cardTxt = parentCard.textContent || "";
+            var isAssistantCard =
+              cardTxt.indexOf("الأصناف والمقادير") !== -1 ||
+              cardTxt.indexOf("تأكيد إضافة") !== -1 ||
+              cardTxt.indexOf("أضف بمفرده") !== -1 ||
+              cardTxt.indexOf("أفكار لتحضيره") !== -1 ||
+              cardTxt.indexOf("منتجات مشابهة") !== -1 ||
+              cardTxt.indexOf("مقاضي الصباح") !== -1;
+            if (!isAssistantCard) return false;
+
+            var t = (el.textContent || "").trim();
+            if (
+              t.indexOf("الأصناف والمقادير") !== -1 ||
+              t.indexOf("تأكيد إضافة") !== -1 ||
+              t.indexOf("الإجمالي:") !== -1 ||
+              t.indexOf("ر.ي (حبة)") !== -1 ||
+              t.indexOf("أضف بمفرده") !== -1 ||
+              t.indexOf("اعتمد وإضافة") !== -1 ||
+              t.indexOf("إلغاء") !== -1
+            ) {
+              return false;
+            }
+            return t.length >= 10;
+          });
+
+          allLeaves.forEach(function(replyLeaf) {
+            var assistantCard = replyLeaf.parentElement;
+            if (!assistantCard || assistantCard === messagesBox) return;
+
+            if (!assistantCard.classList.contains("v126-bot-full")) {
+              assistantCard.classList.add("v126-bot-full");
+              if (assistantCard.parentElement && assistantCard.parentElement !== messagesBox) {
+                assistantCard.parentElement.classList.add("v126-bot-row");
+              }
+              replyLeaf.style.whiteSpace = "pre-line";
+              replyLeaf.style.lineHeight = "1.75";
+              replyLeaf.style.fontSize = "0.94rem";
+              replyLeaf.style.color = "#0f172a";
+            }
+
+            if (!assistantCard.querySelector(".v126-ai-header")) {
+              var aiHdr = document.createElement("div");
+              aiHdr.className = "v126-ai-header";
+              aiHdr.style.cssText = "display:flex;align-items:center;gap:6px;margin-bottom:8px;font-weight:900;font-size:0.83rem;color:#0d3825;";
+              aiHdr.innerHTML = "<span style='background:#fef3c7;color:#b45309;border:1px solid #f59e0b;width:22px;height:22px;border-radius:99px;display:inline-flex;align-items:center;justify-content:center;font-size:0.75rem;'>✨</span><span>شيف ومساعد أورجنال الذكي</span>";
+              assistantCard.insertBefore(aiHdr, assistantCard.firstChild);
+            }
+
+            if (assistantCard.getAttribute("data-v126-done") === "1") return;
+
+            var precedingUsers = allUserBubbles.filter(function(ub) {
+              return Boolean(ub.compareDocumentPosition(assistantCard) & Node.DOCUMENT_POSITION_FOLLOWING);
+            });
+            var lastUserBubble = precedingUsers.length > 0 ? precedingUsers[precedingUsers.length - 1] : null;
+            var prevUserBubble = precedingUsers.length > 1 ? precedingUsers[precedingUsers.length - 2] : null;
+
+            var userQueryTxt = lastUserBubble ? (lastUserBubble.getAttribute("data-v126-orig-user") || lastUserBubble.textContent || "").trim() : "";
+            var prevUserTxt = prevUserBubble ? (prevUserBubble.getAttribute("data-v126-orig-user") || prevUserBubble.textContent || "").trim() : "";
+            if (!userQueryTxt) return;
+
+            var normKey = normalizeArabicClientV116(userQueryTxt + "|" + prevUserTxt);
+            var cachedSmart = window.__v126SmartDataByQuery[normKey] || window.__v126SmartDataByQuery[normalizeArabicClientV116(userQueryTxt)];
+
+            if (!cachedSmart && !assistantCard.getAttribute("data-v126-fetched")) {
+              assistantCard.setAttribute("data-v126-fetched", "1");
+              origFetchV112("/api/ai-v112/chat", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  message: userQueryTxt,
+                  prevMessage: prevUserTxt,
+                  sessionId: window.__v112SessionId
+                })
+              })
+                .then(function(r) { return r.json(); })
+                .then(function(sd) {
+                  if (sd && sd.ok && (sd.matchedOverride || sd.matchedCustom)) {
+                    window.__v126SmartDataByQuery[normKey] = sd;
+                    enhanceChatBubblesSafelyV117();
+                  } else {
+                    assistantCard.setAttribute("data-v126-done", "1");
+                  }
+                })
+                .catch(function() {});
+              return;
+            }
+
+            if (cachedSmart && (cachedSmart.matchedOverride || cachedSmart.matchedCustom)) {
+              assistantCard.setAttribute("data-v126-done", "1");
+
+              var imgUrl = cachedSmart.recipeImage || (cachedSmart.recipeCard && cachedSmart.recipeCard.imageUrl) || "";
+              var recTitle = cachedSmart.recipeTitle || (cachedSmart.recipeCard && cachedSmart.recipeCard.title) || userQueryTxt;
+              if (imgUrl && !assistantCard.querySelector(".v118-wa-photo-box")) {
+                var waBox = document.createElement("div");
+                waBox.className = "v118-wa-photo-box";
+                waBox.style.cssText = "margin:0 0 12px 0;border-radius:14px;overflow:hidden;background:#f1f5f9;cursor:pointer;";
+                var waImg = document.createElement("img");
+                waImg.src = imgUrl;
+                waImg.alt = String(recTitle);
+                waImg.style.cssText = "width:100%;max-height:240px;object-fit:cover;display:block;border-radius:14px;";
+                waBox.onclick = function() {
+                  window.__openRecipeImageLightboxV116(imgUrl, recTitle);
+                };
+                waBox.appendChild(waImg);
+                replyLeaf.parentNode.insertBefore(waBox, replyLeaf);
+              }
+
+              if (cachedSmart.reply) {
+                setLeafTextSafe(replyLeaf, cachedSmart.reply);
+              }
+
+              if (Array.isArray(cachedSmart.ingredientsTable) && cachedSmart.ingredientsTable.length > 0 && !assistantCard.querySelector(".v126-ingredients-panel")) {
+                var tblPanel = document.createElement("div");
+                tblPanel.innerHTML = buildIngredientsTableHtmlV126(
+                  cachedSmart.ingredientsTable,
+                  cachedSmart.missingItemsText || "",
+                  recTitle
+                );
+                var panelNode = tblPanel.firstElementChild || tblPanel;
+                if (replyLeaf.nextSibling) {
+                  replyLeaf.parentNode.insertBefore(panelNode, replyLeaf.nextSibling);
+                } else {
+                  replyLeaf.parentNode.appendChild(panelNode);
+                }
+                var copyBtn = panelNode.querySelector(".v126-copy-notes-btn");
+                if (copyBtn) {
+                  copyBtn.onclick = function() {
+                    window.__copyAndAttachMissingToOrderNotesV126(
+                      copyBtn,
+                      copyBtn.getAttribute("data-missing") || "",
+                      copyBtn.getAttribute("data-title") || ""
+                    );
+                  };
+                }
+              }
+
+              syncNativeGreenCartBoxV126(assistantCard, cachedSmart.suggestedItems || []);
+            }
+          });
+
+          var currentTotalBubbles = allUserBubbles.length + allLeaves.length;
+          if (currentTotalBubbles > window.__v126LastBubbleCount) {
+            var prevCount = window.__v126LastBubbleCount;
+            window.__v126LastBubbleCount = currentTotalBubbles;
+            if (prevCount > 0) {
+              window.__v126PinBottomUntil = Date.now() + 4000;
+              setTimeout(scrollToNewReplyStartAndGlideV126, 45);
+            }
+          }
+        }
+
+        var origFetchV112 = window.fetch;
+        if (origFetchV112 && !window.__v112FetchWrapped) {
+          window.__v112FetchWrapped = true;
+          window.fetch = function(input, init) {
+            var urlStr = typeof input === "string" ? input : (input && (input.url || input.href) ? (input.url || input.href) : String(input || ""));
+            var isTrpcAiCall =
+              urlStr.indexOf("/api/trpc/") !== -1 &&
+              /(assistant|chat|chef|ask|recipe|idea|smart|ai)/i.test(urlStr) &&
+              !/cart|order|product|category|admin|push|notif|auth|setting|user/i.test(urlStr) &&
+              init &&
+              init.method === "POST" &&
+              typeof init.body === "string";
+
+            var extractedMsg = isTrpcAiCall ? extractAnyUserTextFromJsonBodyV116(init.body) : "";
+
+            return origFetchV112.apply(this, arguments).then(function(resp) {
+              if (!isTrpcAiCall || !extractedMsg) {
+                return resp;
+              }
+              var prevMsgToSend = window.__v126PreviousUserMsg || "";
+              if (!/(طريقه افضل|طريقة افضل|طريقه ثانيه|طريقة ثانية|غير هذي|وصفه افضل)/.test(extractedMsg)) {
+                window.__v126PreviousUserMsg = extractedMsg;
+              }
+              return resp.clone().json().then(function(trpcJson) {
+                return origFetchV112("/api/ai-v112/chat", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    message: extractedMsg,
+                    prevMessage: prevMsgToSend,
+                    sessionId: window.__v112SessionId
+                  })
+                })
+                  .then(function(r) { return r.json(); })
+                  .then(function(smartData) {
+                    if (smartData && smartData.ok && !smartData.passThrough && (smartData.matchedOverride || smartData.matchedCustom || smartData.recipeCard || smartData.promotedCard || smartData.canContactStore)) {
+                      var normKey = normalizeArabicClientV116(extractedMsg + "|" + prevMsgToSend);
+                      window.__v126SmartDataByQuery[normKey] = smartData;
+                      window.__v126SmartDataByQuery[normalizeArabicClientV116(extractedMsg)] = smartData;
+                      replaceTrpcAiPayloadInPlaceV117(trpcJson, smartData);
+                      setTimeout(enhanceChatBubblesSafelyV117, 70);
+                      setTimeout(enhanceChatBubblesSafelyV117, 250);
+                      return new Response(JSON.stringify(trpcJson), {
+                        status: resp.status,
+                        statusText: resp.statusText,
+                        headers: resp.headers
+                      });
+                    }
+                    setTimeout(enhanceChatBubblesSafelyV117, 80);
+                    return resp;
+                  })
+                  .catch(function() { return resp; });
+              }).catch(function() { return resp; });
+            });
+          };
+        }
+
+        function checkRealPhoneOrderNotificationsV126(latestOrders) {
+          if (!Array.isArray(latestOrders) || latestOrders.length === 0) return;
+          if (window.location.pathname.indexOf("/admin") !== -1) {
+            try { localStorage.setItem("original_v126_is_admin", "1"); } catch (e) {}
+          }
+          if (!window.__v126OrdersSeededOnce) {
+            window.__v126OrdersSeededOnce = true;
+            latestOrders.forEach(function(o) {
+              if (o && o.id) window.__v126NotifiedOrderIds[String(o.id)] = true;
+            });
+            try {
+              localStorage.setItem("original_v126_notified_orders", JSON.stringify(window.__v126NotifiedOrderIds));
+            } catch (e) {}
+            return;
+          }
+
+          var isAdminDevice = window.location.pathname.indexOf("/admin") !== -1 || localStorage.getItem("original_v126_is_admin") === "1";
+          var hasNewOrder = false;
+
+          latestOrders.slice().reverse().forEach(function(ord) {
+            if (!ord || !ord.id) return;
+            var oid = String(ord.id);
+            if (!window.__v126NotifiedOrderIds[oid]) {
+              window.__v126NotifiedOrderIds[oid] = true;
+              hasNewOrder = true;
+              if (isAdminDevice) {
+                var ordNum = ord.orderNumber || ("#" + ord.id);
+                var cName = ord.customerName || "عميل المتجر";
+                var tot = Number(ord.total || 0).toLocaleString("en-US");
+                triggerRealPhoneNotificationV114(
+                  "🛒 وصل طلب جديد للمتجر! (" + ordNum + ")",
+                  "العميل: " + cName + " — الإجمالي: " + tot + " ر.ي"
+                );
+                if (window.location.pathname.indexOf("/admin") !== -1) {
+                  var banner = document.createElement("div");
+                  banner.style.cssText = "position:fixed;top:14px;left:14px;right:14px;z-index:999998;background:linear-gradient(135deg,#0d3825 0%,#165b3c 100%);color:#ffffff;border:2.5px solid #d4af37;border-radius:16px;padding:14px 16px;box-shadow:0 12px 32px rgba(0,0,0,0.35);direction:rtl;text-align:right;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;";
+                  banner.innerHTML =
+                    '<div>' +
+                    '<div style="color:#d4af37;font-weight:900;font-size:0.95rem;">🛒 وصل طلب جديد الآن! (' + ordNum + ')</div>' +
+                    '<div style="font-size:0.85rem;margin-top:2px;">العميل: ' + cName + ' — الإجمالي: ' + tot + ' ر.ي</div>' +
+                    '</div>' +
+                    '<div style="display:flex;gap:8px;">' +
+                    '<button type="button" style="background:#d4af37;color:#0d3825;border:none;border-radius:10px;padding:7px 14px;font-weight:900;font-size:0.82rem;cursor:pointer;" onclick="window.location.reload()">🔄 عرض الطلب الآن</button>' +
+                    '<button type="button" style="background:rgba(255,255,255,0.15);color:#fff;border:none;border-radius:10px;padding:7px 11px;font-weight:800;cursor:pointer;" onclick="this.parentElement.parentElement.remove()">✕</button>' +
+                    '</div>';
+                  document.body.appendChild(banner);
+                }
+              }
+            }
+          });
+
+          if (hasNewOrder) {
+            try {
+              localStorage.setItem("original_v126_notified_orders", JSON.stringify(window.__v126NotifiedOrderIds));
+            } catch (e) {}
+          }
+        }
+
+        function refreshStudioDataV114() {
+          if (!forceOverwrite && (Date.now() - (window.__v115LastSaveTime || 0) < 12000)) {
+            return;
+          }
+          fetch("/api/ai-studio/state")
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+              if (!d || !d.ok) return;
+              if (d.config) {
+                var serverHasData = hasAnyStudioItemsV115(d.config);
+                var localHasData = hasAnyStudioItemsV115(window.__v114StudioConfig);
+
+                if (forceOverwrite || !window.__v115InitialConfigLoaded) {
+                  if (serverHasData || !localHasData) {
+                    window.__v114StudioConfig = d.config;
+                    saveLocalBackupV115();
+                  } else if (localHasData && !serverHasData) {
+                    origFetch("/api/ai-studio/save-config", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify(window.__v114StudioConfig)
+                    }).catch(function() {});
+                  }
+                  window.__v115InitialConfigLoaded = true;
+                }
+              }
+              if (Array.isArray(d.catalog)) window.__v114Catalog = d.catalog;
+              if (d.stats) window.__v114Stats = d.stats;
+              if (Array.isArray(d.latestOrders)) {
+                  checkRealPhoneOrderNotificationsV126(d.latestOrders);
+                }
+                if (Array.isArray(d.requests)) {
+                var oldReqs = window.__v114Requests || [];
+                d.requests.forEach(function(nr) {
+                  if (nr.status === "pending" && !window.__v112NotifiedReqIds[nr.id]) {
+                    window.__v112NotifiedReqIds[nr.id] = true;
+                    if (oldReqs.length > 0 && window.location.pathname.indexOf("/admin") !== -1) {
+                      triggerAdminPhoneNotificationV112(nr);
+                    }
+                  }
+                });
+                window.__v114Requests = d.requests;
+              }
+              if (window.__v114StudioOpen) {
+                updateStudioHeaderBadgesOnlyV115();
+              }
+              enhanceChatBubblesSafelyV117();
+            })
+            .catch(function() {});
+        }
+
+        function showSaveSuccessBannerV115(msg) {
+          window.__v115BannerMsg = msg;
+          var bannerEl = document.getElementById("v115-save-banner");
+          if (bannerEl) {
+            bannerEl.textContent = msg;
+            bannerEl.style.display = "block";
+          }
+        }
+
+        function saveStudioConfigToServerV114(successMsg, cb) {
+          window.__v115LastSaveTime = Date.now();
+          saveLocalBackupV115();
+          if (successMsg) showSaveSuccessBannerV115(successMsg);
+          renderAiStudioDedicatedPageV114();
+
+          fetch("/api/ai-studio/save-config", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(window.__v114StudioConfig)
+          })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+              if (d && d.ok && d.config && hasAnyStudioItemsV115(d.config)) {
+                window.__v114StudioConfig = d.config;
+                saveLocalBackupV115();
+              }
+              if (cb) cb(d);
+              renderAiStudioDedicatedPageV114();
+            })
+            .catch(function() {
+              renderAiStudioDedicatedPageV114();
+            });
+        }
+
+        function compressRecipeImageFileV115(file, callback) {
+          if (!file) return;
+          var reader = new FileReader();
+          reader.onload = function(ev) {
+            var rawDataUrl = String(ev.target.result || "");
+            var img = new Image();
+            img.onload = function() {
+              try {
+                var maxDim = 750;
+                var w = img.width || 600;
+                var h = img.height || 600;
+                if (w > maxDim || h > maxDim) {
+                  if (w > h) {
+                    h = Math.round((h * maxDim) / w);
+                    w = maxDim;
+                  } else {
+                    w = Math.round((w * maxDim) / h);
+                    h = maxDim;
+                  }
+                }
+                var canvas = document.createElement("canvas");
+                canvas.width = w;
+                canvas.height = h;
+                var ctx = canvas.getContext("2d");
+                ctx.drawImage(img, 0, 0, w, h);
+                var compressed = canvas.toDataURL("image/jpeg", 0.78);
+                callback(compressed);
+              } catch (err) {
+                callback(rawDataUrl);
+              }
+            };
+            img.onerror = function() {
+              callback(rawDataUrl);
+            };
+            img.src = rawDataUrl;
+          };
+          reader.readAsDataURL(file);
+        }
+
+        function triggerAdminPhoneNotificationV112(reqObj) {
+          try {
+            var ctx = new (window.AudioContext || window.webkitAudioContext)();
+            var osc = ctx.createOscillator();
+            var gain = ctx.createGain();
+            osc.type = "sine";
+            osc.frequency.setValueAtTime(880, ctx.currentTime);
+            gain.gain.setValueAtTime(0.25, ctx.currentTime);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start();
+            osc.stop(ctx.currentTime + 0.35);
+          } catch (e) {}
+
+          if ("Notification" in window && Notification.permission === "granted") {
+            try {
+              new Notification("🔔 طلب توفير منتج جديد في أورجنال!", {
+                body: "الزبون يطلب: " + reqObj.requestedItem,
+                icon: "/favicon.ico"
+              });
+            } catch (e) {}
+          }
+
+          var toast = document.createElement("div");
+          toast.style.cssText = "position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:999999;background:#0d3825;color:#ffffff;border:2px solid #d4af37;border-radius:16px;padding:12px 18px;box-shadow:0 12px 32px rgba(0,0,0,0.35);font-weight:800;font-size:0.9rem;direction:rtl;max-width:92vw;text-align:right;";
+          toast.innerHTML = "<div style='color:#d4af37;margin-bottom:4px;'>🔔 إشعار فوري من الذكاء الاصطناعي</div><div>زبون يطلب توفير: <b>«" + reqObj.requestedItem + "»</b></div>";
+          document.body.appendChild(toast);
+          setTimeout(function() { toast.remove(); }, 7000);
+        }
+
+        function pollCustomerNotificationsV112() {
+          if (window.location.pathname.indexOf("/admin") !== -1) return;
+          fetch("/api/ai-studio/customer-notifications?sessionId=" + encodeURIComponent(window.__v112SessionId))
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+              if (!d || !Array.isArray(d.notifications)) return;
+              d.notifications.forEach(function(n) {
+                var key = n.id + "_" + (n.repliedAt || "");
+                if (window.__v112DeliveredReplyIds[key]) return;
+                window.__v112DeliveredReplyIds[key] = true;
+                try {
+                  localStorage.setItem("original_v112_delivered_replies", JSON.stringify(window.__v112DeliveredReplyIds));
+                } catch (e) {}
+                showCustomerAdminReplyPopupV112(n);
+              });
+            })
+            .catch(function() {});
+        }
+
+        function showCustomerAdminReplyPopupV112(notif) {
+          var box = document.createElement("div");
+          box.style.cssText = "position:fixed;bottom:85px;right:14px;left:14px;max-width:440px;margin:0 auto;z-index:999998;background:#ffffff;border:2.5px solid #0d3825;border-radius:18px;padding:14px 16px;box-shadow:0 16px 40px rgba(13,56,37,0.28);direction:rtl;text-align:right;";
+          box.innerHTML =
+            "<div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;'>" +
+            "<strong style='color:#0d3825;font-size:0.95rem;'>💬 رد مباشر من إدارة متجر أورجنال</strong>" +
+            "<button type='button' style='background:none;border:none;font-size:1.1rem;cursor:pointer;color:#64748b;' onclick='this.parentElement.parentElement.remove()'>✕</button>" +
+            "</div>" +
+            "<div style='font-size:0.82rem;color:#475569;margin-bottom:6px;'>بخصوص طلبك: <b>«" + notif.requestedItem + "»</b></div>" +
+            "<div style='background:#f2f9f5;border:1px solid #bbe3ce;border-radius:12px;padding:10px 12px;color:#0d3825;font-weight:700;font-size:0.9rem;line-height:1.5;'>" + notif.adminReply + "</div>";
+          document.body.appendChild(box);
+        }
+
+        function cleanProductIdNumberInDom() {
+          var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+          var node;
+          while ((node = walker.nextNode())) {
+            if (node.nodeValue && node.nodeValue.indexOf("(رقم ") !== -1) {
+              node.nodeValue = node.nodeValue.replace(/\(\s*رقم\s*\d+\s*\)/g, "");
+            }
+          }
+        }
+
+        function upgradeProductSmartModalV112() {
+          var modals = Array.from(document.querySelectorAll("div")).filter(function(d) {
+            var txt = d.textContent || "";
+            return txt.indexOf("أفكار وطرق:") !== -1 && txt.indexOf("المساعد والشيف الذكي") !== -1;
+          });
+          if (modals.length === 0) return;
+
+          var modal = modals[modals.length - 1];
+          if (modal.getAttribute("data-v112-upgraded") === "1") return;
+
+          var titleEl = Array.from(modal.querySelectorAll("h1, h2, h3, h4, div, span")).find(function(el) {
+            return el.children.length === 0 && (el.textContent || "").trim().indexOf("أفكار وطرق:") === 0;
+          });
+          if (!titleEl) return;
+
+          var rawProdName = (titleEl.textContent || "").replace("أفكار وطرق:", "").trim();
+          var cleanName = rawProdName.replace(/\(\s*رقم\s*\d+\s*\)/g, "").trim();
+          if (!cleanName) return;
+
+          modal.setAttribute("data-v112-upgraded", "1");
+
+          fetch("/api/ai-studio/smart-chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              message: "معلومات وافكار عن " + cleanName,
+              productName: cleanName,
+              sessionId: window.__v112SessionId
+            })
+          })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+              if (!d || !d.ok) return;
+
+              var chipBtns = Array.from(modal.querySelectorAll("button")).filter(function(b) {
+                var t = (b.textContent || "").trim();
+                return (
+                  t.indexOf("وصفة اقتصادية") !== -1 ||
+                  t.indexOf("بدون توابل") !== -1 ||
+                  t.indexOf("وصفة يمنية") !== -1 ||
+                  t.indexOf("وجبة صحية") !== -1 ||
+                  t.indexOf("تقديم بارد") !== -1 ||
+                  t.indexOf("خلطة موكيتل") !== -1 ||
+                  t.indexOf("أفضل سناك") !== -1 ||
+                  t.indexOf("أفضل وقت") !== -1
+                );
+              });
+
+              var smartChips = Array.isArray(d.smartChips) ? d.smartChips : [];
+              chipBtns.forEach(function(btn, idx) {
+                if (smartChips[idx]) {
+                  btn.textContent = smartChips[idx].icon + " " + smartChips[idx].label;
+                  btn.onclick = function(ev) {
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                    requestCustomPromptInModalV112(modal, cleanName, smartChips[idx].prompt);
+                  };
+                } else {
+                  btn.style.display = "none";
+                }
+              });
+
+              updateModalReplyBoxV112(modal, d.reply, d.recipeImage);
+            })
+            .catch(function() {});
+        }
+
+        function updateModalReplyBoxV112(modal, replyText, recipeImg) {
+          if (!replyText) return;
+          var textBoxes = Array.from(modal.querySelectorAll("div, p")).filter(function(el) {
+            var t = (el.textContent || "").trim();
+            return (
+              t.length > 35 &&
+              (t.indexOf("أهلاً بك في أورجنال") !== -1 ||
+                t.indexOf("متوفر الآن") !== -1 ||
+                t.indexOf("متوفرة الآن") !== -1 ||
+                el.getAttribute("data-v112-replybox") === "1")
+            );
+          });
+          if (textBoxes.length > 0) {
+            var targetBox = textBoxes[textBoxes.length - 1];
+            targetBox.setAttribute("data-v112-replybox", "1");
+            targetBox.style.whiteSpace = "pre-line";
+            targetBox.style.lineHeight = "1.65";
+            targetBox.innerHTML = "";
+            if (recipeImg) {
+              var img = document.createElement("img");
+              img.src = recipeImg;
+              img.style.cssText = "width:100%;max-height:190px;object-fit:cover;border-radius:14px;margin-bottom:10px;border:2px solid #d4af37;";
+              targetBox.appendChild(img);
+            }
+            var txtNode = document.createElement("div");
+            txtNode.textContent = replyText;
+            targetBox.appendChild(txtNode);
+          }
+        }
+
+        function requestCustomPromptInModalV112(modal, prodName, promptStr) {
+          fetch("/api/ai-studio/smart-chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              message: promptStr,
+              productName: prodName,
+              sessionId: window.__v112SessionId
+            })
+          })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+              if (d && d.ok) {
+                updateModalReplyBoxV112(modal, d.reply, d.recipeImage);
+              }
+            })
+            .catch(function() {});
+        }
+
+        // ====================================================================
+        // DEDICATED AI CUSTOMIZATION SECTION IN ADMIN SIDEBAR (v115/v117)
+        // ====================================================================
+        function ensureDedicatedAiSidebarItemV114() {
+          if (window.location.pathname.indexOf("/admin") === -1) {
+            var oldFloat = document.getElementById("v120-floating-studio-btn");
+            if (oldFloat) oldFloat.remove();
+            return;
+          }
+
+          var pendingCount = (window.__v114Requests || []).filter(function(r) { return r.status === "pending"; }).length;
+
+          var floatBtn = document.getElementById("v120-floating-studio-btn");
+          if (!floatBtn) {
+            floatBtn = document.createElement("button");
+            floatBtn.id = "v120-floating-studio-btn";
+            floatBtn.type = "button";
+            floatBtn.style.cssText = "position:fixed;bottom:18px;left:16px;z-index:99991;display:flex;align-items:center;gap:8px;padding:11px 16px;border-radius:99px;border:2px solid #d4af37;background:linear-gradient(135deg,#0d3825 0%,#165b3c 100%);color:#ffffff;font-weight:900;font-size:0.88rem;cursor:pointer;box-shadow:0 10px 26px rgba(13,56,37,0.38);direction:rtl;";
+            floatBtn.onclick = function(ev) {
+              ev.preventDefault();
+              ev.stopPropagation();
+              window.__v114StudioOpen = true;
+              refreshStudioDataV114(false);
+              renderAiStudioDedicatedPageV114();
+            };
+            document.body.appendChild(floatBtn);
+          }
+          floatBtn.innerHTML =
+            "<span>🤖 قسم تخصيص الذكاء الاصطناعي</span>" +
+            (pendingCount > 0
+              ? "<span style='background:#ef4444;color:#fff;border-radius:99px;padding:2px 8px;font-size:0.75rem;font-weight:900;'>" + pendingCount + "</span>"
+              : "<span style='background:#d4af37;color:#0d3825;border-radius:99px;padding:2px 8px;font-size:0.72rem;font-weight:900;'>مستقل</span>");
+
+          var allClickables = Array.from(document.querySelectorAll("aside button, nav button, aside a, nav a, button, a"));
+          var mainNavAnchor = allClickables.find(function(el) {
+            var t = (el.textContent || "").trim();
+            return (t === "الطلبات" || t === "المنتجات" || t === "الأقسام") && el.id !== "v114-dedicated-ai-nav-btn";
+          });
+
+          if (mainNavAnchor && mainNavAnchor.parentElement && !document.getElementById("v114-dedicated-ai-nav-btn")) {
+            var navBtn = document.createElement("button");
+            navBtn.id = "v114-dedicated-ai-nav-btn";
+            navBtn.type = "button";
+            navBtn.style.cssText = "width:100%;display:flex;align-items:center;justify-content:space-between;padding:11px 14px;margin:6px 0;border-radius:12px;border:2px solid #d4af37;background:linear-gradient(135deg,#0d3825 0%,#165b3c 100%);color:#ffffff;font-weight:900;font-size:0.9rem;cursor:pointer;box-shadow:0 6px 16px rgba(13,56,37,0.22);direction:rtl;text-align:right;";
+            navBtn.innerHTML =
+              "<span style='display:flex;align-items:center;gap:8px;'><span>🤖</span><span>تخصيص الذكاء الاصطناعي</span></span>" +
+              (pendingCount > 0
+                ? "<span style='background:#ef4444;color:#fff;border-radius:99px;padding:2px 8px;font-size:0.75rem;font-weight:900;'>" + pendingCount + "</span>"
+                : "<span style='background:#d4af37;color:#0d3825;border-radius:99px;padding:2px 8px;font-size:0.72rem;font-weight:900;'>قسم مستقل</span>");
+
+            navBtn.onclick = function(ev) {
+              ev.preventDefault();
+              ev.stopPropagation();
+              window.__v114StudioOpen = true;
+              refreshStudioDataV114(false);
+              renderAiStudioDedicatedPageV114();
+            };
+
+            mainNavAnchor.parentElement.appendChild(navBtn);
+          }
+        }
+
+        function updateStudioHeaderBadgesOnlyV115() {
+          var cfg = window.__v114StudioConfig || {};
+          var instCount = (cfg.instructions || []).length;
+          var rulesCount = (cfg.rules || []).length;
+          var promoCount = (cfg.promotedProducts || []).length;
+          var recCount = (cfg.recipes || []).length;
+          var prodInfoCount = Object.keys(cfg.productAiMap || {}).length;
+          var pendingCount = (window.__v114Requests || []).filter(function(r) { return r.status === "pending"; }).length;
+
+          var bInst = document.querySelector("[data-v114-subtab='inst']");
+          if (bInst) bInst.textContent = "1️⃣ التعليمات والشخصية (" + instCount + ")";
+          var bRules = document.querySelector("[data-v114-subtab='rules']");
+          if (bRules) bRules.textContent = "2️⃣ قاموس الردود (" + rulesCount + ")";
+          var bPromo = document.querySelector("[data-v114-subtab='promo']");
+          if (bPromo) bPromo.textContent = "3️⃣ ترويج منتج برابطه (" + promoCount + ")";
+          var bRec = document.querySelector("[data-v114-subtab='recipes']");
+          if (bRec) bRec.textContent = "4️⃣ الوصفات المصورة والمنتجات (" + recCount + ")";
+          var bProd = document.querySelector("[data-v114-subtab='prodinfo']");
+          if (bProd) bProd.textContent = "5️⃣ معلومات المنتجات (" + prodInfoCount + ")";
+          var bReq = document.querySelector("[data-v114-subtab='requests']");
+          if (bReq) bReq.textContent = "6️⃣ الإشعارات وطلبات الزبائن (" + pendingCount + ")";
+        }
+
+        function renderAiStudioDedicatedPageV114() {
+          if (window.location.pathname.indexOf("/admin") === -1) return;
+
+          var studioPage = document.getElementById("v114-dedicated-studio-page");
+          if (!window.__v114StudioOpen) {
+            if (studioPage) studioPage.style.display = "none";
+            return;
+          }
+
+          if (!studioPage) {
+            studioPage = document.createElement("div");
+            studioPage.id = "v114-dedicated-studio-page";
+            studioPage.style.cssText = "position:fixed;inset:0;width:100vw;height:100vh;overflow-y:auto;z-index:99995;padding:18px;box-sizing:border-box;background:#f4fbf7;direction:rtl;text-align:right;";
+            document.body.appendChild(studioPage);
+          }
+          studioPage.style.display = "block";
+
+          var cfg = window.__v114StudioConfig || {};
+          var instructions = Array.isArray(cfg.instructions) ? cfg.instructions : [];
+          var rules = Array.isArray(cfg.rules) ? cfg.rules : [];
+          var promos = Array.isArray(cfg.promotedProducts) ? cfg.promotedProducts : [];
+          var recipes = Array.isArray(cfg.recipes) ? cfg.recipes : [];
+          var reqs = Array.isArray(window.__v114Requests) ? window.__v114Requests : [];
+          var catalog = Array.isArray(window.__v114Catalog) ? window.__v114Catalog : [];
+          var activeTab = window.__v114ActiveSubTab || "inst";
+
+          var pendingCount = reqs.filter(function(r) { return r.status === "pending"; }).length;
+
+          var catalogOptionsHtml = '<option value="">-- اختر منتجاً من المتجر لملء بياناته ورابطه تلقائياً --</option>';
+          catalog.forEach(function(cp) {
+            var safeName = String(cp.name || "").replace(/"/g, "&quot;");
+            catalogOptionsHtml += '<option value="' + cp.id + '" data-name="' + safeName + '" data-url="' + (cp.url || "") + '" data-price="' + (cp.price || 0) + '">' + cp.name + ' (' + cp.price + ' ر.ي)</option>';
+          });
+
+          function tabBtnStyle(tabId) {
+            var isAct = activeTab === tabId;
+            return "padding:9px 13px;border-radius:12px;border:1.5px solid #0d3825;font-weight:900;font-size:0.83rem;cursor:pointer;" +
+              (isAct ? "background:#0d3825;color:#d4af37;" : "background:#f4fbf7;color:#0d3825;");
+          }
+
+          var bodyHtml = "";
+
+          // TAB 1: INSTRUCTIONS & PERSONALITY
+          if (activeTab === "inst") {
+            var instListHtml = instructions.length === 0
+              ? '<div style="color:#64748b;font-size:0.84rem;padding:12px;background:#f8fafc;border-radius:10px;border:1px dashed #cbd5e1;">القسم فارغ حالياً — أضف تعليماتك الخاصة بالأسفل بالترتيب الذي تريده.</div>'
+              : instructions.map(function(item, idx) {
+                  var catLabel =
+                    item.category === "welcome" ? "👋 أسلوب الترحيب والكلام كصديق" :
+                    item.category === "missing_item" ? "📦 التصرف عند طلب منتج غير متوفر" :
+                    item.category === "tone" ? "🧠 الذكاء ومنع الاقتراحات العشوائية" : "📌 تعليمة عامة";
+                  return (
+                    '<div style="background:#ffffff;border:1.5px solid #cdeadf;border-radius:12px;padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">' +
+                    '<div>' +
+                    '<span style="display:inline-block;background:#e6f5ee;color:#0d3825;font-weight:800;font-size:0.74rem;padding:2px 8px;border-radius:99px;margin-bottom:4px;">' + catLabel + '</span>' +
+                    '<div style="font-size:0.86rem;color:#1e293b;font-weight:700;line-height:1.5;">' + item.text + '</div>' +
+                    '</div>' +
+                    '<button type="button" data-del-inst="' + idx + '" style="background:#fee2e2;color:#b91c1c;border:none;border-radius:8px;padding:5px 10px;font-weight:800;cursor:pointer;font-size:0.75rem;flex-shrink:0;">حذف</button>' +
+                    '</div>'
+                  );
+                }).join("");
+
+            bodyHtml =
+              '<div style="background:#f2f9f5;border:1.5px solid #bbe3ce;border-radius:14px;padding:14px;margin-bottom:14px;">' +
+              '<div style="font-weight:900;color:#0d3825;font-size:0.95rem;margin-bottom:8px;">➕ إضافة تعليمة جديدة للذكاء الاصطناعي:</div>' +
+              '<select id="v114-inst-cat" style="width:100%;padding:9px 10px;border:1.5px solid #94a3b8;border-radius:10px;margin-bottom:8px;font-weight:800;font-size:0.84rem;background:#fff;">' +
+              '<option value="welcome">🗣️ أسلوب الترحيب والكلام مع الزبون (مثال: تكلم كصديق، قل له فهمتك، حلو حلو...)</option>' +
+              '<option value="missing_item">📦 عند السؤال عن منتج غير متوفر (مثال: اعرض التواصل مع المتجر وإرسال إشعار لهاتفي)</option>' +
+              '<option value="tone">🧠 قواعد الذكاء والاقتراحات (مثال: لا تقترح طبخ للشوكولاتة، ركز على السعرات أو المشروبات)</option>' +
+              '<option value="general">📌 تعليمة عامة أخرى</option>' +
+              '</select>' +
+              '<textarea id="v114-inst-text" rows="3" placeholder="اكتب التعليمة هنا بالتفصيل (مثال: رحب بالزبون كصديق، وإذا طلب منتج غير متوفر اعرض عليه التواصل مع المتجر)..." style="width:100%;padding:10px;border:1.5px solid #94a3b8;border-radius:10px;font-size:0.85rem;margin-bottom:8px;"></textarea>' +
+              '<button type="button" id="v114-add-inst-btn" style="background:#0d3825;color:#d4af37;border:none;border-radius:10px;padding:9px 18px;font-weight:900;font-size:0.86rem;cursor:pointer;">+ إضافة وحفظ التعليمة</button>' +
+              '</div>' +
+              '<div style="font-weight:900;color:#0d3825;margin-bottom:8px;">📋 التعليمات المضافة حالياً (' + instructions.length + '):</div>' +
+              instListHtml;
+          }
+
+          // TAB 2: CUSTOM TRIGGER -> RESPONSE DICTIONARY
+          else if (activeTab === "rules") {
+            var rulesListHtml = rules.length === 0
+              ? '<div style="color:#64748b;font-size:0.84rem;padding:12px;background:#f8fafc;border-radius:10px;border:1px dashed #cbd5e1;">قاموس الردود فارغ حالياً — أضف أي كلمة مفتاحية والرد المخصص لها بالأسفل.</div>'
+              : rules.map(function(r, idx) {
+                  return (
+                    '<div style="background:#ffffff;border:1.5px solid #cdeadf;border-radius:12px;padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">' +
+                    '<div>' +
+                    '<div style="font-weight:900;color:#0d3825;font-size:0.85rem;">🔑 إذا قال الزبون: «' + r.trigger + '»</div>' +
+                    '<div style="color:#334155;font-size:0.83rem;margin-top:4px;">💬 يرد الذكاء: ' + r.response + '</div>' +
+                    '</div>' +
+                    '<button type="button" data-del-rule="' + idx + '" style="background:#fee2e2;color:#b91c1c;border:none;border-radius:8px;padding:5px 10px;font-weight:800;cursor:pointer;font-size:0.75rem;flex-shrink:0;">حذف</button>' +
+                    '</div>'
+                  );
+                }).join("");
+
+            bodyHtml =
+              '<div style="background:#f2f9f5;border:1.5px solid #bbe3ce;border-radius:14px;padding:14px;margin-bottom:14px;">' +
+              '<div style="font-weight:900;color:#0d3825;font-size:0.95rem;margin-bottom:8px;">➕ إضافة رد مخصص فوري (يستهلك 0 توكن):</div>' +
+              '<input id="v114-rule-trig" type="text" placeholder="إذا سأل الزبون عن (مثال: التوصيل، الدفع، العنوان، خصم)..." style="width:100%;padding:9px 10px;border:1.5px solid #94a3b8;border-radius:10px;margin-bottom:8px;font-size:0.85rem;" />' +
+              '<textarea id="v114-rule-resp" rows="2" placeholder="الرد الذي يرسله الذكاء الاصطناعي فوراً..." style="width:100%;padding:9px 10px;border:1.5px solid #94a3b8;border-radius:10px;margin-bottom:8px;font-size:0.85rem;"></textarea>' +
+              '<button type="button" id="v114-add-rule-btn" style="background:#0d3825;color:#d4af37;border:none;border-radius:10px;padding:9px 18px;font-weight:900;font-size:0.86rem;cursor:pointer;">+ إضافة وحفظ الرد</button>' +
+              '</div>' +
+              '<div style="font-weight:900;color:#0d3825;margin-bottom:8px;">📋 الردود المضافة (' + rules.length + '):</div>' +
+              rulesListHtml;
+          }
+
+          // TAB 3: PROMOTED PRODUCTS WITH DIRECT LINKS
+          else if (activeTab === "promo") {
+            var promoListHtml = promos.length === 0
+              ? '<div style="color:#64748b;font-size:0.84rem;padding:12px;background:#f8fafc;border-radius:10px;border:1px dashed #cbd5e1;">لا توجد منتجات مروجة حالياً — اختر منتجاً أو ضع رابطه بالأسفل ليقترحه الذكاء للزبائن.</div>'
+              : promos.map(function(p, idx) {
+                  return (
+                    '<div style="background:#ffffff;border:1.5px solid #cdeadf;border-radius:12px;padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">' +
+                    '<div>' +
+                    '<span style="background:#fef3c7;color:#92400e;font-weight:900;font-size:0.74rem;padding:2px 8px;border-radius:99px;">' + (p.promoBadge || "⭐ عرض مميز") + '</span> ' +
+                    '<strong style="color:#0d3825;font-size:0.88rem;">' + p.productName + '</strong>' +
+                    '<div style="font-size:0.78rem;color:#475569;margin-top:3px;">🔗 الرابط: <a href="' + p.productUrl + '" target="_blank" style="color:#0d3825;text-decoration:underline;">' + p.productUrl + '</a></div>' +
+                    '<div style="font-size:0.8rem;color:#1e293b;margin-top:3px;">🔑 يظهر عند البحث عن: ' + p.triggerKeywords + '</div>' +
+                    '<div style="font-size:0.82rem;color:#0f5132;margin-top:3px;">💬 رسالة الترويج: ' + p.promoPitch + '</div>' +
+                    '</div>' +
+                    '<button type="button" data-del-promo="' + idx + '" style="background:#fee2e2;color:#b91c1c;border:none;border-radius:8px;padding:5px 10px;font-weight:800;cursor:pointer;font-size:0.75rem;flex-shrink:0;">حذف</button>' +
+                    '</div>'
+                  );
+                }).join("");
+
+            bodyHtml =
+              '<div style="background:#f2f9f5;border:1.5px solid #bbe3ce;border-radius:14px;padding:14px;margin-bottom:14px;">' +
+              '<div style="font-weight:900;color:#0d3825;font-size:0.95rem;margin-bottom:8px;">🚀 إضافة منتج مروج مع رابطه المباشر ليقترحه الذكاء الاصطناعي:</div>' +
+              '<select id="v114-promo-select" style="width:100%;padding:9px 10px;border:1.5px solid #0d3825;border-radius:10px;margin-bottom:8px;font-weight:800;font-size:0.83rem;background:#fff;">' +
+              catalogOptionsHtml +
+              '</select>' +
+              '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">' +
+              '<input id="v114-promo-name" type="text" placeholder="اسم المنتج المراد ترويجه..." style="padding:9px 10px;border:1.5px solid #94a3b8;border-radius:10px;font-size:0.84rem;" />' +
+              '<input id="v114-promo-url" type="text" placeholder="رابط المنتج (مثال: /products?search=...)" style="padding:9px 10px;border:1.5px solid #94a3b8;border-radius:10px;font-size:0.84rem;" />' +
+              '</div>' +
+              '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">' +
+              '<input id="v114-promo-kws" type="text" placeholder="متى يقترحه؟ (مثال: قهوة، حلى، سناك، عرض)..." style="padding:9px 10px;border:1.5px solid #94a3b8;border-radius:10px;font-size:0.84rem;" />' +
+              '<input id="v114-promo-badge" type="text" placeholder="شارة العرض (مثال: 🔥 الأكثر مبيعاً / عرض خاص)" style="padding:9px 10px;border:1.5px solid #94a3b8;border-radius:10px;font-size:0.84rem;" />' +
+              '</div>' +
+              '<textarea id="v114-promo-pitch" rows="2" placeholder="جملة الترويج التي يقولها الذكاء للزبون عن هذا المنتج..." style="width:100%;padding:9px 10px;border:1.5px solid #94a3b8;border-radius:10px;margin-bottom:8px;font-size:0.84rem;"></textarea>' +
+              '<button type="button" id="v114-add-promo-btn" style="background:#0d3825;color:#d4af37;border:none;border-radius:10px;padding:9px 18px;font-weight:900;font-size:0.86rem;cursor:pointer;">+ إضافة وحفظ الترويج</button>' +
+              '</div>' +
+              '<div style="font-weight:900;color:#0d3825;margin-bottom:8px;">📋 المنتجات المروجة حالياً (' + promos.length + '):</div>' +
+              promoListHtml;
+          }
+
+          // TAB 4: ILLUSTRATED RECIPES + LINKED PRODUCTS
+          else if (activeTab === "recipes") {
+            var draftIngs = window.__v114DraftIngredients || [];
+            var draftIngsHtml = draftIngs.length === 0
+              ? '<div style="font-size:0.78rem;color:#64748b;margin-top:4px;">لم يتم ربط منتجات بعد — اختر أي منتج من القائمة المنسدلة أعلاه لربطه تلقائياً، أو اضغط "+ ربط المنتج بالوصفة".</div>'
+              : '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;">' +
+                draftIngs.map(function(ing, idx) {
+                  return (
+                    '<span style="background:#e6f5ee;border:1px solid #0d3825;color:#0d3825;border-radius:99px;padding:4px 10px;font-size:0.78rem;font-weight:800;display:inline-flex;align-items:center;gap:6px;">' +
+                    '<span>🛒 ' + ing.name + (ing.price ? ' (' + ing.price + ' ر.ي)' : '') + '</span>' +
+                    '<button type="button" data-del-draft-ing="' + idx + '" style="background:none;border:none;color:#b91c1c;font-weight:900;cursor:pointer;">✕</button>' +
+                    '</span>'
+                  );
+                }).join("") +
+                '</div>';
+
+            var draftImgPreviewHtml = window.__v114DraftRecipeImg
+              ? '<div style="margin-top:8px;display:flex;align-items:center;gap:10px;background:#e6f5ee;padding:8px 12px;border-radius:10px;border:1px solid #0d3825;">' +
+                '<img src="' + window.__v114DraftRecipeImg + '" style="width:60px;height:60px;object-fit:cover;border-radius:8px;border:1.5px solid #d4af37;" />' +
+                '<div style="font-size:0.8rem;color:#0d3825;font-weight:800;">✅ تم تجهيز صورة الوصفة بنجاح وجاهزة للحفظ!</div>' +
+                '<button type="button" id="v115-clear-draft-img" style="margin-right:auto;background:#fee2e2;color:#b91c1c;border:none;border-radius:8px;padding:4px 8px;font-size:0.75rem;font-weight:800;cursor:pointer;">إزالة الصورة</button>' +
+                '</div>'
+              : '';
+
+            var recListHtml = recipes.length === 0
+              ? '<div style="color:#64748b;font-size:0.84rem;padding:12px;background:#f8fafc;border-radius:10px;border:1px dashed #cbd5e1;">لا توجد وصفات مضافة بعد — أضف وصفة مع صورتها والمنتجات المستخدمة فيها بالأعلى ليقترحها الذكاء الاصطناعي للزبائن.</div>'
+              : recipes.map(function(rec, idx) {
+                  var ingLinks = (rec.ingredients || []).map(function(g) {
+                    return '<a href="' + (g.url || "#") + '" target="_blank" style="display:inline-block;background:#e6f5ee;color:#0d3825;padding:3px 9px;border-radius:99px;font-size:0.76rem;font-weight:800;margin:2px;text-decoration:underline;border:1px solid #bbe3ce;">🔗 ' + g.name + (g.price ? ' (' + g.price + ' ر.ي)' : '') + '</a>';
+                  }).join(" ");
+                  return (
+                    '<div style="background:#ffffff;border:1.5px solid #cdeadf;border-radius:12px;padding:12px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">' +
+                    '<div style="display:flex;gap:12px;align-items:flex-start;flex:1;">' +
+                    (rec.imageUrl ? '<img src="' + rec.imageUrl + '" style="width:74px;height:74px;object-fit:cover;border-radius:12px;border:2px solid #d4af37;flex-shrink:0;" />' : '') +
+                    '<div style="flex:1;">' +
+                    '<div style="font-weight:900;color:#0d3825;font-size:0.92rem;">🍰 ' + rec.title + '</div>' +
+                    '<div style="font-size:0.78rem;color:#64748b;margin-top:2px;">🔍 كلمات البحث: ' + rec.keywords + '</div>' +
+                    '<div style="font-size:0.82rem;color:#1e293b;margin-top:5px;white-space:pre-line;line-height:1.5;">' + rec.steps + '</div>' +
+                    '<div style="margin-top:6px;">' + (ingLinks || '<span style="font-size:0.75rem;color:#94a3b8;">بدون منتجات مربوطة</span>') + '</div>' +
+                    '</div>' +
+                    '</div>' +
+                    '<button type="button" data-del-rec="' + idx + '" style="background:#fee2e2;color:#b91c1c;border:none;border-radius:8px;padding:5px 10px;font-weight:800;cursor:pointer;font-size:0.75rem;flex-shrink:0;">حذف</button>' +
+                    '</div>'
+                  );
+                }).join("");
+
+            bodyHtml =
+              '<div style="background:#f2f9f5;border:1.5px solid #bbe3ce;border-radius:14px;padding:14px;margin-bottom:14px;">' +
+              '<div style="font-weight:900;color:#0d3825;font-size:0.95rem;margin-bottom:8px;">🍰 إضافة وصفة مصورة مع روابط المنتجات المستخدمة ليقترحها الذكاء الاصطناعي:</div>' +
+              '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">' +
+              '<input id="v114-rec-title" type="text" placeholder="اسم الوصفة (مثال: حلى بسكويت أبو ولد بالحليب والشوكولاتة)..." style="padding:9px 10px;border:1.5px solid #94a3b8;border-radius:10px;font-size:0.84rem;" />' +
+              '<input id="v114-rec-kws" type="text" placeholder="متى يقترحها؟ (مثال: اريد حلى بسكويت حلو، حلى سريع)..." style="padding:9px 10px;border:1.5px solid #94a3b8;border-radius:10px;font-size:0.84rem;" />' +
+              '</div>' +
+              '<div style="background:#ffffff;border:1px dashed #0d3825;border-radius:10px;padding:10px;margin-bottom:8px;">' +
+              '<div style="font-size:0.82rem;font-weight:800;color:#0d3825;margin-bottom:6px;">📸 صورة الوصفة (ارفع صورة من هاتفك مباشرة أو ضع رابط صورة):</div>' +
+              '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">' +
+              '<input id="v114-rec-file" type="file" accept="image/*" style="font-size:0.8rem;" />' +
+              '<input id="v114-rec-img" type="text" placeholder="أو ضع رابط الصورة هنا اختيارياً..." value="' + (window.__v114DraftRecipeImg && window.__v114DraftRecipeImg.indexOf("data:") !== 0 ? window.__v114DraftRecipeImg : "") + '" style="flex:1;min-width:180px;padding:7px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:0.82rem;" />' +
+              '</div>' +
+              draftImgPreviewHtml +
+              '</div>' +
+              '<textarea id="v114-rec-steps" rows="3" placeholder="طريقة التحضير والخطوات بالتفصيل..." style="width:100%;padding:9px 10px;border:1.5px solid #94a3b8;border-radius:10px;margin-bottom:10px;font-size:0.84rem;"></textarea>' +
+              '<div style="background:#ffffff;border:1.5px solid #cdeadf;border-radius:12px;padding:10px;margin-bottom:10px;">' +
+              '<div style="font-weight:900;color:#0d3825;font-size:0.85rem;margin-bottom:6px;">🛒 ربط المنتجات المستخدمة في الوصفة (بمجرد اختيار المنتج من القائمة يرتبط تلقائياً!):</div>' +
+              '<select id="v114-rec-prod-select" style="width:100%;padding:8px 10px;border:1.5px solid #0d3825;border-radius:9px;margin-bottom:6px;font-weight:800;font-size:0.82rem;background:#fff;">' +
+              catalogOptionsHtml +
+              '</select>' +
+              '<div style="display:flex;gap:6px;flex-wrap:wrap;">' +
+              '<input id="v114-rec-ing-name" type="text" placeholder="اسم المنتج..." style="flex:1;min-width:140px;padding:7px 9px;border:1px solid #94a3b8;border-radius:8px;font-size:0.82rem;" />' +
+              '<input id="v114-rec-ing-url" type="text" placeholder="رابط المنتج..." style="flex:1;min-width:140px;padding:7px 9px;border:1px solid #94a3b8;border-radius:8px;font-size:0.82rem;" />' +
+              '<button type="button" id="v114-add-rec-ing-btn" style="background:#e6f5ee;color:#0d3825;border:1.5px solid #0d3825;border-radius:8px;padding:7px 14px;font-weight:900;font-size:0.8rem;cursor:pointer;">+ ربط المنتج بالوصفة</button>' +
+              '</div>' +
+              draftIngsHtml +
+              '</div>' +
+              '<button type="button" id="v114-save-rec-btn" style="background:#0d3825;color:#d4af37;border:none;border-radius:10px;padding:10px 20px;font-weight:900;font-size:0.88rem;cursor:pointer;width:100%;">💾 حفظ الوصفة المصورة ومنتجاتها</button>' +
+              '</div>' +
+              '<div style="font-weight:900;color:#0d3825;margin-bottom:8px;">📋 الوصفات المصورة المضافة (' + recipes.length + '):</div>' +
+              recListHtml;
+          }
+
+          // TAB 5: PER-PRODUCT AI METADATA
+          else if (activeTab === "prodinfo") {
+            var prodMap = cfg.productAiMap || {};
+            var configuredKeys = Object.keys(prodMap);
+            var configuredHtml = configuredKeys.length === 0
+              ? '<div style="color:#64748b;font-size:0.84rem;padding:12px;background:#f8fafc;border-radius:10px;border:1px dashed #cbd5e1;">لم تقم بتخصيص معلومات إضافية لمنتج بعد — اختر أي منتج بالأعلى لإضافة سعراته الحرارية أو نصائحه الخاصة.</div>'
+              : configuredKeys.map(function(k) {
+                  var m = prodMap[k];
+                  var foundP = catalog.find(function(x) { return String(x.id) === String(k) || x.name === k; });
+                  var labelName = foundP ? foundP.name : k;
+                  return (
+                    '<div style="background:#ffffff;border:1.5px solid #cdeadf;border-radius:12px;padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">' +
+                    '<div>' +
+                    '<strong style="color:#0d3825;font-size:0.88rem;">🏷️ ' + labelName + '</strong>' +
+                    (m.calories ? '<div style="font-size:0.8rem;color:#334155;margin-top:3px;">🔥 السعرات: ' + m.calories + '</div>' : '') +
+                    (m.pairings ? '<div style="font-size:0.8rem;color:#334155;margin-top:2px;">☕ يقدم مع: ' + m.pairings + '</div>' : '') +
+                    (m.prepIdeas ? '<div style="font-size:0.8rem;color:#334155;margin-top:2px;">🍰 أفكار تحضير: ' + m.prepIdeas + '</div>' : '') +
+                    (m.customInfo ? '<div style="font-size:0.8rem;color:#334155;margin-top:2px;">✨ معلومات إضافية: ' + m.customInfo + '</div>' : '') +
+                    '</div>' +
+                    '<button type="button" data-del-prodmeta="' + k + '" style="background:#fee2e2;color:#b91c1c;border:none;border-radius:8px;padding:5px 10px;font-weight:800;cursor:pointer;font-size:0.75rem;flex-shrink:0;">حذف</button>' +
+                    '</div>'
+                  );
+                }).join("");
+
+            bodyHtml =
+              '<div style="background:#f2f9f5;border:1.5px solid #bbe3ce;border-radius:14px;padding:14px;margin-bottom:14px;">' +
+              '<div style="font-weight:900;color:#0d3825;font-size:0.95rem;margin-bottom:8px;">🏷️ تخصيص معلومات الذكاء الاصطناعي لمنتج معين (سعرات، مشروبات تناسبه، أو وصفات):</div>' +
+              '<select id="v114-pm-select" style="width:100%;padding:9px 10px;border:1.5px solid #0d3825;border-radius:10px;margin-bottom:8px;font-weight:800;font-size:0.84rem;background:#fff;">' +
+              catalogOptionsHtml +
+              '</select>' +
+              '<select id="v114-pm-type" style="width:100%;padding:9px 10px;border:1.5px solid #94a3b8;border-radius:10px;margin-bottom:8px;font-weight:800;font-size:0.83rem;background:#fff;">' +
+              '<option value="auto">🤖 تصنيف ذكي تلقائي (يميز الشوكولاتة الجاهزة عن البسكويت والطبخ)</option>' +
+              '<option value="snacks_and_drinks">🍫 سناك جاهز للأكل (اعرض السعرات والمشروبات المناسبة فقط بدون طبخ)</option>' +
+              '<option value="recipe">🍰 يدخل في وصفات وحلويات (اعرض طرق عمل حلى أو طبخات به)</option>' +
+              '<option value="calories_and_info">🔥 معلومات غذائية وسعرات حرارية فقط</option>' +
+              '<option value="custom">✨ معلومات مخصصة بالكامل</option>' +
+              '</select>' +
+              '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">' +
+              '<input id="v114-pm-cal" type="text" placeholder="🔥 السعرات والقيمة الغذائية..." style="padding:8px 10px;border:1.5px solid #94a3b8;border-radius:10px;font-size:0.83rem;" />' +
+              '<input id="v114-pm-pair" type="text" placeholder="☕ أفضل مشروب أو سناك يؤكل معه..." style="padding:8px 10px;border:1.5px solid #94a3b8;border-radius:10px;font-size:0.83rem;" />' +
+              '</div>' +
+              '<input id="v114-pm-prep" type="text" placeholder="🍰 أفكار حلى أو تحضير (إن وجد)..." style="width:100%;padding:8px 10px;border:1.5px solid #94a3b8;border-radius:10px;margin-bottom:8px;font-size:0.83rem;" />' +
+              '<textarea id="v114-pm-info" rows="2" placeholder="✨ معلومات إضافية للذكاء الاصطناعي عن هذا المنتج..." style="width:100%;padding:8px 10px;border:1.5px solid #94a3b8;border-radius:10px;margin-bottom:8px;font-size:0.83rem;"></textarea>' +
+              '<button type="button" id="v114-save-pm-btn" style="background:#0d3825;color:#d4af37;border:none;border-radius:10px;padding:9px 18px;font-weight:900;font-size:0.86rem;cursor:pointer;">💾 حفظ معلومات المنتج للذكاء</button>' +
+              '</div>' +
+              '<div style="font-weight:900;color:#0d3825;margin-bottom:8px;">📋 المنتجات المخصصة حالياً (' + configuredKeys.length + '):</div>' +
+              configuredHtml;
+          }
+
+          // TAB 6: CUSTOMER NOTIFICATIONS & REQUESTS
+          else if (activeTab === "requests") {
+            var reqListHtml = reqs.length === 0
+              ? '<div style="color:#64748b;font-size:0.84rem;padding:12px;background:#f8fafc;border-radius:10px;border:1px dashed #cbd5e1;">لا توجد طلبات توفير منتجات من الزبائن حالياً.</div>'
+              : reqs.slice(0, 30).map(function(r) {
+                  var badge = r.status === "pending"
+                    ? '<span style="background:#fef3c7;color:#b45309;padding:2px 8px;border-radius:99px;font-size:0.74rem;font-weight:800;">⏳ بانتظار ردك</span>'
+                    : '<span style="background:#dcfce7;color:#15803d;padding:2px 8px;border-radius:99px;font-size:0.74rem;font-weight:800;">✅ تم الرد على الزبون</span>';
+                  return (
+                    '<div style="border:1.5px solid #cdeadf;border-radius:12px;padding:12px;margin-bottom:8px;background:#fff;">' +
+                    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">' +
+                    '<strong style="color:#0d3825;font-size:0.9rem;">📦 المنتج المطلوب: «' + r.requestedItem + '»</strong>' +
+                    badge +
+                    '</div>' +
+                    '<div style="font-size:0.8rem;color:#475569;margin-bottom:8px;">رسالة الزبون: "' + r.userMessage + '"</div>' +
+                    '<div style="display:flex;gap:6px;flex-wrap:wrap;">' +
+                    '<input type="text" data-reply-input="' + r.id + '" value="' + (r.adminReply || "").replace(/"/g, "&quot;") + '" placeholder="اكتب ردك للزبون هنا (مثال: أبشر وفرناه لك اليوم بالمتجر بسعر ممتاز!)..." style="flex:1;min-width:200px;padding:8px 10px;border:1.5px solid #94a3b8;border-radius:9px;font-size:0.83rem;" />' +
+                    '<button type="button" data-send-reply="' + r.id + '" style="background:#0d3825;color:#d4af37;border:none;border-radius:9px;padding:8px 14px;font-weight:900;font-size:0.82rem;cursor:pointer;">إرسال الرد للزبون 💬</button>' +
+                    '</div>' +
+                    '</div>'
+                  );
+                }).join("");
+
+            bodyHtml =
+              '<div style="background:#f2f9f5;border:1.5px solid #bbe3ce;border-radius:14px;padding:12px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">' +
+              '<div>' +
+              '<div style="font-weight:900;color:#0d3825;font-size:0.92rem;">🔔 إشعارات الهاتف وطلبات توفير المنتجات من الزبائن</div>' +
+              '<div style="font-size:0.78rem;color:#475569;">عندما يطلب الزبون منتجاً غير متوفر، يصلك تنبيه صوتي وإشعار لهاتفك وتستطيع الرد عليه ليظهر الرد فوراً في شاشته.</div>' +
+              '</div>' +
+              '<button type="button" id="v114-enable-notif-btn" style="background:#0d3825;color:#d4af37;border:none;border-radius:10px;padding:8px 14px;font-weight:900;font-size:0.8rem;cursor:pointer;">🔔 تفعيل وتجربة إشعار الهاتف</button>' +
+              '</div>' +
+              reqListHtml;
+          }
+
+          var bannerDisplay = window.__v115BannerMsg ? "block" : "none";
+
+          studioPage.innerHTML =
+            '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;border-bottom:2px solid #e2f1ea;padding-bottom:12px;margin-bottom:14px;">' +
+            '<div>' +
+            '<h2 style="margin:0;color:#0d3825;font-size:1.18rem;font-weight:900;">🤖 قسم تخصيص وإدارة الذكاء الاصطناعي الشامل</h2>' +
+            '<div style="font-size:0.8rem;color:#15803d;font-weight:700;margin-top:3px;">تحكم كامل في تعليمات الذكاء، ترويج المنتجات بالروابط، الوصفات المصورة، والإشعارات الفورية (استهلاك 0 توكن يكفي +10,000 رسالة يومياً)</div>' +
+            '</div>' +
+            '<div style="display:flex;gap:8px;">' +
+            '<button type="button" id="v114-test-notif-top" style="background:#e6f5ee;color:#0d3825;border:1.5px solid #0d3825;border-radius:10px;padding:7px 12px;font-weight:900;font-size:0.78rem;cursor:pointer;">🔔 تفعيل إشعارات الهاتف وتجربتها</button>' +
+            '<button type="button" id="v114-close-studio-btn" style="background:#fee2e2;color:#991b1b;border:none;border-radius:10px;padding:7px 14px;font-weight:900;font-size:0.8rem;cursor:pointer;">↩ رجوع للقسم السابق</button>' +
+            '</div>' +
+            '</div>' +
+            '<div id="v115-save-banner" style="display:' + bannerDisplay + ';background:#dcfce7;color:#166534;border:1.5px solid #15803d;border-radius:12px;padding:10px 14px;margin-bottom:12px;font-weight:900;font-size:0.88rem;text-align:center;">' + (window.__v115BannerMsg || "") + '</div>' +
+            '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;">' +
+            '<button type="button" data-v114-subtab="inst" style="' + tabBtnStyle("inst") + '">1️⃣ التعليمات والشخصية (' + instructions.length + ')</button>' +
+            '<button type="button" data-v114-subtab="rules" style="' + tabBtnStyle("rules") + '">2️⃣ قاموس الردود (' + rules.length + ')</button>' +
+            '<button type="button" data-v114-subtab="promo" style="' + tabBtnStyle("promo") + '">3️⃣ ترويج منتج برابطه (' + promos.length + ')</button>' +
+            '<button type="button" data-v114-subtab="recipes" style="' + tabBtnStyle("recipes") + '">4️⃣ الوصفات المصورة والمنتجات (' + recipes.length + ')</button>' +
+            '<button type="button" data-v114-subtab="prodinfo" style="' + tabBtnStyle("prodinfo") + '">5️⃣ معلومات المنتجات (' + Object.keys(cfg.productAiMap || {}).length + ')</button>' +
+            '<button type="button" data-v114-subtab="requests" style="' + tabBtnStyle("requests") + '">6️⃣ الإشعارات وطلبات الزبائن (' + pendingCount + ')</button>' +
+            '</div>' +
+            '<div>' + bodyHtml + '</div>';
+
+          // Bind Top Buttons
+          var closeBtn = document.getElementById("v114-close-studio-btn");
+          if (closeBtn) {
+            closeBtn.onclick = function() {
+              window.__v114StudioOpen = false;
+              studioPage.style.display = "none";
+            };
+          }
+
+          var notifTopBtn = document.getElementById("v114-test-notif-top");
+          if (notifTopBtn) {
+            notifTopBtn.onclick = function() {
+              if ("Notification" in window) Notification.requestPermission();
+              triggerAdminPhoneNotificationV112({ requestedItem: "تجربة إشعار فوري ناجحة ✅" });
+            };
+          }
+
+          // Bind Sub-tab navigation
+          Array.from(studioPage.querySelectorAll("[data-v114-subtab]")).forEach(function(btn) {
+            btn.onclick = function() {
+              window.__v115BannerMsg = "";
+              window.__v114ActiveSubTab = btn.getAttribute("data-v114-subtab") || "inst";
+              renderAiStudioDedicatedPageV114();
+            };
+          });
+
+          // Bind Tab 1: Instructions
+          var addInstBtn = document.getElementById("v114-add-inst-btn");
+          if (addInstBtn) {
+            addInstBtn.onclick = function() {
+              var cat = (document.getElementById("v114-inst-cat") || {}).value || "general";
+              var txt = ((document.getElementById("v114-inst-text") || {}).value || "").trim();
+              if (!txt) {
+                alert("يرجى كتابة نص التعليمة أولاً");
+                return;
+              }
+              window.__v114StudioConfig.instructions = window.__v114StudioConfig.instructions || [];
+              window.__v114StudioConfig.instructions.push({
+                id: "inst_" + Date.now(),
+                category: cat,
+                text: txt,
+                active: true,
+                createdAt: new Date().toISOString()
+              });
+              saveStudioConfigToServerV114("✅ تم حفظ التعليمة بنجاح في الذكاء الاصطناعي!");
+            };
+          }
+          Array.from(studioPage.querySelectorAll("[data-del-inst]")).forEach(function(b) {
+            b.onclick = function() {
+              var idx = parseInt(b.getAttribute("data-del-inst"), 10);
+              window.__v114StudioConfig.instructions.splice(idx, 1);
+              saveStudioConfigToServerV114("🗑️ تم حذف التعليمة وحفظ التعديل.");
+            };
+          });
+
+          // Bind Tab 2: Dictionary Rules
+          var addRuleBtn = document.getElementById("v114-add-rule-btn");
+          if (addRuleBtn) {
+            addRuleBtn.onclick = function() {
+              var trig = ((document.getElementById("v114-rule-trig") || {}).value || "").trim();
+              var resp = ((document.getElementById("v114-rule-resp") || {}).value || "").trim();
+              if (!trig || !resp) {
+                alert("يرجى كتابة الكلمة المفتاحية والرد المخصص أولاً");
+                return;
+              }
+              window.__v114StudioConfig.rules = window.__v114StudioConfig.rules || [];
+              window.__v114StudioConfig.rules.push({
+                id: "rule_" + Date.now(),
+                trigger: trig,
+                response: resp,
+                active: true
+              });
+              saveStudioConfigToServerV114("✅ تم حفظ الرد المخصص بنجاح!");
+            };
+          }
+          Array.from(studioPage.querySelectorAll("[data-del-rule]")).forEach(function(b) {
+            b.onclick = function() {
+              var idx = parseInt(b.getAttribute("data-del-rule"), 10);
+              window.__v114StudioConfig.rules.splice(idx, 1);
+              saveStudioConfigToServerV114("🗑️ تم حذف الرد وحفظ التعديل.");
+            };
+          });
+
+          // Bind Tab 3: Promoted Products
+          var promoSel = document.getElementById("v114-promo-select");
+          if (promoSel) {
+            promoSel.onchange = function() {
+              var opt = promoSel.options[promoSel.selectedIndex];
+              if (!opt || !opt.value) return;
+              var pNameEl = document.getElementById("v114-promo-name");
+              var pUrlEl = document.getElementById("v114-promo-url");
+              if (pNameEl) pNameEl.value = opt.getAttribute("data-name") || "";
+              if (pUrlEl) pUrlEl.value = opt.getAttribute("data-url") || "";
+            };
+          }
+          var addPromoBtn = document.getElementById("v114-add-promo-btn");
+          if (addPromoBtn) {
+            addPromoBtn.onclick = function() {
+              var selEl = document.getElementById("v114-promo-select");
+              var selOpt = selEl && selEl.options ? selEl.options[selEl.selectedIndex] : null;
+              var pId = selOpt && selOpt.value ? Number(selOpt.value) : undefined;
+              var pPrice = selOpt && selOpt.getAttribute("data-price") ? Number(selOpt.getAttribute("data-price")) : undefined;
+              var pName = ((document.getElementById("v114-promo-name") || {}).value || "").trim() || (selOpt ? selOpt.getAttribute("data-name") || "" : "");
+              var pUrl = ((document.getElementById("v114-promo-url") || {}).value || "").trim() || ("/products?search=" + encodeURIComponent(pName));
+              var pKws = ((document.getElementById("v114-promo-kws") || {}).value || "").trim() || pName;
+              var pBadge = ((document.getElementById("v114-promo-badge") || {}).value || "").trim() || "🔥 عرض خاص";
+              var pPitch = ((document.getElementById("v114-promo-pitch") || {}).value || "").trim();
+              if (!pName) {
+                alert("يرجى اختيار منتج أو كتابة اسمه أولاً");
+                return;
+              }
+              window.__v114StudioConfig.promotedProducts = window.__v114StudioConfig.promotedProducts || [];
+              window.__v114StudioConfig.promotedProducts.push({
+                id: "promo_" + Date.now(),
+                productId: pId,
+                productName: pName,
+                productUrl: pUrl,
+                productPrice: pPrice,
+                triggerKeywords: pKws,
+                promoBadge: pBadge,
+                promoPitch: pPitch,
+                active: true
+              });
+              saveStudioConfigToServerV114("✅ تم حفظ ترويج المنتج برابطه بنجاح!");
+            };
+          }
+          Array.from(studioPage.querySelectorAll("[data-del-promo]")).forEach(function(b) {
+            b.onclick = function() {
+              var idx = parseInt(b.getAttribute("data-del-promo"), 10);
+              window.__v114StudioConfig.promotedProducts.splice(idx, 1);
+              saveStudioConfigToServerV114("🗑️ تم حذف الترويج وحفظ التعديل.");
+            };
+          });
+
+          // Bind Tab 4: Recipes + Image Compression + Auto-linked Ingredients
+          var recFileEl = document.getElementById("v114-rec-file");
+          if (recFileEl) {
+            recFileEl.onchange = function() {
+              var f = recFileEl.files && recFileEl.files[0];
+              if (!f) return;
+              var savedTitle = ((document.getElementById("v114-rec-title") || {}).value || "");
+              var savedKws = ((document.getElementById("v114-rec-kws") || {}).value || "");
+              var savedSteps = ((document.getElementById("v114-rec-steps") || {}).value || "");
+              compressRecipeImageFileV115(f, function(compressedDataUrl) {
+                window.__v114DraftRecipeImg = compressedDataUrl;
+                renderAiStudioDedicatedPageV114();
+                var tEl = document.getElementById("v114-rec-title");
+                var kEl = document.getElementById("v114-rec-kws");
+                var sEl = document.getElementById("v114-rec-steps");
+                if (tEl) tEl.value = savedTitle;
+                if (kEl) kEl.value = savedKws;
+                if (sEl) sEl.value = savedSteps;
+              });
+            };
+          }
+
+          var clearImgBtn = document.getElementById("v115-clear-draft-img");
+          if (clearImgBtn) {
+            clearImgBtn.onclick = function() {
+              var savedTitle = ((document.getElementById("v114-rec-title") || {}).value || "");
+              var savedKws = ((document.getElementById("v114-rec-kws") || {}).value || "");
+              var savedSteps = ((document.getElementById("v114-rec-steps") || {}).value || "");
+              window.__v114DraftRecipeImg = "";
+              renderAiStudioDedicatedPageV114();
+              var tEl = document.getElementById("v114-rec-title");
+              var kEl = document.getElementById("v114-rec-kws");
+              var sEl = document.getElementById("v114-rec-steps");
+              if (tEl) tEl.value = savedTitle;
+              if (kEl) kEl.value = savedKws;
+              if (sEl) sEl.value = savedSteps;
+            };
+          }
+
+          var recProdSel = document.getElementById("v114-rec-prod-select");
+          if (recProdSel) {
+            recProdSel.onchange = function() {
+              var opt = recProdSel.options[recProdSel.selectedIndex];
+              if (!opt || !opt.value) return;
+              var pName = opt.getAttribute("data-name") || "";
+              var pUrl = opt.getAttribute("data-url") || ("/products?search=" + encodeURIComponent(pName));
+              var pPrice = opt.getAttribute("data-price") ? Number(opt.getAttribute("data-price")) : undefined;
+              var pId = Number(opt.value);
+
+              var savedTitle = ((document.getElementById("v114-rec-title") || {}).value || "");
+              var savedKws = ((document.getElementById("v114-rec-kws") || {}).value || "");
+              var savedSteps = ((document.getElementById("v114-rec-steps") || {}).value || "");
+
+              window.__v114DraftIngredients = window.__v114DraftIngredients || [];
+              var already = window.__v114DraftIngredients.some(function(x) { return x.name === pName; });
+              if (!already && pName) {
+                window.__v114DraftIngredients.push({
+                  productId: pId,
+                  name: pName,
+                  url: pUrl,
+                  price: pPrice
+                });
+              }
+              renderAiStudioDedicatedPageV114();
+              var tEl = document.getElementById("v114-rec-title");
+              var kEl = document.getElementById("v114-rec-kws");
+              var sEl = document.getElementById("v114-rec-steps");
+              if (tEl) tEl.value = savedTitle;
+              if (kEl) kEl.value = savedKws;
+              if (sEl) sEl.value = savedSteps;
+            };
+          }
+
+          var addRecIngBtn = document.getElementById("v114-add-rec-ing-btn");
+          if (addRecIngBtn) {
+            addRecIngBtn.onclick = function() {
+              var selEl = document.getElementById("v114-rec-prod-select");
+              var selOpt = selEl && selEl.options ? selEl.options[selEl.selectedIndex] : null;
+              var pId = selOpt && selOpt.value ? Number(selOpt.value) : undefined;
+              var pPrice = selOpt && selOpt.getAttribute("data-price") ? Number(selOpt.getAttribute("data-price")) : undefined;
+              var ingName = ((document.getElementById("v114-rec-ing-name") || {}).value || "").trim() || (selOpt ? selOpt.getAttribute("data-name") || "" : "");
+              var ingUrl = ((document.getElementById("v114-rec-ing-url") || {}).value || "").trim() || ("/products?search=" + encodeURIComponent(ingName));
+              if (!ingName) {
+                alert("يرجى اختيار منتج من القائمة أو كتابة اسمه أولاً");
+                return;
+              }
+              var savedTitle = ((document.getElementById("v114-rec-title") || {}).value || "");
+              var savedKws = ((document.getElementById("v114-rec-kws") || {}).value || "");
+              var savedSteps = ((document.getElementById("v114-rec-steps") || {}).value || "");
+
+              window.__v114DraftIngredients = window.__v114DraftIngredients || [];
+              window.__v114DraftIngredients.push({
+                productId: pId,
+                name: ingName,
+                url: ingUrl,
+                price: pPrice
+              });
+              renderAiStudioDedicatedPageV114();
+              var tEl = document.getElementById("v114-rec-title");
+              var kEl = document.getElementById("v114-rec-kws");
+              var sEl = document.getElementById("v114-rec-steps");
+              if (tEl) tEl.value = savedTitle;
+              if (kEl) kEl.value = savedKws;
+              if (sEl) sEl.value = savedSteps;
+            };
+          }
+
+          Array.from(studioPage.querySelectorAll("[data-del-draft-ing]")).forEach(function(b) {
+            b.onclick = function() {
+              var savedTitle = ((document.getElementById("v114-rec-title") || {}).value || "");
+              var savedKws = ((document.getElementById("v114-rec-kws") || {}).value || "");
+              var savedSteps = ((document.getElementById("v114-rec-steps") || {}).value || "");
+              var idx = parseInt(b.getAttribute("data-del-draft-ing"), 10);
+              window.__v114DraftIngredients.splice(idx, 1);
+              renderAiStudioDedicatedPageV114();
+              var tEl = document.getElementById("v114-rec-title");
+              var kEl = document.getElementById("v114-rec-kws");
+              var sEl = document.getElementById("v114-rec-steps");
+              if (tEl) tEl.value = savedTitle;
+              if (kEl) kEl.value = savedKws;
+              if (sEl) sEl.value = savedSteps;
+            };
+          });
+
+          var saveRecBtn = document.getElementById("v114-save-rec-btn");
+          if (saveRecBtn) {
+            saveRecBtn.onclick = function() {
+              var title = ((document.getElementById("v114-rec-title") || {}).value || "").trim();
+              var kws = ((document.getElementById("v114-rec-kws") || {}).value || "").trim() || title;
+              var urlInputVal = ((document.getElementById("v114-rec-img") || {}).value || "").trim();
+              var imgUrl = window.__v114DraftRecipeImg || urlInputVal;
+              var steps = ((document.getElementById("v114-rec-steps") || {}).value || "").trim();
+              if (!title || !steps) {
+                alert("يرجى كتابة اسم الوصفة وطريقة التحضير أولاً");
+                return;
+              }
+
+              var pendingIngName = ((document.getElementById("v114-rec-ing-name") || {}).value || "").trim();
+              var pendingIngUrl = ((document.getElementById("v114-rec-ing-url") || {}).value || "").trim();
+              if (pendingIngName) {
+                window.__v114DraftIngredients = window.__v114DraftIngredients || [];
+                var exists = window.__v114DraftIngredients.some(function(x) { return x.name === pendingIngName; });
+                if (!exists) {
+                  window.__v114DraftIngredients.push({
+                    name: pendingIngName,
+                    url: pendingIngUrl || ("/products?search=" + encodeURIComponent(pendingIngName))
+                  });
+                }
+              }
+
+              window.__v114StudioConfig.recipes = window.__v114StudioConfig.recipes || [];
+              window.__v114StudioConfig.recipes.push({
+                id: "rec_" + Date.now(),
+                title: title,
+                keywords: kws,
+                imageUrl: imgUrl,
+                steps: steps,
+                ingredients: (window.__v114DraftIngredients || []).slice()
+              });
+              window.__v114DraftIngredients = [];
+              window.__v114DraftRecipeImg = "";
+              saveStudioConfigToServerV114("✅ تم حفظ الوصفة المصورة ومنتجاتها بنجاح!");
+            };
+          }
+
+          Array.from(studioPage.querySelectorAll("[data-del-rec]")).forEach(function(b) {
+            b.onclick = function() {
+              var idx = parseInt(b.getAttribute("data-del-rec"), 10);
+              window.__v114StudioConfig.recipes.splice(idx, 1);
+              saveStudioConfigToServerV114("🗑️ تم حذف الوصفة وحفظ التعديل.");
+            };
+          });
+
+          // Bind Tab 5: Per-Product Metadata
+          var pmSel = document.getElementById("v114-pm-select");
+          if (pmSel) {
+            pmSel.onchange = function() {
+              var pid = pmSel.value;
+              var opt = pmSel.options[pmSel.selectedIndex];
+              var pname = opt ? opt.getAttribute("data-name") : "";
+              var existing = (window.__v114StudioConfig.productAiMap || {})[pid] || (window.__v114StudioConfig.productAiMap || {})[pname] || {};
+              var tEl = document.getElementById("v114-pm-type");
+              var cEl = document.getElementById("v114-pm-cal");
+              var pEl = document.getElementById("v114-pm-pair");
+              var prEl = document.getElementById("v114-pm-prep");
+              var iEl = document.getElementById("v114-pm-info");
+              if (tEl) tEl.value = existing.usageType || "auto";
+              if (cEl) cEl.value = existing.calories || "";
+              if (pEl) pEl.value = existing.pairings || "";
+              if (prEl) prEl.value = existing.prepIdeas || "";
+              if (iEl) iEl.value = existing.customInfo || "";
+            };
+          }
+          var savePmBtn = document.getElementById("v114-save-pm-btn");
+          if (savePmBtn) {
+            savePmBtn.onclick = function() {
+              var sel = document.getElementById("v114-pm-select");
+              if (!sel || !sel.value) {
+                alert("يرجى اختيار المنتج من القائمة أولاً");
+                return;
+              }
+              var pid = sel.value;
+              var opt = sel.options[sel.selectedIndex];
+              var pname = opt ? opt.getAttribute("data-name") : pid;
+              var metaObj = {
+                usageType: (document.getElementById("v114-pm-type") || {}).value || "auto",
+                calories: ((document.getElementById("v114-pm-cal") || {}).value || "").trim(),
+                pairings: ((document.getElementById("v114-pm-pair") || {}).value || "").trim(),
+                prepIdeas: ((document.getElementById("v114-pm-prep") || {}).value || "").trim(),
+                customInfo: ((document.getElementById("v114-pm-info") || {}).value || "").trim()
+              };
+              window.__v114StudioConfig.productAiMap = window.__v114StudioConfig.productAiMap || {};
+              window.__v114StudioConfig.productAiMap[pid] = metaObj;
+              if (pname) window.__v114StudioConfig.productAiMap[pname] = metaObj;
+              saveStudioConfigToServerV114("✅ تم حفظ معلومات المنتج للذكاء الاصطناعي بنجاح!");
+            };
+          }
+          Array.from(studioPage.querySelectorAll("[data-del-prodmeta]")).forEach(function(b) {
+            b.onclick = function() {
+              var k = b.getAttribute("data-del-prodmeta");
+              if (k && window.__v114StudioConfig.productAiMap) {
+                delete window.__v114StudioConfig.productAiMap[k];
+                saveStudioConfigToServerV114("🗑️ تم حذف تخصيص المنتج.");
+              }
+            };
+          });
+
+          // Bind Tab 6: Customer Requests & Notifications
+          var enNotifBtn = document.getElementById("v114-enable-notif-btn");
+          if (enNotifBtn) {
+            enNotifBtn.onclick = function() {
+              if ("Notification" in window) Notification.requestPermission();
+              triggerAdminPhoneNotificationV112({ requestedItem: "تجربة إشعار الهاتف بنجاح ✅" });
+            };
+          }
+          Array.from(studioPage.querySelectorAll("[data-send-reply]")).forEach(function(btn) {
+            btn.onclick = function() {
+              var reqId = btn.getAttribute("data-send-reply");
+              var inp = studioPage.querySelector("[data-reply-input='" + reqId + "']");
+              var replyTxt = inp ? inp.value.trim() : "";
+              if (!replyTxt) {
+                alert("يرجى كتابة الرد للزبون أولاً");
+                return;
+              }
+              btn.textContent = "جاري الإرسال...";
+              fetch("/api/ai-studio/admin-reply", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ requestId: reqId, adminReply: replyTxt, status: "available" })
+              })
+                .then(function(r) { return r.json(); })
+                .then(function() {
+                  showSaveSuccessBannerV115("✅ تم إرسال الرد للزبون بنجاح!");
+                  refreshStudioDataV114(true);
+                });
+            };
+          });
+        }
+
+        function attachProductModalAiFieldsV112() {
+          if (window.location.pathname.indexOf("/admin") === -1) return;
+          var descInput = Array.from(document.querySelectorAll("textarea, input")).find(function(el) {
+            var ph = (el.getAttribute("placeholder") || "") + " " + (el.getAttribute("name") || "");
+            return ph.indexOf("وصف") !== -1 || ph.indexOf("description") !== -1;
+          });
+          if (!descInput || !descInput.parentElement) return;
+          if (document.getElementById("v112-prod-ai-box")) return;
+
+          var nameInput = Array.from(document.querySelectorAll("input")).find(function(el) {
+            var ph = (el.getAttribute("placeholder") || "") + " " + (el.getAttribute("name") || "");
+            return ph.indexOf("اسم المنتج") !== -1 || ph.indexOf("name") !== -1;
+          });
+          var prodName = nameInput ? nameInput.value.trim() : "";
+          var existingMeta = (window.__v114StudioConfig.productAiMap || {})[prodName] || {
+            usageType: "auto",
+            calories: "",
+            customInfo: "",
+            pairings: "",
+            prepIdeas: ""
+          };
+
+          var box = document.createElement("div");
+          box.id = "v112-prod-ai-box";
+          box.style.cssText = "margin-top:10px;padding:12px;border:2px solid #0d3825;border-radius:12px;background:#f2f9f5;direction:rtl;text-align:right;";
+          box.innerHTML =
+            '<div style="font-weight:900;color:#0d3825;font-size:0.88rem;margin-bottom:8px;">🤖 معلومات إضافية للذكاء الاصطناعي عن هذا المنتج (اختياري):</div>' +
+            '<select id="v112-pm-type" style="width:100%;padding:7px;border:1px solid #0d3825;border-radius:8px;margin-bottom:6px;font-size:0.8rem;font-weight:700;background:#fff;">' +
+            '<option value="auto"' + (existingMeta.usageType === "auto" ? " selected" : "") + '>🤖 ذكي تلقائي (يميز الشوكولاتة السناك عن منتجات الوصفات)</option>' +
+            '<option value="snacks_and_drinks"' + (existingMeta.usageType === "snacks_and_drinks" ? " selected" : "") + '>🍫 سناك/مشروب جاهز (سعرات ومشروبات بدون طبخ)</option>' +
+            '<option value="recipe"' + (existingMeta.usageType === "recipe" ? " selected" : "") + '>🍰 يدخل في حلى ووصفات (مثل بسكويت ماري)</option>' +
+            '<option value="calories_and_info"' + (existingMeta.usageType === "calories_and_info" ? " selected" : "") + '>🔥 سعرات حرارية ومعلومات غذائية فقط</option>' +
+            '</select>' +
+            '<input id="v112-pm-cal" type="text" placeholder="🔥 السعرات والمعلومات الغذائية (مثال: 120 سعرة حرارية)..." value="' + (existingMeta.calories || "").replace(/"/g, "&quot;") + '" style="width:100%;padding:7px;border:1px solid #cbd5e1;border-radius:8px;margin-bottom:6px;font-size:0.8rem;" />' +
+            '<input id="v112-pm-pair" type="text" placeholder="☕ أفضل مشروب أو إضافة معه..." value="' + (existingMeta.pairings || "").replace(/"/g, "&quot;") + '" style="width:100%;padding:7px;border:1px solid #cbd5e1;border-radius:8px;margin-bottom:6px;font-size:0.8rem;" />' +
+            '<input id="v112-pm-prep" type="text" placeholder="🍰 فكرة حلى أو تحضير (إن وجد)..." value="' + (existingMeta.prepIdeas || "").replace(/"/g, "&quot;") + '" style="width:100%;padding:7px;border:1px solid #cbd5e1;border-radius:8px;margin-bottom:6px;font-size:0.8rem;" />' +
+            '<button type="button" id="v112-pm-save" style="background:#0d3825;color:#d4af37;border:none;border-radius:8px;padding:7px 14px;font-weight:900;font-size:0.8rem;cursor:pointer;width:100%;">💾 حفظ معلومات الذكاء لهذا المنتج</button>';
+
+          descInput.parentElement.appendChild(box);
+
+          var saveBtn = document.getElementById("v112-pm-save");
+          if (saveBtn) {
+            saveBtn.onclick = function() {
+              var currentName = nameInput ? nameInput.value.trim() : prodName;
+              if (!currentName) {
+                alert("يرجى كتابة اسم المنتج أولاً");
+                return;
+              }
+              window.__v114StudioConfig.productAiMap = window.__v114StudioConfig.productAiMap || {};
+              window.__v114StudioConfig.productAiMap[currentName] = {
+                usageType: (document.getElementById("v112-pm-type") || {}).value || "auto",
+                calories: (document.getElementById("v112-pm-cal") || {}).value || "",
+                pairings: (document.getElementById("v112-pm-pair") || {}).value || "",
+                prepIdeas: (document.getElementById("v112-pm-prep") || {}).value || "",
+                customInfo: ""
+              };
+              saveBtn.textContent = "✅ تم الحفظ!";
+              saveStudioConfigToServerV114("✅ تم حفظ معلومات المنتج!", function() {
+                setTimeout(function() { saveBtn.textContent = "💾 حفظ معلومات الذكاء لهذا المنتج"; }, 1200);
+              });
+            };
+          }
+        }
+
+        // ====================================================================
+        // PRESERVED v107-v111 CART & VARIANT PRICE ENGINE
+        // ====================================================================
+        function parseVariantSegmentsFromText(text) {
+          if (!text) return [];
+          var parenMatches = Array.from(String(text).matchAll(/\(([^()]+)\)/g));
+          var inner = "";
+          if (parenMatches.length > 0) {
+            inner = parenMatches.map(function(m) { return m[1].trim(); }).filter(function(s) { return s.indexOf(":") !== -1; }).join("، ");
+          } else if (String(text).indexOf(":") !== -1) {
+            inner = String(text);
+          }
+          if (!inner) return [];
+          var segments = inner.split(/[،,+]+/).map(function(s) { return s.trim(); }).filter(Boolean);
+          var out = [];
+          segments.forEach(function(seg) {
+            var sQty = 1;
+            var mm = seg.match(/[×xX*]\s*(\d+)/);
+            if (mm && mm[1]) sQty = Math.max(1, parseInt(mm[1], 10));
+            var cleanSeg = seg.replace(/[×xX*]\s*\d+.*$/, "").trim();
+            var cIdx = cleanSeg.indexOf(":");
+            if (cIdx !== -1) {
+              var oName = cleanSeg.slice(0, cIdx).trim();
+              var oPrice = parseFloat(cleanSeg.slice(cIdx + 1).trim());
+              if (oName && !isNaN(oPrice) && oPrice > 0) {
+                out.push({ name: oName, price: Math.round(oPrice), qty: sQty });
+              }
+            }
+          });
+          return out;
+        }
+
+        function setLeafTextSafe(el, newStr) {
+          if (!el) return;
+          if (el.children.length === 0) {
+            if ((el.textContent || "").trim() !== newStr.trim()) {
+              el.textContent = newStr;
+            }
+            return;
+          }
+          for (var i = 0; i < el.childNodes.length; i++) {
+            var n = el.childNodes[i];
+            if (n.nodeType === 3 && n.nodeValue && /\d/.test(n.nodeValue)) {
+              n.nodeValue = newStr;
+              return;
+            }
+          }
+        }
+
+        function syncVariantModalPrice() {
+          var headings = Array.from(document.querySelectorAll("h1, h2, h3, h4, p, div, span"));
+          var modalTitle = headings.find(function(el) {
+            return el.children.length === 0 && (el.textContent || "").trim().indexOf("اختر النوع أو الحجم") !== -1;
+          });
+          if (!modalTitle) return;
+
+          var modalContainer = modalTitle.parentElement;
+          while (
+            modalContainer &&
+            modalContainer !== document.body &&
+            modalContainer.querySelectorAll("button").length < 2
+          ) {
+            modalContainer = modalContainer.parentElement;
+          }
+          if (!modalContainer) return;
+
+          var prodNameEl = Array.from(modalContainer.querySelectorAll("h2, h3, h4, strong, p, div")).find(function(el) {
+            if (el.children.length > 0) return false;
+            var t = (el.textContent || "").trim();
+            return (
+              t.length >= 3 &&
+              t.indexOf("اختر النوع") === -1 &&
+              t.indexOf("يمكنك اختيار") === -1 &&
+              t.indexOf("الإجمالي") === -1 &&
+              t.indexOf("ر.ي") === -1 &&
+              t.indexOf("إضافة للسلة") === -1 &&
+              t.indexOf("إلغاء") === -1
+            );
+          });
+          var currentModalProdName = prodNameEl ? (prodNameEl.textContent || "").trim() : "";
+
+          var allElements = Array.from(modalContainer.querySelectorAll("button, div, label, li"));
+          var optionRows = [];
+          allElements.forEach(function(el) {
+            var txt = (el.textContent || "").trim();
+            if (
+              txt.indexOf(":") !== -1 &&
+              txt.indexOf("اختر النوع") === -1 &&
+              txt.indexOf("إضافة للسلة") === -1 &&
+              txt.length < 95
+            ) {
+              var hasChildWithColon = Array.from(el.children).some(function(c) {
+                var ct = (c.textContent || "").trim();
+                return ct.indexOf(":") !== -1 && ct.indexOf("ر.ي") !== -1 && ct.length < 80;
+              });
+              if (!hasChildWithColon) {
+                optionRows.push(el);
+              }
+            }
+          });
+
+          if (currentModalProdName && optionRows.length > 0 && !modalContainer.getAttribute("data-v111-order-bound")) {
+            modalContainer.setAttribute("data-v111-order-bound", "1");
+            modalContainer.addEventListener("click", function(ev) {
+              var target = ev.target;
+              while (target && target !== modalContainer) {
+                var rowIdx = optionRows.indexOf(target);
+                if (rowIdx !== -1) {
+                  var rTxt = (target.textContent || "").trim();
+                  var mOpt = rTxt.match(/([^:\n]+):\s*(\d+(?:\.\d+)?)/);
+                  if (mOpt) {
+                    var oName = mOpt[1].replace(/[✓✔]/g, "").trim();
+                    var oPrice = Math.round(parseFloat(mOpt[2]));
+                    window.__v111ClickOrder = window.__v111ClickOrder || {};
+                    var list = window.__v111ClickOrder[currentModalProdName] || [];
+                    setTimeout(function() {
+                      var isNowSel = isOptionRowSelected(target);
+                      if (isNowSel) {
+                        var existing = list.find(function(x) { return x.name === oName; });
+                        if (!existing) {
+                          list.push({ name: oName, price: oPrice, qty: getRowSpinQty(target) });
+                        } else {
+                          existing.qty = getRowSpinQty(target);
+                        }
+                      } else {
+                        list = list.filter(function(x) { return x.name !== oName; });
+                      }
+                      window.__v111ClickOrder[currentModalProdName] = list;
+                    }, 20);
+                  }
+                  break;
+                }
+                target = target.parentElement;
+              }
+            }, true);
+          }
+
+          function isOptionRowSelected(row) {
+            var cls = (row.className || "") + " " + (row.parentElement ? row.parentElement.className || "" : "");
+            var styleAttr = (row.getAttribute("style") || "") + " " + (row.parentElement ? row.parentElement.getAttribute("style") || "" : "");
+            var ariaChecked = row.getAttribute("aria-checked") === "true" || row.getAttribute("aria-pressed") === "true" || row.getAttribute("data-state") === "checked";
+            var hasCheckInput = false;
+            var inp = row.querySelector("input[type='checkbox'], input[type='radio']");
+            if (inp && inp.checked) hasCheckInput = true;
+            var hasCheckIcon = (row.textContent || "").indexOf("✓") !== -1 || (row.textContent || "").indexOf("✔") !== -1;
+
+            var bg = "";
+            var borderCol = "";
+            try {
+              var cs = window.getComputedStyle(row);
+              bg = cs.backgroundColor || "";
+              borderCol = cs.borderColor || "";
+            } catch (e) {}
+
+            var isGreenBg =
+              bg.indexOf("22, 101, 52") !== -1 ||
+              bg.indexOf("20, 83, 45") !== -1 ||
+              bg.indexOf("220, 252, 231") !== -1 ||
+              bg.indexOf("240, 253, 244") !== -1 ||
+              bg.indexOf("16, 185, 129") !== -1 ||
+              bg.indexOf("5, 150, 105") !== -1 ||
+              bg.indexOf("13, 56, 37") !== -1;
+
+            var isGreenBorder =
+              borderCol.indexOf("22, 101, 52") !== -1 ||
+              borderCol.indexOf("20, 83, 45") !== -1 ||
+              borderCol.indexOf("16, 185, 129") !== -1 ||
+              borderCol.indexOf("5, 150, 105") !== -1 ||
+              borderCol.indexOf("13, 56, 37") !== -1;
+
+            var hasActiveClass =
+              cls.indexOf("emerald") !== -1 ||
+              cls.indexOf("green") !== -1 ||
+              cls.indexOf("selected") !== -1 ||
+              cls.indexOf("ring-") !== -1 ||
+              cls.indexOf("bg-primary") !== -1 ||
+              styleAttr.indexOf("#0d3825") !== -1 ||
+              styleAttr.indexOf("rgb(13, 56, 37)") !== -1;
+
+            var hasSpinButtons = row.querySelectorAll("button").length >= 2;
+            return ariaChecked || hasCheckInput || hasCheckIcon || isGreenBg || isGreenBorder || hasActiveClass || hasSpinButtons;
+          }
+
+          function getRowSpinQty(row) {
+            var q = 1;
+            var spinBtns = Array.from(row.querySelectorAll("button"));
+            if (spinBtns.length >= 2) {
+              var qtEl = Array.from(row.querySelectorAll("span, div, strong")).find(function(s) {
+                if (s.children.length > 0) return false;
+                var v = (s.textContent || "").trim();
+                return /^\d+$/.test(v) && parseInt(v, 10) >= 1 && parseInt(v, 10) < 100;
+              });
+              if (qtEl) q = parseInt((qtEl.textContent || "1").trim(), 10) || 1;
+            }
+            return q;
+          }
+
+          var selectedSum = 0;
+          var selectedCount = 0;
+          var currentSelectedMap = {};
+
+          optionRows.forEach(function(row) {
+            var txt = (row.textContent || "").trim();
+            var m = txt.match(/([^:\n]+):\s*(\d+(?:\.\d+)?)/);
+            if (!m) return;
+            var optName = m[1].replace(/[✓✔]/g, "").trim();
+            var optPrice = Math.round(parseFloat(m[2]));
+            if (!optPrice || isNaN(optPrice)) return;
+
+            if (isOptionRowSelected(row)) {
+              var q = getRowSpinQty(row);
+              selectedSum += optPrice * q;
+              selectedCount += q;
+              currentSelectedMap[optName] = { name: optName, price: optPrice, qty: q };
+            }
+          });
+
+          if (currentModalProdName && selectedCount > 0) {
+            window.__v111ClickOrder = window.__v111ClickOrder || {};
+            var prevOrder = window.__v111ClickOrder[currentModalProdName] || [];
+            var finalOrdered = [];
+            prevOrder.forEach(function(po) {
+              if (currentSelectedMap[po.name]) {
+                finalOrdered.push(currentSelectedMap[po.name]);
+                delete currentSelectedMap[po.name];
+              }
+            });
+            Object.keys(currentSelectedMap).forEach(function(k) {
+              finalOrdered.push(currentSelectedMap[k]);
+            });
+            window.__v111ClickOrder[currentModalProdName] = finalOrdered;
+
+            var rawOrderedStr = finalOrdered.map(function(x) {
+              return x.name + ":" + x.price + (x.qty > 1 ? " × " + x.qty : "");
+            }).join("، ");
+
+            window.__v111ReorderedVariants[currentModalProdName] = {
+              ordered: finalOrdered,
+              raw: rawOrderedStr,
+              totalSum: selectedSum
+            };
+            try {
+              sessionStorage.setItem("original_v111_reordered_variants", JSON.stringify(window.__v111ReorderedVariants));
+            } catch (e) {}
+          }
+
+          if (selectedCount > 0 && selectedSum > 0) {
+            var formattedSum = selectedSum.toLocaleString("en-US");
+            var allLeafNodes = Array.from(modalContainer.querySelectorAll("span, strong, b, p, div, button")).filter(function(el) {
+              return el.children.length === 0;
+            });
+
+            allLeafNodes.forEach(function(el) {
+              var t = (el.textContent || "").trim();
+              if (t.indexOf(":") !== -1 && optionRows.some(function(r) { return r.contains(el); })) {
+                return;
+              }
+              if (t.indexOf("إضافة للسلة") !== -1 && /\d/.test(t)) {
+                el.textContent = t.replace(/[\d,]+(?=\s*ر\.ي)/, formattedSum);
+                return;
+              }
+              if (t.indexOf("ر.ي") !== -1 && /\d/.test(t)) {
+                var parentTxt = el.parentElement ? (el.parentElement.textContent || "") : "";
+                if (parentTxt.indexOf("الإجمالي") !== -1 || parentTxt.indexOf("السعر") !== -1 || el.tagName === "BUTTON") {
+                  el.textContent = t.replace(/[\d,]+(?=\s*ر\.ي)/, formattedSum);
+                }
+              }
+            });
+          }
+        }
+
+        function syncCartDrawerPricesAndTotals() {
+          var allTitles = Array.from(document.querySelectorAll("h3, h4, strong, p, span, div")).filter(function(el) {
+            if (el.children.length > 0) return false;
+            var t = (el.textContent || "").trim();
+            return (
+              t.indexOf(":") !== -1 &&
+              t.indexOf("(") !== -1 &&
+              t.indexOf(")") !== -1 &&
+              t.indexOf("اختر النوع") === -1 &&
+              t.indexOf("الإجمالي") === -1 &&
+              t.length < 140
+            );
+          });
+
+          if (allTitles.length > 0) {
+            var computedSubtotal = 0;
+            var processedRows = [];
+
+            allTitles.forEach(function(titleEl) {
+              var titleTxt = (titleEl.textContent || "").trim();
+              var basePName = titleTxt.replace(/\s*\([^()]*\)\s*$/g, "").trim();
+
+              var reordInfo = window.__v111ReorderedVariants && window.__v111ReorderedVariants[basePName];
+              if (reordInfo && reordInfo.raw && titleTxt.indexOf("،") !== -1) {
+                var desiredFullTitle = basePName + " (" + reordInfo.raw + ")";
+                if (titleTxt !== desiredFullTitle) {
+                  titleEl.textContent = desiredFullTitle;
+                  titleTxt = desiredFullTitle;
+                }
+              }
+
+              var segments = parseVariantSegmentsFromText(titleTxt);
+              if (segments.length === 0) return;
+
+              var card = titleEl.parentElement;
+              while (
+                card &&
+                card !== document.body &&
+                (card.textContent || "").indexOf("ر.ي") === -1
+              ) {
+                card = card.parentElement;
+              }
+              if (!card || processedRows.indexOf(card) !== -1) return;
+              processedRows.push(card);
+
+              var qty = 1;
+              var cardSpans = Array.from(card.querySelectorAll("span, div, strong")).filter(function(s) {
+                if (s.children.length > 0) return false;
+                var v = (s.textContent || "").trim();
+                return /^\d+$/.test(v) && parseInt(v, 10) >= 1 && parseInt(v, 10) < 500;
+              });
+              if (cardSpans.length > 0) {
+                qty = parseInt((cardSpans[0].textContent || "1").trim(), 10) || 1;
+              }
+
+              var singleSetPrice = segments.reduce(function(acc, s) {
+                return acc + (s.price * (s.qty || 1));
+              }, 0);
+
+              var hasExplicitMulti = segments.some(function(s) { return s.qty > 1; });
+              var rowTotal = hasExplicitMulti ? singleSetPrice : (singleSetPrice * qty);
+              var unitDisplayPrice = hasExplicitMulti ? singleSetPrice : segments[0].price;
+
+              if (segments.length > 1 && !card.getAttribute("data-v111-split-done")) {
+                var existingBreakdown = card.querySelector(".v111-split-lines");
+                var breakdownHtml = segments.map(function(s, idx) {
+                  var sTot = s.price * (s.qty || 1);
+                  return '<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 8px;margin-top:3px;background:#f2f9f5;border:1px solid #ccebd9;border-radius:8px;font-size:0.78rem;color:#0d3825;font-weight:700;">' +
+                    '<span>' + (idx + 1) + '. ' + basePName + ' (' + s.name + (s.qty > 1 ? ' × ' + s.qty : '') + ')</span>' +
+                    '<span>' + sTot.toLocaleString("en-US") + ' ر.ي</span>' +
+                    '</div>';
+                }).join("");
+
+                if (!existingBreakdown) {
+                  var bdDiv = document.createElement("div");
+                  bdDiv.className = "v111-split-lines";
+                  bdDiv.style.cssText = "width:100%;margin-top:6px;direction:rtl;";
+                  bdDiv.innerHTML = breakdownHtml;
+                  titleEl.parentElement.appendChild(bdDiv);
+                } else if (existingBreakdown.innerHTML !== breakdownHtml) {
+                  existingBreakdown.innerHTML = breakdownHtml;
+                }
+              }
+
+              var priceLeaves = Array.from(card.querySelectorAll("span, strong, b, p, div")).filter(function(el) {
+                if (el.children.length > 0 || el === titleEl) return false;
+                if (el.closest && el.closest(".v111-split-lines")) return false;
+                var t = (el.textContent || "").trim();
+                return t.indexOf("ر.ي") !== -1 && /\d/.test(t);
+              });
+
+              if (priceLeaves.length === 1) {
+                var pTxt = (priceLeaves[0].textContent || "").trim();
+                var newPTxt = pTxt.replace(/[\d,]+(?=\s*ر\.ي)/, rowTotal.toLocaleString("en-US"));
+                setLeafTextSafe(priceLeaves[0], newPTxt);
+              } else if (priceLeaves.length >= 2) {
+                var uTxt = (priceLeaves[0].textContent || "").trim();
+                setLeafTextSafe(priceLeaves[0], uTxt.replace(/[\d,]+(?=\s*ر\.ي)/, unitDisplayPrice.toLocaleString("en-US")));
+                var totEl = priceLeaves[priceLeaves.length - 1];
+                var tTxt = (totEl.textContent || "").trim();
+                setLeafTextSafe(totEl, tTxt.replace(/[\d,]+(?=\s*ر\.ي)/, rowTotal.toLocaleString("en-US")));
+              }
+            });
+
+            var cartRoot = processedRows[0] ? processedRows[0].parentElement : null;
+            while (
+              cartRoot &&
+              cartRoot !== document.body &&
+              (cartRoot.textContent || "").indexOf("الإجمالي") === -1 &&
+              (cartRoot.textContent || "").indexOf("المجموع") === -1
+            ) {
+              cartRoot = cartRoot.parentElement;
+            }
+
+            if (cartRoot) {
+              var allItemRows = Array.from(cartRoot.children[0] ? cartRoot.children[0].children : []);
+              if (allItemRows.length === 0) allItemRows = processedRows;
+
+              computedSubtotal = 0;
+              var countedCards = [];
+              Array.from(cartRoot.querySelectorAll("div, li")).forEach(function(rowEl) {
+                if (countedCards.some(function(c) { return c.contains(rowEl) || rowEl.contains(c); })) return;
+                if (rowEl.closest && rowEl.closest(".v111-split-lines")) return;
+                var rText = (rowEl.textContent || "").trim();
+                if (
+                  rText.indexOf("الإجمالي") !== -1 ||
+                  rText.indexOf("المجموع") !== -1 ||
+                  rText.indexOf("التوصيل") !== -1 ||
+                  rText.indexOf("إتمام الطلب") !== -1
+                ) {
+                  return;
+                }
+                var priceNodes = Array.from(rowEl.querySelectorAll("span, strong, b, p, div")).filter(function(el) {
+                  if (el.children.length > 0) return false;
+                  if (el.closest && el.closest(".v111-split-lines")) return false;
+                  var t = (el.textContent || "").trim();
+                  return t.indexOf("ر.ي") !== -1 && /\d/.test(t) && t.indexOf(":") === -1;
+                });
+                var hasQtyButtons = rowEl.querySelectorAll("button").length >= 2;
+                if (hasQtyButtons && priceNodes.length > 0 && rText.length < 350) {
+                  var lastP = (priceNodes[priceNodes.length - 1].textContent || "").trim();
+                  var mNum = lastP.match(/([\d,]+)\s*ر\.ي/);
+                  if (mNum && mNum[1]) {
+                    var val = parseInt(mNum[1].replace(/,/g, ""), 10);
+                    if (!isNaN(val) && val > 0) {
+                      computedSubtotal += val;
+                      countedCards.push(rowEl);
+                    }
+                  }
+                }
+              });
+
+              if (computedSubtotal > 0) {
+                window.__v108ComputedCartSubtotal = computedSubtotal;
+              }
+            }
+          }
+
+          var savedSub = Number(window.__v108ComputedCartSubtotal || 0);
+          if (savedSub > 0) {
+            updateSummaryTotalsOnPage(savedSub);
+          }
+        }
+
+        function updateSummaryTotalsOnPage(correctSubtotal) {
+          var fmtSub = correctSubtotal.toLocaleString("en-US");
+          var deliveryFee = 0;
+
+          var allContainers = Array.from(document.querySelectorAll("div, li, p, section"));
+          allContainers.forEach(function(c) {
+            var txt = (c.textContent || "").trim();
+            if ((txt.indexOf("رسوم التوصيل") !== -1 || txt.indexOf("سعر التوصيل") !== -1) && txt.length < 90) {
+              var mDel = txt.match(/([\d,]+)\s*ر\.ي/);
+              if (mDel && mDel[1]) {
+                var dVal = parseInt(mDel[1].replace(/,/g, ""), 10);
+                if (!isNaN(dVal) && dVal >= 0 && dVal < 10000) {
+                  deliveryFee = dVal;
+                }
+              }
+            }
+          });
+
+          allContainers.forEach(function(c) {
+            if (c.children.length > 5) return;
+            var txt = (c.textContent || "").trim();
+            if (txt.length > 110 || txt.indexOf("ر.ي") === -1) return;
+
+            var isSubtotalRow =
+              txt.indexOf("المجموع الفرعي") !== -1 ||
+              txt.indexOf("مجموع المنتجات") !== -1 ||
+              txt.indexOf("قيمة المنتجات") !== -1 ||
+              txt.indexOf("إجمالي السلة") !== -1 ||
+              (txt.indexOf("المجموع") !== -1 && txt.indexOf("الكلي") === -1 && txt.indexOf("النهائي") === -1);
+
+            var isGrandTotalRow =
+              txt.indexOf("الإجمالي الكلي") !== -1 ||
+              txt.indexOf("الإجمالي النهائي") !== -1 ||
+              txt.indexOf("المبلغ الإجمالي") !== -1 ||
+              (txt.indexOf("الإجمالي") !== -1 && txt.indexOf("سلة") === -1 && txt.indexOf("منتجات") === -1);
+
+            if (isSubtotalRow || isGrandTotalRow) {
+              var targetVal = isGrandTotalRow && deliveryFee > 0 ? (correctSubtotal + deliveryFee) : correctSubtotal;
+              var fmtTarget = targetVal.toLocaleString("en-US");
+
+              var priceLeaves = Array.from(c.querySelectorAll("span, strong, b, p, div")).filter(function(el) {
+                if (el.children.length > 0) return false;
+                var t = (el.textContent || "").trim();
+                return t.indexOf("ر.ي") !== -1 && /\d/.test(t);
+              });
+
+              priceLeaves.forEach(function(pEl) {
+                var oldT = (pEl.textContent || "").trim();
+                var newT = oldT.replace(/[\d,]+(?=\s*ر\.ي)/, fmtTarget);
+                setLeafTextSafe(pEl, newT);
+              });
+            }
+          });
+
+          var buttons = Array.from(document.querySelectorAll("button, a"));
+          buttons.forEach(function(btn) {
+            var bTxt = (btn.textContent || "").trim();
+            if (
+              (bTxt.indexOf("إتمام الطلب") !== -1 ||
+                bTxt.indexOf("تأكيد الطلب") !== -1 ||
+                bTxt.indexOf("عرض السلة") !== -1 ||
+                bTxt.indexOf("الدفع") !== -1) &&
+              bTxt.indexOf("ر.ي") !== -1 &&
+              /\d/.test(bTxt)
+            ) {
+              var targetBtnVal = (bTxt.indexOf("تأكيد") !== -1 && deliveryFee > 0)
+                ? (correctSubtotal + deliveryFee)
+                : correctSubtotal;
+              var fmtBtn = targetBtnVal.toLocaleString("en-US");
+
+              var btnLeaves = Array.from(btn.querySelectorAll("span, strong, b, div")).filter(function(el) {
+                return el.children.length === 0 && (el.textContent || "").indexOf("ر.ي") !== -1 && /\d/.test(el.textContent || "");
+              });
+              if (btnLeaves.length > 0) {
+                btnLeaves.forEach(function(l) {
+                  setLeafTextSafe(l, (l.textContent || "").replace(/[\d,]+(?=\s*ر\.ي)/, fmtBtn));
+                });
+              } else if (btn.children.length === 0) {
+                setLeafTextSafe(btn, bTxt.replace(/[\d,]+(?=\s*ر\.ي)/, fmtBtn));
+              }
+            }
+          });
+        }
+
+        function attachAdminAddInvoiceItemV99() {
+          if (window.location.pathname.indexOf("/admin") === -1) return;
+          var tables = Array.from(document.querySelectorAll("table"));
+          tables.forEach(function(tbl) {
+            var headers = (tbl.textContent || "");
+            if (headers.indexOf("الصنف") === -1 && headers.indexOf("المنتج") === -1) return;
+
+            var rows = Array.from(tbl.querySelectorAll("tbody tr"));
+            rows.forEach(function(tr) {
+              if (tr.getAttribute("data-v111-split") === "1") return;
+              var cells = Array.from(tr.querySelectorAll("td"));
+              if (cells.length < 3) return;
+              var nameCell = cells[0];
+              var rawName = (nameCell.textContent || "").trim();
+              var segments = parseVariantSegmentsFromText(rawName);
+              if (segments.length > 1) {
+                tr.setAttribute("data-v111-split", "1");
+                var baseTitle = rawName.replace(/\s*\([^()]*\)\s*$/g, "").trim() || rawName;
+                segments.forEach(function(seg, sIdx) {
+                  var segTitle = baseTitle + " (" + seg.name + ":" + seg.price + ")";
+                  var segTotal = seg.price * (seg.qty || 1);
+                  if (sIdx === 0) {
+                    nameCell.textContent = segTitle;
+                    cells.forEach(function(c, cIdx) {
+                      if (cIdx === 0) return;
+                      var ct = (c.textContent || "").trim();
+                      if (/^\d+$/.test(ct)) c.textContent = String(seg.qty || 1);
+                      else if (ct.indexOf("ر.ي") !== -1) c.textContent = segTotal.toLocaleString("en-US") + " ر.ي";
+                    });
+                  } else {
+                    var cloneTr = tr.cloneNode(true);
+                    var cloneCells = Array.from(cloneTr.querySelectorAll("td"));
+                    if (cloneCells[0]) cloneCells[0].textContent = segTitle;
+                    cloneCells.forEach(function(c, cIdx) {
+                      if (cIdx === 0) return;
+                      var ct = (c.textContent || "").trim();
+                      if (/^\d+$/.test(ct)) c.textContent = String(seg.qty || 1);
+                      else if (ct.indexOf("ر.ي") !== -1) c.textContent = segTotal.toLocaleString("en-US") + " ر.ي";
+                    });
+                    tr.parentElement.insertBefore(cloneTr, tr.nextSibling);
+                  }
+                });
+              }
+            });
+
+            if (tbl.parentElement && tbl.parentElement.querySelector(".v99-add-item-box")) return;
+            var container = tbl.parentElement;
+            if (!container) return;
+
+            var pageText = document.body.textContent || "";
+            var orderIdMatch = pageText.match(/طلب\s*#?\s*(\d+)/) || pageText.match(/#(\d+)/);
+            if (!orderIdMatch) return;
+            var currentOrderId = parseInt(orderIdMatch[1], 10);
+            if (!currentOrderId) return;
+
+            var box = document.createElement("div");
+            box.className = "v99-add-item-box";
+            box.style.cssText = "margin-top:12px;padding:12px;border:2px dashed #15803d;border-radius:12px;background:#f0fdf4;direction:rtl;";
+            box.innerHTML =
+              '<div style="font-weight:800;color:#14532d;margin-bottom:8px;font-size:0.9rem;">➕ إضافة صنف جديد لهذه الفاتورة (طلب #' + currentOrderId + ')</div>' +
+              '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">' +
+              '<input type="text" class="v99-item-name" placeholder="اسم الصنف (مثال: لبن المراعي (كبير:1000))" style="flex:2;min-width:160px;padding:8px 10px;border:1px solid #86efac;border-radius:8px;font-size:0.85rem;" />' +
+              '<input type="number" class="v99-item-qty" placeholder="الكمية" value="1" min="1" style="width:75px;padding:8px;border:1px solid #86efac;border-radius:8px;font-size:0.85rem;" />' +
+              '<input type="number" class="v99-item-price" placeholder="السعر (ر.ي)" style="width:110px;padding:8px;border:1px solid #86efac;border-radius:8px;font-size:0.85rem;" />' +
+              '<button type="button" class="v99-item-submit" style="padding:8px 16px;background:#15803d;color:#fff;border:none;border-radius:8px;font-weight:800;cursor:pointer;font-size:0.85rem;">إضافة للفاتورة</button>' +
+              '</div>';
+
+            container.appendChild(box);
+            var btn = box.querySelector(".v99-item-submit");
+            btn.addEventListener("click", function() {
+              var customName = box.querySelector(".v99-item-name").value.trim();
+              var qty = parseInt(box.querySelector(".v99-item-qty").value || "1", 10);
+              var price = parseFloat(box.querySelector(".v99-item-price").value || "0");
+              if (!customName) {
+                alert("يرجى كتابة اسم الصنف");
+                return;
+              }
+              btn.disabled = true;
+              btn.textContent = "جاري الإضافة...";
+              fetch("/api/admin/order-add-item", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  orderId: currentOrderId,
+                  customName: customName,
+                  quantity: Math.max(1, qty),
+                  unitPrice: Math.max(0, price)
+                })
+              })
+                .then(function(r) { return r.json(); })
+                .then(function(res) {
+                  if (res && res.ok) {
+                    window.location.reload();
+                  } else {
+                    alert("حدث خطأ: " + (res && res.error ? res.error : "تعذر الحفظ"));
+                    btn.disabled = false;
+                    btn.textContent = "إضافة للفاتورة";
+                  }
+                })
+                .catch(function() {
+                  btn.disabled = false;
+                  btn.textContent = "إضافة للفاتورة";
+                });
+            });
+          });
+        }
+
+        function runAllSyncV117() {
+          try {
+            cleanProductIdNumberInDom();
+            syncVariantModalPrice();
+            syncCartDrawerPricesAndTotals();
+            attachAdminAddInvoiceItemV99();
+            upgradeProductSmartModalV112();
+            enhanceChatBubblesSafelyV117();
+            ensureDedicatedAiSidebarItemV114();
+            attachProductModalAiFieldsV112();
+          } catch (e) {}
+        }
+
+        refreshStudioDataV114(true);
+        setInterval(refreshStudioDataV114, 5000);
+        setInterval(function() { if (document.visibilityState === 'visible') pollCustomerNotificationsV112(); }, 25000);
+        setInterval(runAllSyncV117, 260);
+        document.addEventListener("click", function() {
+          setTimeout(runAllSyncV117, 40);
+          setTimeout(runAllSyncV117, 180);
+          setTimeout(runAllSyncV117, 450);
+        }, true);
+      })();
+    </script>
+
+  <script id="v130-standalone-engine">
+(function() {
+if (typeof window === "undefined" || typeof document === "undefined") return;
+try {
+if ("caches" in window && localStorage.getItem("original_v130_purged") !== "1") {
+localStorage.setItem("original_v130_purged", "1");
+caches.keys().then(function(ks) { ks.forEach(function(k) { caches.delete(k); }); });
+if (navigator.serviceWorker) {
+navigator.serviceWorker.getRegistrations().then(function(rs) { rs.forEach(function(r) { r.update(); }); });
+}
+}
+} catch (e) {}
+function getBtnTextNodesV130(btn) {
+var nodes = [];
+if (!btn) return nodes;
+var tw = document.createTreeWalker(btn, NodeFilter.SHOW_TEXT, null);
+var n;
+while ((n = tw.nextNode())) {
+if (n.parentElement && n.parentElement.closest && n.parentElement.closest("svg")) continue;
+nodes.push(n);
+}
+return nodes;
+}
+function getCleanBtnTextV130(btn) {
+return getBtnTextNodesV130(btn).map(function(n) { return n.nodeValue || ""; }).join("").replace(/[✓✔]/g, "").replace(/\s+/g, " ").trim();
+}
+function setCleanBtnTextV130(btn, newText) {
+var nodes = getBtnTextNodesV130(btn);
+if (nodes.length === 0) return;
+var joined = nodes.map(function(n) { return n.nodeValue || ""; }).join("").replace(/\s+/g, " ").trim();
+if (joined === newText.trim()) return;
+nodes[0].nodeValue = " " + newText.trim() + " ";
+for (var i = 1; i < nodes.length; i++) {
+if (nodes[i].nodeValue !== "") nodes[i].nodeValue = "";
+}
+}
+function parseOptV130(raw) {
+var clean = String(raw || "").replace(/[✓✔]/g, "").replace(/\s+/g, " ").trim();
+var parts = clean.split(":");
+if (parts.length < 2) return null;
+var optName = parts[0].trim();
+var pm = parts[1].trim().match(/(\d+(?:\.\d+)?)/);
+if (!pm || !pm[1]) return null;
+var p = parseFloat(pm[1]);
+if (isNaN(p) || p <= 0) return null;
+var stock = null;
+if (parts.length >= 3 && parts[2].trim() !== "") {
+var sm = parts[2].trim().match(/^(-?\d+)/);
+if (sm) stock = parseInt(sm[1], 10);
+}
+var isOut = (stock !== null && stock <= 0);
+var rawFull = stock !== null ? (optName + ":" + p + ":" + stock) : (optName + ":" + p);
+return { raw: rawFull, priceRaw: optName + ":" + p, optName: optName, unitPrice: p, stock: stock, isOut: isOut };
+}
+function isOptSelectedDomV130(b) {
+if (!b) return false;
+var st = window.getComputedStyle(b);
+var bg = st.backgroundColor || "";
+if (bg && bg !== "transparent" && bg.indexOf("rgba(0, 0, 0, 0)") === -1 && bg.indexOf("rgba(0,0,0,0)") === -1) {
+var rgb = bg.match(/\d+(\.\d+)?/g);
+if (rgb && rgb.length >= 3) {
+var r = parseFloat(rgb[0]), g = parseFloat(rgb[1]), bl = parseFloat(rgb[2]);
+var a = rgb.length >= 4 ? parseFloat(rgb[3]) : 1;
+if (a > 0.5 && r < 95 && g >= 30 && g < 175 && bl < 125 && g > r) return true;
+}
+}
+var fg = (st.color || "").match(/\d+/g);
+if (fg && fg.length >= 3 && Number(fg[0]) > 210 && Number(fg[1]) > 210 && Number(fg[2]) > 210) return true;
+if (b.querySelector("svg")) return true;
+var cls = b.className || "";
+return typeof cls === "string" && (cls.indexOf("selected") !== -1 || cls.indexOf("active") !== -1);
+}
+function readQtyFromBoxV130(container, excludeBtns) {
+var cBtns = Array.from(container.querySelectorAll("button"));
+for (var i = 0; i < cBtns.length; i++) {
+var qb = cBtns[i];
+if (excludeBtns && excludeBtns.indexOf(qb) !== -1) continue;
+var qbt = (qb.textContent || "").trim();
+var isStep = qbt === "+" || qbt === "＋" || qbt === "-" || qbt === "−" || qbt === "–" || qb.innerHTML.indexOf("M5 12h14") !== -1 || qb.innerHTML.indexOf("lucide-plus") !== -1 || qb.innerHTML.indexOf("lucide-minus") !== -1;
+if (isStep && qb.parentElement) {
+var box = qb.parentElement;
+for (var up = 0; up < 2 && box && box !== container; up++) {
+var inp = box.querySelector("input");
+if (inp && /^\d+$/.test((inp.value || "").trim())) return Math.max(1, parseInt(inp.value.trim(), 10));
+var tw = document.createTreeWalker(box, NodeFilter.SHOW_TEXT, null);
+var tn;
+while ((tn = tw.nextNode())) {
+var pe = tn.parentElement;
+if (pe && pe.closest && (pe.closest("button") || pe.closest("svg"))) continue;
+var sv = (tn.nodeValue || "").trim();
+if (/^\d+$/.test(sv)) return Math.max(1, parseInt(sv, 10));
+}
+box = box.parentElement;
+}
+}
+}
+return 1;
+}
+window.__readCartRowQtyV130 = readQtyFromBoxV130;
+function showToastV130(msg) {
+var old = document.getElementById("v130-stock-toast");
+if (old) old.remove();
+var t = document.createElement("div");
+t.id = "v130-stock-toast";
+t.textContent = msg;
+t.style.cssText = "position:fixed;bottom:85px;left:50%;transform:translateX(-50%);background:#991b1b;color:#fff;padding:10px 18px;border-radius:12px;font-weight:800;font-size:0.88rem;z-index:999999;box-shadow:0 8px 24px rgba(0,0,0,0.25);direction:rtl;text-align:center;max-width:90vw;";
+document.body.appendChild(t);
+setTimeout(function() { if (t.parentNode) t.remove(); }, 2600);
+}
+function syncBoxV130(container, addBtn, isDetail) {
+if (!container || !addBtn) return;
+var cBtns = Array.from(container.querySelectorAll("button"));
+var optBtns = cBtns.filter(function(b) {
+if (b === addBtn) return false;
+var t = getCleanBtnTextV130(b);
+if (t === "+" || t === "＋" || t === "-" || t === "−" || t === "–" || t === "×" || t === "✕") return false;
+return t.indexOf(":") !== -1 || b.hasAttribute("data-raw-opt");
+});
+if (optBtns.length === 0) return;
+optBtns.forEach(function(b) {
+var curT = getCleanBtnTextV130(b);
+if (!b.hasAttribute("data-raw-opt") && curT.indexOf(":") !== -1) b.setAttribute("data-raw-opt", curT);
+var parsed = parseOptV130(b.getAttribute("data-raw-opt") || curT);
+if (parsed) {
+setCleanBtnTextV130(b, parsed.optName);
+if (parsed.isOut) {
+b.setAttribute("data-v130-out", "1");
+if (b.getAttribute("data-v127-opt-price") !== "غير متوفر حالياً") b.setAttribute("data-v127-opt-price", "غير متوفر حالياً");
+} else {
+b.removeAttribute("data-v130-out");
+var pAttr = parsed.unitPrice.toLocaleString("en-US") + " ريال" + (parsed.stock !== null ? (" · متوفر " + parsed.stock) : "");
+if (b.getAttribute("data-v127-opt-price") !== pAttr) b.setAttribute("data-v127-opt-price", pAttr);
+}
+}
+});
+if (!container.hasAttribute("data-v130-init-avail")) {
+container.setAttribute("data-v130-init-avail", "1");
+var firstP = parseOptV130(optBtns[0].getAttribute("data-raw-opt") || "");
+if (firstP && firstP.isOut) {
+var firstAvail = optBtns.find(function(b) { var p = parseOptV130(b.getAttribute("data-raw-opt") || ""); return p && !p.isOut; });
+if (firstAvail) {
+optBtns.forEach(function(s) { s.removeAttribute("data-v129-sel"); });
+firstAvail.setAttribute("data-v129-sel", "1");
+setTimeout(function() { try { firstAvail.click(); } catch (e) {} }, 0);
+}
+}
+}
+var userSel = optBtns.find(function(b) { return b.getAttribute("data-v129-sel") === "1"; });
+var domSel = optBtns.find(function(b) { return isOptSelectedDomV130(b); });
+var activeBtn = userSel || domSel || optBtns[0];
+if (!activeBtn) return;
+var parsedSel = parseOptV130(activeBtn.getAttribute("data-raw-opt") || getCleanBtnTextV130(activeBtn));
+if (!parsedSel) return;
+window.__v128ActiveVariant = parsedSel.raw;
+var unitPrice = parsedSel.unitPrice;
+var qty = readQtyFromBoxV130(container, [addBtn].concat(optBtns));
+if (!parsedSel.isOut && parsedSel.stock !== null && qty > parsedSel.stock) qty = parsedSel.stock;
+var totalPrice = Math.round(unitPrice * qty);
+var unitStr = unitPrice.toLocaleString("en-US");
+var totalStr = totalPrice.toLocaleString("en-US");
+var twAll = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
+var tNodes = [], tn;
+while ((tn = twAll.nextNode())) {
+var pEl = tn.parentElement;
+if (!pEl || pEl === addBtn || addBtn.contains(pEl)) continue;
+if (optBtns.some(function(ob) { return ob === pEl || ob.contains(pEl); })) continue;
+tNodes.push(tn);
+}
+for (var i = 0; i < tNodes.length; i++) {
+var cv = tNodes[i].nodeValue || "";
+var nv = (i + 1 < tNodes.length) ? (tNodes[i + 1].nodeValue || "") : "";
+if (/\d[\d,.]*\s*(?:ر\.ي|ريال)/.test(cv)) {
+var rv = cv.replace(/\d[\d,.]*(?=\s*(?:ر\.ي|ريال))/, unitStr);
+if (cv !== rv) tNodes[i].nodeValue = rv;
+} else if (/^\s*\d[\d,.]*\s*$/.test(cv) && /^\s*(?:ر\.ي|ريال)/.test(nv)) {
+if (cv.trim() !== unitStr) tNodes[i].nodeValue = unitStr;
+}
+}
+if (parsedSel.isOut) {
+addBtn.setAttribute("data-v130-btn-disabled", "1");
+setCleanBtnTextV130(addBtn, "«" + parsedSel.optName + "» غير متوفر حالياً");
+if (addBtn.getAttribute("data-v127-btn-price") !== "نفدت الكمية") addBtn.setAttribute("data-v127-btn-price", "نفدت الكمية");
+} else {
+addBtn.removeAttribute("data-v130-btn-disabled");
+var descTxt = isDetail ? ("أضف «" + parsedSel.optName + "» للسلة") : ("إضافة «" + parsedSel.optName + "» للسلة");
+setCleanBtnTextV130(addBtn, descTxt);
+var bPrice = totalStr + " ريال";
+if (addBtn.getAttribute("data-v127-btn-price") !== bPrice) addBtn.setAttribute("data-v127-btn-price", bPrice);
+}
+}
+function findCartRowCardsV130() {
+var remBtns = Array.from(document.querySelectorAll("button")).filter(function(b) {
+return b.offsetParent !== null && (b.textContent || "").indexOf("إزالة") !== -1 && (b.textContent || "").indexOf("الصورة") === -1;
+});
+var rows = [];
+remBtns.forEach(function(remBtn, idx) {
+var rc = remBtn.parentElement;
+while (rc && rc.parentElement && rc.parentElement !== document.body) {
+var pt = rc.parentElement.textContent || "";
+if (pt.indexOf("إفراغ السلة") !== -1 || pt.indexOf("ملخص الطلب") !== -1) break;
+var pRem = Array.from(rc.parentElement.querySelectorAll("button")).filter(function(b) {
+return (b.textContent || "").indexOf("إزالة") !== -1 && (b.textContent || "").indexOf("الصورة") === -1;
+}).length;
+if (pRem > 1) break;
+rc = rc.parentElement;
+}
+if (rc) {
+rc.setAttribute("data-v130-cart-row", String(idx));
+rows.push({ rowCard: rc, remBtn: remBtn, idx: idx });
+}
+});
+return rows;
+}
+function syncCartStorageV130(nextArr) {
+try {
+for (var i = 0; i < localStorage.length; i++) {
+var k = localStorage.key(i);
+if (!k || k.indexOf("v11") !== -1 || k.indexOf("v12") !== -1 || k.indexOf("v13") !== -1) continue;
+var raw = localStorage.getItem(k);
+if (raw && raw.charAt(0) === "[") {
+var parsed = JSON.parse(raw);
+if (Array.isArray(parsed) && (parsed.length === 0 || (parsed[0] && (parsed[0].productId !== undefined || parsed[0].quantity !== undefined)))) {
+localStorage.setItem(k, JSON.stringify(nextArr));
+}
+}
+}
+} catch (e) {}
+}
+window.__runV129Sync = function() {
+try {
+if (!document.getElementById("v130-variant-gold-styles")) {
+var st = document.createElement("style");
+st.id = "v130-variant-gold-styles";
+st.textContent =
+"button { touch-action: manipulation !important; } button svg, button path { pointer-events: none !important; }" +
+"button[data-v127-opt-price] { display: inline-flex !important; flex-direction: column !important; align-items: center !important; justify-content: center !important; gap: 3px !important; line-height: 1.25 !important; }" +
+"button[data-v127-opt-price]:not([data-v130-out='1'])::after { content: attr(data-v127-opt-price); color: #d4af37 !important; font-weight: 900 !important; font-size: 0.90em !important; direction: rtl !important; display: block !important; }" +
+"button[data-v130-out='1'] { opacity: 0.78 !important; border: 1.5px dashed #ef4444 !important; }" +
+"button[data-v130-out='1']::after { content: attr(data-v127-opt-price); color: #ef4444 !important; background: #fef2f2 !important; padding: 1px 7px !important; border-radius: 99px !important; font-weight: 900 !important; font-size: 0.80em !important; direction: rtl !important; display: inline-block !important; }" +
+"button[data-v127-btn-price] { direction: rtl !important; display: inline-flex !important; flex-direction: row !important; align-items: center !important; justify-content: center !important; gap: 8px !important; flex-wrap: wrap !important; color: #ffffff !important; }" +
+"button[data-v127-btn-price]:not([data-v130-btn-disabled='1'])::after { content: attr(data-v127-btn-price); color: #d4af37 !important; font-weight: 900 !important; font-size: 1.02em !important; direction: rtl !important; display: inline-block !important; }" +
+"button[data-v130-btn-disabled='1'] { background: #6b7280 !important; border-color: #6b7280 !important; cursor: not-allowed !important; opacity: 0.92 !important; }" +
+"button[data-v130-btn-disabled='1']::after { content: attr(data-v127-btn-price); color: #fecaca !important; font-weight: 900 !important; font-size: 0.92em !important; }";
+document.head.appendChild(st);
+}
+if (window.location.pathname.indexOf("/admin") !== -1) {
+var badge = Array.from(document.querySelectorAll("span, div, strong")).find(function(el) {
+return el.children.length === 0 && (el.textContent || "").indexOf("عدد الخيارات المضافة:") !== -1;
+});
+if (badge) {
+var cm = (badge.textContent || "").match(/:\s*(\d+)/);
+var vCount = cm && cm[1] ? parseInt(cm[1], 10) : 0;
+var fBox = badge.parentElement;
+while (fBox && fBox !== document.body && fBox.querySelectorAll("input").length < 3) fBox = fBox.parentElement;
+if (fBox) {
+Array.from(fBox.querySelectorAll("label, span, div, strong")).forEach(function(lbl) {
+var lt = (lbl.textContent || "").trim();
+if (lbl.children.length === 0 && (lt.indexOf("السعر بالريال") !== -1 || lt.indexOf("السعر الافتراضي (مُلغى") !== -1)) {
+var wrap = lbl.parentElement;
+var inp = wrap ? wrap.querySelector("input") : null;
+if (!inp && wrap && wrap.parentElement) inp = wrap.parentElement.querySelector("input[type='number'], input[placeholder='0']");
+if (inp && inp.id !== "admin-inline-var-price" && inp.id !== "admin-inline-var-stock") {
+if (vCount > 0) {
+if (inp.value !== "") { inp.value = ""; inp.dispatchEvent(new Event("input", { bubbles: true })); }
+inp.disabled = true;
+inp.placeholder = "مُلغى تلقائياً — تُعتمد أسعار الجدول بالأسفل";
+} else if (inp.disabled) {
+inp.disabled = false;
+inp.placeholder = "0";
+}
+}
+}
+});
+}
+}
+}
+var btns = Array.from(document.querySelectorAll("button"));
+btns.filter(function(b) {
+var t = b.textContent || "";
+return t.indexOf("مجدداً") === -1 && (b.hasAttribute("data-v127-modal-add") || t.indexOf("إضافة إلى السلة") !== -1 || (t.indexOf("إضافة «") !== -1 && t.indexOf("للسلة") !== -1) || b.hasAttribute("data-v130-btn-disabled"));
+}).forEach(function(addBtn) {
+addBtn.setAttribute("data-v127-modal-add", "1");
+var modal = addBtn.parentElement;
+for (var u = 0; u < 6 && modal && modal.parentElement && modal.parentElement !== document.body; u++) {
+var mt = modal.textContent || "";
+var hasV = Array.from(modal.querySelectorAll("button")).some(function(b) { return b !== addBtn && (b.hasAttribute("data-raw-opt") || (b.textContent || "").indexOf(":") !== -1); });
+if (hasV && (mt.indexOf("ر.ي") !== -1 || mt.indexOf("ريال") !== -1) && mt.indexOf("/") !== -1) break;
+modal = modal.parentElement;
+}
+if (modal) syncBoxV130(modal, addBtn, false);
+});
+btns.filter(function(b) {
+if (b.hasAttribute("data-v127-modal-add")) return false;
+var t = b.textContent || "";
+return b.hasAttribute("data-v127-detail-add") || (t.indexOf("أضف «") !== -1 && t.indexOf("للسلة") !== -1);
+}).forEach(function(dBtn) {
+var card = dBtn.parentElement, found = null;
+for (var u = 0; u < 7 && card && card !== document.body; u++) {
+var dt = card.textContent || "";
+var hasV = dt.indexOf("اختر النوع") !== -1 || Array.from(card.querySelectorAll("button")).some(function(b) { return b !== dBtn && (b.hasAttribute("data-raw-opt") || (b.textContent || "").indexOf(":") !== -1); });
+if (hasV && (dt.indexOf("ر.ي") !== -1 || dt.indexOf("ريال") !== -1) && dt.indexOf("/") !== -1) { found = card; break; }
+card = card.parentElement;
+}
+if (found) { dBtn.setAttribute("data-v127-detail-add", "1"); syncBoxV130(found, dBtn, true); }
+});
+findCartRowCardsV130();
+} catch (e) {}
+};
+if (!window.__v130Bound) {
+window.__v130Bound = true;
+document.addEventListener("click", function(ev) {
+try {
+var btn = ev.target && ev.target.closest ? ev.target.closest("button") : null;
+if (btn) {
+if (btn.getAttribute("data-v130-btn-disabled") === "1") {
+ev.stopPropagation();
+ev.preventDefault();
+showToastV130("عذراً، هذا الخيار غير متوفر حالياً — يرجى اختيار نوع آخر متوفر");
+return;
+}
+var raw = btn.getAttribute("data-raw-opt") || getCleanBtnTextV130(btn);
+if (raw.indexOf(":") !== -1) {
+window.__v128ActiveVariant = raw;
+var grp = (btn.parentElement && btn.parentElement.parentElement) || btn.parentElement;
+if (grp) Array.from(grp.querySelectorAll("button")).forEach(function(s) { s.removeAttribute("data-v129-sel"); });
+btn.setAttribute("data-v129-sel", "1");
+}
+var cartRows = findCartRowCardsV130();
+if (cartRows.length > 0) {
+var matchedRow = null;
+for (var r = 0; r < cartRows.length; r++) {
+if (cartRows[r].rowCard.contains(btn)) { matchedRow = cartRows[r]; break; }
+}
+if (matchedRow) {
+var bTxt = (btn.textContent || "").trim();
+var isRem = (btn === matchedRow.remBtn) || bTxt.indexOf("إزالة") !== -1;
+var isPlus = !isRem && (bTxt === "+" || bTxt === "＋" || btn.innerHTML.indexOf("lucide-plus") !== -1 || (btn.innerHTML.indexOf("M5 12h14") !== -1 && btn.innerHTML.indexOf("M12 5v14") !== -1));
+var isMinus = !isRem && !isPlus && (bTxt === "-" || bTxt === "−" || bTxt === "–" || btn.innerHTML.indexOf("lucide-minus") !== -1 || (btn.innerHTML.indexOf("M5 12h14") !== -1 && btn.innerHTML.indexOf("M12 5v14") === -1));
+if ((isRem || isPlus || isMinus) && typeof window.__v130SetCartArray === "function" && Array.isArray(window.__v130CartArray)) {
+var targetIdx = matchedRow.idx;
+if (targetIdx >= 0 && targetIdx < window.__v130CartArray.length) {
+ev.stopPropagation();
+ev.preventDefault();
+window.__v130SetCartArray(function(prev) {
+if (!Array.isArray(prev) || targetIdx >= prev.length) return prev;
+var next = prev.slice();
+if (isRem) {
+next.splice(targetIdx, 1);
+} else if (isPlus) {
+var itemCopy = Object.assign({}, next[targetIdx]);
+var curQ = Math.max(1, Number(itemCopy.quantity || 1));
+var nm = String(itemCopy.name || itemCopy.variant || "");
+var sm = nm.match(/:\s*\d+(?:\.\d+)?\s*:\s*(\d+)/);
+var maxStock = sm && sm[1] ? parseInt(sm[1], 10) : null;
+if (maxStock !== null && curQ >= maxStock) {
+showToastV130("الكمية المتوفرة من هذا الخيار هي " + maxStock + " فقط");
+return prev;
+}
+itemCopy.quantity = curQ + 1;
+next[targetIdx] = itemCopy;
+} else if (isMinus) {
+var itemCopyM = Object.assign({}, next[targetIdx]);
+var curQM = Math.max(1, Number(itemCopyM.quantity || 1));
+if (curQM <= 1) next.splice(targetIdx, 1);
+else { itemCopyM.quantity = curQM - 1; next[targetIdx] = itemCopyM; }
+}
+window.__v130CartArray = next;
+if (next.length === 0) window.__v108ComputedCartSubtotal = 0;
+syncCartStorageV130(next);
+return next;
+});
+setTimeout(window.__runV129Sync, 15);
+setTimeout(window.__runV129Sync, 60);
+return;
+}
+}
+}
+}
+}
+} catch (e) {}
+window.__runV129Sync();
+setTimeout(window.__runV129Sync, 15);
+setTimeout(window.__runV129Sync, 60);
+setTimeout(window.__runV129Sync, 160);
+}, true);
+setInterval(window.__runV129Sync, 180);
+}
+})();
+</script>
+</body>
+</html>

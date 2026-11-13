@@ -103,7 +103,7 @@ async function startServer() {
       res.set("Content-Type", entry.contentType);
       res.set("X-Content-Type-Options", "nosniff");
       res.set("Content-Security-Policy", "default-src 'none'; sandbox");
-      res.set("Cache-Control", "public, max-age=31536000, immutable");
+      res.set("Cache-Control", "public, max-age=0, must-revalidate");
       return res.send(entry.buf);
     } catch {
       return res.status(500).end();
