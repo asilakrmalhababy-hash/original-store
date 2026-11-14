@@ -1,3 +1,4 @@
+import * as __aiBcastModV140 from "../ai_engine_v112";
 import mysqlV138 from "mysql2/promise";
 import * as __dbStatusModV137 from "../db";
 import { registerAiEngineV112 } from "../ai_engine_v112";
@@ -178,6 +179,121 @@ async function startServer() {
     }
   });
 // === ORIGINAL_DB_STATUS_V137_END ===
+  // === ORIGINAL_V140_ROUTES_START ===
+  const __v140Broadcasts: any[] = [];
+  let __v140LoadedFromDb = false;
+
+  async function __ensureV140Loaded() {
+    if (__v140LoadedFromDb) return;
+    __v140LoadedFromDb = true;
+    try {
+      const pool = (__dbStatusModV137 as any).getPool ? await (__dbStatusModV137 as any).getPool() : null;
+      if (!pool) return;
+      const [rows]: any = await pool.query(
+        "SELECT `value` FROM store_settings WHERE `key` = 'v140_broadcast_history' LIMIT 1"
+      );
+      if (Array.isArray(rows) && rows[0] && rows[0].value) {
+        const parsed = JSON.parse(String(rows[0].value));
+        if (Array.isArray(parsed)) {
+          for (const item of parsed.slice(-30)) {
+            __v140Broadcasts.push(item);
+          }
+        }
+      }
+    } catch (_e) {}
+  }
+
+  app.post("/api/v140/admin-broadcast", express.json(), async (req: any, res: any) => {
+    try {
+      await __ensureV140Loaded();
+      const body = req.body || {};
+      const title = String(body.title || "متجر أورجنال").trim();
+      const message = String(body.body || body.message || "").trim();
+      const targetType = String(body.targetType || "all").trim();
+      const targetValue = String(body.targetValue || "").trim().replace(/^#/, "");
+      const url = String(body.url || "/").trim();
+
+      if (!message) {
+        return res.status(400).json({ ok: false, error: "يرجى كتابة نص الإشعار" });
+      }
+
+      const bcastItem = {
+        id: "bcast_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6),
+        title,
+        body: message,
+        targetType,
+        targetValue,
+        url,
+        createdAt: Date.now()
+      };
+      __v140Broadcasts.push(bcastItem);
+      if (__v140Broadcasts.length > 40) {
+        __v140Broadcasts.splice(0, __v140Broadcasts.length - 40);
+      }
+
+      // حفظ في قاعدة البيانات ليبقى محفوظاً
+      try {
+        const pool = (__dbStatusModV137 as any).getPool ? await (__dbStatusModV137 as any).getPool() : null;
+        if (pool) {
+          await pool.query(
+            "INSERT INTO store_settings (`key`, `value`) VALUES ('v140_broadcast_history', ?) ON DUPLICATE KEY UPDATE `value` = VALUES(`value`)",
+            [JSON.stringify(__v140Broadcasts.slice(-30))]
+          );
+        }
+      } catch (_e) {}
+
+      // إرسال Web Push فوري لهواتف الزبائن
+      let pushRes = { sent: 0, total: 0 };
+      if ((__aiBcastModV140 as any).sendCustomPushBroadcastV140) {
+        pushRes = await (__aiBcastModV140 as any).sendCustomPushBroadcastV140({
+          title,
+          body: message,
+          targetType,
+          targetValue,
+          url
+        });
+      }
+
+      return res.json({
+        ok: true,
+        broadcast: bcastItem,
+        pushSent: pushRes.sent,
+        pushTotal: pushRes.total
+      });
+    } catch (err: any) {
+      return res.status(500).json({ ok: false, error: err?.message || "خطأ في إرسال الإشعار" });
+    }
+  });
+
+  app.get("/api/v140/customer-feed", async (req: any, res: any) => {
+    try {
+      await __ensureV140Loaded();
+      const phone = String((req.query && req.query.phone) || "").trim();
+      const orderNum = String((req.query && req.query.order) || "").trim().replace(/^#/, "");
+      const since = Number((req.query && req.query.since) || 0);
+
+      const matched = __v140Broadcasts.filter((b) => {
+        if (!b || Number(b.createdAt || 0) <= since) return false;
+        if (b.targetType === "all" || !b.targetType) return true;
+        if (b.targetType === "phone" && b.targetValue) {
+          return phone && (phone.includes(b.targetValue) || b.targetValue.includes(phone));
+        }
+        if (b.targetType === "order" && b.targetValue) {
+          return orderNum && orderNum === String(b.targetValue).replace(/^#/, "");
+        }
+        return false;
+      });
+
+      return res.json({
+        ok: true,
+        notifications: matched.slice(-5),
+        recentHistory: __v140Broadcasts.slice(-10).reverse()
+      });
+    } catch (_e) {
+      return res.json({ ok: true, notifications: [], recentHistory: [] });
+    }
+  });
+// === ORIGINAL_V140_ROUTES_END ===
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   app.get("/api/health", (_req, res) => res.json({ status: "ok", ts: Date.now() }));

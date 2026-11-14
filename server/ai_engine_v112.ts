@@ -1538,3 +1538,87 @@ export async function savePushStoreToTiDBV139(): Promise<void> {
 
 setTimeout(() => { syncPushStoreFromTiDBV139(); }, 1500);
 // === ORIGINAL_DB_PUSH_PERSIST_V139_END ===
+
+
+// === ORIGINAL_BROADCAST_PUSH_V140_START ===
+import webpushV140 from "web-push";
+
+export async function sendCustomPushBroadcastV140(payload: {
+  title: string;
+  body: string;
+  targetType?: string;
+  targetValue?: string;
+  url?: string;
+}): Promise<{ sent: number; total: number }> {
+  let sent = 0;
+  let total = 0;
+  try {
+    if (typeof syncPushStoreFromTiDBV139 === "function") {
+      await syncPushStoreFromTiDBV139();
+    }
+    const storeFile = pathV139.resolve(process.cwd(), ".ai-v112-store.json");
+    if (!fsV139.existsSync(storeFile)) return { sent: 0, total: 0 };
+    const data = JSON.parse(fsV139.readFileSync(storeFile, "utf-8"));
+    if (data.vapidKeys && data.vapidKeys.publicKey && data.vapidKeys.privateKey) {
+      try {
+        webpushV140.setVapidDetails(
+          "mailto:admin@original-store.com",
+          data.vapidKeys.publicKey,
+          data.vapidKeys.privateKey
+        );
+      } catch (_e) {}
+    }
+
+    const allSubs: any[] = [];
+    const seen = new Set<string>();
+    for (const key of ["pushSubscriptions", "customerSubscriptions", "adminSubscriptions", "subscriptions"]) {
+      if (Array.isArray(data[key])) {
+        for (const item of data[key]) {
+          const sub = item && (item.subscription || item.sub || (item.endpoint ? item : null));
+          if (sub && sub.endpoint && !seen.has(sub.endpoint)) {
+            seen.add(sub.endpoint);
+            allSubs.push({
+              sub,
+              phone: String(item.phone || item.customerPhone || "").trim(),
+              orderNumber: String(item.orderNumber || item.orderId || "").trim(),
+              role: String(item.role || "")
+            });
+          }
+        }
+      }
+    }
+
+    const tType = String(payload.targetType || "all").trim();
+    const tVal = String(payload.targetValue || "").trim().replace(/^#/, "");
+
+    const pushJson = JSON.stringify({
+      title: payload.title || "متجر أورجنال",
+      body: payload.body || "",
+      icon: "/icon-orig-v139.png",
+      badge: "/icon-orig-v139.png",
+      url: payload.url || "/",
+      tag: "orig-bcast-" + Date.now()
+    });
+
+    for (const entry of allSubs) {
+      if (tType === "phone" && tVal) {
+        if (entry.phone && !entry.phone.includes(tVal) && !tVal.includes(entry.phone)) {
+          continue;
+        }
+      } else if (tType === "order" && tVal) {
+        if (entry.orderNumber && entry.orderNumber !== tVal) {
+          continue;
+        }
+      }
+      total += 1;
+      try {
+        await webpushV140.sendNotification(entry.sub, pushJson);
+        sent += 1;
+      } catch (_err) {}
+    }
+  } catch (err) {
+    console.warn("[BroadcastPushV140] warning:", err);
+  }
+  return { sent, total };
+}
+// === ORIGINAL_BROADCAST_PUSH_V140_END ===
