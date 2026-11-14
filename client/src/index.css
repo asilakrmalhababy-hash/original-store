@@ -2366,3 +2366,60 @@ html, body { overscroll-behavior-y: contain; -webkit-overflow-scrolling: touch; 
   pointer-events: auto !important;
   touch-action: manipulation;
 }
+
+
+/* ORIGINAL_ACCOUNT_CLEAN_REDESIGN_V1 */
+.original-account-page { gap: 13px !important; }
+.original-account-page > .page-title-row { display:none !important; }
+
+/* إخفاء حقن الولاء القديم نهائياً */
+#orig-vip-loyalty-section-v140 { display:none !important; }
+
+.original-account-card {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  gap: 13px !important;
+}
+.original-account-card-head {
+  background: linear-gradient(120deg,#174b36,#0b2b1d) !important;
+  border: 1.5px solid #d8b454 !important;
+  border-radius: 22px !important;
+  padding: 20px 16px !important;
+  min-height: 125px;
+  color: white !important;
+  box-shadow: 0 8px 22px rgba(11,43,29,.15) !important;
+}
+.original-account-identity { gap: 12px !important; }
+.original-account-identity h2 { color:#fff !important; font-size:18px !important; }
+.original-account-identity small { color:#e4eee7 !important; }
+.original-account-avatar {
+  width:58px !important;height:58px !important;
+  border:2px solid #d8b454 !important;border-radius:50% !important;
+  background:rgba(255,255,255,.12) !important;
+  color:#f4d98c !important;font-size:23px !important;
+}
+.original-account-edit-btn {
+  background:#fff !important;color:#174b36 !important;
+  border:1px solid #d8b454 !important;
+}
+.original-account-info-grid { grid-template-columns:1fr !important; gap:9px !important; }
+.original-account-info-box {
+  border:1px solid #e5e9e2 !important;border-radius:16px !important;
+  background:#fff !important;padding:13px 14px !important;
+}
+.original-account-shortcuts { grid-template-columns:repeat(2,minmax(0,1fr)) !important; gap:9px !important; }
+.original-account-shortcut {
+  min-height:54px !important;padding:12px !important;
+  border:1px solid #e6e9df !important;border-radius:16px !important;
+  background:#fff !important;box-shadow:0 3px 12px rgba(20,55,35,.045) !important;
+}
+.original-account-card .form-stack {
+  background:#fff !important;border-radius:17px !important;
+}
+.original-account-card > div[style*="grid"] { min-width:0; }
+@media(max-width:380px) {
+  .original-account-card-head { padding:15px 12px !important; }
+  .original-account-shortcut { font-size:11px !important;padding:9px !important; }
+}
