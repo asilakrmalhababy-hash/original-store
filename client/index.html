@@ -4679,10 +4679,11 @@ setInterval(window.__runV129Sync, 180);
 
 
 
-<!-- ORIGINAL_HOME_V150_START -->
+
+<!-- ORIGINAL_HOME_V151_START -->
 <style>
-  /* 1. تصميم الأقسام المربع (114x114) في الواجهة الرئيسية */
-  [data-orig-cat-row-v150="1"] {
+  /* 1. بطاقات الأقسام المربعة (114x114) في الواجهة الرئيسية */
+  [data-orig-cat-row-v151="1"] {
     display: flex !important;
     flex-direction: row !important;
     flex-wrap: nowrap !important;
@@ -4691,11 +4692,11 @@ setInterval(window.__runV129Sync, 180);
     padding: 4px 4px 10px 4px !important;
     scrollbar-width: none !important;
   }
-  [data-orig-cat-row-v150="1"]::-webkit-scrollbar {
+  [data-orig-cat-row-v151="1"]::-webkit-scrollbar {
     display: none !important;
   }
 
-  [data-orig-cat-card-v150="1"] {
+  [data-orig-cat-card-v151="1"] {
     position: relative !important;
     flex: 0 0 114px !important;
     width: 114px !important;
@@ -4717,8 +4718,8 @@ setInterval(window.__runV129Sync, 180);
     box-sizing: border-box !important;
   }
 
-  [data-orig-cat-card-v150="1"] > div:not(.orig-cat-label-v150),
-  [data-orig-cat-card-v150="1"] > span:not(.orig-cat-label-v150) {
+  [data-orig-cat-card-v151="1"] > div:not(.orig-cat-label-v151),
+  [data-orig-cat-card-v151="1"] > span:not(.orig-cat-label-v151) {
     position: relative !important;
     width: 100% !important;
     height: 100% !important;
@@ -4730,7 +4731,7 @@ setInterval(window.__runV129Sync, 180);
     background: transparent !important;
   }
 
-  [data-orig-cat-card-v150="1"] img {
+  [data-orig-cat-card-v151="1"] img {
     width: 100% !important;
     height: 100% !important;
     object-fit: cover !important;
@@ -4740,7 +4741,7 @@ setInterval(window.__runV129Sync, 180);
     margin: 0 !important;
   }
 
-  [data-orig-cat-card-v150="1"] .orig-cat-label-v150 {
+  [data-orig-cat-card-v151="1"] .orig-cat-label-v151 {
     position: absolute !important;
     bottom: 0 !important;
     left: 0 !important;
@@ -4761,40 +4762,39 @@ setInterval(window.__runV129Sync, 180);
     pointer-events: none !important;
   }
 
-  /* 2. شريط فلترة الأقسام في صفحة المنتجات: أبيض+ذهبي لغير المحدد، وأخضر+ذهبي للمحدد */
-  [data-orig-cat-pill-v150="inactive"] {
+  /* 2. شريط فلترة الأقسام في صفحة المنتجات */
+  [data-orig-cat-pill-v151="inactive"] {
     background: #ffffff !important;
     color: #b38422 !important;
     border: 1.5px solid #d8b454 !important;
   }
-  [data-orig-cat-pill-v150="inactive"] span,
-  [data-orig-cat-pill-v150="inactive"] div {
+  [data-orig-cat-pill-v151="inactive"] span,
+  [data-orig-cat-pill-v151="inactive"] div {
     color: #b38422 !important;
     font-weight: 800 !important;
   }
 
-  [data-orig-cat-pill-v150="active"] {
+  [data-orig-cat-pill-v151="active"] {
     background: linear-gradient(135deg, #165237 0%, #0b2b1d 100%) !important;
     color: #e7c972 !important;
     border: 1.5px solid #d8b454 !important;
   }
-  [data-orig-cat-pill-v150="active"] span,
-  [data-orig-cat-pill-v150="active"] div {
+  [data-orig-cat-pill-v151="active"] span,
+  [data-orig-cat-pill-v151="active"] div {
     color: #e7c972 !important;
     font-weight: 800 !important;
   }
 
-  /* 3. تقصير بطاقة المنتج: إخفاء كلمة الوحدة المنفردة الزائدة + وضع العداد بجانب السعر في نفس السطر */
-  [data-orig-compact-card-v150="1"] {
+  /* 3. تقصير بطاقة المنتج: وضع عداد الكمية بجانب السعر في نفس السطر */
+  [data-orig-compact-card-v151="1"] {
     padding: 8px !important;
   }
-  [data-orig-hide-unit-line-v150="1"],
-  [data-orig-hidden-plus-v150="1"] {
+  [data-orig-hide-unit-line-v151="1"],
+  [data-orig-hidden-plus-v151="1"] {
     display: none !important;
   }
 
-  /* عداد الكمية المدمج بجانب السعر في نفس السطر */
-  .orig-inline-qty-v150 {
+  .orig-inline-qty-v151 {
     display: inline-flex !important;
     align-items: center !important;
     justify-content: space-between !important;
@@ -4808,7 +4808,7 @@ setInterval(window.__runV129Sync, 180);
     direction: rtl !important;
     flex-shrink: 0 !important;
   }
-  .orig-inline-qty-v150 button {
+  .orig-inline-qty-v151 button {
     width: 22px !important;
     height: 22px !important;
     border: none !important;
@@ -4823,7 +4823,7 @@ setInterval(window.__runV129Sync, 180);
     box-shadow: 0 1px 2px rgba(0,0,0,0.08) !important;
     touch-action: manipulation !important;
   }
-  .orig-inline-qty-v150 input {
+  .orig-inline-qty-v151 input {
     width: 28px !important;
     border: none !important;
     background: transparent !important;
@@ -4836,14 +4836,13 @@ setInterval(window.__runV129Sync, 180);
     padding: 0 !important;
     -moz-appearance: textfield !important;
   }
-  .orig-inline-qty-v150 input::-webkit-outer-spin-button,
-  .orig-inline-qty-v150 input::-webkit-inner-spin-button {
+  .orig-inline-qty-v151 input::-webkit-outer-spin-button,
+  .orig-inline-qty-v151 input::-webkit-inner-spin-button {
     -webkit-appearance: none !important;
     margin: 0 !important;
   }
 
-  /* زر أضف للسلة بعرض البطاقة الكامل وحجم ثابت 100% تحت السعر والعداد */
-  .orig-full-add-btn-v150 {
+  .orig-full-add-btn-v151 {
     width: 100% !important;
     height: 34px !important;
     min-height: 34px !important;
@@ -4866,15 +4865,15 @@ setInterval(window.__runV129Sync, 180);
     transition: background 0.2s ease, color 0.2s ease !important;
     touch-action: manipulation !important;
   }
-  .orig-full-add-btn-v150.orig-added-lock {
+  .orig-full-add-btn-v151.orig-added-lock {
     background: linear-gradient(135deg, #e7c972 0%, #c89d38 100%) !important;
     color: #0b2b1d !important;
     border-color: #13462f !important;
     pointer-events: none !important;
   }
 
-  /* 4. تقليص حجم صندوق "عروض المتجر / فرص تستحق الانتباه" للنصف */
-  [data-orig-offers-box-v150="1"] {
+  /* 4. تقليص حجم صندوق العروض (فرص تستحق الانتباه) للنصف */
+  [data-orig-offers-box-v151="1"] {
     padding: 8px 12px !important;
     margin-top: 4px !important;
     margin-bottom: 6px !important;
@@ -4883,17 +4882,13 @@ setInterval(window.__runV129Sync, 180);
     border: 1px solid rgba(216, 180, 84, 0.5) !important;
     box-shadow: 0 3px 10px rgba(19, 70, 47, 0.05) !important;
   }
-  [data-orig-offers-box-v150="1"] > div:first-child {
-    margin-bottom: 4px !important;
-    padding: 0 !important;
-  }
-  [data-orig-offers-box-v150="1"] h2,
-  [data-orig-offers-box-v150="1"] h3 {
+  [data-orig-offers-box-v151="1"] h2,
+  [data-orig-offers-box-v151="1"] h3 {
     font-size: 13.5px !important;
     margin: 0 !important;
     line-height: 1.2 !important;
   }
-  [data-orig-offer-card-v150="1"] {
+  [data-orig-offer-card-v151="1"] {
     padding: 6px 10px !important;
     margin: 0 !important;
     border-radius: 12px !important;
@@ -4901,7 +4896,7 @@ setInterval(window.__runV129Sync, 180);
     border: 1px solid rgba(216, 180, 84, 0.45) !important;
     cursor: pointer !important;
   }
-  [data-orig-offer-code-pill-v150="1"] {
+  [data-orig-offer-code-pill-v151="1"] {
     background: linear-gradient(135deg, #165237 0%, #0b2b1d 100%) !important;
     color: #e7c972 !important;
     border: 1px dashed #d8b454 !important;
@@ -4911,158 +4906,94 @@ setInterval(window.__runV129Sync, 180);
     font-weight: 800 !important;
     cursor: pointer !important;
   }
-
-  /* 5. إخفاء جميع الإشعارات الأصلية المكررة والاكتفاء بالشريط الأخضر الفاتح الوحيد القابل للسحب بكل الاتجاهات */
-  [data-orig-kill-toast-v150="1"] {
-    display: none !important;
-    visibility: hidden !important;
-    opacity: 0 !important;
-    pointer-events: none !important;
-  }
-
-  #orig-single-light-toast-v150 {
-    position: fixed !important;
-    top: 10px !important;
-    left: 50% !important;
-    transform: translate(-50%, -220%) !important;
-    z-index: 2147483647 !important;
-    width: calc(100vw - 24px) !important;
-    max-width: 410px !important;
-    background: #ecfdf3 !important;
-    color: #13462f !important;
-    border: 1.5px solid #86efac !important;
-    border-radius: 16px !important;
-    padding: 11px 14px !important;
-    box-shadow: 0 8px 22px rgba(19, 70, 47, 0.14) !important;
-    font-family: 'Tajawal', 'Cairo', sans-serif !important;
-    font-size: 13.5px !important;
-    font-weight: 800 !important;
-    direction: rtl !important;
-    text-align: right !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: flex-start !important;
-    gap: 10px !important;
-    box-sizing: border-box !important;
-    transition: transform 0.24s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.2s ease !important;
-    opacity: 0 !important;
-    pointer-events: none !important;
-    touch-action: none !important;
-    user-select: none !important;
-  }
-  #orig-single-light-toast-v150.show {
-    transform: translate(-50%, 0) !important;
-    opacity: 1 !important;
-    pointer-events: auto !important;
-  }
-  .orig-toast-check-v150 {
-    width: 22px;
-    height: 22px;
-    border-radius: 50%;
-    background: #16a34a;
-    color: #ffffff;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 13px;
-    font-weight: 900;
-    flex-shrink: 0;
-  }
 </style>
 
 <script>
 (function() {
   var MAX_CARD_QTY = 99;
-  var toastTimer = null;
-  var singleToastEl = null;
 
-  // 1. الشريط الوحيد (بنفس التصميم الأخضر الفاتح الأصلي) القابل للسحب في 4 اتجاهات (أعلى، أسفل، يمين، يسار)
-  function ensureSingleToastV150() {
-    if (singleToastEl) return singleToastEl;
-    if (!document.body) return null;
-    singleToastEl = document.createElement("div");
-    singleToastEl.id = "orig-single-light-toast-v150";
-    document.body.appendChild(singleToastEl);
-
-    var sX = 0, sY = 0, isDrag = false;
-    singleToastEl.addEventListener("touchstart", function(e) {
-      if (!e.touches || !e.touches[0]) return;
-      sX = e.touches[0].clientX;
-      sY = e.touches[0].clientY;
-      isDrag = true;
-      singleToastEl.style.transition = "none";
-    }, { passive: true });
-
-    singleToastEl.addEventListener("touchmove", function(e) {
-      if (!isDrag || !e.touches || !e.touches[0]) return;
-      var dx = e.touches[0].clientX - sX;
-      var dy = e.touches[0].clientY - sY;
-      singleToastEl.style.transform = "translate(calc(-50% + " + dx + "px), " + dy + "px)";
-    }, { passive: true });
-
-    singleToastEl.addEventListener("touchend", function(e) {
-      if (!isDrag) return;
-      isDrag = false;
-      singleToastEl.style.transition = "transform 0.22s ease, opacity 0.18s ease";
-      var eX = (e.changedTouches && e.changedTouches[0]) ? e.changedTouches[0].clientX : sX;
-      var eY = (e.changedTouches && e.changedTouches[0]) ? e.changedTouches[0].clientY : sY;
-      var dx = eX - sX;
-      var dy = eY - sY;
-      if (Math.sqrt(dx * dx + dy * dy) > 10) {
-        singleToastEl.style.transform = "translate(calc(-50% + " + (dx * 4) + "px), " + (dy * 4) + "px)";
-        singleToastEl.style.opacity = "0";
-        setTimeout(function() {
-          singleToastEl.classList.remove("show");
-          singleToastEl.style.transform = "";
-          singleToastEl.style.opacity = "";
-        }, 190);
-      } else {
-        singleToastEl.classList.remove("show");
-        singleToastEl.style.transform = "";
-      }
-    });
-
-    singleToastEl.addEventListener("click", function() {
-      singleToastEl.classList.remove("show");
-    });
-
-    return singleToastEl;
-  }
-
-  function showOneToastV150(textMsg) {
-    var el = ensureSingleToastV150();
-    if (!el) return;
-    el.style.transform = "";
-    el.style.opacity = "";
-    el.innerHTML = '<span class="orig-toast-check-v150">✓</span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + textMsg + '</span>';
-    el.classList.add("show");
-    if (toastTimer) clearTimeout(toastTimer);
-    toastTimer = setTimeout(function() {
-      el.classList.remove("show");
-    }, 2100);
-  }
-
-  // إخفاء أي إشعار أصلي مكرر يظهر فوق الهيدر فوراً
-  function killDuplicateToastsV150() {
-    var allDivs = document.querySelectorAll("div");
-    for (var i = 0; i < allDivs.length; i++) {
-      var d = allDivs[i];
-      if (d.id === "orig-single-light-toast-v150" || d.id === "orig-offline-bar-v136") continue;
-      if (d.getAttribute("data-orig-kill-toast-v150") === "1") continue;
+  // 1. دعم السحب بجميع الاتجاهات (فوق، تحت، يمين، يسار) والاختفاء السريع (1 ثانية) للإشعار الأصلي فقط!
+  function bindNativeToastSwipeAndSpeedV151() {
+    var divs = document.querySelectorAll("div");
+    var foundToasts = [];
+    for (var i = 0; i < divs.length; i++) {
+      var d = divs[i];
+      if (d.id && d.id.indexOf("orig-") === 0) continue;
       var t = (d.textContent || "").trim();
-      if (t === "أضيف إلى السلة" || t === "أضيف إلى المفضلة على هذا الجهاز" || t === "أزيل من المفضلة") {
+      if ((t.indexOf("إلى السلة") !== -1 || t.indexOf("المفضلة") !== -1 || t.indexOf("تم نسخ") !== -1) &&
+          d.children.length <= 4) {
         var r = d.getBoundingClientRect();
-        if (r.top >= 0 && r.top < 150 && r.height > 25 && r.height < 120) {
-          d.setAttribute("data-orig-kill-toast-v150", "1");
-          if (t.indexOf("المفضلة") !== -1) {
-            showOneToastV150(t);
-          }
+        if (r.top >= 0 && r.top < 180 && r.height > 28 && r.height < 110 && r.width > 180) {
+          foundToasts.push(d);
         }
       }
     }
+
+    // إذا وُجد أكثر من إشعار أصلي واحد مكدس، نخفي الأقدم فوراً ونبقي الأحدث فقط!
+    if (foundToasts.length > 1) {
+      for (var k = 0; k < foundToasts.length - 1; k++) {
+        foundToasts[k].style.setProperty("display", "none", "important");
+      }
+    }
+
+    for (var j = 0; j < foundToasts.length; j++) {
+      var toastNode = foundToasts[j];
+      if (toastNode.getAttribute("data-orig-native-bound-v151") === "1") continue;
+      toastNode.setAttribute("data-orig-native-bound-v151", "1");
+      toastNode.style.touchAction = "none";
+      toastNode.style.userSelect = "none";
+
+      // إخفاء تلقائي سريع بعد ثانية واحدة (1050ms)
+      (function(el) {
+        var autoTimer = setTimeout(function() {
+          el.style.transition = "transform 0.2s ease, opacity 0.18s ease";
+          el.style.transform = "translateY(-140%)";
+          el.style.opacity = "0";
+          setTimeout(function() {
+            el.style.setProperty("display", "none", "important");
+          }, 190);
+        }, 1050);
+
+        var sX = 0, sY = 0, dragging = false;
+        el.addEventListener("touchstart", function(e) {
+          if (!e.touches || !e.touches[0]) return;
+          clearTimeout(autoTimer);
+          sX = e.touches[0].clientX;
+          sY = e.touches[0].clientY;
+          dragging = true;
+          el.style.transition = "none";
+        }, { passive: true });
+
+        el.addEventListener("touchmove", function(e) {
+          if (!dragging || !e.touches || !e.touches[0]) return;
+          var dx = e.touches[0].clientX - sX;
+          var dy = e.touches[0].clientY - sY;
+          el.style.transform = "translate(" + dx + "px, " + dy + "px)";
+        }, { passive: true });
+
+        el.addEventListener("touchend", function(e) {
+          if (!dragging) return;
+          dragging = false;
+          var eX = (e.changedTouches && e.changedTouches[0]) ? e.changedTouches[0].clientX : sX;
+          var eY = (e.changedTouches && e.changedTouches[0]) ? e.changedTouches[0].clientY : sY;
+          var dx = eX - sX;
+          var dy = eY - sY;
+          el.style.transition = "transform 0.2s ease, opacity 0.18s ease";
+          if (Math.sqrt(dx * dx + dy * dy) > 10) {
+            el.style.transform = "translate(" + (dx * 4) + "px, " + (dy * 4) + "px)";
+          } else {
+            el.style.transform = "translateY(-140%)";
+          }
+          el.style.opacity = "0";
+          setTimeout(function() {
+            el.style.setProperty("display", "none", "important");
+          }, 180);
+        });
+      })(toastNode);
+    }
   }
 
-  function copyGuaranteedV150(str) {
+  function copyGuaranteedV151(str) {
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(str).catch(function() {});
     }
@@ -5080,10 +5011,9 @@ setInterval(window.__runV129Sync, 180);
   }
 
   // 2. تنسيق الأقسام المربعة (114x114) في الواجهة الرئيسية + شريط الفلترة في صفحة المنتجات
-  function styleCategoriesV150() {
+  function styleCategoriesV151() {
     if (window.location.pathname.indexOf("/admin") === 0) return;
 
-    // أ) شريط فلترة الأقسام في صفحة المنتجات
     var pills = document.querySelectorAll("button, a");
     for (var i = 0; i < pills.length; i++) {
       var btn = pills[i];
@@ -5096,8 +5026,8 @@ setInterval(window.__runV129Sync, 180);
       var isAllPill = (txt === "الكل" && btn.parentElement && btn.parentElement.querySelector("img[src*='category']"));
 
       if (hasCatImg || isAllPill) {
-        if (!btn.getAttribute("data-orig-pill-bound-v150")) {
-          btn.setAttribute("data-orig-pill-bound-v150", "1");
+        if (!btn.getAttribute("data-orig-pill-bound-v151")) {
+          btn.setAttribute("data-orig-pill-bound-v151", "1");
           if (isAllPill && !btn.parentElement.querySelector("[data-orig-active-cat='1']")) {
             btn.setAttribute("data-orig-active-cat", "1");
           }
@@ -5107,15 +5037,14 @@ setInterval(window.__runV129Sync, 180);
               siblings[s].removeAttribute("data-orig-active-cat");
             }
             this.setAttribute("data-orig-active-cat", "1");
-            setTimeout(styleCategoriesV150, 20);
+            setTimeout(styleCategoriesV151, 20);
           });
         }
         var isActive = btn.getAttribute("data-orig-active-cat") === "1";
-        btn.setAttribute("data-orig-cat-pill-v150", isActive ? "active" : "inactive");
+        btn.setAttribute("data-orig-cat-pill-v151", isActive ? "active" : "inactive");
       }
     }
 
-    // ب) بطاقات الأقسام المربعة (114x114) في الواجهة الرئيسية
     var imgs = document.querySelectorAll("img");
     for (var j = 0; j < imgs.length; j++) {
       var img = imgs[j];
@@ -5126,13 +5055,13 @@ setInterval(window.__runV129Sync, 180);
       if (!card || card.clientHeight < 75 || card.clientHeight > 260 || card.clientWidth < 75) continue;
 
       var row = card.parentElement;
-      if (row) row.setAttribute("data-orig-cat-row-v150", "1");
+      if (row) row.setAttribute("data-orig-cat-row-v151", "1");
 
       var realName = "";
       var subSpans = card.querySelectorAll("span, p, h3, h4, div");
       for (var k = 0; k < subSpans.length; k++) {
         var sp = subSpans[k];
-        if (sp.classList && sp.classList.contains("orig-cat-label-v150")) continue;
+        if (sp.classList && sp.classList.contains("orig-cat-label-v151")) continue;
         if (sp.children.length === 0 && sp.textContent && sp.textContent.trim()) {
           realName = sp.textContent.trim();
           break;
@@ -5143,17 +5072,17 @@ setInterval(window.__runV129Sync, 180);
       var children = card.children;
       for (var c = 0; c < children.length; c++) {
         var ch = children[c];
-        if (ch.classList && ch.classList.contains("orig-cat-label-v150")) continue;
+        if (ch.classList && ch.classList.contains("orig-cat-label-v151")) continue;
         if (ch !== img && !ch.contains(img)) {
           ch.style.setProperty("display", "none", "important");
         }
       }
 
-      card.setAttribute("data-orig-cat-card-v150", "1");
-      var lbl = card.querySelector(".orig-cat-label-v150");
+      card.setAttribute("data-orig-cat-card-v151", "1");
+      var lbl = card.querySelector(".orig-cat-label-v151");
       if (!lbl) {
         lbl = document.createElement("div");
-        lbl.className = "orig-cat-label-v150";
+        lbl.className = "orig-cat-label-v151";
         card.appendChild(lbl);
       }
       if (lbl.textContent !== realName) {
@@ -5162,8 +5091,8 @@ setInterval(window.__runV129Sync, 180);
     }
   }
 
-  // 3. تقليص حجم صندوق العروض (فرص تستحق الانتباه) + نسخ الكود بضغطة واحدة
-  function compactOffersAndBindCopyV150() {
+  // 3. تقليص حجم صندوق العروض + نسخ الكود بضغطة واحدة
+  function compactOffersAndBindCopyV151() {
     if (window.location.pathname.indexOf("/admin") === 0) return;
 
     var allEls = document.querySelectorAll("h1, h2, h3, h4, div, p, span");
@@ -5171,15 +5100,13 @@ setInterval(window.__runV129Sync, 180);
       var el = allEls[i];
       if (el.children.length > 0) continue;
       if ((el.textContent || "").trim() === "فرص تستحق الانتباه") {
-        // نصعد للبطاقة الخارجية لعروض المتجر
         var box = el.parentElement;
         while (box && box !== document.body && box.clientHeight < 95) {
           box = box.parentElement;
         }
-        if (box && box !== document.body && !box.getAttribute("data-orig-offers-box-v150")) {
-          box.setAttribute("data-orig-offers-box-v150", "1");
+        if (box && box !== document.body && !box.getAttribute("data-orig-offers-box-v151")) {
+          box.setAttribute("data-orig-offers-box-v151", "1");
 
-          // نبحث عن شارة الكود (مثل: اليوم عيد) داخل صندوق العروض
           var leaves = box.querySelectorAll("span, div, button");
           for (var k = 0; k < leaves.length; k++) {
             var lf = leaves[k];
@@ -5190,24 +5117,22 @@ setInterval(window.__runV129Sync, 180);
             var styleStr = ((lf.className || "") + " " + (lf.getAttribute("style") || "")).toLowerCase();
             var rect = lf.getBoundingClientRect();
             var boxRect = box.getBoundingClientRect();
-            // الكود يقع في النصف الأيسر من بطاقة العرض أو له إطار منقط/حدود
             if (styleStr.indexOf("dashed") !== -1 || styleStr.indexOf("border") !== -1 || (rect.left < boxRect.left + boxRect.width * 0.55 && rect.width > 30 && rect.width < 150)) {
-              lf.setAttribute("data-orig-offer-code-pill-v150", "1");
+              lf.setAttribute("data-orig-offer-code-pill-v151", "1");
               var offerCard = lf.parentElement;
               if (offerCard && offerCard !== box) {
-                offerCard.setAttribute("data-orig-offer-card-v150", "1");
+                offerCard.setAttribute("data-orig-offer-card-v151", "1");
               }
               (function(pillEl, parentRow, codeVal) {
                 var clickTarget = parentRow || pillEl;
                 clickTarget.addEventListener("click", function(ev) {
                   ev.preventDefault();
                   ev.stopPropagation();
-                  copyGuaranteedV150(codeVal);
+                  copyGuaranteedV151(codeVal);
                   pillEl.textContent = "✓ تم النسخ";
-                  showOneToastV150("تم نسخ كود العرض «" + codeVal + "» بنجاح");
                   setTimeout(function() {
                     pillEl.textContent = codeVal;
-                  }, 1500);
+                  }, 1400);
                 });
               })(lf, offerCard, lTxt);
             }
@@ -5217,52 +5142,26 @@ setInterval(window.__runV129Sync, 180);
     }
   }
 
-  // 4. استخراج اسم المنتج النقي (بدون التصاق كلمة حبة!)
-  function getCleanProductInfoV150(cardEl) {
-    var prodName = "المنتج";
-    var unitName = "حبة";
-
-    var fullTxt = cardEl.textContent || "";
-    var mUnit = fullTxt.match(/\/\s*(حبة|باكت|كرتون|كيلو|درزن|عبوة|كيس|شدة)/);
-    if (mUnit && mUnit[1]) unitName = mUnit[1];
-
-    // نبحث عن أول عنصر نصي مباشر (بدون أبناء) يمثل اسم المنتج
-    var candidates = cardEl.querySelectorAll("h2, h3, h4, p, div, span");
-    for (var i = 0; i < candidates.length; i++) {
-      var c = candidates[i];
-      if (c.children.length > 0) continue;
-      if (c.closest(".orig-inline-qty-v150") || c.closest(".orig-full-add-btn-v150")) continue;
-      var t = (c.textContent || "").trim();
-      if (!t || t.length < 2 || t.length > 55) continue;
-      if (t === "حبة" || t === "باكت" || t === "كرتون" || t === "كيلو" || t === "عبوة") continue;
-      if (t.indexOf("ر.ي") !== -1 || t.indexOf("ريال") !== -1 || t === "+" || t === "−" || t === "-") continue;
-      prodName = t;
-      break;
-    }
-    return { name: prodName, unit: unitName };
-  }
-
-  // 5. تقصير بطاقة المنتج: إخفاء كلمة (حبة) المنفردة + وضع عداد [- 1 +] بجانب السعر في نفس السطر + زر أضف للسلة تحته
-  function setupShortProductCardV150(plusBtnOrig, cardEl) {
-    plusBtnOrig.setAttribute("data-orig-upgraded-v150", "1");
-    plusBtnOrig.setAttribute("data-orig-hidden-plus-v150", "1");
+  // 4. تقصير بطاقة المنتج: وضع عداد الكمية بجانب السعر + نقرة واحدة فقط لـ StoreContext بدون تكرار الإشعار!
+  function setupShortProductCardV151(plusBtnOrig, cardEl) {
+    plusBtnOrig.setAttribute("data-orig-upgraded-v151", "1");
+    plusBtnOrig.setAttribute("data-orig-hidden-plus-v151", "1");
     plusBtnOrig.style.setProperty("display", "none", "important");
-    cardEl.setAttribute("data-orig-compact-card-v150", "1");
+    cardEl.setAttribute("data-orig-compact-card-v151", "1");
 
-    // إخفاء السطر الزائد لكلمة (حبة / باكت) تحت اسم المنتج لأنها مكتوبة بجانب السعر (150 ر.ي / حبة)
     var leaves = cardEl.querySelectorAll("p, span, div");
     for (var i = 0; i < leaves.length; i++) {
       var lf = leaves[i];
       if (lf.children.length === 0) {
         var t = (lf.textContent || "").trim();
         if (t === "حبة" || t === "باكت" || t === "كرتون" || t === "كيلو" || t === "عبوة") {
-          lf.setAttribute("data-orig-hide-unit-line-v150", "1");
+          lf.setAttribute("data-orig-hide-unit-line-v151", "1");
         }
       }
     }
 
     var qtyBox = document.createElement("div");
-    qtyBox.className = "orig-inline-qty-v150";
+    qtyBox.className = "orig-inline-qty-v151";
     qtyBox.addEventListener("click", function(e) { e.stopPropagation(); });
 
     var plusBtn = document.createElement("button");
@@ -5318,14 +5217,13 @@ setInterval(window.__runV129Sync, 180);
     qtyBox.appendChild(qtyInput);
     qtyBox.appendChild(minusBtn);
 
-    // نضع عداد الكمية [- 1 +] في نفس سطر السعر مكان زر (+) القديم!
     if (plusBtnOrig.parentElement) {
       plusBtnOrig.parentElement.insertBefore(qtyBox, plusBtnOrig);
     }
 
     var addBtn = document.createElement("button");
     addBtn.type = "button";
-    addBtn.className = "orig-full-add-btn-v150";
+    addBtn.className = "orig-full-add-btn-v151";
     addBtn.textContent = "أضف للسلة";
 
     var locked = false;
@@ -5338,18 +5236,13 @@ setInterval(window.__runV129Sync, 180);
       var count = clampQty(qtyInput.value);
       qtyInput.value = String(count);
 
-      var info = getCleanProductInfoV150(cardEl);
-
       addBtn.classList.add("orig-added-lock");
       addBtn.disabled = true;
       addBtn.textContent = "✓ تمت الإضافة للسلة";
 
-      for (var step = 0; step < count; step++) {
-        plusBtnOrig.click();
-      }
-      killDuplicateToastsV150();
-
-      showOneToastV150("تمت إضافة " + count + " " + info.unit + " من «" + info.name + "» إلى السلة");
+      // نقرة واحدة فقط! StoreContext يقرأ __origBatchQtyV151 ويضيف الدفعة كاملة ويطلق الإشعار الأصلي مرة واحدة فقط!
+      window.__origBatchQtyV151 = count;
+      plusBtnOrig.click();
 
       setTimeout(function() {
         qtyInput.value = "1";
@@ -5357,20 +5250,20 @@ setInterval(window.__runV129Sync, 180);
         addBtn.disabled = false;
         addBtn.textContent = "أضف للسلة";
         locked = false;
-      }, 1500);
+      }, 1200);
     });
 
     cardEl.appendChild(addBtn);
   }
 
-  function upgradeProductCardsV150() {
+  function upgradeProductCardsV151() {
     if (window.location.pathname.indexOf("/admin") === 0) return;
 
     var cards = document.querySelectorAll("article, div[class*='rounded']");
     for (var i = 0; i < cards.length; i++) {
       var card = cards[i];
       if (card.clientWidth < 130 || card.clientWidth > 260 || card.clientHeight < 160) continue;
-      if (card.querySelector(".orig-full-add-btn-v150")) continue;
+      if (card.querySelector(".orig-full-add-btn-v151")) continue;
 
       var fullTxt = card.textContent || "";
       if (fullTxt.indexOf("ر.ي") === -1 && fullTxt.indexOf("ريال") === -1) continue;
@@ -5392,19 +5285,19 @@ setInterval(window.__runV129Sync, 180);
       }
 
       if (targetAddBtn) {
-        setupShortProductCardV150(targetAddBtn, card);
+        setupShortProductCardV151(targetAddBtn, card);
       }
     }
   }
 
   setInterval(function() {
-    killDuplicateToastsV150();
-    styleCategoriesV150();
-    compactOffersAndBindCopyV150();
-    upgradeProductCardsV150();
-  }, 180);
+    bindNativeToastSwipeAndSpeedV151();
+    styleCategoriesV151();
+    compactOffersAndBindCopyV151();
+    upgradeProductCardsV151();
+  }, 150);
 })();
 </script>
-<!-- ORIGINAL_HOME_V150_END -->
+<!-- ORIGINAL_HOME_V151_END -->
 </body>
 </html>
