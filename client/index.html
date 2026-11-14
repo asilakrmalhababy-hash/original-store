@@ -4675,10 +4675,12 @@ setInterval(window.__runV129Sync, 180);
 </script>
 <!-- ORIGINAL_HOME_DESIGN_V141_END -->
 
-<!-- ORIGINAL_HOME_V144_START -->
+
+
+<!-- ORIGINAL_HOME_V147_START -->
 <style>
-  /* شريط الأقسام الأفقي */
-  [data-orig-cat-row-v142="1"] {
+  /* 1. شريط الأقسام المربع في الواجهة الرئيسية: ألوان مشرقة وواضحة واسم كامل بدون قص */
+  [data-orig-cat-row-v147="1"] {
     display: flex !important;
     flex-direction: row !important;
     flex-wrap: nowrap !important;
@@ -4687,12 +4689,11 @@ setInterval(window.__runV129Sync, 180);
     padding: 6px 4px 12px 4px !important;
     scrollbar-width: none !important;
   }
-  [data-orig-cat-row-v142="1"]::-webkit-scrollbar {
+  [data-orig-cat-row-v147="1"]::-webkit-scrollbar {
     display: none !important;
   }
 
-  /* بطاقة القسم: مربع صريح 100% (114x114) أكبر وأوضح مع إطار أبيض وذهبي خفيف */
-  [data-orig-cat-card-v142="1"] {
+  [data-orig-cat-card-v147="1"] {
     position: relative !important;
     flex: 0 0 114px !important;
     width: 114px !important;
@@ -4702,26 +4703,23 @@ setInterval(window.__runV129Sync, 180);
     min-height: 114px !important;
     max-height: 114px !important;
     aspect-ratio: 1 / 1 !important;
-    background: radial-gradient(circle at 50% 40%, #1a583b 0%, #0d3624 72%, #092418 100%) !important;
+    background: radial-gradient(circle at 50% 38%, #206b48 0%, #13462f 70%, #0b2b1d 100%) !important;
     border: 2px solid #ffffff !important;
-    outline: 1.5px solid rgba(216, 180, 84, 0.85) !important;
+    outline: 1.5px solid #d8b454 !important;
     border-radius: 18px !important;
     padding: 0 !important;
     margin: 0 !important;
     display: block !important;
-    box-shadow: 0 6px 16px rgba(11, 43, 29, 0.14) !important;
+    box-shadow: 0 6px 16px rgba(19, 70, 47, 0.16) !important;
     overflow: hidden !important;
     box-sizing: border-box !important;
   }
 
-  /* إلغاء أي هوامش أو مربعات داخلية حول الصورة لتملأ المربع كله */
-  [data-orig-cat-card-v142="1"] > div:not(.orig-cat-label-v142),
-  [data-orig-cat-card-v142="1"] > span:not(.orig-cat-label-v142) {
+  [data-orig-cat-card-v147="1"] > div:not(.orig-cat-label-v147),
+  [data-orig-cat-card-v147="1"] > span:not(.orig-cat-label-v147) {
     position: relative !important;
     width: 100% !important;
     height: 100% !important;
-    min-height: 100% !important;
-    max-height: 100% !important;
     margin: 0 !important;
     padding: 0 !important;
     border: none !important;
@@ -4730,66 +4728,60 @@ setInterval(window.__runV129Sync, 180);
     background: transparent !important;
   }
 
-  [data-orig-cat-card-v142="1"] img {
+  [data-orig-cat-card-v147="1"] img {
     width: 100% !important;
     height: 100% !important;
-    min-height: 100% !important;
-    max-height: 100% !important;
     object-fit: cover !important;
     object-position: center center !important;
     border-radius: 16px !important;
     display: block !important;
     margin: 0 !important;
-    padding: 0 !important;
-    background: radial-gradient(circle at 50% 40%, #1a583b 0%, #0b2b1d 100%) !important;
+    filter: brightness(1.06) contrast(1.04) !important;
   }
 
-  /* الاسم يجلس أسفل الصورة مباشرة بدون صندوق منفصل وبدون قص الكلام */
-  [data-orig-cat-card-v142="1"] .orig-cat-label-v142 {
+  [data-orig-cat-card-v147="1"] .orig-cat-label-v147 {
     position: absolute !important;
     bottom: 0 !important;
     left: 0 !important;
     right: 0 !important;
     z-index: 4 !important;
-    padding: 18px 5px 6px 5px !important;
-    background: linear-gradient(to top, rgba(9, 34, 22, 0.92) 0%, rgba(9, 34, 22, 0.55) 55%, rgba(9, 34, 22, 0) 100%) !important;
+    padding: 16px 4px 6px 4px !important;
+    background: linear-gradient(to top, rgba(11, 43, 29, 0.92) 0%, rgba(11, 43, 29, 0.52) 60%, rgba(11, 43, 29, 0) 100%) !important;
     font-family: 'Tajawal', 'Cairo', sans-serif !important;
-    font-size: 12px !important;
+    font-size: 11.5px !important;
     font-weight: 800 !important;
     color: #ffffff !important;
     text-align: center !important;
     line-height: 1.2 !important;
     white-space: normal !important;
-    overflow: visible !important;
-    text-overflow: unset !important;
     word-break: break-word !important;
-    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.65) !important;
-    border: none !important;
-    margin: 0 !important;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8) !important;
+    box-sizing: border-box !important;
     pointer-events: none !important;
   }
 
-  /* خلفية ناعمة ومتناسقة للصور الشفافة في بطاقات المنتجات */
-  [data-orig-prod-card="1"] img {
-    background: radial-gradient(circle at 50% 45%, #f5f3eb 0%, #eae6d9 100%) !important;
-    border-radius: 14px !important;
+  /* 2. إصلاح الألوان المعتمة في أزرار فلترة الأقسام (في صفحة كل المنتجات) */
+  [data-orig-filter-pill-v147="1"],
+  [data-orig-filter-pill-v147="1"] * {
+    color: #ffffff !important;
+    font-weight: 800 !important;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35) !important;
   }
-</style>
-<!-- ORIGINAL_HOME_V144_END -->
-<!-- ORIGINAL_HOME_V146_START -->
-<style>
-  /* إخفاء زر (+) القديم المكرر إخفاءً تاماً */
-  [data-orig-hidden-btn-v146="1"] {
+  [data-orig-filter-pill-v147="1"] {
+    border: 1.5px solid #d8b454 !important;
+    box-shadow: 0 3px 10px rgba(19, 70, 47, 0.12) !important;
+  }
+
+  /* 3. إخفاء زر (+) القديم السفلي فقط دون لمس زر القلب (المفضلة) */
+  [data-orig-hidden-plus-v147="1"] {
     display: none !important;
-    visibility: hidden !important;
-    pointer-events: none !important;
   }
 
-  /* شريط الكمية وزر أضف للسلة داخل بطاقة المنتج */
-  .orig-card-action-bar-v142 {
+  /* 4. تصميم متناسق وثابت 100% لعداد الكمية فوق زر "أضف للسلة" لمنع أي زحف للنصوص */
+  .orig-card-action-wrap-v147 {
     display: flex !important;
-    align-items: center !important;
-    gap: 5px !important;
+    flex-direction: column !important;
+    gap: 6px !important;
     width: 100% !important;
     margin-top: 8px !important;
     direction: rtl !important;
@@ -4797,83 +4789,147 @@ setInterval(window.__runV129Sync, 180);
     position: relative !important;
     z-index: 6 !important;
   }
-  .orig-qty-mini-v142 {
+
+  .orig-qty-row-v147 {
     display: flex !important;
     align-items: center !important;
-    background: #f3f4f0 !important;
-    border: 1.5px solid rgba(19, 70, 47, 0.22) !important;
-    border-radius: 10px !important;
-    height: 34px !important;
-    padding: 0 2px !important;
-    flex: 0 0 auto !important;
+    justify-content: space-between !important;
+    background: #f4f5f0 !important;
+    border: 1.5px solid rgba(19, 70, 47, 0.18) !important;
+    border-radius: 11px !important;
+    height: 32px !important;
+    padding: 0 4px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
   }
-  .orig-qty-mini-v142 button {
-    width: 24px !important;
-    height: 30px !important;
+
+  .orig-qty-row-v147 button {
+    width: 32px !important;
+    height: 26px !important;
     border: none !important;
-    background: transparent !important;
+    border-radius: 8px !important;
+    background: #ffffff !important;
     color: #13462f !important;
     font-weight: 900 !important;
     font-size: 16px !important;
     cursor: pointer !important;
     padding: 0 !important;
     line-height: 1 !important;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08) !important;
     touch-action: manipulation !important;
   }
-  .orig-qty-mini-v142 input {
-    width: 28px !important;
+
+  .orig-qty-row-v147 input {
+    flex: 1 1 auto !important;
+    width: 40px !important;
     border: none !important;
     background: transparent !important;
     text-align: center !important;
     font-family: 'Tajawal', 'Cairo', sans-serif !important;
-    font-size: 13px !important;
+    font-size: 13.5px !important;
     font-weight: 800 !important;
     color: #0b2b1d !important;
     outline: none !important;
     padding: 0 !important;
     -moz-appearance: textfield !important;
   }
-  .orig-qty-mini-v142 input::-webkit-outer-spin-button,
-  .orig-qty-mini-v142 input::-webkit-inner-spin-button {
+  .orig-qty-row-v147 input::-webkit-outer-spin-button,
+  .orig-qty-row-v147 input::-webkit-inner-spin-button {
     -webkit-appearance: none !important;
     margin: 0 !important;
   }
-  .orig-add-btn-v142 {
-    flex: 1 1 auto !important;
-    height: 34px !important;
-    border-radius: 10px !important;
+
+  .orig-add-btn-v147 {
+    width: 100% !important;
+    min-width: 100% !important;
+    max-width: 100% !important;
+    height: 36px !important;
+    min-height: 36px !important;
+    max-height: 36px !important;
+    border-radius: 11px !important;
     border: 1.5px solid #d8b454 !important;
     background: linear-gradient(135deg, #165237 0%, #0b2b1d 100%) !important;
     color: #ffffff !important;
     font-family: 'Tajawal', 'Cairo', sans-serif !important;
-    font-size: 11.5px !important;
+    font-size: 12.5px !important;
     font-weight: 800 !important;
     cursor: pointer !important;
     white-space: nowrap !important;
-    padding: 0 6px !important;
-    transition: all 0.2s ease !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    padding: 0 8px !important;
+    box-sizing: border-box !important;
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
-    gap: 4px !important;
+    transition: background 0.2s ease, color 0.2s ease !important;
     touch-action: manipulation !important;
   }
-  .orig-add-btn-v142.orig-added-lock {
+
+  .orig-add-btn-v147.orig-added-lock {
     background: linear-gradient(135deg, #e7c972 0%, #c89d38 100%) !important;
     color: #0b2b1d !important;
     border-color: #13462f !important;
     pointer-events: none !important;
     cursor: not-allowed !important;
-    font-size: 11px !important;
+  }
+
+  /* 5. شريط الإشعار الموحد للدفعة الواحدة في أعلى الشاشة */
+  #orig-batch-toast-v147 {
+    position: fixed !important;
+    top: 12px !important;
+    left: 50% !important;
+    transform: translateX(-50%) translateY(-200%) !important;
+    z-index: 2147483646 !important;
+    width: calc(100vw - 24px) !important;
+    max-width: 410px !important;
+    background: linear-gradient(135deg, #13462f 0%, #0b2b1d 100%) !important;
+    color: #ffffff !important;
+    border: 1.5px solid #d8b454 !important;
+    border-radius: 14px !important;
+    padding: 11px 16px !important;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.32) !important;
+    font-family: 'Tajawal', 'Cairo', sans-serif !important;
+    font-size: 13.5px !important;
+    font-weight: 800 !important;
+    direction: rtl !important;
+    text-align: right !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    box-sizing: border-box !important;
+    transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1) !important;
+    pointer-events: none !important;
+  }
+  #orig-batch-toast-v147.show {
+    transform: translateX(-50%) translateY(0) !important;
   }
 </style>
 
 <script>
 (function() {
   var MAX_CARD_QTY = 99;
+  var batchToastTimer = null;
 
-  // 1. تحويل بطاقات قسم "الأقسام" الكبيرة فقط (دون لمس أزرار الفلترة الصغيرة في صفحة كل المنتجات)
-  function transformHomeCategoriesV146() {
+  function showSingleBatchToastV147(qty, unitName, prodName) {
+    var toast = document.getElementById("orig-batch-toast-v147");
+    if (!toast) {
+      toast = document.createElement("div");
+      toast.id = "orig-batch-toast-v147";
+      document.body.appendChild(toast);
+    }
+    var u = unitName || "حبة";
+    var p = prodName || "المنتج";
+    toast.innerHTML = '<span style="color:#e7c972;font-size:16px;">✓</span><span>تمت إضافة <strong>' + qty + ' ' + u + '</strong> من «' + p + '» إلى السلة</span>';
+    toast.classList.add("show");
+    if (batchToastTimer) clearTimeout(batchToastTimer);
+    batchToastTimer = setTimeout(function() {
+      toast.classList.remove("show");
+    }, 2400);
+  }
+
+  // 1. تنسيق بطاقات الأقسام المربعة في الواجهة الرئيسية + توضيح ألوان أزرار فلترة الأقسام
+  function styleCategoriesAndFilterPillsV147() {
     if (window.location.pathname.indexOf("/admin") === 0) return;
 
     var imgs = document.querySelectorAll("img");
@@ -4883,13 +4939,19 @@ setInterval(window.__runV129Sync, 180);
       if (src.indexOf("/category/") === -1 && src.indexOf("category") === -1) continue;
 
       var card = img.closest("button, a, div[class*='rounded']");
-      if (!card || card.getAttribute("data-orig-cat-card-v142") === "1") continue;
+      if (!card) continue;
 
-      // استثناء أزرار الفلترة الصغيرة (التي ارتفاعها أقل من 90px)
-      if (card.clientWidth < 80 || card.clientHeight < 95 || card.clientHeight > 260) continue;
+      // أزرار فلترة الأقسام الأفقية الصغيرة في صفحة "كل المنتجات" (ارتفاعها أقل من 70px)
+      if (card.clientHeight > 24 && card.clientHeight < 72) {
+        card.setAttribute("data-orig-filter-pill-v147", "1");
+        continue;
+      }
+
+      if (card.getAttribute("data-orig-cat-card-v147") === "1") continue;
+      if (card.clientWidth < 80 || card.clientHeight < 85 || card.clientHeight > 260) continue;
 
       var row = card.parentElement;
-      if (row) row.setAttribute("data-orig-cat-row-v142", "1");
+      if (row) row.setAttribute("data-orig-cat-row-v147", "1");
 
       var rawLabel = (card.textContent || "").replace(/عرض الكل/g, "").trim();
       if (!rawLabel) rawLabel = img.getAttribute("alt") || "قسم";
@@ -4902,30 +4964,43 @@ setInterval(window.__runV129Sync, 180);
         }
       }
 
-      card.setAttribute("data-orig-cat-card-v142", "1");
-      if (!card.querySelector(".orig-cat-label-v142")) {
+      card.setAttribute("data-orig-cat-card-v147", "1");
+      if (!card.querySelector(".orig-cat-label-v147")) {
         var lbl = document.createElement("div");
-        lbl.className = "orig-cat-label-v142";
+        lbl.className = "orig-cat-label-v147";
         lbl.textContent = rawLabel;
         card.appendChild(lbl);
       }
     }
   }
 
-  // 2. شريط الكمية + زر أضف للسلة مع إخفاء زر (+) القديم نهائياً
-  function setupCardBarV146(origBtnRef, cardEl) {
-    origBtnRef.setAttribute("data-orig-upgraded-v142", "1");
-    origBtnRef.setAttribute("data-orig-hidden-btn-v146", "1");
-    origBtnRef.style.setProperty("display", "none", "important");
+  // 2. استخراج اسم المنتج والوحدة من البطاقة لعرضهما في الإشعار الموحد
+  function getCardProductInfoV147(cardEl) {
+    var prodName = "المنتج";
+    var unitName = "حبة";
+    var h = cardEl.querySelector("h2, h3, h4, [class*='title'], [class*='font-bold']");
+    if (h && h.textContent) {
+      var t = h.textContent.trim();
+      if (t && t.indexOf("ر.ي") === -1 && t.length < 60) prodName = t;
+    }
+    var fullTxt = cardEl.textContent || "";
+    var mUnit = fullTxt.match(/\/\s*(حبة|باكت|كرتون|كيلو|درزن|عبوة|كيس|شدة)/);
+    if (mUnit && mUnit[1]) unitName = mUnit[1];
+    return { name: prodName, unit: unitName };
+  }
 
-    var bar = document.createElement("div");
-    bar.className = "orig-card-action-bar-v142";
-    bar.addEventListener("click", function(e) {
-      e.stopPropagation();
-    });
+  // 3. ربط شريط الكمية وزر "أضف للسلة" بزر الإضافة الحقيقي (+) فقط (دون لمس زر القلب أبداً)
+  function setupCardBarV147(plusBtnOrig, cardEl) {
+    plusBtnOrig.setAttribute("data-orig-upgraded-v147", "1");
+    plusBtnOrig.setAttribute("data-orig-hidden-plus-v147", "1");
+    plusBtnOrig.style.setProperty("display", "none", "important");
 
-    var qtyWrap = document.createElement("div");
-    qtyWrap.className = "orig-qty-mini-v142";
+    var wrap = document.createElement("div");
+    wrap.className = "orig-card-action-wrap-v147";
+    wrap.addEventListener("click", function(e) { e.stopPropagation(); });
+
+    var qtyRow = document.createElement("div");
+    qtyRow.className = "orig-qty-row-v147";
 
     var plusBtn = document.createElement("button");
     plusBtn.type = "button";
@@ -4950,15 +5025,13 @@ setInterval(window.__runV129Sync, 180);
     plusBtn.addEventListener("click", function(e) {
       e.preventDefault();
       e.stopPropagation();
-      var cur = clampQty(qtyInput.value);
-      qtyInput.value = String(Math.min(MAX_CARD_QTY, cur + 1));
+      qtyInput.value = String(Math.min(MAX_CARD_QTY, clampQty(qtyInput.value) + 1));
     });
 
     minusBtn.addEventListener("click", function(e) {
       e.preventDefault();
       e.stopPropagation();
-      var cur = clampQty(qtyInput.value);
-      qtyInput.value = String(Math.max(1, cur - 1));
+      qtyInput.value = String(Math.max(1, clampQty(qtyInput.value) - 1));
     });
 
     qtyInput.addEventListener("input", function(e) {
@@ -4969,30 +5042,22 @@ setInterval(window.__runV129Sync, 180);
         return;
       }
       var num = parseInt(cleaned, 10);
-      if (num > MAX_CARD_QTY) {
-        qtyInput.value = String(MAX_CARD_QTY);
-      } else if (num < 1) {
-        qtyInput.value = "1";
-      } else {
-        qtyInput.value = String(num);
-      }
+      if (num > MAX_CARD_QTY) qtyInput.value = String(MAX_CARD_QTY);
+      else if (num < 1) qtyInput.value = "1";
+      else qtyInput.value = String(num);
     });
 
     qtyInput.addEventListener("blur", function() {
       qtyInput.value = String(clampQty(qtyInput.value));
     });
 
-    qtyInput.addEventListener("click", function(e) {
-      e.stopPropagation();
-    });
-
-    qtyWrap.appendChild(plusBtn);
-    qtyWrap.appendChild(qtyInput);
-    qtyWrap.appendChild(minusBtn);
+    qtyRow.appendChild(plusBtn);
+    qtyRow.appendChild(qtyInput);
+    qtyRow.appendChild(minusBtn);
 
     var addBtn = document.createElement("button");
     addBtn.type = "button";
-    addBtn.className = "orig-add-btn-v142";
+    addBtn.className = "orig-add-btn-v147";
     addBtn.textContent = "أضف للسلة";
 
     var locked = false;
@@ -5005,13 +5070,18 @@ setInterval(window.__runV129Sync, 180);
       var count = clampQty(qtyInput.value);
       qtyInput.value = String(count);
 
+      var info = getCardProductInfoV147(cardEl);
+
       addBtn.classList.add("orig-added-lock");
       addBtn.disabled = true;
       addBtn.textContent = "✓ تمت الإضافة للسلة";
 
-      for (var step = 0; step < count; step++) {
-        origBtnRef.click();
-      }
+      // تمرير الكمية الكاملة دفعة واحدة إلى StoreContext ونقر زر السلة مرة واحدة فقط!
+      window.__origBatchAddQtyV147 = count;
+      plusBtnOrig.click();
+
+      // إظهار شريط إشعار واحد فقط بالكمية واسم الصنف
+      showSingleBatchToastV147(count, info.unit, info.name);
 
       setTimeout(function() {
         qtyInput.value = "1";
@@ -5022,43 +5092,47 @@ setInterval(window.__runV129Sync, 180);
       }, 1500);
     });
 
-    bar.appendChild(addBtn);
-    bar.appendChild(qtyWrap);
-    cardEl.appendChild(bar);
+    wrap.appendChild(qtyRow);
+    wrap.appendChild(addBtn);
+    cardEl.appendChild(wrap);
   }
 
-  function upgradeProductAddButtonsV146() {
+  function upgradeProductCardsV147() {
     if (window.location.pathname.indexOf("/admin") === 0) return;
 
     var buttons = document.querySelectorAll("button");
     for (var i = 0; i < buttons.length; i++) {
       var btn = buttons[i];
-      if (btn.getAttribute("data-orig-upgraded-v142") === "1") continue;
-      if (btn.closest(".orig-card-action-bar-v142")) continue;
+      if (btn.getAttribute("data-orig-upgraded-v147") === "1") continue;
+      if (btn.closest(".orig-card-action-wrap-v147")) continue;
 
+      // نستهدف حصرياً زر (+) الخاص بالسلة في أسفل البطاقة، ونستثني زر المفضلة (القلب) وزر الذكاء الاصطناعي
       var txt = (btn.textContent || "").trim();
-      var aria = (btn.getAttribute("aria-label") || "").trim();
-      var isQuickAddBtn = (txt === "+" || aria.indexOf("أضف") !== -1 || aria.indexOf("إضافة") !== -1);
-      if (!isQuickAddBtn) continue;
+      var aria = (btn.getAttribute("aria-label") || btn.getAttribute("title") || "").toLowerCase();
+      if (aria.indexOf("مفضل") !== -1 || aria.indexOf("fav") !== -1 || aria.indexOf("ذكاء") !== -1 || aria.indexOf("مساعد") !== -1) {
+        continue;
+      }
+      if (txt !== "+") continue;
 
       var card = btn.closest("article, div[class*='rounded']");
       if (!card || card.clientWidth < 130 || card.clientWidth > 260) continue;
-      if (card.querySelector(".orig-card-action-bar-v142")) {
-        btn.setAttribute("data-orig-hidden-btn-v146", "1");
+
+      if (card.querySelector(".orig-card-action-wrap-v147")) {
+        btn.setAttribute("data-orig-hidden-plus-v147", "1");
         btn.style.setProperty("display", "none", "important");
         continue;
       }
 
-      setupCardBarV146(btn, card);
+      setupCardBarV147(btn, card);
     }
   }
 
   setInterval(function() {
-    transformHomeCategoriesV146();
-    upgradeProductAddButtonsV146();
+    styleCategoriesAndFilterPillsV147();
+    upgradeProductCardsV147();
   }, 450);
 })();
 </script>
-<!-- ORIGINAL_HOME_V146_END -->
+<!-- ORIGINAL_HOME_V147_END -->
 </body>
 </html>
