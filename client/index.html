@@ -4352,5 +4352,327 @@ setInterval(window.__runV129Sync, 180);
 })();
 </script>
 <!-- ORIGINAL_LUXURY_UI_V140_END -->
+<!-- ORIGINAL_HOME_DESIGN_V141_START -->
+<style>
+  /* 1. الخلفية الكريمية الفاخرة والخط العربي الواضح */
+  html, body {
+    background-color: #f8f7f2 !important;
+    font-family: 'Tajawal', 'Cairo', sans-serif !important;
+  }
+
+  /* 2. الهيدر العلوي الموحد */
+  header {
+    background: rgba(248, 247, 242, 0.96) !important;
+    backdrop-filter: blur(12px) !important;
+    -webkit-backdrop-filter: blur(12px) !important;
+    border-bottom: 1px solid rgba(216, 180, 84, 0.22) !important;
+  }
+
+  /* شريط البحث الأبيض الأنيق */
+  header input[type="search"],
+  header input[type="text"],
+  input[placeholder*="ابحث"] {
+    background-color: #ffffff !important;
+    border: 1px solid rgba(19, 70, 47, 0.12) !important;
+    border-radius: 16px !important;
+    box-shadow: 0 3px 12px rgba(19, 70, 47, 0.05) !important;
+  }
+
+  /* 3. البنر الرئيسي */
+  [class*="banner"] img,
+  [class*="slider"] img,
+  [class*="hero"] img {
+    border-radius: 20px !important;
+  }
+
+  /* 4. بطاقات الأقسام بإطار ذهبي ناعم وظل فخم */
+  [data-orig-cat-card="1"] {
+    background: #13462f !important;
+    border: 1.5px solid rgba(216, 180, 84, 0.68) !important;
+    border-radius: 18px !important;
+    box-shadow: 0 6px 16px rgba(19, 70, 47, 0.14) !important;
+    overflow: hidden !important;
+  }
+
+  /* 5. بطاقات المنتجات البيضاء في الواجهة الرئيسية */
+  [data-orig-prod-card="1"] {
+    background: #ffffff !important;
+    border: 1px solid rgba(216, 180, 84, 0.34) !important;
+    border-radius: 20px !important;
+    box-shadow: 0 6px 20px rgba(19, 70, 47, 0.06) !important;
+    transition: transform 0.2s ease, box-shadow 0.2s ease !important;
+  }
+  [data-orig-prod-card="1"]:active {
+    transform: scale(0.985) !important;
+  }
+
+  /* 6. زر جرس الإشعارات والعروض في الهيدر العلوي */
+  #orig-header-bell-v141 {
+    position: relative !important;
+    background: #13462f !important;
+    color: #e7c972 !important;
+    border: 1.5px solid #d8b454 !important;
+    box-shadow: 0 3px 10px rgba(19, 70, 47, 0.18) !important;
+  }
+  #orig-header-bell-dot-v141 {
+    position: absolute;
+    top: -3px;
+    right: -3px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #f3d98b, #c89d38);
+    color: #0b2b1d;
+    font-size: 10px;
+    font-weight: 900;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1.5px solid #f8f7f2;
+  }
+
+  /* 7. نافذة العروض والإشعارات عند الضغط على الجرس */
+  #orig-notif-drawer-v141 {
+    position: fixed;
+    inset: 0;
+    z-index: 2147483645;
+    background: rgba(11, 43, 29, 0.55);
+    backdrop-filter: blur(5px);
+    display: none;
+    align-items: flex-end;
+    justify-content: center;
+    direction: rtl;
+    font-family: 'Tajawal', 'Cairo', sans-serif;
+  }
+  #orig-notif-drawer-v141.open {
+    display: flex;
+  }
+  .orig-notif-sheet-v141 {
+    width: 100%;
+    max-width: 480px;
+    max-height: 84vh;
+    background: #f8f7f2;
+    border-top: 2.5px solid #d8b454;
+    border-radius: 26px 26px 0 0;
+    padding: 18px 16px 24px 16px;
+    box-shadow: 0 -12px 38px rgba(0, 0, 0, 0.3);
+    overflow-y: auto;
+    box-sizing: border-box;
+  }
+  .orig-notif-head-v141 {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+  }
+  .orig-notif-head-v141 h3 {
+    margin: 0;
+    font-size: 19px;
+    font-weight: 900;
+    color: #13462f;
+  }
+  .orig-notif-close-v141 {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    border: 1px solid rgba(19, 70, 47, 0.18);
+    background: #ffffff;
+    color: #13462f;
+    font-size: 16px;
+    font-weight: 800;
+    cursor: pointer;
+  }
+  .orig-notif-card-v141 {
+    background: #ffffff;
+    border: 1px solid rgba(216, 180, 84, 0.42);
+    border-right: 4px solid #d8b454;
+    border-radius: 16px;
+    padding: 12px 14px;
+    margin-bottom: 10px;
+    box-shadow: 0 4px 14px rgba(19, 70, 47, 0.05);
+  }
+  .orig-notif-card-v141 h4 {
+    margin: 0 0 4px 0;
+    font-size: 14.5px;
+    font-weight: 800;
+    color: #13462f;
+  }
+  .orig-notif-card-v141 p {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.5;
+    color: #374151;
+  }
+  .orig-notif-time-v141 {
+    margin-top: 6px;
+    font-size: 11px;
+    color: #9ca3af;
+    font-weight: 700;
+  }
+
+  /* 8. الإبقاء على أيقونة الواتساب العائمة فوق الشريط السفلي ظاهرة ومرتفعة بوضوح */
+  a[href*="wa.me"]:not(header a),
+  button[aria-label*="واتساب"]:not(header button),
+  [class*="whatsapp"]:not(header *) {
+    z-index: 9000 !important;
+  }
+</style>
+
+<script>
+(function() {
+  var XML_NS = ["http", "://www.w3.org/2000/svg"].join("");
+
+  // 1. تحويل زر الواتساب الموجود داخل الهيدر العلوي فقط إلى زر الجرس (الإشعارات والعروض)
+  // مع ترك زر الواتساب العائم فوق الشريط السفلي كما هو تماماً
+  function convertTopHeaderWhatsAppToBellV141() {
+    if (window.location.pathname.indexOf("/admin") === 0) return;
+    if (document.getElementById("orig-header-bell-v141")) return;
+
+    var headerEl = document.querySelector("header");
+    if (!headerEl) return;
+
+    var candidates = headerEl.querySelectorAll("a, button");
+    var waHeaderBtn = null;
+    for (var i = 0; i < candidates.length; i++) {
+      var el = candidates[i];
+      var href = (el.getAttribute("href") || "").toLowerCase();
+      var aria = (el.getAttribute("aria-label") || el.getAttribute("title") || "").toLowerCase();
+      var html = (el.innerHTML || "").toLowerCase();
+      if (href.indexOf("wa.me") !== -1 || href.indexOf("whatsapp") !== -1 ||
+          aria.indexOf("واتس") !== -1 || aria.indexOf("whatsapp") !== -1 ||
+          html.indexOf("25d366") !== -1) {
+        waHeaderBtn = el;
+        break;
+      }
+    }
+
+    if (!waHeaderBtn) return;
+
+    // استنساخ العنصر لفك ارتباط واتساب عنه وتحويله لفتح العروض والإشعارات
+    var bellBtn = document.createElement("button");
+    bellBtn.type = "button";
+    bellBtn.id = "orig-header-bell-v141";
+    bellBtn.className = waHeaderBtn.className || "";
+    bellBtn.setAttribute("aria-label", "العروض والإشعارات");
+    bellBtn.setAttribute("title", "العروض والإشعارات");
+    bellBtn.innerHTML =
+      '<svg xmlns="' + XML_NS + '" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#e7c972" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">' +
+        '<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>' +
+        '<path d="M13.73 21a2 2 0 0 1-3.46 0"></path>' +
+      '</svg>' +
+      '<span id="orig-header-bell-dot-v141" style="display:none;">1</span>';
+
+    bellBtn.onclick = function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      openNotificationsDrawerV141();
+    };
+
+    waHeaderBtn.parentNode.replaceChild(bellBtn, waHeaderBtn);
+    refreshBellBadgeCountV141();
+  }
+
+  function refreshBellBadgeCountV141() {
+    fetch("/api/v140/customer-feed?since=0")
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        var dot = document.getElementById("orig-header-bell-dot-v141");
+        if (!dot) return;
+        var list = (data && Array.isArray(data.recentHistory)) ? data.recentHistory : [];
+        if (list.length > 0) {
+          dot.textContent = String(list.length > 9 ? "9+" : list.length);
+          dot.style.display = "flex";
+        } else {
+          dot.style.display = "none";
+        }
+      })
+      .catch(function() {});
+  }
+
+  function openNotificationsDrawerV141() {
+    var drawer = document.getElementById("orig-notif-drawer-v141");
+    if (!drawer) {
+      drawer = document.createElement("div");
+      drawer.id = "orig-notif-drawer-v141";
+      drawer.innerHTML =
+        '<div class="orig-notif-sheet-v141">' +
+          '<div class="orig-notif-head-v141">' +
+            '<h3>🔔 العروض والإشعارات</h3>' +
+            '<button type="button" class="orig-notif-close-v141" id="orig-notif-close-v141">✕</button>' +
+          '</div>' +
+          '<div id="orig-notif-list-v141"><p style="text-align:center;color:#6b7280;font-weight:700;">جاري تحميل الإشعارات والعروض...</p></div>' +
+        '</div>';
+      document.body.appendChild(drawer);
+
+      drawer.onclick = function(ev) {
+        if (ev.target === drawer) drawer.classList.remove("open");
+      };
+      document.getElementById("orig-notif-close-v141").onclick = function() {
+        drawer.classList.remove("open");
+      };
+    }
+
+    drawer.classList.add("open");
+    var listEl = document.getElementById("orig-notif-list-v141");
+
+    fetch("/api/v140/customer-feed?since=0")
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        var items = (data && Array.isArray(data.recentHistory)) ? data.recentHistory : [];
+        if (!items.length) {
+          listEl.innerHTML =
+            '<div class="orig-notif-card-v141">' +
+              '<h4>🌿 أهلاً بك في متجر أورجنال</h4>' +
+              '<p>ستظهر هنا جميع إشعارات المتجر والعروض الحصرية والخصومات فور إرسالها من الإدارة.</p>' +
+            '</div>';
+          return;
+        }
+        var htmlOut = "";
+        for (var i = 0; i < items.length; i++) {
+          var it = items[i];
+          var dt = it.createdAt ? new Date(it.createdAt).toLocaleString("ar-YE", { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" }) : "";
+          htmlOut +=
+            '<div class="orig-notif-card-v141">' +
+              '<h4>🔔 ' + (it.title || "إشعار من متجر أورجنال") + '</h4>' +
+              '<p>' + (it.body || "") + '</p>' +
+              (dt ? '<div class="orig-notif-time-v141">' + dt + '</div>' : '') +
+            '</div>';
+        }
+        listEl.innerHTML = htmlOut;
+      })
+      .catch(function() {
+        listEl.innerHTML = '<div class="orig-notif-card-v141"><h4>تعذر تحميل الإشعارات</h4><p>يرجى التحقق من اتصال الإنترنت والمحاولة مرة أخرى.</p></div>';
+      });
+  }
+
+  // 2. وسم بطاقات الأقسام والمنتجات في الواجهة الرئيسية لتطبيق الإطارات الفاخرة
+  function decorateHomeCardsV141() {
+    if (window.location.pathname.indexOf("/admin") === 0) return;
+    var imgs = document.querySelectorAll("img");
+    for (var i = 0; i < imgs.length; i++) {
+      var img = imgs[i];
+      var src = img.getAttribute("src") || "";
+      if (src.indexOf("/category/") !== -1 || src.indexOf("category") !== -1) {
+        var catCard = img.closest("button, a, div[class*='rounded']");
+        if (catCard && catCard.clientWidth < 210 && catCard.clientHeight < 260) {
+          catCard.setAttribute("data-orig-cat-card", "1");
+        }
+      } else if (src.indexOf("/product/") !== -1 || src.indexOf("product") !== -1) {
+        var prodCard = img.closest("article, div[class*='rounded']");
+        if (prodCard && prodCard.clientWidth > 130 && prodCard.clientWidth < 240) {
+          prodCard.setAttribute("data-orig-prod-card", "1");
+        }
+      }
+    }
+  }
+
+  setInterval(function() {
+    convertTopHeaderWhatsAppToBellV141();
+    decorateHomeCardsV141();
+  }, 600);
+})();
+</script>
+<!-- ORIGINAL_HOME_DESIGN_V141_END -->
 </body>
 </html>
