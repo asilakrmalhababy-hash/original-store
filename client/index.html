@@ -4677,108 +4677,93 @@ setInterval(window.__runV129Sync, 180);
 
 
 
-<!-- ORIGINAL_HOME_V147_START -->
+
+<!-- ORIGINAL_HOME_V148_START -->
 <style>
-  /* 1. شريط الأقسام المربع في الواجهة الرئيسية: ألوان مشرقة وواضحة واسم كامل بدون قص */
-  [data-orig-cat-row-v147="1"] {
-    display: flex !important;
-    flex-direction: row !important;
-    flex-wrap: nowrap !important;
-    overflow-x: auto !important;
-    gap: 12px !important;
-    padding: 6px 4px 12px 4px !important;
-    scrollbar-width: none !important;
-  }
-  [data-orig-cat-row-v147="1"]::-webkit-scrollbar {
+  /* 1. منع ظهور أكثر من شريط إشعار واحد في الأعلى وكتم التكرار أثناء إضافة الدفعة */
+  body.orig-mute-native-toasts [role="status"],
+  body.orig-mute-native-toasts [aria-live="polite"],
+  body.orig-mute-native-toasts [class*="toast"] {
     display: none !important;
+    opacity: 0 !important;
   }
 
-  [data-orig-cat-card-v147="1"] {
-    position: relative !important;
-    flex: 0 0 114px !important;
-    width: 114px !important;
-    min-width: 114px !important;
-    max-width: 114px !important;
-    height: 114px !important;
-    min-height: 114px !important;
-    max-height: 114px !important;
-    aspect-ratio: 1 / 1 !important;
-    background: radial-gradient(circle at 50% 38%, #206b48 0%, #13462f 70%, #0b2b1d 100%) !important;
-    border: 2px solid #ffffff !important;
-    outline: 1.5px solid #d8b454 !important;
-    border-radius: 18px !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    display: block !important;
-    box-shadow: 0 6px 16px rgba(19, 70, 47, 0.16) !important;
-    overflow: hidden !important;
-    box-sizing: border-box !important;
-  }
-
-  [data-orig-cat-card-v147="1"] > div:not(.orig-cat-label-v147),
-  [data-orig-cat-card-v147="1"] > span:not(.orig-cat-label-v147) {
-    position: relative !important;
-    width: 100% !important;
-    height: 100% !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    border: none !important;
-    border-radius: 16px !important;
-    overflow: hidden !important;
-    background: transparent !important;
-  }
-
-  [data-orig-cat-card-v147="1"] img {
-    width: 100% !important;
-    height: 100% !important;
-    object-fit: cover !important;
-    object-position: center center !important;
-    border-radius: 16px !important;
-    display: block !important;
-    margin: 0 !important;
-    filter: brightness(1.06) contrast(1.04) !important;
-  }
-
-  [data-orig-cat-card-v147="1"] .orig-cat-label-v147 {
-    position: absolute !important;
-    bottom: 0 !important;
-    left: 0 !important;
-    right: 0 !important;
-    z-index: 4 !important;
-    padding: 16px 4px 6px 4px !important;
-    background: linear-gradient(to top, rgba(11, 43, 29, 0.92) 0%, rgba(11, 43, 29, 0.52) 60%, rgba(11, 43, 29, 0) 100%) !important;
-    font-family: 'Tajawal', 'Cairo', sans-serif !important;
-    font-size: 11.5px !important;
-    font-weight: 800 !important;
-    color: #ffffff !important;
-    text-align: center !important;
-    line-height: 1.2 !important;
-    white-space: normal !important;
-    word-break: break-word !important;
-    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8) !important;
-    box-sizing: border-box !important;
-    pointer-events: none !important;
-  }
-
-  /* 2. إصلاح الألوان المعتمة في أزرار فلترة الأقسام (في صفحة كل المنتجات) */
-  [data-orig-filter-pill-v147="1"],
-  [data-orig-filter-pill-v147="1"] * {
-    color: #ffffff !important;
-    font-weight: 800 !important;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35) !important;
-  }
-  [data-orig-filter-pill-v147="1"] {
+  /* 2. تنسيق الأقسام وأزرار الأقسام:
+        - غير المحدد: خلفية بيضاء (#ffffff) + كتابة ذهبية (#b38422) + إطار ذهبي
+        - المحدد (النشط): خلفية خضراء زمردية (#13462f) + كتابة ذهبية مشرقة (#e7c972) */
+  [data-orig-cat-pill-v148="inactive"] {
+    background: #ffffff !important;
+    color: #b38422 !important;
     border: 1.5px solid #d8b454 !important;
-    box-shadow: 0 3px 10px rgba(19, 70, 47, 0.12) !important;
+    box-shadow: 0 3px 10px rgba(19, 70, 47, 0.06) !important;
+  }
+  [data-orig-cat-pill-v148="inactive"] span,
+  [data-orig-cat-pill-v148="inactive"] div,
+  [data-orig-cat-pill-v148="inactive"] p {
+    color: #b38422 !important;
+    font-weight: 800 !important;
   }
 
-  /* 3. إخفاء زر (+) القديم السفلي فقط دون لمس زر القلب (المفضلة) */
-  [data-orig-hidden-plus-v147="1"] {
+  [data-orig-cat-pill-v148="active"] {
+    background: linear-gradient(135deg, #165237 0%, #0b2b1d 100%) !important;
+    color: #e7c972 !important;
+    border: 1.5px solid #d8b454 !important;
+    box-shadow: 0 5px 14px rgba(19, 70, 47, 0.22) !important;
+  }
+  [data-orig-cat-pill-v148="active"] span,
+  [data-orig-cat-pill-v148="active"] div,
+  [data-orig-cat-pill-v148="active"] p {
+    color: #e7c972 !important;
+    font-weight: 800 !important;
+  }
+
+  /* بطاقات الأقسام في الواجهة الرئيسية: خلفية بيضاء نظيفة وشارات أسماء واضحة باللون الذهبي والأخضر */
+  [data-orig-home-cat-card-v148="1"] {
+    background: #ffffff !important;
+    border: 1.5px solid rgba(216, 180, 84, 0.65) !important;
+    border-radius: 18px !important;
+    box-shadow: 0 5px 15px rgba(19, 70, 47, 0.07) !important;
+  }
+
+  /* 3. تصغير وتنسيق قسم "عروض المتجر / فرص تستحق الانتباه" ليكون مدمجاً وأنيقاً */
+  [data-orig-offers-section-v148="1"] {
+    padding: 10px 12px !important;
+    margin-top: 6px !important;
+    margin-bottom: 8px !important;
+    border-radius: 16px !important;
+    border: 1px solid rgba(216, 180, 84, 0.45) !important;
+    background: linear-gradient(135deg, #ffffff 0%, #f9f7f0 100%) !important;
+    box-shadow: 0 4px 12px rgba(19, 70, 47, 0.05) !important;
+  }
+  [data-orig-offers-section-v148="1"] h2,
+  [data-orig-offers-section-v148="1"] h3 {
+    font-size: 15px !important;
+    margin: 0 0 4px 0 !important;
+    line-height: 1.25 !important;
+  }
+  [data-orig-offer-code-v148="1"] {
+    cursor: pointer !important;
+    background: linear-gradient(135deg, #165237 0%, #0b2b1d 100%) !important;
+    color: #e7c972 !important;
+    border: 1px dashed #d8b454 !important;
+    border-radius: 9px !important;
+    padding: 4px 10px !important;
+    font-size: 12px !important;
+    font-weight: 800 !important;
+    transition: transform 0.15s ease !important;
+    user-select: none !important;
+  }
+  [data-orig-offer-code-v148="1"]:active {
+    transform: scale(0.95) !important;
+  }
+
+  /* 4. إخفاء زر (+) الأصلي السفلي فقط عند تركيب شريط الكمية */
+  [data-orig-hidden-plus-v148="1"] {
     display: none !important;
   }
 
-  /* 4. تصميم متناسق وثابت 100% لعداد الكمية فوق زر "أضف للسلة" لمنع أي زحف للنصوص */
-  .orig-card-action-wrap-v147 {
+  /* 5. شريط الكمية (فوق) + زر "أضف للسلة" (تحت بعرض البطاقة الكامل وحجم ثابت 100%) */
+  .orig-card-action-wrap-v148 {
     display: flex !important;
     flex-direction: column !important;
     gap: 6px !important;
@@ -4790,28 +4775,28 @@ setInterval(window.__runV129Sync, 180);
     z-index: 6 !important;
   }
 
-  .orig-qty-row-v147 {
+  .orig-qty-row-v148 {
     display: flex !important;
     align-items: center !important;
     justify-content: space-between !important;
     background: #f4f5f0 !important;
-    border: 1.5px solid rgba(19, 70, 47, 0.18) !important;
-    border-radius: 11px !important;
+    border: 1.5px solid rgba(216, 180, 84, 0.55) !important;
+    border-radius: 10px !important;
     height: 32px !important;
     padding: 0 4px !important;
     width: 100% !important;
     box-sizing: border-box !important;
   }
 
-  .orig-qty-row-v147 button {
-    width: 32px !important;
-    height: 26px !important;
+  .orig-qty-row-v148 button {
+    width: 30px !important;
+    height: 24px !important;
     border: none !important;
-    border-radius: 8px !important;
+    border-radius: 7px !important;
     background: #ffffff !important;
     color: #13462f !important;
     font-weight: 900 !important;
-    font-size: 16px !important;
+    font-size: 15px !important;
     cursor: pointer !important;
     padding: 0 !important;
     line-height: 1 !important;
@@ -4819,9 +4804,9 @@ setInterval(window.__runV129Sync, 180);
     touch-action: manipulation !important;
   }
 
-  .orig-qty-row-v147 input {
+  .orig-qty-row-v148 input {
     flex: 1 1 auto !important;
-    width: 40px !important;
+    width: 36px !important;
     border: none !important;
     background: transparent !important;
     text-align: center !important;
@@ -4833,13 +4818,13 @@ setInterval(window.__runV129Sync, 180);
     padding: 0 !important;
     -moz-appearance: textfield !important;
   }
-  .orig-qty-row-v147 input::-webkit-outer-spin-button,
-  .orig-qty-row-v147 input::-webkit-inner-spin-button {
+  .orig-qty-row-v148 input::-webkit-outer-spin-button,
+  .orig-qty-row-v148 input::-webkit-inner-spin-button {
     -webkit-appearance: none !important;
     margin: 0 !important;
   }
 
-  .orig-add-btn-v147 {
+  .orig-add-btn-v148 {
     width: 100% !important;
     min-width: 100% !important;
     max-width: 100% !important;
@@ -4849,7 +4834,7 @@ setInterval(window.__runV129Sync, 180);
     border-radius: 11px !important;
     border: 1.5px solid #d8b454 !important;
     background: linear-gradient(135deg, #165237 0%, #0b2b1d 100%) !important;
-    color: #ffffff !important;
+    color: #e7c972 !important;
     font-family: 'Tajawal', 'Cairo', sans-serif !important;
     font-size: 12.5px !important;
     font-weight: 800 !important;
@@ -4857,7 +4842,7 @@ setInterval(window.__runV129Sync, 180);
     white-space: nowrap !important;
     overflow: hidden !important;
     text-overflow: ellipsis !important;
-    padding: 0 8px !important;
+    padding: 0 6px !important;
     box-sizing: border-box !important;
     display: flex !important;
     align-items: center !important;
@@ -4866,7 +4851,7 @@ setInterval(window.__runV129Sync, 180);
     touch-action: manipulation !important;
   }
 
-  .orig-add-btn-v147.orig-added-lock {
+  .orig-add-btn-v148.orig-added-lock {
     background: linear-gradient(135deg, #e7c972 0%, #c89d38 100%) !important;
     color: #0b2b1d !important;
     border-color: #13462f !important;
@@ -4874,13 +4859,13 @@ setInterval(window.__runV129Sync, 180);
     cursor: not-allowed !important;
   }
 
-  /* 5. شريط الإشعار الموحد للدفعة الواحدة في أعلى الشاشة */
-  #orig-batch-toast-v147 {
+  /* 6. شريط الإشعار الموحد للدفعة الواحدة ولنسخ الكود */
+  #orig-batch-toast-v148 {
     position: fixed !important;
     top: 12px !important;
     left: 50% !important;
-    transform: translateX(-50%) translateY(-200%) !important;
-    z-index: 2147483646 !important;
+    transform: translateX(-50%) translateY(-220%) !important;
+    z-index: 2147483647 !important;
     width: calc(100vw - 24px) !important;
     max-width: 410px !important;
     background: linear-gradient(135deg, #13462f 0%, #0b2b1d 100%) !important;
@@ -4888,9 +4873,9 @@ setInterval(window.__runV129Sync, 180);
     border: 1.5px solid #d8b454 !important;
     border-radius: 14px !important;
     padding: 11px 16px !important;
-    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.32) !important;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35) !important;
     font-family: 'Tajawal', 'Cairo', sans-serif !important;
-    font-size: 13.5px !important;
+    font-size: 13px !important;
     font-weight: 800 !important;
     direction: rtl !important;
     text-align: right !important;
@@ -4901,7 +4886,7 @@ setInterval(window.__runV129Sync, 180);
     transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1) !important;
     pointer-events: none !important;
   }
-  #orig-batch-toast-v147.show {
+  #orig-batch-toast-v148.show {
     transform: translateX(-50%) translateY(0) !important;
   }
 </style>
@@ -4911,71 +4896,127 @@ setInterval(window.__runV129Sync, 180);
   var MAX_CARD_QTY = 99;
   var batchToastTimer = null;
 
-  function showSingleBatchToastV147(qty, unitName, prodName) {
-    var toast = document.getElementById("orig-batch-toast-v147");
+  function showUnifiedToastV148(htmlMessage) {
+    var toast = document.getElementById("orig-batch-toast-v148");
     if (!toast) {
       toast = document.createElement("div");
-      toast.id = "orig-batch-toast-v147";
+      toast.id = "orig-batch-toast-v148";
       document.body.appendChild(toast);
     }
-    var u = unitName || "حبة";
-    var p = prodName || "المنتج";
-    toast.innerHTML = '<span style="color:#e7c972;font-size:16px;">✓</span><span>تمت إضافة <strong>' + qty + ' ' + u + '</strong> من «' + p + '» إلى السلة</span>';
+    toast.innerHTML = htmlMessage;
     toast.classList.add("show");
     if (batchToastTimer) clearTimeout(batchToastTimer);
     batchToastTimer = setTimeout(function() {
       toast.classList.remove("show");
-    }, 2400);
+    }, 2300);
   }
 
-  // 1. تنسيق بطاقات الأقسام المربعة في الواجهة الرئيسية + توضيح ألوان أزرار فلترة الأقسام
-  function styleCategoriesAndFilterPillsV147() {
+  // 1. تنسيق شريط الأقسام (أبيض + ذهبي لغير المحدد، وأخضر + ذهبي للمحدد) بدون خلط الأسماء
+  function styleCategoryPillsAndCardsV148() {
     if (window.location.pathname.indexOf("/admin") === 0) return;
 
-    var imgs = document.querySelectorAll("img");
-    for (var i = 0; i < imgs.length; i++) {
-      var img = imgs[i];
-      var src = img.getAttribute("src") || "";
-      if (src.indexOf("/category/") === -1 && src.indexOf("category") === -1) continue;
+    // أ) شريط فلترة الأقسام الأفقي (الكل + الأقسام)
+    var buttons = document.querySelectorAll("button, a");
+    for (var i = 0; i < buttons.length; i++) {
+      var btn = buttons[i];
+      var h = btn.clientHeight;
+      var w = btn.clientWidth;
+      if (h < 26 || h > 64 || w < 44 || w > 240) continue;
 
-      var card = img.closest("button, a, div[class*='rounded']");
-      if (!card) continue;
+      var txt = (btn.textContent || "").trim();
+      var hasCatImg = !!btn.querySelector("img[src*='category']");
+      var isAllPill = (txt === "الكل" && btn.parentElement && btn.parentElement.querySelector("img[src*='category']"));
 
-      // أزرار فلترة الأقسام الأفقية الصغيرة في صفحة "كل المنتجات" (ارتفاعها أقل من 70px)
-      if (card.clientHeight > 24 && card.clientHeight < 72) {
-        card.setAttribute("data-orig-filter-pill-v147", "1");
-        continue;
-      }
+      if (hasCatImg || isAllPill) {
+        // نتحقق هل هذا القسم هو المحدد حالياً
+        var cls = (btn.className || "");
+        var ariaPressed = btn.getAttribute("aria-pressed") === "true" || btn.getAttribute("aria-selected") === "true";
+        var inlineBg = (btn.style && btn.style.backgroundColor) ? btn.style.backgroundColor : "";
+        var isActive = ariaPressed || cls.indexOf("ring-") !== -1 || cls.indexOf("scale-") !== -1 || cls.indexOf("shadow-md") !== -1 || btn.getAttribute("data-orig-active-cat") === "1";
 
-      if (card.getAttribute("data-orig-cat-card-v147") === "1") continue;
-      if (card.clientWidth < 80 || card.clientHeight < 85 || card.clientHeight > 260) continue;
-
-      var row = card.parentElement;
-      if (row) row.setAttribute("data-orig-cat-row-v147", "1");
-
-      var rawLabel = (card.textContent || "").replace(/عرض الكل/g, "").trim();
-      if (!rawLabel) rawLabel = img.getAttribute("alt") || "قسم";
-
-      var children = card.children;
-      for (var c = 0; c < children.length; c++) {
-        var ch = children[c];
-        if (ch !== img && !ch.contains(img)) {
-          ch.style.setProperty("display", "none", "important");
+        if (!btn.getAttribute("data-orig-cat-bound-v148")) {
+          btn.setAttribute("data-orig-cat-bound-v148", "1");
+          btn.addEventListener("click", function() {
+            var siblings = this.parentElement ? this.parentElement.querySelectorAll("button, a") : [];
+            for (var s = 0; s < siblings.length; s++) {
+              siblings[s].removeAttribute("data-orig-active-cat");
+            }
+            this.setAttribute("data-orig-active-cat", "1");
+            setTimeout(styleCategoryPillsAndCardsV148, 30);
+          });
         }
-      }
 
-      card.setAttribute("data-orig-cat-card-v147", "1");
-      if (!card.querySelector(".orig-cat-label-v147")) {
-        var lbl = document.createElement("div");
-        lbl.className = "orig-cat-label-v147";
-        lbl.textContent = rawLabel;
-        card.appendChild(lbl);
+        btn.setAttribute("data-orig-cat-pill-v148", isActive ? "active" : "inactive");
+      }
+    }
+
+    // ب) بطاقات الأقسام في الواجهة الرئيسية: الحفاظ على الاسم الأصلي وتطبيق إطار ذهبي وخلفية بيضاء/أزرار خضراء وذهبية
+    var catImgs = document.querySelectorAll("img[src*='category']");
+    for (var j = 0; j < catImgs.length; j++) {
+      var cImg = catImgs[j];
+      var cCard = cImg.closest("button, a, div[class*='rounded']");
+      if (!cCard || cCard.clientHeight < 90 || cCard.clientHeight > 280) continue;
+      cCard.setAttribute("data-orig-home-cat-card-v148", "1");
+      var pillInside = cCard.querySelector("span, div[class*='rounded-full'], p");
+      if (pillInside && pillInside.textContent && pillInside.textContent.trim().length > 0) {
+        pillInside.style.setProperty("background", "linear-gradient(135deg, #165237 0%, #0b2b1d 100%)", "important");
+        pillInside.style.setProperty("color", "#e7c972", "important");
+        pillInside.style.setProperty("border", "1px solid #d8b454", "important");
+        pillInside.style.setProperty("font-weight", "800", "important");
       }
     }
   }
 
-  // 2. استخراج اسم المنتج والوحدة من البطاقة لعرضهما في الإشعار الموحد
-  function getCardProductInfoV147(cardEl) {
+  // 2. تصغير شريط "عروض المتجر / فرص تستحق الانتباه" وتفعيل نسخ الكود بضغطة واحدة
+  function enhanceOffersSectionV148() {
+    if (window.location.pathname.indexOf("/admin") === 0) return;
+
+    var allEls = document.querySelectorAll("section, div");
+    for (var i = 0; i < allEls.length; i++) {
+      var el = allEls[i];
+      if (el.getAttribute("data-orig-offers-section-v148") === "1") continue;
+      var txt = (el.textContent || "").trim();
+      if (txt.indexOf("فرص تستحق الانتباه") !== -1 && txt.indexOf("عروض المتجر") !== -1 && el.clientHeight > 100 && el.clientHeight < 340) {
+        el.setAttribute("data-orig-offers-section-v148", "1");
+
+        // البحث عن شارة كود العرض (مثل: اليوم عيد) وجعلها قابلة للنسخ بضغطة واحدة
+        var spans = el.querySelectorAll("span, div, button");
+        for (var k = 0; k < spans.length; k++) {
+          var sp = spans[k];
+          var sTxt = (sp.textContent || "").trim();
+          var cls = (sp.className || "");
+          if (sTxt.length >= 2 && sTxt.length <= 24 &&
+              sTxt !== "عروض المتجر" && sTxt !== "فرص تستحق الانتباه" &&
+              (cls.indexOf("dashed") !== -1 || cls.indexOf("border") !== -1 || sp.children.length === 0)) {
+            if (sp.clientWidth > 35 && sp.clientWidth < 150 && sp.clientHeight > 18 && sp.clientHeight < 50) {
+              if (!sp.getAttribute("data-orig-offer-code-v148")) {
+                sp.setAttribute("data-orig-offer-code-v148", "1");
+                sp.setAttribute("title", "اضغط لنسخ الكود");
+                (function(codeEl, originalCode) {
+                  codeEl.addEventListener("click", function(ev) {
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                      navigator.clipboard.writeText(originalCode).catch(function() {});
+                    }
+                    var prev = codeEl.textContent;
+                    codeEl.textContent = "✓ تم النسخ";
+                    showUnifiedToastV148('<span style="color:#e7c972;font-size:16px;">📋</span><span>تم نسخ كود العرض <strong>«' + originalCode + '»</strong> بنجاح!</span>');
+                    setTimeout(function() {
+                      codeEl.textContent = originalCode;
+                    }, 1600);
+                  });
+                })(sp, sTxt);
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // 3. استخراج اسم الصنف والوحدة من بطاقة المنتج
+  function getCardProductInfoV148(cardEl) {
     var prodName = "المنتج";
     var unitName = "حبة";
     var h = cardEl.querySelector("h2, h3, h4, [class*='title'], [class*='font-bold']");
@@ -4989,18 +5030,18 @@ setInterval(window.__runV129Sync, 180);
     return { name: prodName, unit: unitName };
   }
 
-  // 3. ربط شريط الكمية وزر "أضف للسلة" بزر الإضافة الحقيقي (+) فقط (دون لمس زر القلب أبداً)
-  function setupCardBarV147(plusBtnOrig, cardEl) {
-    plusBtnOrig.setAttribute("data-orig-upgraded-v147", "1");
-    plusBtnOrig.setAttribute("data-orig-hidden-plus-v147", "1");
+  // 4. تركيب شريط الكمية + زر "أضف للسلة" لكل بطاقة منتج (مع التعرف على زر SVG + السفلي بدقة)
+  function setupCardBarV148(plusBtnOrig, cardEl) {
+    plusBtnOrig.setAttribute("data-orig-upgraded-v148", "1");
+    plusBtnOrig.setAttribute("data-orig-hidden-plus-v148", "1");
     plusBtnOrig.style.setProperty("display", "none", "important");
 
     var wrap = document.createElement("div");
-    wrap.className = "orig-card-action-wrap-v147";
+    wrap.className = "orig-card-action-wrap-v148";
     wrap.addEventListener("click", function(e) { e.stopPropagation(); });
 
     var qtyRow = document.createElement("div");
-    qtyRow.className = "orig-qty-row-v147";
+    qtyRow.className = "orig-qty-row-v148";
 
     var plusBtn = document.createElement("button");
     plusBtn.type = "button";
@@ -5057,7 +5098,7 @@ setInterval(window.__runV129Sync, 180);
 
     var addBtn = document.createElement("button");
     addBtn.type = "button";
-    addBtn.className = "orig-add-btn-v147";
+    addBtn.className = "orig-add-btn-v148";
     addBtn.textContent = "أضف للسلة";
 
     var locked = false;
@@ -5070,18 +5111,24 @@ setInterval(window.__runV129Sync, 180);
       var count = clampQty(qtyInput.value);
       qtyInput.value = String(count);
 
-      var info = getCardProductInfoV147(cardEl);
+      var info = getCardProductInfoV148(cardEl);
 
       addBtn.classList.add("orig-added-lock");
       addBtn.disabled = true;
       addBtn.textContent = "✓ تمت الإضافة للسلة";
 
-      // تمرير الكمية الكاملة دفعة واحدة إلى StoreContext ونقر زر السلة مرة واحدة فقط!
-      window.__origBatchAddQtyV147 = count;
-      plusBtnOrig.click();
+      // كتم الإشعارات المكررة أثناء إضافة الدفعة وإظهار شريط واحد نظيف بالكمية واسم الصنف
+      document.body.classList.add("orig-mute-native-toasts");
+      for (var step = 0; step < count; step++) {
+        plusBtnOrig.click();
+      }
+      setTimeout(function() {
+        document.body.classList.remove("orig-mute-native-toasts");
+      }, 900);
 
-      // إظهار شريط إشعار واحد فقط بالكمية واسم الصنف
-      showSingleBatchToastV147(count, info.unit, info.name);
+      showUnifiedToastV148(
+        '<span style="color:#e7c972;font-size:16px;">✓</span><span>تمت إضافة <strong>' + count + ' ' + info.unit + '</strong> من «' + info.name + '» إلى السلة</span>'
+      );
 
       setTimeout(function() {
         qtyInput.value = "1";
@@ -5097,42 +5144,49 @@ setInterval(window.__runV129Sync, 180);
     cardEl.appendChild(wrap);
   }
 
-  function upgradeProductCardsV147() {
+  function upgradeProductCardsV148() {
     if (window.location.pathname.indexOf("/admin") === 0) return;
 
-    var buttons = document.querySelectorAll("button");
-    for (var i = 0; i < buttons.length; i++) {
-      var btn = buttons[i];
-      if (btn.getAttribute("data-orig-upgraded-v147") === "1") continue;
-      if (btn.closest(".orig-card-action-wrap-v147")) continue;
+    var cards = document.querySelectorAll("article, div[class*='rounded']");
+    for (var i = 0; i < cards.length; i++) {
+      var card = cards[i];
+      if (card.clientWidth < 130 || card.clientWidth > 260 || card.clientHeight < 180) continue;
+      if (card.querySelector(".orig-card-action-wrap-v148")) continue;
 
-      // نستهدف حصرياً زر (+) الخاص بالسلة في أسفل البطاقة، ونستثني زر المفضلة (القلب) وزر الذكاء الاصطناعي
-      var txt = (btn.textContent || "").trim();
-      var aria = (btn.getAttribute("aria-label") || btn.getAttribute("title") || "").toLowerCase();
-      if (aria.indexOf("مفضل") !== -1 || aria.indexOf("fav") !== -1 || aria.indexOf("ذكاء") !== -1 || aria.indexOf("مساعد") !== -1) {
-        continue;
+      var fullTxt = card.textContent || "";
+      if (fullTxt.indexOf("ر.ي") === -1 && fullTxt.indexOf("ريال") === -1) continue;
+
+      // نبحث عن الأزرار داخل البطاقة ونختار الزر السفلي الخاص بالسلة فقط (وليس القلب أو الذكاء الاصطناعي في الأعلى)
+      var btns = card.querySelectorAll("button");
+      var targetAddBtn = null;
+      var cardRect = card.getBoundingClientRect();
+
+      for (var b = 0; b < btns.length; b++) {
+        var btn = btns[b];
+        var aria = (btn.getAttribute("aria-label") || btn.getAttribute("title") || "").toLowerCase();
+        if (aria.indexOf("مفضل") !== -1 || aria.indexOf("fav") !== -1 || aria.indexOf("ذكاء") !== -1 || aria.indexOf("مساعد") !== -1) {
+          continue;
+        }
+        var btnRect = btn.getBoundingClientRect();
+        // الزر الموجود في النصف السفلي من البطاقة هو زر الإضافة للسلة (+)
+        if (btnRect.top > cardRect.top + (cardRect.height * 0.52)) {
+          targetAddBtn = btn;
+        }
       }
-      if (txt !== "+") continue;
 
-      var card = btn.closest("article, div[class*='rounded']");
-      if (!card || card.clientWidth < 130 || card.clientWidth > 260) continue;
-
-      if (card.querySelector(".orig-card-action-wrap-v147")) {
-        btn.setAttribute("data-orig-hidden-plus-v147", "1");
-        btn.style.setProperty("display", "none", "important");
-        continue;
+      if (targetAddBtn) {
+        setupCardBarV148(targetAddBtn, card);
       }
-
-      setupCardBarV147(btn, card);
     }
   }
 
   setInterval(function() {
-    styleCategoriesAndFilterPillsV147();
-    upgradeProductCardsV147();
+    styleCategoryPillsAndCardsV148();
+    enhanceOffersSectionV148();
+    upgradeProductCardsV148();
   }, 450);
 })();
 </script>
-<!-- ORIGINAL_HOME_V147_END -->
+<!-- ORIGINAL_HOME_V148_END -->
 </body>
 </html>
