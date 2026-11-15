@@ -5377,6 +5377,7 @@ setInterval(window.__runV129Sync, 180);
 })();
 </script>
 <!-- ORIGINAL_HOME_V153_END -->
+
 <!-- ORIGINAL_CLEAN_HEADER_V155_START -->
 <style>
   header.store-header,
@@ -5398,7 +5399,7 @@ setInterval(window.__runV129Sync, 180);
     flex-wrap: wrap !important;
     align-items: center !important;
     justify-content: space-between !important;
-    gap: 10px !important;
+    gap: 8px !important;
     width: 100% !important;
     box-sizing: border-box !important;
   }
@@ -5423,7 +5424,7 @@ setInterval(window.__runV129Sync, 180);
     margin: 0 !important;
   }
 
-  /* إخفاء أيقونتي حسابي والمفضلة من الهيدر العلوي فقط وإبقاء 3 أيقونات: الإشعارات، طلباتي، السلة */
+  /* إبقاء 3 أيقونات فقط: الإشعارات، طلباتي، السلة */
   header .header-actions a[href="/account"],
   header .header-actions a[href*="account"],
   header .header-actions a[href="/favorites"],
@@ -5433,21 +5434,22 @@ setInterval(window.__runV129Sync, 180);
     display: none !important;
   }
 
+  /* توحيد حجم الأيقونات الثلاث بنفس حجم زر طلباتي (38x38px) */
   header .header-actions > a,
   header .header-actions > button,
   header .header-actions #orig-header-bell-v141 {
-    width: 44px !important;
-    height: 44px !important;
-    min-width: 44px !important;
-    min-height: 44px !important;
-    max-width: 44px !important;
-    max-height: 44px !important;
-    border-radius: 14px !important;
+    width: 38px !important;
+    height: 38px !important;
+    min-width: 38px !important;
+    min-height: 38px !important;
+    max-width: 38px !important;
+    max-height: 38px !important;
+    border-radius: 12px !important;
     display: inline-flex !important;
     align-items: center !important;
     justify-content: center !important;
     border: 1.5px solid #d8b454 !important;
-    box-shadow: 0 4px 12px rgba(19, 70, 47, 0.12) !important;
+    box-shadow: 0 3px 10px rgba(19, 70, 47, 0.1) !important;
     padding: 0 !important;
     margin: 0 !important;
     position: relative !important;
@@ -5457,17 +5459,19 @@ setInterval(window.__runV129Sync, 180);
   header .header-actions > a svg,
   header .header-actions > button svg,
   header .header-actions #orig-header-bell-v141 svg {
-    width: 21px !important;
-    height: 21px !important;
+    width: 19px !important;
+    height: 19px !important;
   }
 
   header .header-actions a[href="/orders"],
-  header .header-actions a[href*="orders"] {
+  header .header-actions a[href*="orders"],
+  header .header-actions button[aria-label*="طلب"] {
     background: #ffffff !important;
     color: #13462f !important;
   }
   header .header-actions a[href="/cart"],
-  header .header-actions a[href*="cart"] {
+  header .header-actions a[href*="cart"],
+  header .header-actions button[aria-label*="سلة"] {
     background: linear-gradient(135deg, #165237 0%, #0b2b1d 100%) !important;
     color: #e7c972 !important;
   }
@@ -5479,19 +5483,24 @@ setInterval(window.__runV129Sync, 180);
     stroke: #13462f !important;
   }
 
+  /* شريط البحث المنسق بدون إطار مزدوج */
   header .header-search {
     order: 3 !important;
     flex: 1 0 100% !important;
     width: 100% !important;
     margin: 0 !important;
+    background: #ffffff !important;
+    border: 1.5px solid rgba(216, 180, 84, 0.45) !important;
+    border-radius: 14px !important;
+    box-shadow: 0 2px 10px rgba(19, 70, 47, 0.05) !important;
+    overflow: hidden !important;
   }
   header .header-search input {
-    width: 100% !important;
-    height: 40px !important;
-    border-radius: 14px !important;
-    border: 1.5px solid rgba(216, 180, 84, 0.45) !important;
-    background: #ffffff !important;
-    box-shadow: 0 2px 10px rgba(19, 70, 47, 0.05) !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    height: 38px !important;
+    outline: none !important;
   }
 </style>
 <!-- ORIGINAL_CLEAN_HEADER_V155_END -->
