@@ -1,16 +1,4 @@
 
-const INSTANT_CATALOG_KEY = "original-catalog-instant-v87";
-function getInstantLocalCatalog(): HomeData {
-  try {
-    const raw = localStorage.getItem(INSTANT_CATALOG_KEY);
-    if (raw) {
-      const p = JSON.parse(raw);
-      if (p && Array.isArray(p.products)) return p;
-    }
-  } catch {}
-  return { categories: [], products: [], banners: [], offers: [], settings: {} };
-}
-
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Link, useLocation, useSearch } from "wouter";
 import {
@@ -26,6 +14,19 @@ import { cleanYemeniPhone, clearPendingOrderIdempotencyKey, getPendingOrderIdemp
 import PWAInstall from "@/components/PWAInstall";
 import { buildMissingIngredientNote } from "@/lib/assistant-note";
 import { ensureBrowserPushSubscription, getExistingBrowserPushSubscription, getPushPermissionState, requestPushPermission } from "@/lib/pushNotifications";
+
+const INSTANT_CATALOG_KEY = "original-catalog-instant-v87";
+function getInstantLocalCatalog(): HomeData {
+  try {
+    const raw = localStorage.getItem(INSTANT_CATALOG_KEY);
+    if (raw) {
+      const p = JSON.parse(raw);
+      if (p && Array.isArray(p.products)) return p;
+    }
+  } catch {}
+  return { categories: [], products: [], banners: [], offers: [], settings: {} };
+}
+
 
 const storeName = "ORIGINAL - أورجنال";
 
@@ -885,7 +886,7 @@ function Header({ data, onSearch }: { data?: HomeData; onSearch: (text: string) 
   return <header className="store-header">
     <div className="header-main">
       <Link href="/" className="brand-lockup" aria-label={`${storeName} الرئيسية`}>
-        <img src={(data?.settings?.logo || "").trim() || "/app-icon-192-v85.png"} onError={(e) => { e.currentTarget.src = "/app-icon-192-v85.png"; }} alt={storeName} className="brand-mark" style={{ borderRadius: "12px", objectFit: "cover", padding: 0, border: "1.5px solid #d4af37" }} />
+        <img src={((data?.settings?.storeIconUrl || data?.settings?.logo) || "").trim() || "/app-icon-192-v85.png"} onError={(e) => { e.currentTarget.src = "/app-icon-192-v85.png"; }} alt={storeName} className="brand-mark" style={{ borderRadius: "12px", objectFit: "cover", padding: 0, border: "1.5px solid #d4af37" }} />
         <span className="brand-type"><strong>ORIGINAL</strong><small>{brandSubtitle}</small></span>
       </Link>
       <form className="header-search" onSubmit={submitSearch}>
@@ -3815,7 +3816,7 @@ function AccountPage() {
             })()}
 
             {accountPanel === 'contact_options' && (() => {
-              const rawStorePhone = String(homeCatalog.data?.settings?.contactPhone || '770000000').trim();
+              const rawStorePhone = String(homeCatalog.data?.settings?.contactPhone || '770731619').trim();
               const digitsOnly = rawStorePhone.replace(/\D+/g, '');
               const waPhone = digitsOnly ? (digitsOnly.startsWith('967') ? digitsOnly : '967' + digitsOnly.replace(/^0+/, '')) : '';
               const waLink = waPhone ? (['ht', 'tps://wa.me/'].join('') + waPhone) : '';
