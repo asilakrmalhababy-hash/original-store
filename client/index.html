@@ -22,6 +22,31 @@
       window.__origRuntimeV168 = true;
 
       let currentSubMode = null;
+
+      let storeSupportPhone = localStorage.getItem("orig_store_support_phone_v171") || "774577334";
+      function normalizeWaPhone(raw) {
+        const digits = String(raw || "").replace(/\D+/g, "");
+        if (!digits) return "967774577334";
+        if (digits.startsWith("967")) return digits;
+        if (digits.startsWith("00967")) return digits.slice(2);
+        if (digits.length === 9 && digits.startsWith("7")) return "967" + digits;
+        return digits;
+      }
+      fetch("/api/trpc/store.getData")
+        .then(r => r.ok ? r.json() : null)
+        .then(res => {
+          const settings = res?.result?.data?.json?.settings || res?.result?.data?.settings;
+          if (!settings) return;
+          const rawPhone = String(settings.whatsappPhone || settings.contactPhone || "").trim();
+          if (rawPhone) {
+            storeSupportPhone = rawPhone;
+            try { localStorage.setItem("orig_store_support_phone_v171", rawPhone); } catch (_) {}
+            const el = document.getElementById("orig-about-phone-v171");
+            if (el) el.textContent = "الإصدار الرسمي • خدمة عملاء: " + rawPhone;
+          }
+        })
+        .catch(() => {});
+
       let isBusy = false;
 
       // 1. تبديل أيقونة الواتساب في الهيدر العلوي فقط إلى جرس الإشعارات
@@ -360,7 +385,7 @@
             <h3 class="orig-modal-title-v168">ORIGINAL – أورجنال</h3>
             <p class="orig-modal-desc-v168">
               متجرك المفضل لتوصيل كافة مقاضي البيت والمواد الغذائية الطازجة في صنعاء بسرعة وعناية فائقة.<br>
-              <strong style="color:#13462f;display:inline-block;margin-top:6px;">الإصدار الرسمي • خدمة عملاء: 779542219</strong>
+              <strong id="orig-about-phone-v171" style="color:#13462f;display:inline-block;margin-top:6px;">الإصدار الرسمي • خدمة عملاء: ${storeSupportPhone}</strong>
             </p>
             <div class="orig-modal-actions-v168">
               <button type="button" class="orig-modal-btn-v168 primary" id="orig-close-about-v168">إغلاق</button>
@@ -529,7 +554,7 @@
               else if (act === "favorites") window.location.href = "/favorites";
               else if (act === "profile") openSubViewSmoothly("profile");
               else if (act === "addresses") openSubViewSmoothly("addresses");
-              else if (act === "support") window.open("https://wa.me/967779542219", "_blank");
+              else if (act === "support") window.open("https://wa.me/" + normalizeWaPhone(storeSupportPhone), "_blank");
               else if (act === "about") document.getElementById("orig-about-modal-v168")?.classList.add("open");
               else if (act === "logout") document.getElementById("orig-logout-modal-v168")?.classList.add("open");
             });

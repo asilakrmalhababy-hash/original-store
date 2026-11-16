@@ -883,7 +883,7 @@ function Header({ data, onSearch }: { data?: HomeData; onSearch: (text: string) 
   return <header className="store-header">
     <div className="header-main">
       <Link href="/" className="brand-lockup" aria-label={`${storeName} الرئيسية`}>
-        <img src="/app-icon-192-v85.png" alt="ORIGINAL" className="brand-mark" style={{ borderRadius: "12px", objectFit: "cover", padding: 0, border: "1.5px solid #d4af37" }} />
+        <img src={(data?.settings?.logo || "").trim() || "/app-icon-192-v85.png"} onError={(e) => { e.currentTarget.src = "/app-icon-192-v85.png"; }} alt={storeName} className="brand-mark" style={{ borderRadius: "12px", objectFit: "cover", padding: 0, border: "1.5px solid #d4af37" }} />
         <span className="brand-type"><strong>ORIGINAL</strong><small>{brandSubtitle}</small></span>
       </Link>
       <form className="header-search" onSubmit={submitSearch}>
