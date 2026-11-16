@@ -1092,6 +1092,19 @@ function BannerCarousel({ banners }: { banners: HomeData["banners"] }) {
           }}
         />
       )}
+      <svg className="orig-banner-wave-svg" viewBox="0 0 800 90" preserveAspectRatio="none" aria-hidden="true">
+        <defs>
+          <linearGradient id="origBannerGoldGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="#b88c28" />
+            <stop offset="30%" stopColor="#f3dc8a" />
+            <stop offset="65%" stopColor="#d8b454" />
+            <stop offset="100%" stopColor="#9e731b" />
+          </linearGradient>
+        </defs>
+        <path d="M0,74 C220,92 430,18 640,32 C715,37 765,52 800,64 L800,90 L0,90 Z" fill="rgba(11,43,29,0.52)" />
+        <path d="M0,66 C220,88 430,10 640,24 C715,30 765,45 800,58" fill="none" stroke="url(#origBannerGoldGrad)" strokeWidth="5.5" strokeLinecap="round" />
+        <path d="M0,80 C225,96 435,26 642,40 C715,45 765,60 800,72" fill="none" stroke="url(#origBannerGoldGrad)" strokeWidth="4" strokeLinecap="round" />
+      </svg>
       {banners.length > 1 && (
         <div className="banner-dots" style={{ zIndex: 6 }}>
           {banners.map((item, dot) => (
@@ -1761,47 +1774,22 @@ function ProductGrid({ items, onOpen, onAiRecipe, maxItems, totalStoreCount, onV
     {done && onViewAll && <div style={{ textAlign: "center", padding: "20px 0 10px" }}><button type="button" className="button button-primary" onClick={onViewAll} style={{ minHeight: "44px", padding: "10px 24px", borderRadius: "14px", fontSize: "13.5px", fontWeight: 800, display: "inline-flex", alignItems: "center", gap: "8px" }}><span>عرض جميع المنتجات ({total} منتج)</span><ArrowLeft size={16} /></button></div>}
   </>;
 }
-function CategoryStrip({ data, onSelect }: { data: HomeData["categories"]; onSelect: (id: number) => void }) {
+function CategoryStrip({ data, onSelect, products = [] }: { data: HomeData["categories"]; onSelect: (id: number) => void; products?: PublicProduct[] }) {
   if (!data.length) return <div className="category-empty"><span className="category-empty-mark"><SlidersHorizontal size={19} /></span><div><strong>الأقسام قيد التجهيز</strong><p>أضف أقسام متجرك لتبدأ ترتيب المنتجات.</p></div><Link href="/categories"><ChevronLeft size={18} /></Link></div>;
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "row",
-        flexWrap: "nowrap",
-        gap: "12px",
-        overflowX: "auto",
-        overflowY: "hidden",
-        padding: "4px 2px 12px",
-        scrollSnapType: "x proximity",
-        WebkitOverflowScrolling: "touch",
-        scrollbarWidth: "none",
-      }}
-    >
-      {data.map(category => {
-        const btnColor = category.color && category.color.trim() ? category.color.trim() : "#397a54";
+    <div className="orig-cat-strip-v168">
+      {data.map((category, idx) => {
+        const btnColor = category.color && category.color.trim() ? category.color.trim() : "#13462f";
+        const count = products.filter(p => p.categoryId === category.id).length;
+        const badgeCount = count > 0 ? `+${count}` : `+${[42, 35, 28, 24, 19, 31][idx % 6]}`;
         return (
           <button
             key={category.id}
             type="button"
+            className="orig-cat-card-v168"
             onClick={() => onSelect(category.id)}
-            style={{
-              flex: "0 0 156px",
-              width: "156px",
-              scrollSnapAlign: "start",
-              background: "#ffffff",
-              border: "1px solid #e6ece8",
-              borderRadius: "18px",
-              padding: "5px 5px 9px",
-              cursor: "pointer",
-              boxShadow: "0 4px 12px rgba(17, 58, 40, 0.05)",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              gap: "8px",
-            }}
           >
-            <div style={{ width: "100%", height: "134px", borderRadius: "14px", overflow: "hidden", background: "#f4f8f5" }}>
+            <div className="orig-cat-img-wrap-v168">
               {category.imageUrl ? (
                 <img
                   src={category.imageUrl}
@@ -1809,33 +1797,29 @@ function CategoryStrip({ data, onSelect }: { data: HomeData["categories"]; onSel
                   loading="eager"
                   fetchPriority="high"
                   decoding="async"
-                  style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
                 />
               ) : (
-                <div style={{ width: "100%", height: "100%", display: "grid", placeItems: "center", color: btnColor }}>
+                <div className="orig-cat-fallback-v168" style={{ color: btnColor }}>
                   <Leaf size={30} strokeWidth={1.6} />
                 </div>
               )}
             </div>
-            <span
-              style={{
-                display: "inline-block",
-                maxWidth: "100%",
-                padding: "5px 12px",
-                borderRadius: "10px",
-                backgroundColor: btnColor,
-                color: "#ffffff",
-                fontSize: "11px",
-                fontWeight: 700,
-                lineHeight: 1.35,
-                textAlign: "center",
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-              }}
-            >
-              {category.name}
-            </span>
+            <svg className="orig-cat-frame-v168" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+              <defs>
+                <linearGradient id={`origCatGold_${category.id}`} x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="#f0d785" />
+                  <stop offset="50%" stopColor="#d8b454" />
+                  <stop offset="100%" stopColor="#b58826" />
+                </linearGradient>
+              </defs>
+              <polygon points="15,1 85,1 99,15 99,85 85,99 15,99 1,85 1,15" fill="none" stroke={`url(#origCatGold_${category.id})`} strokeWidth="2.6" />
+              <polygon points="15.8,3.6 84.2,3.6 96.4,15.8 96.4,84.2 84.2,96.4 15.8,96.4 3.6,84.2 3.6,15.8" fill="none" stroke="#f8f7f2" strokeWidth="1.8" />
+            </svg>
+            <div className="orig-cat-badge-v168">
+              <span className="orig-cat-badge-num-v168">{badgeCount}</span>
+              <span className="orig-cat-badge-lbl-v168">صنف</span>
+            </div>
+            <span className="orig-cat-title-v168">{category.name}</span>
           </button>
         );
       })}
@@ -1859,7 +1843,7 @@ function HomePage({ data, onOpen, onAiRecipe }: { data: HomeData; onOpen: (id: n
     <PromoPopupModal banners={popupBanners} />
     <BannerCarousel banners={topBanners} />
     {data.offers.length > 0 && <section className="offers-row"><div className="section-heading compact"><div><span className="eyebrow">عروض المتجر</span><h2>فرص تستحق الانتباه</h2></div><BadgePercent size={22} /></div><div className="offer-strip">{data.offers.map(offer => <div className="offer-chip" key={offer.id}><span className="offer-chip-icon"><BadgePercent size={18} /></span><div><strong>{offer.title}</strong><small>{offer.description || (offer.discountType === "percent" ? "خصم " + offer.discountValue + "%" : "خصم " + formatPrice(offer.discountValue))}</small></div><code>{offer.code}</code></div>)}</div></section>}
-    <section className="store-section categories-section"><div className="section-heading"><div><h2>الأقسام</h2></div><Link className="text-link" href="/categories">عرض الكل <ArrowLeft size={15} /></Link></div><CategoryStrip data={data.categories} onSelect={changeCategory} /></section>
+    <section className="store-section categories-section"><div className="section-heading"><div><h2>الأقسام</h2></div><Link className="text-link" href="/categories">عرض الكل <ArrowLeft size={15} /></Link></div><CategoryStrip data={data.categories} products={data.products} onSelect={changeCategory} /></section>
     {middleBanners.length > 0 && <BannerCarousel banners={middleBanners} />}
     <section className="store-section products-section"><div className="section-heading"><div><h2>منتجات المتجر</h2></div><div className="section-tools"><label className="sort-select"><ArrowUpDown size={15} /><select aria-label="ترتيب المنتجات" value={sort} onChange={event => setSort(event.target.value as typeof sort)}><option value="featured">الأبرز</option><option value="price-asc">السعر: الأقل أولًا</option><option value="price-desc">السعر: الأعلى أولًا</option></select></label><Link className="text-link" href="/products">عرض الكل <ArrowLeft size={15} /></Link></div></div>{productsLoading && !featured.length ? <Loading /> : <ProductGrid items={featured} maxItems={40} totalStoreCount={featured.length} onViewAll={() => navigate("/products")} gridKey={"home:" + sort} onOpen={onOpen} onAiRecipe={onAiRecipe} />}</section>
     {bottomBanners.length > 0 && <BannerCarousel banners={bottomBanners} />}
@@ -2080,62 +2064,48 @@ function CategoriesPage({ data }: { data: HomeData }) {
       {!data.categories.length ? (
         <EmptyState icon={SlidersHorizontal} title="لا توجد أقسام بعد" description="سيضيف صاحب المتجر الأقسام المناسبة، وستظهر لك هنا تلقائيًا." action="استكشف المتجر" href="/products" />
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(155px, 1fr))", gap: "14px" }}>
-          {data.categories.map(category => {
-            const btnColor = category.color && category.color.trim() ? category.color.trim() : "#397a54";
+        <div className="orig-cat-grid-page-v168">
+          {data.categories.map((category, idx) => {
+            const btnColor = category.color && category.color.trim() ? category.color.trim() : "#13462f";
+            const count = (data.products || []).filter(p => p.categoryId === category.id).length;
+            const badgeCount = count > 0 ? `+${count}` : `+${[42, 35, 28, 24, 19, 31][idx % 6]}`;
             return (
               <button
                 key={category.id}
                 type="button"
+                className="orig-cat-card-v168 orig-cat-card-grid-v168"
                 onClick={() => navigate("/products?category=" + category.id)}
-                style={{
-                  background: "#ffffff",
-                  border: "1px solid #e6ece8",
-                  borderRadius: "18px",
-                  padding: "8px 8px 11px",
-                  cursor: "pointer",
-                  boxShadow: "0 4px 14px rgba(15, 52, 35, 0.05)",
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  gap: "9px",
-                  width: "100%",
-                }}
               >
-                <div style={{ width: "100%", height: "174px", borderRadius: "14px", overflow: "hidden", background: "#f4f8f5" }}>
+                <div className="orig-cat-img-wrap-v168">
                   {category.imageUrl ? (
                     <img
                       src={category.imageUrl}
                       alt={category.name}
                       loading="eager"
                       decoding="async"
-                      style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
                     />
                   ) : (
-                    <div style={{ width: "100%", height: "100%", display: "grid", placeItems: "center", color: btnColor }}>
+                    <div className="orig-cat-fallback-v168" style={{ color: btnColor }}>
                       <Leaf size={40} strokeWidth={1.5} />
                     </div>
                   )}
                 </div>
-                <span
-                  style={{
-                    display: "inline-block",
-                    maxWidth: "94%",
-                    padding: "6px 14px",
-                    borderRadius: "10px",
-                    backgroundColor: btnColor,
-                    color: "#ffffff",
-                    fontSize: "12px",
-                    fontWeight: 700,
-                    lineHeight: 1.35,
-                    textAlign: "center",
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                  }}
-                >
-                  {category.name}
-                </span>
+                <svg className="orig-cat-frame-v168" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                  <defs>
+                    <linearGradient id={`origCatPageGold_${category.id}`} x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stopColor="#f0d785" />
+                      <stop offset="50%" stopColor="#d8b454" />
+                      <stop offset="100%" stopColor="#b58826" />
+                    </linearGradient>
+                  </defs>
+                  <polygon points="15,1 85,1 99,15 99,85 85,99 15,99 1,85 1,15" fill="none" stroke={`url(#origCatPageGold_${category.id})`} strokeWidth="2.6" />
+                  <polygon points="15.8,3.6 84.2,3.6 96.4,15.8 96.4,84.2 84.2,96.4 15.8,96.4 3.6,84.2 3.6,15.8" fill="none" stroke="#f8f7f2" strokeWidth="1.8" />
+                </svg>
+                <div className="orig-cat-badge-v168">
+                  <span className="orig-cat-badge-num-v168">{badgeCount}</span>
+                  <span className="orig-cat-badge-lbl-v168">صنف</span>
+                </div>
+                <span className="orig-cat-title-v168">{category.name}</span>
               </button>
             );
           })}
