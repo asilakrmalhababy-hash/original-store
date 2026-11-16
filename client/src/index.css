@@ -2663,7 +2663,7 @@ header.store-header .header-search input {
 #orig-vip-loyalty-section-v140 {
   display: none !important;
 }
-.original-account-page:not(.orig-mode-subview) > *:not(#orig-acc-v168-root) {
+.original-account-page:not(.orig-mode-sub) > *:not(#orig-acc-v168-root) {
   display: none !important;
 }
 .original-account-page.orig-mode-hub > #orig-acc-v168-root {
@@ -2914,7 +2914,7 @@ body.orig-on-account-page [class*="whatsapp-float"] {
 
 
 /* === V174 ZERO-FLICKER GUARD === */
-.original-account-page:not(.orig-mode-subview) > *:not(#orig-acc-v168-root) { display: none !important; }
+.original-account-page:not(.orig-mode-sub) > *:not(#orig-acc-v168-root) { display: none !important; }
 header.store-header .header-actions a[href*="wa.me"],
 header.store-header .header-actions a[href="/favorites"],
 header.store-header .header-actions a[href="/account"] { display: none !important; }
