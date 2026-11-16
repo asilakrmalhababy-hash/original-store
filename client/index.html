@@ -25,6 +25,77 @@
       let isBusy = false;
 
       // 1. تبديل أيقونة الواتساب في الهيدر العلوي فقط إلى جرس الإشعارات
+      
+      function openNotificationsDrawer() {
+        let drawer = document.getElementById("orig-notif-drawer-v170");
+        if (!drawer) {
+          drawer = document.createElement("div");
+          drawer.id = "orig-notif-drawer-v170";
+          drawer.innerHTML = `
+            <div class="orig-notif-sheet-v170">
+              <div class="orig-notif-head-v170">
+                <div class="orig-notif-pill-v170"></div>
+                <div class="orig-notif-head-row-v170">
+                  <h3 class="orig-notif-title-v170">إشعارات الطلبات والعروض</h3>
+                  <button type="button" class="orig-notif-close-v170" id="orig-notif-close-btn-v170">إغلاق</button>
+                </div>
+              </div>
+              <div class="orig-notif-body-v170" id="orig-notif-body-v170">
+                <div class="orig-notif-card-v170">
+                  <p class="orig-notif-card-msg-v170">جارٍ تحميل أحدث الإشعارات والعروض...</p>
+                </div>
+              </div>
+            </div>
+          `;
+          document.body.appendChild(drawer);
+          drawer.addEventListener("click", (e) => { if (e.target === drawer) drawer.classList.remove("open"); });
+          document.getElementById("orig-notif-close-btn-v170").addEventListener("click", () => drawer.classList.remove("open"));
+        }
+        drawer.classList.add("open");
+
+        const bodyEl = document.getElementById("orig-notif-body-v170");
+        Promise.allSettled([
+          fetch("/api/v140/customer-feed").then(r => r.ok ? r.json() : null).catch(() => null),
+          fetch("/api/trpc/store.getData").then(r => r.ok ? r.json() : null).catch(() => null)
+        ]).then(([feedRes, storeRes]) => {
+          const cards = [];
+          const feed = feedRes.status === "fulfilled" && feedRes.value ? (feedRes.value.items || feedRes.value.notifications || []) : [];
+          if (Array.isArray(feed)) {
+            feed.forEach(item => {
+              cards.push(`
+                <div class="orig-notif-card-v170">
+                  <h4 class="orig-notif-card-title-v170">🔔 ${item.title || "إشعار من متجر أورجنال"}</h4>
+                  <p class="orig-notif-card-msg-v170">${item.body || item.message || ""}</p>
+                </div>
+              `);
+            });
+          }
+          const storeData = storeRes.status === "fulfilled" && storeRes.value ? (storeRes.value?.result?.data?.json || storeRes.value?.result?.data) : null;
+          const offers = storeData?.offers || [];
+          if (Array.isArray(offers)) {
+            offers.forEach(of => {
+              const code = (of.code || "").trim();
+              cards.push(`
+                <div class="orig-notif-card-v170">
+                  <h4 class="orig-notif-card-title-v170">🎁 ${of.title || "عرض خاص"}</h4>
+                  <p class="orig-notif-card-msg-v170">${of.description || "استفد من هذا العرض عند تأكيد طلبك."}</p>
+                  ${code ? `<button type="button" class="orig-promo-copy-btn-v170" onclick="navigator.clipboard?.writeText('${code}');this.textContent='✓ تم نسخ الكود: ${code}';">نسخ الكود: ${code}</button>` : ""}
+                </div>
+              `);
+            });
+          }
+          if (!cards.length) {
+            cards.push(`
+              <div class="orig-notif-card-v170">
+                <h4 class="orig-notif-card-title-v170">أهلاً بك في إشعارات أورجنال</h4>
+                <p class="orig-notif-card-msg-v170">ستظهر هنا فورياً جميع تحديثات طلباتك وعروض الخصم الحصرية.</p>
+              </div>
+            `);
+          }
+          if (bodyEl) bodyEl.innerHTML = cards.join("");
+        });
+      }
+
       function upgradeHeaderBell() {
         const actions = document.querySelector("header.store-header .header-actions");
         if (!actions || actions.dataset.bellReady === "1") return;
@@ -40,7 +111,8 @@
           bellBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="#13462f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>';
           bellBtn.addEventListener("click", (e) => {
             e.preventDefault();
-            window.location.href = "/orders";
+            e.stopPropagation();
+            openNotificationsDrawer();
           });
           waLink.replaceWith(bellBtn);
         }
@@ -103,12 +175,13 @@
           if (ch.id === "orig-acc-v168-root" || ch.id === "orig-subview-sheet-head-v168" || ch.classList.contains("page-title-row")) return;
           const txt = (ch.textContent || "").trim();
           if (txt.includes("عناوين التوصيل المحفوظة") || txt.includes("إضافة عنوان")) hitAddresses = true;
+          const hasProfileInputs = Boolean(ch.querySelector('input:not([type="checkbox"]):not([type="radio"])')) || txt.includes("تحديث البيانات الشخصية") || txt.includes("حفظ البيانات");
           const sec = hitAddresses
             ? "addresses"
+            : hasProfileInputs
+            ? "profile-form"
             : (ch.classList.contains("original-account-card") && (txt.includes("بيانات مكتملة") || txt.includes("تعديل البيانات") || ch.querySelector(".original-account-avatar")))
             ? "legacy-hero"
-            : (txt.includes("تحديث البيانات الشخصية") || (ch.querySelector("input") && (txt.includes("الاسم الكامل") || txt.includes("حفظ البيانات"))))
-            ? "profile-form"
             : (txt.includes("الاسم الكامل للمستلم") || txt.includes("رقم الجوال المعتمد"))
             ? "profile-readonly"
             : "legacy-links";
@@ -352,7 +425,7 @@
             </div>
 
             <div class="orig-quick-grid-v168">
-              <button type="button" class="orig-quick-card-v168" data-act="orders">
+              <button type="button" class="orig-quick-card-v168" data-act="notifications">
                 <svg viewBox="0 0 24 24" fill="#13462f"><path d="M12 22c1.1 0 2-.9 2-2h-4a2 2 0 002 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>
                 <span class="orig-quick-label-v168">إشعاراتي</span>
               </button>
@@ -451,7 +524,8 @@
               e.preventDefault();
               e.stopPropagation();
               const act = el.getAttribute("data-act");
-              if (act === "orders") window.location.href = "/orders";
+              if (act === "notifications") openNotificationsDrawer();
+              else if (act === "orders") window.location.href = "/orders";
               else if (act === "favorites") window.location.href = "/favorites";
               else if (act === "profile") openSubViewSmoothly("profile");
               else if (act === "addresses") openSubViewSmoothly("addresses");

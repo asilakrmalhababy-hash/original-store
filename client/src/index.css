@@ -2796,3 +2796,118 @@ body.orig-on-account-page [class*="whatsapp-float"] {
 .orig-modal-btn-v168.primary { background: linear-gradient(135deg, #13462f, #0b2b1d); color: var(--orig-gold-light); border: 1.5px solid var(--orig-gold); }
 .orig-modal-btn-v168.cancel { background: #f1efe6; color: #2c3e34; border: 1px solid rgba(216, 180, 84, 0.4); }
 /* === ORIGINAL CLEAN V168 END === */
+
+/* === NOTIF DRAWER V170 START === */
+#orig-notif-drawer-v170 {
+  position: fixed;
+  inset: 0;
+  background: rgba(8, 24, 16, 0.6);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+  z-index: 99998;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.24s ease;
+  direction: rtl;
+  font-family: 'Cairo', 'Tajawal', sans-serif;
+}
+#orig-notif-drawer-v170.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+.orig-notif-sheet-v170 {
+  width: 100%;
+  max-width: 540px;
+  max-height: 82vh;
+  background: #f8f7f2;
+  border-top: 2px solid #d8b454;
+  border-radius: 26px 26px 0 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transform: translateY(100%);
+  transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+  box-shadow: 0 -10px 35px rgba(0, 0, 0, 0.25);
+}
+#orig-notif-drawer-v170.open .orig-notif-sheet-v170 {
+  transform: translateY(0);
+}
+.orig-notif-head-v170 {
+  background: linear-gradient(135deg, #13462f 0%, #0b2b1d 100%);
+  padding: 12px 18px 16px 18px;
+  color: #ffffff;
+  border-bottom: 1.5px solid #d8b454;
+}
+.orig-notif-pill-v170 {
+  width: 42px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(216, 180, 84, 0.55);
+  margin: 0 auto 10px auto;
+}
+.orig-notif-head-row-v170 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.orig-notif-title-v170 {
+  font-size: 16.5px;
+  font-weight: 800;
+  margin: 0;
+}
+.orig-notif-close-v170 {
+  background: rgba(216, 180, 84, 0.18);
+  border: 1px solid rgba(216, 180, 84, 0.6);
+  color: #e7c972;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.orig-notif-body-v170 {
+  padding: 14px 16px 26px 16px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.orig-notif-card-v170 {
+  background: #ffffff;
+  border: 1.5px solid rgba(216, 180, 84, 0.4);
+  border-radius: 16px;
+  padding: 13px 14px;
+  box-shadow: 0 4px 12px rgba(19, 70, 47, 0.05);
+}
+.orig-notif-card-title-v170 {
+  font-size: 14.5px;
+  font-weight: 800;
+  color: #13462f;
+  margin: 0 0 4px 0;
+}
+.orig-notif-card-msg-v170 {
+  font-size: 13px;
+  color: #4a5c52;
+  margin: 0;
+  line-height: 1.55;
+  font-weight: 600;
+}
+.orig-promo-copy-btn-v170 {
+  margin-top: 8px;
+  background: linear-gradient(135deg, #13462f, #0b2b1d);
+  color: #e7c972;
+  border: 1px solid #d8b454;
+  border-radius: 10px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+/* === NOTIF DRAWER V170 END === */
