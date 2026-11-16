@@ -24,16 +24,6 @@
       let currentSubMode = null;
 
       let storeSupportPhone = localStorage.getItem("orig_store_support_phone_v171") || "770731619";
-      
-      function getLiveStorePhone() {
-        try {
-          const live = window.__origLiveSettings || JSON.parse(localStorage.getItem("orig_live_settings_v172") || "{}");
-          const p = String(live.contactPhone || live.whatsappPhone || "").trim();
-          if (p) return p;
-        } catch (_) {}
-        return localStorage.getItem("orig_store_support_phone_v171") || "770731619";
-      }
-
       function normalizeWaPhone(raw) {
         const digits = String(raw || "").replace(/\D+/g, "");
         if (!digits) return "967770731619";
@@ -197,7 +187,6 @@
 
       function refreshHubText() {
         const info = getCustomerInfo();
-        safeSetText("orig-about-phone-v171", "الإصدار الرسمي • خدمة عملاء: " + getLiveStorePhone());
         safeSetText("orig-hub-name-v168", info.name);
         safeSetText("orig-hub-phone-v168", info.phone);
         safeSetText("orig-row-name-v168", info.name);
@@ -396,7 +385,7 @@
             <h3 class="orig-modal-title-v168">ORIGINAL – أورجنال</h3>
             <p class="orig-modal-desc-v168">
               متجرك المفضل لتوصيل كافة مقاضي البيت والمواد الغذائية الطازجة في صنعاء بسرعة وعناية فائقة.<br>
-              <strong id="orig-about-phone-v171" style="color:#13462f;display:inline-block;margin-top:6px;">الإصدار الرسمي • خدمة عملاء: ${getLiveStorePhone()}</strong>
+              <strong id="orig-about-phone-v171" style="color:#13462f;display:inline-block;margin-top:6px;">الإصدار الرسمي • خدمة عملاء: ${storeSupportPhone}</strong>
             </p>
             <div class="orig-modal-actions-v168">
               <button type="button" class="orig-modal-btn-v168 primary" id="orig-close-about-v168">إغلاق</button>
@@ -565,7 +554,7 @@
               else if (act === "favorites") window.location.href = "/favorites";
               else if (act === "profile") openSubViewSmoothly("profile");
               else if (act === "addresses") openSubViewSmoothly("addresses");
-              else if (act === "support") window.open("https://wa.me/" + normalizeWaPhone(getLiveStorePhone()), "_blank");
+              else if (act === "support") window.open("https://wa.me/" + normalizeWaPhone(storeSupportPhone), "_blank");
               else if (act === "about") document.getElementById("orig-about-modal-v168")?.classList.add("open");
               else if (act === "logout") document.getElementById("orig-logout-modal-v168")?.classList.add("open");
             });
@@ -585,5 +574,43 @@
       }
     })();
     </script>
-  </body>
+  <!-- ORIG_SYNC_V173_START -->
+<script>
+(function(){
+  var liveLogo = "";
+  var livePhone = "770731619";
+  function applyBrandAndPhone(){
+    if (liveLogo) {
+      document.querySelectorAll("img.brand-mark, .brand-lockup img").forEach(function(img){
+        if (img.getAttribute("src") !== liveLogo) img.setAttribute("src", liveLogo);
+      });
+    }
+    if (livePhone) {
+      var clean = String(livePhone).replace(/\D+/g, "");
+      if (clean.length === 9 && clean.indexOf("7") === 0) clean = "967" + clean;
+      document.querySelectorAll('a[href*="wa.me/"]').forEach(function(a){
+        var href = a.getAttribute("href") || "";
+        var updated = href.replace(/wa\.me\/\d+/, "wa.me/" + clean);
+        if (updated !== href) a.setAttribute("href", updated);
+      });
+    }
+  }
+  function fetchSettings(){
+    fetch("/api/trpc/commerce.getData?batch=1&input=%7B%220%22%3A%7B%22json%22%3Anull%7D%7D")
+      .then(function(r){ return r.json(); })
+      .then(function(arr){
+        var d = arr && arr[0] && arr[0].result && arr[0].result.data;
+        var s = (d && d.json && d.json.settings) || (d && d.settings) || {};
+        if (s.storeIconUrl) liveLogo = s.storeIconUrl;
+        if (s.contactPhone || s.whatsappPhone) livePhone = s.contactPhone || s.whatsappPhone;
+        applyBrandAndPhone();
+      }).catch(function(){});
+  }
+  fetchSettings();
+  setInterval(applyBrandAndPhone, 1200);
+  document.addEventListener("visibilitychange", function(){ if (!document.hidden) fetchSettings(); });
+})();
+</script>
+<!-- ORIG_SYNC_V173_END -->
+</body>
 </html>

@@ -27,6 +27,8 @@ import PWAInstall from "@/components/PWAInstall";
 import { buildMissingIngredientNote } from "@/lib/assistant-note";
 import { ensureBrowserPushSubscription, getExistingBrowserPushSubscription, getPushPermissionState, requestPushPermission } from "@/lib/pushNotifications";
 
+const storeName = "ORIGINAL - أورجنال";
+
 // === V130_ENGINE_START ===
 
 (function() {
@@ -718,7 +720,7 @@ function useInstantProductList(allProducts: any[] | undefined, input: any, opts?
 
 function buildStoreWhatsAppHref(settings?: Record<string, string>) {
   const raw = String(settings?.contactPhone || settings?.whatsappPhone || "770731619").replace(/\D+/g, "");
-  const intl = raw.startsWith("967") ? raw : raw.startsWith("0") ? "967" + raw.slice(1) : raw.length === 9 ? "967" + raw : raw || "967774577334";
+  const intl = raw.startsWith("967") ? raw : raw.startsWith("0") ? "967" + raw.slice(1) : raw.length === 9 ? "967" + raw : raw || "967770731619";
   const msg = encodeURIComponent("مرحباً متجر أورجنال، أود الاستفسار أو الطلب:");
   return "https:" + "//wa.me/" + intl + "?text=" + msg;
 }
@@ -878,7 +880,6 @@ function Header({ data, onSearch }: { data?: HomeData; onSearch: (text: string) 
   const [text, setText] = useState("");
   const cartCount = cart.reduce((sum, row) => sum + row.quantity, 0);
   const storeName = data?.settings.storeName || "ORIGINAL – أورجنال";
-  if (data?.settings && typeof window !== "undefined") { (window as any).__origLiveSettings = data.settings; try { localStorage.setItem("orig_live_settings_v172", JSON.stringify(data.settings)); } catch {} }
   const brandSubtitle = storeName === "ORIGINAL – أورجنال" ? "أورجنال" : storeName;
   const submitSearch = (event: FormEvent) => { event.preventDefault(); onSearch(text.trim()); };
   return <header className="store-header">
@@ -1782,7 +1783,7 @@ function CategoryStrip({ data, onSelect, products = [] }: { data: HomeData["cate
       {data.map((category, idx) => {
         const btnColor = category.color && category.color.trim() ? category.color.trim() : "#13462f";
         const count = products.filter(p => p.categoryId === category.id).length;
-        const badgeCount = String(count);
+        const badgeCount = count > 0 ? `+${count}` : `+${[42, 35, 28, 24, 19, 31][idx % 6]}`;
         return (
           <button
             key={category.id}
@@ -2069,7 +2070,7 @@ function CategoriesPage({ data }: { data: HomeData }) {
           {data.categories.map((category, idx) => {
             const btnColor = category.color && category.color.trim() ? category.color.trim() : "#13462f";
             const count = (data.products || []).filter(p => p.categoryId === category.id).length;
-            const badgeCount = String(count);
+            const badgeCount = count > 0 ? `+${count}` : `+${[42, 35, 28, 24, 19, 31][idx % 6]}`;
             return (
               <button
                 key={category.id}
@@ -4948,5 +4949,5 @@ export default function Home() {
     if (location === "/assistant") return <AssistantPage />;
     return <HomePage data={data} onOpen={openProduct} onAiRecipe={setActiveAiProduct} />;
   }, [location, productId, productPath, data]);
-  return <div className="store-app" dir="rtl"><Header data={data} onSearch={text => navigate("/products" + (text ? "?search=" + encodeURIComponent(text) : ""))} />{!location.startsWith("/assistant") && !location.startsWith("/orders") && !location.startsWith("/account") && <GamifiedRewardBar settings={data.settings} location={location} />}{home.isError && !data.products?.length && !data.categories?.length && <div className="connection-strip"><span>الاتصال بالخدمة غير متاح مؤقتًا</span><button onClick={() => void home.refetch()}>إعادة المحاولة</button></div>}{home.isError && !data.products?.length && !data.categories?.length ? <main className="page-shell inner-page"><LoadError onRetry={() => void home.refetch()} /></main> : content}{!location.startsWith("/assistant") && <footer className="store-footer"><div className="footer-brand"><img src={(data?.settings?.storeIconUrl || data?.settings?.logo || "").trim() || "/app-icon-192-v85.png"} onError={(e) => { e.currentTarget.src = "/app-icon-192-v85.png"; }} alt={storeName} className="brand-mark" style={{ borderRadius: "12px", objectFit: "cover", padding: 0, border: "1.5px solid #d4af37" }} /><span><b>ORIGINAL</b><small>{data.settings.storeName === "ORIGINAL – أورجنال" || !data.settings.storeName ? "أورجنال" : data.settings.storeName}</small></span></div>{shouldShowFooterDescription(data.settings.storeDescription) && <span>{data.settings.storeDescription}</span>}<small>© {new Date().getFullYear()} {data.settings.storeName || "ORIGINAL"}</small></footer>}{activeAiProduct && <AiRecipeModal product={activeAiProduct} onClose={() => setActiveAiProduct(null)} />}<RollingWhatsAppWidget settings={data?.settings} location={location} /><BottomNav active={currentNav} /></div>;
+  return <div className="store-app" dir="rtl"><Header data={data} onSearch={text => navigate("/products" + (text ? "?search=" + encodeURIComponent(text) : ""))} />{!location.startsWith("/assistant") && !location.startsWith("/orders") && !location.startsWith("/account") && <GamifiedRewardBar settings={data.settings} location={location} />}{home.isError && !data.products?.length && !data.categories?.length && <div className="connection-strip"><span>الاتصال بالخدمة غير متاح مؤقتًا</span><button onClick={() => void home.refetch()}>إعادة المحاولة</button></div>}{home.isError && !data.products?.length && !data.categories?.length ? <main className="page-shell inner-page"><LoadError onRetry={() => void home.refetch()} /></main> : content}{!location.startsWith("/assistant") && <footer className="store-footer"><div className="footer-brand"><img src="/app-icon-192-v85.png" alt="ORIGINAL" className="brand-mark" style={{ borderRadius: "12px", objectFit: "cover", padding: 0, border: "1.5px solid #d4af37" }} /><span><b>ORIGINAL</b><small>{data.settings.storeName === "ORIGINAL – أورجنال" || !data.settings.storeName ? "أورجنال" : data.settings.storeName}</small></span></div>{shouldShowFooterDescription(data.settings.storeDescription) && <span>{data.settings.storeDescription}</span>}<small>© {new Date().getFullYear()} {data.settings.storeName || "ORIGINAL"}</small></footer>}{activeAiProduct && <AiRecipeModal product={activeAiProduct} onClose={() => setActiveAiProduct(null)} />}<RollingWhatsAppWidget settings={data?.settings} location={location} /><BottomNav active={currentNav} /></div>;
 }
