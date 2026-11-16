@@ -23,10 +23,20 @@
 
       let currentSubMode = null;
 
-      let storeSupportPhone = localStorage.getItem("orig_store_support_phone_v171") || "774577334";
+      let storeSupportPhone = localStorage.getItem("orig_store_support_phone_v171") || "770731619";
+      
+      function getLiveStorePhone() {
+        try {
+          const live = window.__origLiveSettings || JSON.parse(localStorage.getItem("orig_live_settings_v172") || "{}");
+          const p = String(live.contactPhone || live.whatsappPhone || "").trim();
+          if (p) return p;
+        } catch (_) {}
+        return localStorage.getItem("orig_store_support_phone_v171") || "770731619";
+      }
+
       function normalizeWaPhone(raw) {
         const digits = String(raw || "").replace(/\D+/g, "");
-        if (!digits) return "967774577334";
+        if (!digits) return "967770731619";
         if (digits.startsWith("967")) return digits;
         if (digits.startsWith("00967")) return digits.slice(2);
         if (digits.length === 9 && digits.startsWith("7")) return "967" + digits;
@@ -187,6 +197,7 @@
 
       function refreshHubText() {
         const info = getCustomerInfo();
+        safeSetText("orig-about-phone-v171", "الإصدار الرسمي • خدمة عملاء: " + getLiveStorePhone());
         safeSetText("orig-hub-name-v168", info.name);
         safeSetText("orig-hub-phone-v168", info.phone);
         safeSetText("orig-row-name-v168", info.name);
@@ -385,7 +396,7 @@
             <h3 class="orig-modal-title-v168">ORIGINAL – أورجنال</h3>
             <p class="orig-modal-desc-v168">
               متجرك المفضل لتوصيل كافة مقاضي البيت والمواد الغذائية الطازجة في صنعاء بسرعة وعناية فائقة.<br>
-              <strong id="orig-about-phone-v171" style="color:#13462f;display:inline-block;margin-top:6px;">الإصدار الرسمي • خدمة عملاء: ${storeSupportPhone}</strong>
+              <strong id="orig-about-phone-v171" style="color:#13462f;display:inline-block;margin-top:6px;">الإصدار الرسمي • خدمة عملاء: ${getLiveStorePhone()}</strong>
             </p>
             <div class="orig-modal-actions-v168">
               <button type="button" class="orig-modal-btn-v168 primary" id="orig-close-about-v168">إغلاق</button>
@@ -554,7 +565,7 @@
               else if (act === "favorites") window.location.href = "/favorites";
               else if (act === "profile") openSubViewSmoothly("profile");
               else if (act === "addresses") openSubViewSmoothly("addresses");
-              else if (act === "support") window.open("https://wa.me/" + normalizeWaPhone(storeSupportPhone), "_blank");
+              else if (act === "support") window.open("https://wa.me/" + normalizeWaPhone(getLiveStorePhone()), "_blank");
               else if (act === "about") document.getElementById("orig-about-modal-v168")?.classList.add("open");
               else if (act === "logout") document.getElementById("orig-logout-modal-v168")?.classList.add("open");
             });
