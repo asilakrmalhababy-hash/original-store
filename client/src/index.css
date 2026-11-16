@@ -3119,7 +3119,7 @@ body.orig-on-account-page [class*="whatsapp-float"] {
 .orig-modal-btn-v165.primary { background: linear-gradient(135deg, #13462f, #0b2b1d); color: var(--orig-gold-light); border: 1.5px solid var(--orig-gold); }
 .orig-modal-btn-v165.cancel { background: #f1efe6; color: #2c3e34; border: 1px solid rgba(216, 180, 84, 0.4); }
 
-/* === ORIGINAL MASTER DESIGN-19 V166 START === */
+
 :root {
   --orig-em-dark: #0b2b1d;
   --orig-em-main: #13462f;
@@ -3909,4 +3909,3 @@ body.orig-on-account-page [class*="whatsapp-float"] {
 .orig-modal-btn-v166.confirm { background: #b91c1c; color: #ffffff; }
 .orig-modal-btn-v166.primary { background: linear-gradient(135deg, #13462f, #0b2b1d); color: var(--orig-gold-light); border: 1.5px solid var(--orig-gold); }
 .orig-modal-btn-v166.cancel { background: #f1efe6; color: #2c3e34; border: 1px solid rgba(216, 180, 84, 0.4); }
-/* === ORIGINAL MASTER DESIGN-19 V166 END === */
