@@ -2918,3 +2918,48 @@ body.orig-on-account-page [class*="whatsapp-float"] {
 header.store-header .header-actions a[href*="wa.me"],
 header.store-header .header-actions a[href="/favorites"],
 header.store-header .header-actions a[href="/account"] { display: none !important; }
+
+/* === V176 CLEAN BANNERS & CATEGORIES START === */
+/* 1. حذف الشريطين الذهبيين من فوق البنرات الإعلانية نهائياً */
+.orig-banner-wave-svg,
+.banner-frame .orig-banner-wave-svg,
+svg.orig-banner-wave-svg {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+}
+
+/* 2. حذف التوهج والتدرج الأخضر الذي يغطي صور الأقسام */
+.orig-cat-card-v168,
+.orig-cat-frame-v168 {
+  box-shadow: none !important;
+  filter: none !important;
+  background: transparent !important;
+}
+
+.orig-cat-card-v168::before,
+.orig-cat-card-v168::after,
+.orig-cat-frame-v168::before,
+.orig-cat-frame-v168::after {
+  background: none !important;
+  box-shadow: none !important;
+}
+
+.orig-cat-title-v168 {
+  background: rgba(255, 255, 255, 0.92) !important;
+  color: #13462f !important;
+  text-shadow: none !important;
+  padding: 4px 8px !important;
+  bottom: 6px !important;
+  left: 8px !important;
+  right: 8px !important;
+  width: auto !important;
+  border-radius: 8px !important;
+  font-weight: 800 !important;
+  font-size: 11px !important;
+  line-height: 1.25 !important;
+  backdrop-filter: blur(4px) !important;
+  -webkit-backdrop-filter: blur(4px) !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08) !important;
+}
+/* === V176 CLEAN BANNERS & CATEGORIES END === */
