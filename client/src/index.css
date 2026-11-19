@@ -2989,3 +2989,25 @@ svg.orig-banner-wave-svg {
   line-height: 1.3 !important;
   text-align: center !important;
 }
+
+/* === V183 UNCLIP CATEGORY TITLE BELOW OCTAGON === */
+[class*="cat-strip"],
+[class*="category-strip"],
+[class*="cat-grid"],
+[class*="categories-grid"],
+.orig-cat-card-v168 {
+  height: auto !important;
+  max-height: none !important;
+  overflow-y: visible !important;
+}
+.orig-cat-card-v168 {
+  padding-bottom: 6px !important;
+}
+.orig-cat-title-v168 {
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+  margin-top: 6px !important;
+  padding: 2px 2px 4px !important;
+  line-height: 1.4 !important;
+}
