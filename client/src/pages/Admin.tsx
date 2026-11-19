@@ -5353,6 +5353,19 @@ function AdminPanel({ section, isOwner, permissions, allowedCategoryIds, staffId
   return <Overview />;
 }
 
+
+// ORIG_CLEAR_INSTANT_CACHE_V188
+function clearStoreInstantCache() {
+  try {
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i) || "";
+      if (k.includes("original") || k.includes("catalog") || k.includes("INSTANT")) {
+        localStorage.removeItem(k);
+      }
+    }
+  } catch {}
+}
+
 export default function Admin() {
   const [location, navigate] = useLocation();
   const auth = useAuth();
