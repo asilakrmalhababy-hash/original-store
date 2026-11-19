@@ -2967,3 +2967,34 @@ svg.orig-banner-wave-svg {
 .orig-cat-card-v168{display:flex!important;flex-direction:column!important;align-items:center!important;height:auto!important;aspect-ratio:auto!important;overflow:visible!important;clip-path:none!important;}
 .orig-cat-frame-v168{order:1!important;width:100%!important;aspect-ratio:1/1!important;position:relative!important;}
 .orig-cat-title-v168{order:2!important;position:static!important;margin-top:6px!important;width:100%!important;text-align:center!important;color:#13462f!important;background:transparent!important;}
+
+/* === V179 FIX CATEGORY IMAGE CLIP & CLEAN TITLE BELOW === */
+.orig-cat-card-v168 {
+  background: transparent !important;
+  box-shadow: none !important;
+  border: none !important;
+  padding: 0 !important;
+  overflow: visible !important;
+}
+.orig-cat-card-v168 > img,
+.orig-cat-card-v168 > .orig-cat-fallback-v168 {
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: auto !important;
+  width: 100% !important;
+  height: auto !important;
+  aspect-ratio: 1 / 1 !important;
+  object-fit: cover !important;
+  clip-path: polygon(15% 0%, 85% 0%, 100% 15%, 100% 85%, 85% 100%, 15% 100%, 0% 85%, 0% 15%) !important;
+}
+.orig-cat-title-v168 {
+  position: relative !important;
+  z-index: 3 !important;
+  margin-top: 8px !important;
+  color: #13462f !important;
+  font-size: 12.5px !important;
+  font-weight: 800 !important;
+  background: transparent !important;
+}
