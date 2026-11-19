@@ -2963,3 +2963,7 @@ svg.orig-banner-wave-svg {
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08) !important;
 }
 /* === V176 CLEAN BANNERS & CATEGORIES END === */
+
+.orig-cat-card-v168{display:flex!important;flex-direction:column!important;align-items:center!important;height:auto!important;aspect-ratio:auto!important;overflow:visible!important;clip-path:none!important;}
+.orig-cat-frame-v168{order:1!important;width:100%!important;aspect-ratio:1/1!important;position:relative!important;}
+.orig-cat-title-v168{order:2!important;position:static!important;margin-top:6px!important;width:100%!important;text-align:center!important;color:#13462f!important;background:transparent!important;}
