@@ -888,19 +888,19 @@ async function ensureTenBatchProductsSeeded() {
 // ensureTenBatchProductsSeeded disabled on boot in v132
 const fastProductColumns = {
   id: products.id, name: products.name, slug: products.slug, description: products.description,
-  imageUrl: sql<string | null>`CASE WHEN ${products.imageUrl} IS NULL OR ${products.imageUrl} = '' THEN NULL WHEN ${products.imageUrl} LIKE 'data:image/%' THEN CONCAT('/api/fast-img/product/', ${products.id}) ELSE ${products.imageUrl} END`,
+  imageUrl: sql<string | null>`CASE WHEN ${products.imageUrl} IS NULL OR ${products.imageUrl} = '' THEN NULL WHEN ${products.imageUrl} LIKE 'data:image/%' THEN CONCAT('/api/fast-img/product/', ${products.id}, '?v=', LENGTH(${products.imageUrl}), '_', LEFT(MD5(${products.imageUrl}), 6)) ELSE ${products.imageUrl} END`,
   categoryId: products.categoryId, price: products.price, unit: products.unit, stock: products.stock,
   minQuantity: products.minQuantity, quantityStep: products.quantityStep, isPublished: products.isPublished,
   isAvailable: products.isAvailable, sortOrder: products.sortOrder, createdAt: products.createdAt, updatedAt: products.updatedAt,
 };
 const fastCategoryColumns = {
   id: categories.id, name: categories.name, slug: categories.slug, description: categories.description,
-  imageUrl: sql<string | null>`CASE WHEN ${categories.imageUrl} IS NULL OR ${categories.imageUrl} = '' THEN NULL WHEN ${categories.imageUrl} LIKE 'data:image/%' THEN CONCAT('/api/fast-img/category/', ${categories.id}) ELSE ${categories.imageUrl} END`,
+  imageUrl: sql<string | null>`CASE WHEN ${categories.imageUrl} IS NULL OR ${categories.imageUrl} = '' THEN NULL WHEN ${categories.imageUrl} LIKE 'data:image/%' THEN CONCAT('/api/fast-img/category/', ${categories.id}, '?v=', LENGTH(${categories.imageUrl}), '_', LEFT(MD5(${categories.imageUrl}), 6)) ELSE ${categories.imageUrl} END`,
   color: categories.color, isActive: categories.isActive, sortOrder: categories.sortOrder, createdAt: categories.createdAt,
 };
 const fastBannerColumns = {
   id: banners.id, title: banners.title, body: banners.body,
-  imageUrl: sql<string | null>`CASE WHEN ${banners.imageUrl} IS NULL OR ${banners.imageUrl} = '' THEN NULL WHEN ${banners.imageUrl} LIKE 'data:image/%' THEN CONCAT('/api/fast-img/banner/', ${banners.id}) ELSE ${banners.imageUrl} END`,
+  imageUrl: sql<string | null>`CASE WHEN ${banners.imageUrl} IS NULL OR ${banners.imageUrl} = '' THEN NULL WHEN ${banners.imageUrl} LIKE 'data:image/%' THEN CONCAT('/api/fast-img/banner/', ${banners.id}, '?v=', LENGTH(${banners.imageUrl}), '_', LEFT(MD5(${banners.imageUrl}), 6)) ELSE ${banners.imageUrl} END`,
   actionText: banners.actionText, actionUrl: banners.actionUrl, isActive: banners.isActive, sortOrder: banners.sortOrder, createdAt: banners.createdAt,
 };
 
@@ -2268,17 +2268,17 @@ export const commerceRouter = router({
       }),
       create: requirePermission("banners.manage").use(async ({ next }) => { clearLiveHomeCache(); return next(); }).input(z.object({ title: z.string().trim().min(1).max(160), body: z.string().trim().max(1000).optional(), imageUrl: z.string().max(8500000).optional(), actionText: z.string().trim().max(5000).optional(), actionUrl: z.string().trim().max(2000).optional(), isActive: z.boolean().default(false), sortOrder: z.number().int().min(-10000).max(10000).default(0) })).mutation(async ({ input }) => {
         const db = await database();
-        const result = await db.insert(banners).values({ ...input, body: input.body ?? null, imageUrl: input.imageUrl ?? null, actionText: input.actionText ?? null, actionUrl: input.actionUrl ?? null });
+        const result = await db.insert(banners).values({ ...input, body: input.body ?? null, imageUrl: input.imageUrl ?? null, actionText: input.actionText ?? null, actionUrl: input.actionUrl ?? null }); clearLiveHomeCache();
         clearCatalogCache(); return { id: Number(result[0].insertId) };
       }),
       update: requirePermission("banners.manage").use(async ({ next }) => { clearLiveHomeCache(); return next(); }).input(z.object({ id: safeId, values: z.object({ title: z.string().trim().min(1).max(160).optional(), body: z.string().max(1000).nullable().optional(), imageUrl: z.string().max(8500000).nullable().optional(), actionText: z.string().max(5000).nullable().optional(), actionUrl: z.string().max(2000).nullable().optional(), isActive: z.boolean().optional(), sortOrder: z.number().int().min(-10000).max(10000).optional() }) })).mutation(async ({ input }) => {
         const db = await database();
-        const cleanBanVals = { ...input.values }; if (typeof cleanBanVals.imageUrl === "string" && cleanBanVals.imageUrl.startsWith("/api/fast-img/")) delete cleanBanVals.imageUrl; (globalThis as any).__fastImgCache?.delete("banner:" + input.id); await db.update(banners).set(cleanBanVals).where(eq(banners.id, input.id));
+        const cleanBanVals = { ...input.values }; if (typeof cleanBanVals.imageUrl === "string" && cleanBanVals.imageUrl.startsWith("/api/fast-img/")) delete cleanBanVals.imageUrl; (globalThis as any).__fastImgCache?.delete("banner:" + input.id); await db.update(banners).set(cleanBanVals).where(eq(banners.id, input.id)); clearLiveHomeCache();
         clearCatalogCache(); return { success: true };
       }),
       delete: adminProcedure.input(z.object({ id: safeId })).mutation(async ({ input }) => {
         const db = await database();
-        await db.delete(banners).where(eq(banners.id, input.id));
+        await db.delete(banners).where(eq(banners.id, input.id)); (globalThis as any).__fastImgCache?.delete("banner:" + input.id); clearLiveHomeCache();
         clearCatalogCache(); return { success: true };
       }),
     }),
