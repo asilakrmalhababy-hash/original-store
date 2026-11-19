@@ -3049,3 +3049,11 @@ svg.orig-banner-wave-svg {
 .orig-cat-badge-v168 {
   z-index: 4 !important;
 }
+
+/* === V186 CRISP BANNER RENDERING === */
+.banner-frame img {
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: auto;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}

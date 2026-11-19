@@ -90,7 +90,7 @@ function encodeCanvasSmartWebp(sourceCanvas: HTMLCanvasElement, kind: "product" 
   try { applyAmazonHdPolish(workCanvas); } catch {}
   for (let pass = 0; pass < 3; pass++) {
     for (const q of [0.80, 0.74, 0.68, 0.62, 0.56, 0.50]) {
-      const jpeg = workCanvas.toDataURL("image/jpeg", q);
+      const jpeg = workCanvas.toDataURL("image/webp", q);
       const best = jpeg;
       if (best.length <= maxBase64Len) return best;
     }
@@ -109,7 +109,7 @@ function encodeCanvasSmartWebp(sourceCanvas: HTMLCanvasElement, kind: "product" 
     try { applyAmazonHdPolish(scaled); } catch {}
     workCanvas = scaled;
   }
-  return workCanvas.toDataURL("image/jpeg", 0.54);
+  return workCanvas.toDataURL("image/webp", 0.54);
 }
 
 async function quickCompressImageFile(file: File, kind: "product" | "category" | "banner" | "icon"): Promise<string> {
@@ -234,7 +234,7 @@ async function makeVisionThumbDataUrl(fileOrDataUrl: File | string): Promise<str
         ctx.fillStyle = "#0d3825";
         ctx.fillRect(0, 0, w, h);
         ctx.drawImage(img, 0, 0, w, h);
-        resolve(canvas.toDataURL("image/jpeg", 0.58));
+        resolve(canvas.toDataURL("image/webp", 0.58));
       } catch (e) {
         reject(e);
       }
