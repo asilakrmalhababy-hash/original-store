@@ -3011,3 +3011,24 @@ svg.orig-banner-wave-svg {
   padding: 2px 2px 4px !important;
   line-height: 1.4 !important;
 }
+
+/* === V184 PIXEL-PERFECT 1:1 OCTAGON FRAME AROUND IMAGE ONLY === */
+.orig-cat-img-wrap-v168 {
+  clip-path: none !important;
+  overflow: visible !important;
+}
+.orig-cat-img-wrap-v168 > img,
+.orig-cat-img-wrap-v168 > .orig-cat-fallback-v168 {
+  clip-path: polygon(15% 0%, 85% 0%, 100% 15%, 100% 85%, 85% 100%, 15% 100%, 0% 85%, 0% 15%) !important;
+}
+.orig-cat-img-wrap-v168 > svg {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  pointer-events: none !important;
+  z-index: 2 !important;
+}
+.orig-cat-title-v168 {
+  margin-top: 8px !important;
+}

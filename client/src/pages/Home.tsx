@@ -1804,10 +1804,8 @@ function CategoryStrip({ data, onSelect, products = [] }: { data: HomeData["cate
               ) : (
                 <div className="orig-cat-fallback-v168" style={{ color: btnColor }}>
                   <Leaf size={30} strokeWidth={1.6} />
-                </div>
-              )}
-            </div>
-            <svg className="orig-cat-frame-v168" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                
+<svg className="orig-cat-frame-v168" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
               <defs>
                 <linearGradient id={`origCatGold_${category.id}`} x1="0%" y1="0%" x2="100%" y2="100%">
                   <stop offset="0%" stopColor="#f0d785" />
@@ -1818,6 +1816,10 @@ function CategoryStrip({ data, onSelect, products = [] }: { data: HomeData["cate
               <polygon points="15,1 85,1 99,15 99,85 85,99 15,99 1,85 1,15" fill="none" stroke={`url(#origCatGold_${category.id})`} strokeWidth="2.6" />
               <polygon points="15.8,3.6 84.2,3.6 96.4,15.8 96.4,84.2 84.2,96.4 15.8,96.4 3.6,84.2 3.6,15.8" fill="none" stroke="#f8f7f2" strokeWidth="1.8" />
             </svg>
+</div>
+              )}
+            </div>
+            
             <div className="orig-cat-badge-v168">
               <span className="orig-cat-badge-num-v168">{badgeCount}</span>
               <span className="orig-cat-badge-lbl-v168">صنف</span>
@@ -2090,10 +2092,8 @@ function CategoriesPage({ data }: { data: HomeData }) {
                   ) : (
                     <div className="orig-cat-fallback-v168" style={{ color: btnColor }}>
                       <Leaf size={40} strokeWidth={1.5} />
-                    </div>
-                  )}
-                </div>
-                <svg className="orig-cat-frame-v168" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                    
+<svg className="orig-cat-frame-v168" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
                   <defs>
                     <linearGradient id={`origCatPageGold_${category.id}`} x1="0%" y1="0%" x2="100%" y2="100%">
                       <stop offset="0%" stopColor="#f0d785" />
@@ -2104,6 +2104,10 @@ function CategoriesPage({ data }: { data: HomeData }) {
                   <polygon points="15,1 85,1 99,15 99,85 85,99 15,99 1,85 1,15" fill="none" stroke={`url(#origCatPageGold_${category.id})`} strokeWidth="2.6" />
                   <polygon points="15.8,3.6 84.2,3.6 96.4,15.8 96.4,84.2 84.2,96.4 15.8,96.4 3.6,84.2 3.6,15.8" fill="none" stroke="#f8f7f2" strokeWidth="1.8" />
                 </svg>
+</div>
+                  )}
+                </div>
+                
                 <div className="orig-cat-badge-v168">
                   <span className="orig-cat-badge-num-v168">{badgeCount}</span>
                   <span className="orig-cat-badge-lbl-v168">صنف</span>
