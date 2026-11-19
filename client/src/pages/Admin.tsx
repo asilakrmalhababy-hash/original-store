@@ -3418,7 +3418,7 @@ function BannersPanel() {
                     boxShadow: "0 0 0 9999px rgba(0, 0, 0, 0.32)",
                   }}
                 >
-                  <span style={{ background: "rgba(15, 45, 30, 0.88)", color: "#f1d897", padding: "3px 8px", borderRadius: "99px", fontSize: "10px", fontWeight: 700, pointerEvents: "none", whiteSpace: "nowrap" }}>
+                  <span style={{ background: "rgba(15, 45, 30, 0.82)", color: "#f1d897", padding: "3px 8px", borderRadius: "99px", fontSize: "10px", fontWeight: 700, pointerEvents: "none", whiteSpace: "nowrap" }}>
                     👆 منطقة ضغط الزبون
                   </span>
                   <span
@@ -3830,7 +3830,7 @@ function OrdersPanel() {
                       const openBtn = document.createElement("button");
                       openBtn.type = "button";
                       openBtn.innerHTML = "تفاصيل الطلب وإدارة الفاتورة ‹";
-                      openBtn.style.cssText = "width: 100%; background: #eef8f3; color: #0d3825; border: 1.5px solid #0d3825; border-radius: 12px; padding: 10px 14px; font-weight: 800; font-size: 0.88rem; cursor: pointer; display: flex; justify-content: space-between; align-items: center;";
+                      openBtn.style.cssText = "width: 100%; background: #eef8f3; color: #0d3825; border: 1.5px solid #0d3825; border-radius: 12px; padding: 10px 14px; font-weight: 800; font-size: 0.82rem; cursor: pointer; display: flex; justify-content: space-between; align-items: center;";
                       openBtn.onclick = (ev) => {
                         ev.stopPropagation();
                         Array.from(ordersList.querySelectorAll(".v104-admin-order-card")).forEach(c => c.classList.remove("v104-order-open"));
@@ -4723,7 +4723,7 @@ function ChatsPanel() {
                         <span>{isUser ? "🧑 " + msg.sender : isOwner ? "👨‍💼 أنت (إدارة المتجر)" : "🤖 المساعد الذكي"}</span>
                         <span>{new Date(msg.createdAt).toLocaleTimeString("ar-YE")}</span>
                       </div>
-                      <p style={{ margin: 0, whiteSpace: "pre-line", fontSize: "0.88rem", lineHeight: 1.5 }}>{msg.text}</p>
+                      <p style={{ margin: 0, whiteSpace: "pre-line", fontSize: "0.82rem", lineHeight: 1.5 }}>{msg.text}</p>
                     </div>
                   );
                 })}
