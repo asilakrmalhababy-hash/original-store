@@ -569,7 +569,7 @@
       function scheduleTick(){
         if (scheduled) return;
         scheduled = true;
-        requestAnimationFrame(function(){ scheduled = false; tick(); });
+        setTimeout(function(){ requestAnimationFrame(function(){ scheduled = false; tick(); }); }, 120);
       }
       var rootEl = document.getElementById("root");
       if (rootEl && window.MutationObserver) {

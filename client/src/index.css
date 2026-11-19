@@ -3057,3 +3057,18 @@ svg.orig-banner-wave-svg {
   transform: translateZ(0);
   backface-visibility: hidden;
 }
+
+
+/* === V191 PERFORMANCE & SMOOTHNESS BOOST === */
+html, body, button, a, input {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.product-card,
+[class*="product-card"] {
+  content-visibility: auto;
+  contain-intrinsic-size: 240px;
+}
+img {
+  content-visibility: auto;
+}
