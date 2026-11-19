@@ -1784,7 +1784,7 @@ function CategoryStrip({ data, onSelect, products = [] }: { data: HomeData["cate
       {data.map((category, idx) => {
         const btnColor = category.color && category.color.trim() ? category.color.trim() : "#13462f";
         const count = products.filter(p => p.categoryId === category.id).length;
-        const badgeCount = count > 0 ? `+${count}` : `+${[42, 35, 28, 24, 19, 31][idx % 6]}`;
+        const badgeCount = `${count}`;
         return (
           <button
             key={category.id}
@@ -2071,7 +2071,7 @@ function CategoriesPage({ data }: { data: HomeData }) {
           {data.categories.map((category, idx) => {
             const btnColor = category.color && category.color.trim() ? category.color.trim() : "#13462f";
             const count = (data.products || []).filter(p => p.categoryId === category.id).length;
-            const badgeCount = count > 0 ? `+${count}` : `+${[42, 35, 28, 24, 19, 31][idx % 6]}`;
+            const badgeCount = `${count}`;
             return (
               <button
                 key={category.id}
