@@ -1,4 +1,5 @@
 let __imgBustVer = Date.now();
+const bustImg = (row: any) => (row && typeof row.imageUrl === "string" && row.imageUrl.startsWith("/api/fast-img/") && !row.imageUrl.includes("?v=") ? { ...row, imageUrl: row.imageUrl + "?v=" + __imgBustVer } : row);
 
 let __cachedLiveHomeData: any = null;
 let __lastLiveHomeDataTime = 0;
@@ -862,7 +863,7 @@ async function ensureTenBatchProductsSeeded() {
       if (existingProds.some((p: any) => p.name.trim() === item.name.trim())) continue;
       let catRow = existingCats.find((c: any) => c.name.trim() === item.cat.trim());
       if (!catRow) {
-        const insCat = await db.insert(categories).values({ name: item.cat, slug: slugify(item.cat), description: "قسم " + item.cat, isActive: true, sortOrder: existingCats.length });
+        const insCat = await db.insert(categories).values({ name: item.cat, slug: slugify(item.cat), description: "قسم " + item.cat, isActive: true, sortOrder: existingCats.length }); clearLiveHomeCache();
         const newCatId = Number(insCat[0]?.insertId || 0);
         if (newCatId > 0) { catRow = { id: newCatId, name: item.cat } as any; existingCats.push(catRow as any); }
       }
@@ -880,7 +881,7 @@ async function ensureTenBatchProductsSeeded() {
         isPublished: true,
         isAvailable: true,
         sortOrder: 0,
-      });
+      }); clearLiveHomeCache();
       addedAny = true;
     }
     if (addedAny) (globalThis as any).__fastHomeData = null; (globalThis as any).__fastHomeTime = 0; await clearCatalogCache();
@@ -2058,7 +2059,7 @@ export const commerceRouter = router({
           throw new TRPCError({ code: "FORBIDDEN", message: "صلاحيتك مخصصة لإدارة أقسام محددة فقط؛ اختر قسماً ضمن صلاحياتك." });
         }
         const db = await database();
-        const result = await db.insert(products).values({ ...input, slug: slugify(input.name), description: input.description ?? null, imageUrl: input.imageUrl ?? null, categoryId: input.categoryId ?? null, stock: input.stock ?? null });
+        const result = await db.insert(products).values({ ...input, slug: slugify(input.name), description: input.description ?? null, imageUrl: input.imageUrl ?? null, categoryId: input.categoryId ?? null, stock: input.stock ?? null }); clearLiveHomeCache();
         void (async () => {
           try {
             const allRows = await db.select({ id: products.id, name: products.name, description: products.description, price: products.price, unit: products.unit, stock: products.stock, minQuantity: products.minQuantity, quantityStep: products.quantityStep }).from(products).where(and(eq(products.isPublished, true), eq(products.isAvailable, true))).limit(5000);
@@ -2086,7 +2087,7 @@ export const commerceRouter = router({
             throw new TRPCError({ code: "FORBIDDEN", message: "لا يمكنك نقل المنتج إلى قسم خارج صلاحياتك." });
           }
         }
-        const cleanVals = { ...input.values }; if (typeof cleanVals.imageUrl === "string" && cleanVals.imageUrl.startsWith("/api/fast-img/")) delete cleanVals.imageUrl; (globalThis as any).__fastImgCache?.delete("product:" + input.id); await db.update(products).set(cleanVals).where(eq(products.id, input.id));
+        const cleanVals = { ...input.values }; if (typeof cleanVals.imageUrl === "string" && cleanVals.imageUrl.startsWith("/api/fast-img/")) delete cleanVals.imageUrl; (globalThis as any).__fastImgCache?.delete("product:" + input.id); await db.update(products).set(cleanVals).where(eq(products.id, input.id)); (globalThis as any).__fastImgCache?.clear?.(); clearLiveHomeCache();
         return { success: true };
       }),
       bulkAdjustPrices: requireAnyPermission(["products.manage", "products.edit", "inventory.manage"]).use(async ({ next }) => { const res = await next(); (globalThis as any).__fastHomeData = null; (globalThis as any).__fastHomeTime = 0; await clearCatalogCache(); return res; }).input(z.object({
@@ -2116,7 +2117,7 @@ export const commerceRouter = router({
           }
           nextPrice = Math.max(50, nextPrice);
           if (nextPrice !== row.price) {
-            await db.update(products).set({ price: nextPrice }).where(eq(products.id, row.id));
+            await db.update(products).set({ price: nextPrice }).where(eq(products.id, row.id)); (globalThis as any).__fastImgCache?.clear?.(); clearLiveHomeCache();
             updatedCount++;
           }
         }
@@ -2129,7 +2130,7 @@ export const commerceRouter = router({
           const target = (await db.select({ categoryId: products.categoryId }).from(products).where(eq(products.id, input.id)).limit(1))[0];
           if (!target || !target.categoryId || !allowedCats.includes(target.categoryId)) throw new TRPCError({ code: "FORBIDDEN", message: "لا يمكنك تعديل منتج خارج الأقسام المخصصة لك." });
         }
-        await db.update(products).set({ isPublished: false, isAvailable: false }).where(eq(products.id, input.id));
+        await db.update(products).set({ isPublished: false, isAvailable: false }).where(eq(products.id, input.id)); (globalThis as any).__fastImgCache?.clear?.(); clearLiveHomeCache();
         clearCatalogCache(input.id);
         return { success: true };
       }),
@@ -2162,7 +2163,7 @@ export const commerceRouter = router({
           let catRows: Array<{ id: number; name: string }> = cachedCats || await (db!).select({ id: categories.id, name: categories.name }).from(categories).orderBy(asc(categories.sortOrder));
           const allowedCats = (!ctx.user.isOwner && Array.isArray(ctx.user.allowedCategoryIds) && ctx.user.allowedCategoryIds.length > 0) ? ctx.user.allowedCategoryIds : null;
           if (allowedCats) catRows = catRows.filter(c => allowedCats.includes(c.id));
-          const res = await analyzeProductImageAI({ imageDataUrl: input.imageDataUrl, fileName: input.fileName, categories: catRows });
+          const res = await analyzeProductImageAI({ imageDataUrl: input.imageDataUrl, fileName: input.fileName, categories: (catRows || []).map(bustImg) });
           if (allowedCats && (!res.categoryId || !allowedCats.includes(res.categoryId))) {
             res.categoryId = allowedCats[0] ?? null;
           } else if (!res.categoryId && res.suggestedCategoryName && !allowedCats) {
@@ -2197,7 +2198,7 @@ export const commerceRouter = router({
           let catRows = await db.select({ id: categories.id, name: categories.name }).from(categories).orderBy(asc(categories.sortOrder));
           const allowedCats = (!ctx.user.isOwner && Array.isArray(ctx.user.allowedCategoryIds) && ctx.user.allowedCategoryIds.length > 0) ? ctx.user.allowedCategoryIds : null;
           if (allowedCats) catRows = catRows.filter(c => allowedCats.includes(c.id));
-          return parseBulkProductsTextAI({ rawText: input.rawText, categories: catRows });
+          return parseBulkProductsTextAI({ rawText: input.rawText, categories: (catRows || []).map(bustImg) });
         }),
       bulkCreate: requireAnyPermission(["products.manage", "products.add"])
         .use(async ({ next }) => { const res = await next(); (globalThis as any).__fastHomeData = null; (globalThis as any).__fastHomeTime = 0; await clearCatalogCache(); return res; })
@@ -2217,7 +2218,7 @@ export const commerceRouter = router({
               imageUrl: item.imageUrl ?? null,
               categoryId: effectiveCatId,
               stock: item.stock ?? null,
-            });
+            }); clearLiveHomeCache();
             insertedIds.push(Number(result[0]?.insertId || 0));
           }
           return { count: insertedIds.length, ids: insertedIds };
@@ -2248,17 +2249,17 @@ export const commerceRouter = router({
       })),
       create: adminProcedure.use(async ({ next }) => { clearLiveHomeCache(); return next(); }).input(categoryInput).mutation(async ({ input }) => {
         const db = await database();
-        const result = await db.insert(categories).values({ ...input, slug: slugify(input.name), description: input.description ?? null, imageUrl: input.imageUrl ?? null });
+        const result = await db.insert(categories).values({ ...input, slug: slugify(input.name), description: input.description ?? null, imageUrl: input.imageUrl ?? null }); clearLiveHomeCache();
         clearCatalogCache(); return { id: Number(result[0].insertId) };
       }),
       update: adminProcedure.use(async ({ next }) => { clearLiveHomeCache(); return next(); }).input(z.object({ id: safeId, values: categoryInput.partial() })).mutation(async ({ input }) => {
         const db = await database();
-        const cleanCatVals = { ...input.values }; if (typeof cleanCatVals.imageUrl === "string" && cleanCatVals.imageUrl.startsWith("/api/fast-img/")) delete cleanCatVals.imageUrl; (globalThis as any).__fastImgCache?.delete("category:" + input.id); await db.update(categories).set(cleanCatVals).where(eq(categories.id, input.id));
+        const cleanCatVals = { ...input.values }; if (typeof cleanCatVals.imageUrl === "string" && cleanCatVals.imageUrl.startsWith("/api/fast-img/")) delete cleanCatVals.imageUrl; (globalThis as any).__fastImgCache?.delete("category:" + input.id); await db.update(categories).set(cleanCatVals).where(eq(categories.id, input.id)); (globalThis as any).__fastImgCache?.clear?.(); clearLiveHomeCache();
         clearCatalogCache(); return { success: true };
       }),
       archive: adminProcedure.use(async ({ next }) => { clearLiveHomeCache(); return next(); }).input(z.object({ id: safeId })).mutation(async ({ input }) => {
         const db = await database();
-        await db.update(categories).set({ isActive: false }).where(eq(categories.id, input.id));
+        await db.update(categories).set({ isActive: false }).where(eq(categories.id, input.id)); (globalThis as any).__fastImgCache?.clear?.(); clearLiveHomeCache();
         clearCatalogCache(); return { success: true };
       }),
     }),
