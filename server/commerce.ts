@@ -922,8 +922,8 @@ async function refreshHomeCatalogCache() {
       const validBanners = bannerRows.filter(b => Boolean(b.imageUrl && b.imageUrl.trim()));
       const g = globalThis as any;
       g.__fastHomeData = {
-        categories: categoryRows,
-        products: productRows,
+        categories: categoryRows.map(bustImg),
+        products: productRows.map(bustImg),
         banners: validBanners.map((b: any) => (b && typeof b.imageUrl === "string" && b.imageUrl.startsWith("/api/fast-img/") && !b.imageUrl.includes("?v=") ? { ...b, imageUrl: b.imageUrl + "?v=" + __imgBustVer } : b)),
         offers: offerRows,
         settings,
