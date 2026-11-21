@@ -2165,7 +2165,8 @@ function ProductDetail({ id, allProducts = [], onSelectProduct, onBack, onAiReci
     const diff = endX - touchStartX.current;
     touchStartX.current = null;
     if (Math.abs(diff) > 35) {
-      if (diff < 0) goNext();
+      (touchStartX as any).__lastSwipeAt = Date.now();
+      if (diff > 0) goNext();
       else goPrev();
     }
   };
@@ -2212,7 +2213,15 @@ function ProductDetail({ id, allProducts = [], onSelectProduct, onBack, onAiReci
           className='detail-visual'
           onTouchStart={handleTouchStart}
           onTouchEnd={handleTouchEnd}
-          style={{ position: 'relative', userSelect: 'none', width: '100%', aspectRatio: '1 / 1', maxHeight: '420px', background: '#f8f7f2', borderRadius: '18px', overflow: 'hidden', border: '1px solid #edeae0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onClick={e => {
+            if (!hasGallery) return;
+            if (Date.now() - ((touchStartX as any).__lastSwipeAt || 0) < 350) return;
+            const rect = e.currentTarget.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            if (x < rect.width * 0.42) goNext();
+            else if (x > rect.width * 0.58) goPrev();
+          }}
+          style={{ position: 'relative', userSelect: 'none', width: '100%', aspectRatio: '1 / 1', maxHeight: '420px', background: '#f8f7f2', borderRadius: '18px', overflow: 'hidden', border: '1px solid #edeae0', cursor: hasGallery ? 'pointer' : 'default' }}
         >
           {product.imageUrl ? (
             <img key={product.id} src={product.imageUrl} alt={product.name} decoding='async' fetchPriority='high' draggable={false} style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block', background: '#f8f7f2' }} />
@@ -2221,22 +2230,18 @@ function ProductDetail({ id, allProducts = [], onSelectProduct, onBack, onAiReci
           )}
           {hasGallery && (
             <>
-              <button
-                type='button'
-                aria-label='المنتج السابق'
-                onClick={e => { e.stopPropagation(); goPrev(); }}
-                style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', width: '34px', height: '34px', borderRadius: '50%', border: '1px solid rgba(20, 58, 40, 0.12)', background: 'rgba(255, 255, 255, 0.88)', backdropFilter: 'blur(6px)', color: '#143a28', display: 'grid', placeItems: 'center', cursor: 'pointer', boxShadow: '0 2px 8px rgba(18, 53, 36, 0.10)', padding: 0 }}
+              <span
+                aria-hidden='true'
+                style={{ position: 'absolute', right: '6px', top: '50%', transform: 'translateY(-50%)', color: '#143a28', opacity: 0.28, pointerEvents: 'none', display: 'grid', placeItems: 'center', zIndex: 2 }}
               >
-                <svg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2.4' strokeLinecap='round' strokeLinejoin='round'><path d='M9 18l6-6-6-6'/></svg>
-              </button>
-              <button
-                type='button'
-                aria-label='المنتج التالي'
-                onClick={e => { e.stopPropagation(); goNext(); }}
-                style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', width: '34px', height: '34px', borderRadius: '50%', border: '1px solid rgba(20, 58, 40, 0.12)', background: 'rgba(255, 255, 255, 0.88)', backdropFilter: 'blur(6px)', color: '#143a28', display: 'grid', placeItems: 'center', cursor: 'pointer', boxShadow: '0 2px 8px rgba(18, 53, 36, 0.10)', padding: 0 }}
+                <svg width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2.2' strokeLinecap='round' strokeLinejoin='round'><path d='M9 18l6-6-6-6'/></svg>
+              </span>
+              <span
+                aria-hidden='true'
+                style={{ position: 'absolute', left: '6px', top: '50%', transform: 'translateY(-50%)', color: '#143a28', opacity: 0.28, pointerEvents: 'none', display: 'grid', placeItems: 'center', zIndex: 2 }}
               >
-                <svg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2.4' strokeLinecap='round' strokeLinejoin='round'><path d='M15 18l-6-6 6-6'/></svg>
-              </button>
+                <svg width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2.2' strokeLinecap='round' strokeLinejoin='round'><path d='M15 18l-6-6 6-6'/></svg>
+              </span>
             </>
           )}
         </div>
