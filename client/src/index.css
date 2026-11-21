@@ -3072,3 +3072,26 @@ html, body, button, a, input {
 img {
   content-visibility: auto;
 }
+
+/* v195: Force true 1:1 full square on product detail visual */
+.detail-layout .detail-visual {
+  position: relative !important;
+  display: block !important;
+  width: 100% !important;
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: 420px !important;
+  aspect-ratio: 1 / 1 !important;
+}
+.detail-layout .detail-visual > img {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-height: none !important;
+  object-fit: contain !important;
+  z-index: 1 !important;
+}
+.detail-layout .detail-visual > button {
+  z-index: 2 !important;
+}
