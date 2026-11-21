@@ -2165,7 +2165,7 @@ function ProductDetail({ id, allProducts = [], onSelectProduct, onBack, onAiReci
     const diff = endX - touchStartX.current;
     touchStartX.current = null;
     if (Math.abs(diff) > 35) {
-      if (diff > 0) goNext();
+      if (diff < 0) goNext();
       else goPrev();
     }
   };
@@ -2190,61 +2190,88 @@ function ProductDetail({ id, allProducts = [], onSelectProduct, onBack, onAiReci
 
   return (
     <main className='page-shell inner-page' style={{ paddingTop: '6px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', gap: '8px' }}>
-        <button type='button' className='back-link' style={{ marginBottom: 0, padding: '5px 11px', borderRadius: '10px', background: '#ffffff', border: '1px solid #dce5de', color: '#174b36', fontWeight: 800, fontSize: '12px' }} onClick={onBack}><ArrowLeft size={14} /> العودة للمتجر</button>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px', gap: '8px' }}>
+        <button type='button' className='back-link' style={{ marginBottom: 0, height: '34px', padding: '0 12px', borderRadius: '999px', background: '#ffffff', border: '1px solid #e1e8e2', color: '#143a28', fontWeight: 800, fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: '5px', boxShadow: '0 1px 4px rgba(18,53,36,0.04)' }} onClick={onBack}><ArrowLeft size={14} /> العودة للمتجر</button>
         {hasGallery && (
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#ffffff', border: '1px solid #dfe7e0', borderRadius: '999px', padding: '4px 10px', fontSize: '11px', fontWeight: 800, color: '#174b36' }}>
-            <button type='button' onClick={goNext} style={{ border: 0, background: 'transparent', cursor: 'pointer', padding: '2px 5px', fontWeight: 900, color: '#174b36' }}>‹ التالي</button>
-            <span style={{ color: '#78847b', fontSize: '10.5px' }} dir='ltr'>{currentIndex + 1} / {galleryList.length}</span>
-            <button type='button' onClick={goPrev} style={{ border: 0, background: 'transparent', cursor: 'pointer', padding: '2px 5px', fontWeight: 900, color: '#174b36' }}>السابق ›</button>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', height: '34px', background: '#ffffff', border: '1px solid #e1e8e2', borderRadius: '999px', padding: '0 8px', fontSize: '11.5px', fontWeight: 800, color: '#143a28', boxShadow: '0 1px 4px rgba(18,53,36,0.04)' }}>
+            <button type='button' onClick={goPrev} style={{ border: 0, background: 'transparent', cursor: 'pointer', padding: '4px 6px', fontWeight: 800, color: '#174b36', display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
+              <svg width='13' height='13' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2.5' strokeLinecap='round' strokeLinejoin='round'><path d='M9 18l6-6-6-6'/></svg>
+              <span>السابق</span>
+            </button>
+            <span style={{ color: '#7a8a80', fontSize: '11px', fontWeight: 700, padding: '0 4px', borderRight: '1px solid #e7ede8', borderLeft: '1px solid #e7ede8' }} dir='ltr'>{currentIndex + 1} / {galleryList.length}</span>
+            <button type='button' onClick={goNext} style={{ border: 0, background: 'transparent', cursor: 'pointer', padding: '4px 6px', fontWeight: 800, color: '#174b36', display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
+              <span>التالي</span>
+              <svg width='13' height='13' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2.5' strokeLinecap='round' strokeLinejoin='round'><path d='M15 18l-6-6 6-6'/></svg>
+            </button>
           </div>
         )}
       </div>
 
-      <div className='detail-layout' style={{ background: '#ffffff', border: '1px solid #dce6df', borderRadius: '20px', padding: '12px', boxShadow: '0 4px 16px rgba(18, 53, 36, 0.05)', marginBottom: '14px', display: 'grid', gap: '10px' }}>
+      <div className='detail-layout' style={{ background: '#ffffff', border: '1px solid #e2eae4', borderRadius: '22px', padding: '14px', boxShadow: '0 6px 22px rgba(18, 53, 36, 0.06)', marginBottom: '16px', display: 'grid', gap: '14px' }}>
         <div
           className='detail-visual'
           onTouchStart={handleTouchStart}
           onTouchEnd={handleTouchEnd}
-          style={{ position: 'relative', userSelect: 'none', maxHeight: '215px', borderRadius: '16px', overflow: 'hidden' }}
+          style={{ position: 'relative', userSelect: 'none', width: '100%', aspectRatio: '1 / 1', maxHeight: '420px', background: '#f8f7f2', borderRadius: '18px', overflow: 'hidden', border: '1px solid #edeae0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
         >
           {product.imageUrl ? (
-            <img key={product.id} src={product.imageUrl} alt={product.name} decoding='async' fetchPriority='high' draggable={false} />
+            <img key={product.id} src={product.imageUrl} alt={product.name} decoding='async' fetchPriority='high' draggable={false} style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block', background: '#f8f7f2' }} />
           ) : (
             <div className='product-no-image detail-placeholder'><Leaf size={40} /><span>لا توجد صورة لهذا المنتج</span></div>
           )}
           {hasGallery && (
             <>
-              <button type='button' aria-label='المنتج التالي' onClick={e => { e.stopPropagation(); goNext(); }} style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', width: '36px', height: '36px', borderRadius: '50%', border: '1.5px solid rgba(255,255,255,0.9)', background: 'rgba(23, 75, 54, 0.85)', color: '#ffffff', display: 'grid', placeItems: 'center', cursor: 'pointer', fontSize: '18px', fontWeight: 900 }}>‹</button>
-              <button type='button' aria-label='المنتج السابق' onClick={e => { e.stopPropagation(); goPrev(); }} style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)', width: '36px', height: '36px', borderRadius: '50%', border: '1.5px solid rgba(255,255,255,0.9)', background: 'rgba(23, 75, 54, 0.85)', color: '#ffffff', display: 'grid', placeItems: 'center', cursor: 'pointer', fontSize: '18px', fontWeight: 900 }}>›</button>
+              <button
+                type='button'
+                aria-label='المنتج السابق'
+                onClick={e => { e.stopPropagation(); goPrev(); }}
+                style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', width: '34px', height: '34px', borderRadius: '50%', border: '1px solid rgba(20, 58, 40, 0.12)', background: 'rgba(255, 255, 255, 0.88)', backdropFilter: 'blur(6px)', color: '#143a28', display: 'grid', placeItems: 'center', cursor: 'pointer', boxShadow: '0 2px 8px rgba(18, 53, 36, 0.10)', padding: 0 }}
+              >
+                <svg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2.4' strokeLinecap='round' strokeLinejoin='round'><path d='M9 18l6-6-6-6'/></svg>
+              </button>
+              <button
+                type='button'
+                aria-label='المنتج التالي'
+                onClick={e => { e.stopPropagation(); goNext(); }}
+                style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', width: '34px', height: '34px', borderRadius: '50%', border: '1px solid rgba(20, 58, 40, 0.12)', background: 'rgba(255, 255, 255, 0.88)', backdropFilter: 'blur(6px)', color: '#143a28', display: 'grid', placeItems: 'center', cursor: 'pointer', boxShadow: '0 2px 8px rgba(18, 53, 36, 0.10)', padding: 0 }}
+              >
+                <svg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2.4' strokeLinecap='round' strokeLinejoin='round'><path d='M15 18l-6-6 6-6'/></svg>
+              </button>
             </>
           )}
         </div>
 
-        <div className='detail-copy' style={{ display: 'grid', gap: '10px', padding: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
-            <div style={{ display: 'grid', gap: '2px' }}>
-              <h1 style={{ margin: 0, fontSize: '19px', fontWeight: 900, color: '#143a28', lineHeight: 1.25 }}>{product.name}</h1>
-              <small style={{ color: '#6b7d72', fontSize: '11.5px', fontWeight: 700 }}>الوحدة: {product.unit} · {product.stock === null ? 'متوفر في المتجر' : ('المتاح: ' + product.stock)}</small>
+        <div className='detail-copy' style={{ display: 'grid', gap: '12px', padding: '0 2px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
+            <div style={{ display: 'grid', gap: '4px', minWidth: 0 }}>
+              <h1 style={{ margin: 0, fontSize: '19px', fontWeight: 900, color: '#133a27', lineHeight: 1.3 }}>{product.name}</h1>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11.5px', fontWeight: 700, color: '#566d60' }}>
+                  <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#2e8b57', display: 'inline-block' }} />
+                  {product.stock === null ? 'متوفر في المتجر' : ('المتاح: ' + product.stock)}
+                </span>
+                <span style={{ color: '#c8d6cd' }}>•</span>
+                <span style={{ fontSize: '11.5px', fontWeight: 700, color: '#6b7d72' }}>الوحدة: {product.unit}</span>
+              </div>
             </div>
-            <div style={{ background: '#f2f8f4', border: '1px solid #d4e6da', padding: '6px 12px', borderRadius: '12px', textAlign: 'left', flexShrink: 0 }}>
-              <strong style={{ fontSize: '17px', fontWeight: 900, color: '#174b36' }}>{formatPrice(Math.round(extractVariantPriceV104(product, (product as any)?.price, product)))}</strong>
-              <small style={{ fontSize: '11px', color: '#5b7063', marginRight: '4px' }}>/ {product.unit}</small>
+            <div style={{ background: '#f3f8f4', border: '1px solid #d7e6dc', padding: '7px 13px', borderRadius: '14px', textAlign: 'left', flexShrink: 0 }}>
+              <strong style={{ fontSize: '18px', fontWeight: 900, color: '#13462f' }}>{formatPrice(Math.round(extractVariantPriceV104(product, (product as any)?.price, product)))}</strong>
+              <small style={{ fontSize: '11px', color: '#5c7265', marginRight: '4px', fontWeight: 700 }}>/ {product.unit}</small>
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%' }}>
-            <div className='quantity-control' style={{ margin: 0, height: '44px', padding: '0 6px', borderRadius: '13px', flexShrink: 0, background: '#f6faf7', border: '1px solid #d8e6dd' }}>
-              <button type='button' aria-label='تقليل' style={{ width: '32px', height: '32px' }} onClick={() => setQuantity(value => Math.max(product.minQuantity || 1, value - (product.quantityStep || 1)))}><Minus size={15} /></button>
-              <strong style={{ minWidth: '24px', textAlign: 'center', fontSize: '14.5px' }}>{quantity}</strong>
-              <button type='button' aria-label='زيادة' style={{ width: '32px', height: '32px' }} disabled={quantity + (product.quantityStep || 1) > stockLimit} onClick={() => setQuantity(value => Math.min(stockLimit, value + (product.quantityStep || 1)))}><Plus size={15} /></button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%' }}>
+            <div className='quantity-control' style={{ margin: 0, height: '48px', padding: '0 6px', borderRadius: '14px', flexShrink: 0, background: '#f7faf8', border: '1px solid #dbe6df' }}>
+              <button type='button' aria-label='تقليل' style={{ width: '34px', height: '34px', borderRadius: '10px' }} onClick={() => setQuantity(value => Math.max(product.minQuantity || 1, value - (product.quantityStep || 1)))}><Minus size={15} /></button>
+              <strong style={{ minWidth: '28px', textAlign: 'center', fontSize: '15px', color: '#133a27' }}>{quantity}</strong>
+              <button type='button' aria-label='زيادة' style={{ width: '34px', height: '34px', borderRadius: '10px' }} disabled={quantity + (product.quantityStep || 1) > stockLimit} onClick={() => setQuantity(value => Math.min(stockLimit, value + (product.quantityStep || 1)))}><Plus size={15} /></button>
             </div>
             <button
               type='button'
               className='button button-primary'
               disabled={stockLimit < (product.minQuantity || 1)}
               onClick={handleDetailAdd}
-              style={{ flex: 1, height: '44px', borderRadius: '13px', fontSize: '14px', fontWeight: 900, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '7px' }}
+              style={{ flex: 1, height: '48px', borderRadius: '14px', fontSize: '14.5px', fontWeight: 900, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px', background: '#13462f', boxShadow: '0 4px 12px rgba(19, 70, 47, 0.18)' }}
             >
               <ShoppingCart size={17} />
               <span>{unpackedDetail.variants.length > 0 ? (selectedDetailVariant ? ('أضف «' + selectedDetailVariant + '» للسلة') : 'اختر النوع وأضف للسلة') : 'أضف إلى السلة'}</span>
@@ -2252,8 +2279,8 @@ function ProductDetail({ id, allProducts = [], onSelectProduct, onBack, onAiReci
           </div>
 
           {unpackedDetail.variants.length > 0 && (
-            <div style={{ padding: '10px', borderRadius: '13px', background: '#f5f9f6', border: '1px solid #d5e5da', display: 'grid', gap: '7px' }}>
-              <strong style={{ fontSize: '12px', color: '#174b36' }}>اختر النوع المطلوب:</strong>
+            <div style={{ padding: '11px', borderRadius: '14px', background: '#f7faf8', border: '1px solid #dbe6df', display: 'grid', gap: '8px' }}>
+              <strong style={{ fontSize: '12px', color: '#143a28' }}>اختر النوع المطلوب:</strong>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(88px, 1fr))', gap: '6px' }}>
                 {unpackedDetail.variants.map(v => {
                   const isSel = selectedDetailVariant === v;
@@ -2265,9 +2292,9 @@ function ProductDetail({ id, allProducts = [], onSelectProduct, onBack, onAiReci
                       style={{
                         padding: '8px 10px',
                         borderRadius: '10px',
-                        border: isSel ? '2px solid #174b36' : '1px solid #c5d9cc',
-                        background: isSel ? '#174b36' : '#ffffff',
-                        color: isSel ? '#ffffff' : '#174b36',
+                        border: isSel ? '2px solid #13462f' : '1px solid #c9dbd0',
+                        background: isSel ? '#13462f' : '#ffffff',
+                        color: isSel ? '#ffffff' : '#143a28',
                         fontWeight: 800,
                         fontSize: '12px',
                         cursor: 'pointer',
@@ -2286,10 +2313,10 @@ function ProductDetail({ id, allProducts = [], onSelectProduct, onBack, onAiReci
             </div>
           )}
 
-          {unpackedDetail.cleanDescription ? <p className='detail-description' style={{ margin: 0, fontSize: '12.5px', color: '#5c6f63', lineHeight: 1.5 }}>{unpackedDetail.cleanDescription}</p> : null}
+          {unpackedDetail.cleanDescription ? <p className='detail-description' style={{ margin: 0, fontSize: '13px', color: '#586c60', lineHeight: 1.6 }}>{unpackedDetail.cleanDescription}</p> : null}
 
           {onAiRecipe && (
-            <button type='button' className='button button-outline full-button' style={{ minHeight: '38px', padding: '7px 12px', borderRadius: '12px', borderColor: '#286a48', color: '#174b36', fontSize: '12px' }} onClick={() => onAiRecipe(product as PublicProduct)}>
+            <button type='button' className='button button-outline full-button' style={{ minHeight: '42px', padding: '8px 14px', borderRadius: '13px', background: '#faf9f5', borderColor: '#d7e3db', color: '#174b36', fontSize: '12.5px', fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }} onClick={() => onAiRecipe(product as PublicProduct)}>
               <Sparkles size={15} /> أفكار وطرق تحضير بالذكاء الاصطناعي
             </button>
           )}
