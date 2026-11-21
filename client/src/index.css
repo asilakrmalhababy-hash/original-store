@@ -3095,3 +3095,10 @@ img {
 .detail-layout .detail-visual > button {
   z-index: 2 !important;
 }
+
+/* v197: Hide floating WhatsApp bubble on product detail page */
+body.orig-on-product-detail .rolling-whatsapp-wrapper,
+body.orig-on-product-detail .floating-whatsapp,
+body.orig-on-product-detail [class*="whatsapp-float"] {
+  display: none !important;
+}

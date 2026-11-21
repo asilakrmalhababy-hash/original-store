@@ -2126,10 +2126,10 @@ function ProductDetail({ id, allProducts = [], onSelectProduct, onBack, onAiReci
   const cachedProduct = useMemo(() => allProducts.find(p => p.id === id) ?? null, [allProducts, id]);
   const { data: fetchedProduct, isLoading } = trpc.commerce.catalog.product.useQuery({ id }, {
     retry: 1,
-    staleTime: 30000,
-    placeholderData: cachedProduct ? { ...cachedProduct, recommendations: allProducts.filter(p => p.id !== id).slice(0, 4) } : undefined,
+    staleTime: 300000,
+    placeholderData: cachedProduct ? { ...cachedProduct, recommendations: [] } : undefined,
   });
-  const product = fetchedProduct ?? (cachedProduct ? { ...cachedProduct, recommendations: allProducts.filter(p => p.id !== id).slice(0, 4) } : null);
+  const product = fetchedProduct ?? (cachedProduct ? { ...cachedProduct, recommendations: [] } : null);
   const { add } = useStore();
   const [quantity, setQuantity] = useState(1);
   const [detailPickerOpen, setDetailPickerOpen] = useState(false);
@@ -2149,9 +2149,18 @@ function ProductDetail({ id, allProducts = [], onSelectProduct, onBack, onAiReci
   const prevProduct = hasGallery ? galleryList[(currentIndex - 1 + galleryList.length) % galleryList.length] : null;
 
   useEffect(() => {
-    if (nextProduct?.imageUrl) { const img = new Image(); img.src = nextProduct.imageUrl; }
-    if (prevProduct?.imageUrl) { const img = new Image(); img.src = prevProduct.imageUrl; }
-  }, [nextProduct?.imageUrl, prevProduct?.imageUrl]);
+    document.body.classList.add('orig-on-product-detail');
+    return () => { document.body.classList.remove('orig-on-product-detail'); };
+  }, []);
+
+  useEffect(() => {
+    if (!hasGallery) return;
+    const len = galleryList.length;
+    for (const offset of [1, -1, 2, -2]) {
+      const item = galleryList[(currentIndex + offset + len) % len];
+      if (item?.imageUrl) { const img = new Image(); img.src = item.imageUrl; }
+    }
+  }, [hasGallery, galleryList, currentIndex]);
 
   const goNext = () => { if (nextProduct && onSelectProduct) onSelectProduct(nextProduct.id); };
   const goPrev = () => { if (prevProduct && onSelectProduct) onSelectProduct(prevProduct.id); };
@@ -2224,7 +2233,7 @@ function ProductDetail({ id, allProducts = [], onSelectProduct, onBack, onAiReci
           style={{ position: 'relative', userSelect: 'none', width: '100%', aspectRatio: '1 / 1', maxHeight: '420px', background: '#f8f7f2', borderRadius: '18px', overflow: 'hidden', border: '1px solid #edeae0', cursor: hasGallery ? 'pointer' : 'default' }}
         >
           {product.imageUrl ? (
-            <img key={product.id} src={product.imageUrl} alt={product.name} decoding='async' fetchPriority='high' draggable={false} style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block', background: '#f8f7f2' }} />
+            <img src={product.imageUrl} alt={product.name} decoding='sync' fetchPriority='high' draggable={false} style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block', background: '#f8f7f2' }} />
           ) : (
             <div className='product-no-image detail-placeholder'><Leaf size={40} /><span>لا توجد صورة لهذا المنتج</span></div>
           )}
