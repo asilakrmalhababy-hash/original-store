@@ -886,7 +886,7 @@ function Header({ data, onSearch }: { data?: HomeData; onSearch: (text: string) 
   return <header className="store-header">
     <div className="header-main">
       <Link href="/" className="brand-lockup" aria-label={`${storeName} الرئيسية`}>
-        <img src={((data?.settings?.storeIconUrl || data?.settings?.logo) || "").trim() || "/app-icon-192-v85.png"} onError={(e) => { e.currentTarget.src = "/app-icon-192-v85.png"; }} alt={storeName} className="brand-mark" style={{ borderRadius: "12px", objectFit: "cover", padding: 0, border: "1.5px solid #d4af37" }} />
+        <img decoding="async" loading="lazy" src={((data?.settings?.storeIconUrl || data?.settings?.logo) || "").trim() || "/app-icon-192-v85.png"} onError={(e) => { e.currentTarget.src = "/app-icon-192-v85.png"; }} alt={storeName} className="brand-mark" style={{ borderRadius: "12px", objectFit: "cover", padding: 0, border: "1.5px solid #d4af37" }} />
         <span className="brand-type"><strong>ORIGINAL</strong><small>{brandSubtitle}</small></span>
       </Link>
       <form className="header-search" onSubmit={submitSearch}>
@@ -1581,7 +1581,7 @@ function VariantPickerModal({
       <section className="checkout-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: "370px", padding: "18px", borderRadius: "22px" }}>
         <div className="modal-heading" style={{ marginBottom: "12px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            {product.imageUrl && <img src={product.imageUrl} alt="" style={{ width: "44px", height: "44px", borderRadius: "12px", objectFit: "cover" }} />}
+            {product.imageUrl && <img decoding="async" loading="lazy" src={product.imageUrl} alt="" style={{ width: "44px", height: "44px", borderRadius: "12px", objectFit: "cover" }} />}
             <div>
               <h2 style={{ fontSize: "16px", margin: "0 0 2px" }}>{product.name}</h2>
               <small style={{ color: "#174b36", fontWeight: 800 }}>
@@ -2031,7 +2031,7 @@ function ProductListPage({ data, onOpen, onAiRecipe }: { data: HomeData; onOpen:
                 }}
               >
                 {cat.imageUrl && (
-                  <img src={cat.imageUrl} alt="" style={{ width: "24px", height: "24px", borderRadius: "50%", objectFit: "cover" }} />
+                  <img decoding="async" loading="lazy" src={cat.imageUrl} alt="" style={{ width: "24px", height: "24px", borderRadius: "50%", objectFit: "cover" }} />
                 )}
                 <span>{cat.name}</span>
               </button>
@@ -2124,12 +2124,13 @@ function CategoriesPage({ data }: { data: HomeData }) {
 
 function ProductDetail({ id, allProducts = [], onSelectProduct, onBack, onAiRecipe }: { id: number; allProducts?: PublicProduct[]; onSelectProduct?: (nextId: number) => void; onBack: () => void; onAiRecipe?: (p: PublicProduct) => void }) {
   const cachedProduct = useMemo(() => allProducts.find(p => p.id === id) ?? null, [allProducts, id]);
-  const { data: fetchedProduct, isLoading } = trpc.commerce.catalog.product.useQuery({ id }, {
+  const { data: fetchedProduct, isLoading, isFetching } = trpc.commerce.catalog.product.useQuery({ id }, {
     retry: 1,
-    staleTime: 300000,
+    staleTime: 0,
+    refetchOnMount: 'always',
     placeholderData: cachedProduct ? { ...cachedProduct, recommendations: [] } : undefined,
   });
-  const product = fetchedProduct ?? (cachedProduct ? { ...cachedProduct, recommendations: [] } : null);
+  const product = fetchedProduct ? { ...fetchedProduct, imageUrl: (isFetching && cachedProduct?.imageUrl) ? cachedProduct.imageUrl : (fetchedProduct.imageUrl || cachedProduct?.imageUrl || '') } : (cachedProduct ? { ...cachedProduct, recommendations: [] } : null);
   const { add } = useStore();
   const [quantity, setQuantity] = useState(1);
   const [detailPickerOpen, setDetailPickerOpen] = useState(false);
@@ -2156,7 +2157,7 @@ function ProductDetail({ id, allProducts = [], onSelectProduct, onBack, onAiReci
   useEffect(() => {
     if (!hasGallery) return;
     const len = galleryList.length;
-    for (const offset of [1, -1, 2, -2]) {
+    for (const offset of [1, -1]) {
       const item = galleryList[(currentIndex + offset + len) % len];
       if (item?.imageUrl) { const img = new Image(); img.src = item.imageUrl; }
     }
@@ -4995,5 +4996,5 @@ export default function Home() {
     if (location === "/assistant") return <AssistantPage />;
     return <HomePage data={data} onOpen={openProduct} onAiRecipe={setActiveAiProduct} />;
   }, [location, productId, productPath, data]);
-  return <div className="store-app" dir="rtl"><Header data={data} onSearch={text => navigate("/products" + (text ? "?search=" + encodeURIComponent(text) : ""))} />{!location.startsWith("/assistant") && !location.startsWith("/orders") && !location.startsWith("/account") && <GamifiedRewardBar settings={data.settings} location={location} />}{home.isError && !data.products?.length && !data.categories?.length && <div className="connection-strip"><span>الاتصال بالخدمة غير متاح مؤقتًا</span><button onClick={() => void home.refetch()}>إعادة المحاولة</button></div>}{home.isError && !data.products?.length && !data.categories?.length ? <main className="page-shell inner-page"><LoadError onRetry={() => void home.refetch()} /></main> : content}{!location.startsWith("/assistant") && <footer className="store-footer"><div className="footer-brand"><img src="/app-icon-192-v85.png" alt="ORIGINAL" className="brand-mark" style={{ borderRadius: "12px", objectFit: "cover", padding: 0, border: "1.5px solid #d4af37" }} /><span><b>ORIGINAL</b><small>{data.settings.storeName === "ORIGINAL – أورجنال" || !data.settings.storeName ? "أورجنال" : data.settings.storeName}</small></span></div>{shouldShowFooterDescription(data.settings.storeDescription) && <span>{data.settings.storeDescription}</span>}<small>© {new Date().getFullYear()} {data.settings.storeName || "ORIGINAL"}</small></footer>}{activeAiProduct && <AiRecipeModal product={activeAiProduct} onClose={() => setActiveAiProduct(null)} />}<RollingWhatsAppWidget settings={data?.settings} location={location} /><BottomNav active={currentNav} /></div>;
+  return <div className="store-app" dir="rtl"><Header data={data} onSearch={text => navigate("/products" + (text ? "?search=" + encodeURIComponent(text) : ""))} />{!location.startsWith("/assistant") && !location.startsWith("/orders") && !location.startsWith("/account") && <GamifiedRewardBar settings={data.settings} location={location} />}{home.isError && !data.products?.length && !data.categories?.length && <div className="connection-strip"><span>الاتصال بالخدمة غير متاح مؤقتًا</span><button onClick={() => void home.refetch()}>إعادة المحاولة</button></div>}{home.isError && !data.products?.length && !data.categories?.length ? <main className="page-shell inner-page"><LoadError onRetry={() => void home.refetch()} /></main> : content}{!location.startsWith("/assistant") && <footer className="store-footer"><div className="footer-brand"><img decoding="async" loading="lazy" src="/app-icon-192-v85.png" alt="ORIGINAL" className="brand-mark" style={{ borderRadius: "12px", objectFit: "cover", padding: 0, border: "1.5px solid #d4af37" }} /><span><b>ORIGINAL</b><small>{data.settings.storeName === "ORIGINAL – أورجنال" || !data.settings.storeName ? "أورجنال" : data.settings.storeName}</small></span></div>{shouldShowFooterDescription(data.settings.storeDescription) && <span>{data.settings.storeDescription}</span>}<small>© {new Date().getFullYear()} {data.settings.storeName || "ORIGINAL"}</small></footer>}{activeAiProduct && <AiRecipeModal product={activeAiProduct} onClose={() => setActiveAiProduct(null)} />}<RollingWhatsAppWidget settings={data?.settings} location={location} /><BottomNav active={currentNav} /></div>;
 }
