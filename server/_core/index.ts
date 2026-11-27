@@ -337,6 +337,8 @@ async function startServer() {
           entry = { contentType: mime, buf: Buffer.from(m[2], "base64") };
           if (cacheMap.size > 2500) { const firstK = cacheMap.keys().next().value; if (firstK) cacheMap.delete(firstK); }
           cacheMap.set(cacheKey, entry);
+        } else if (raw.includes("res.cloudinary.com")) {
+          return res.redirect(302, raw);
         } else if (raw.startsWith(HTTP_PREFIX)) {
           if (!isSafeExternalImageUrl(raw)) return res.status(403).end();
           const resp = await fetch(raw);

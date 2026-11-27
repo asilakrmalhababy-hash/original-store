@@ -12,7 +12,7 @@ import fs from "node:fs";
 import { createHash } from "node:crypto";
 import { and, asc, desc, eq, gt, inArray, like, or, sql } from "drizzle-orm";
 import { z } from "zod";
-import { storagePut } from "./storage";
+import { storagePut, uploadToCloudinary } from "./storage";
 import { getDb, resetDbPool } from "./db";
 import {
   addresses,
@@ -788,7 +788,7 @@ const HTTP_PRE = ["ht", "tp"].join("");
 function toFastImg<T extends { id: number; imageUrl?: string | null; updatedAt?: Date | string | null }>(kind: "product" | "category" | "banner", row: T): T {
   if (!row || !row.imageUrl) return row;
   const raw = String(row.imageUrl).trim();
-  if (!raw || raw.startsWith("/api/fast-img/")) return row;
+  if (!raw || raw.startsWith("/api/fast-img/") || raw.includes("res.cloudinary.com")) return row;
   try {
     const cacheMap: Map<string, { contentType: string; buf: Buffer }> = (globalThis as any).__fastImgCache || ((globalThis as any).__fastImgCache = new Map());
     const cacheKey = kind + ":" + row.id;
@@ -2565,7 +2565,8 @@ export const commerceRouter = router({
     uploadImage: requireAnyPermission(["products.manage", "products.add", "products.edit", "categories.manage", "banners.manage", "settings.manage"]).input(z.object({ dataUrl: z.string().min(30).max(8_500_000), kind: z.enum(["product", "category", "banner", "icon"]) })).mutation(async ({ input }) => {
       const match = input.dataUrl.match(/^data:(image\/(?:webp|png|jpeg));base64,([A-Za-z0-9+/=]+)$/);
       if (!match) throw new TRPCError({ code: "BAD_REQUEST", message: "صيغة الصورة غير مدعومة. استخدم WEBP أو PNG أو JPEG." });
-      return { imageUrl: input.dataUrl };
+      const uploadedUrl = await uploadToCloudinary(input.dataUrl, "original-store/" + input.kind);
+      return { imageUrl: uploadedUrl };
     }),
   }),
 });
@@ -2636,3 +2637,45 @@ export async function addInvoiceItemToOrderV99(input: { orderId?: number; orderN
 
   return { ok: true, orderId: targetOrder.id, newSubtotal, newTotal, message: noteMsg };
 }
+
+// --- CLOUDINARY_AUTO_MIGRATE_v199_START ---
+async function __migrateBase64ImagesToCloudinaryOnce() {
+  if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) return;
+  try {
+    const db = await getDb();
+    if (!db) return;
+    let moved = 0;
+    const targets: Array<{ name: string; table: any }> = [
+      { name: "product", table: products },
+      { name: "category", table: categories },
+      { name: "banner", table: banners },
+    ];
+    for (const t of targets) {
+      const rows = await db
+        .select({ id: t.table.id, imageUrl: t.table.imageUrl })
+        .from(t.table)
+        .where(like(t.table.imageUrl, "data:image/%"))
+        .limit(50);
+      for (const r of rows) {
+        if (!r?.imageUrl || !String(r.imageUrl).startsWith("data:image/")) continue;
+        try {
+          const cloudUrl = await uploadToCloudinary(String(r.imageUrl), "original-store/" + t.name);
+          if (cloudUrl.startsWith("https://")) {
+            await db.update(t.table).set({ imageUrl: cloudUrl }).where(eq(t.table.id, r.id));
+            moved++;
+          }
+        } catch (err) {
+          console.warn("[Cloudinary migrate] skipped", t.name, r.id, err instanceof Error ? err.message : "");
+        }
+      }
+    }
+    if (moved > 0) {
+      console.log(`[Cloudinary] Migrated ${moved} existing images out of TiDB!`);
+      clearCatalogCache();
+    }
+  } catch (err) {
+    console.warn("[Cloudinary migrate] notice:", err instanceof Error ? err.message : "");
+  }
+}
+setTimeout(() => { void __migrateBase64ImagesToCloudinaryOnce(); }, 15_000);
+// --- CLOUDINARY_AUTO_MIGRATE_v199_END ---
