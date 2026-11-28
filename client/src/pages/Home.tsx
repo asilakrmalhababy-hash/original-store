@@ -3545,28 +3545,83 @@ function OrdersPage() {
     );
   }
 
+  const getOrderProgress = (st: string) => {
+    const s = String(st || '').toLowerCase();
+    if (s.includes('cancel') || s.includes('reject')) return { pct: 100, color: '#c94a4a', cancelled: true };
+    if (s.includes('deliver') || s.includes('complet') || s.includes('done')) return { pct: 100, color: '#1b7a4e', cancelled: false };
+    if (s.includes('out') || s.includes('ship') || s.includes('way')) return { pct: 75, color: '#d49b27', cancelled: false };
+    if (s.includes('prepar') || s.includes('confirm') || s.includes('pack') || s.includes('process')) return { pct: 50, color: '#2b7a5b', cancelled: false };
+    return { pct: 24, color: '#174b36', cancelled: false };
+  };
+
   return (
-    <main className='page-shell inner-page' style={{ paddingTop: '16px' }}>
-      <div className='page-title-row' style={{ marginTop: '4px', marginBottom: '14px' }}>
-        <div><span className='eyebrow'>متابعة حية ومباشرة</span><h1 style={{ fontSize: '23px', fontWeight: 900, margin: '4px 0' }}>طلباتي ({orders.length})</h1><p>اضغط على أي طلب لعرض الفاتورة الكاملة وحالة التجهيز والتوصيل.</p></div>
-        <span className='page-title-icon'><Package size={22} /></span>
+    <main className='page-shell inner-page' style={{ paddingTop: '14px', paddingBottom: '96px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', padding: '2px 2px' }}>
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <h1 style={{ fontSize: '22px', fontWeight: 900, margin: 0, color: '#123826', letterSpacing: '-0.2px' }}>طلباتي</h1>
+            <span style={{ fontSize: '12px', fontWeight: 800, padding: '2px 10px', borderRadius: '999px', background: '#edf4ef', color: '#13462f', border: '1px solid #d5e5da' }}>{orders.length}</span>
+          </div>
+          <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#6b7d72' }}>تتبع مباشر لحالة طلباتك وفواتيرك</p>
+        </div>
+        <span style={{ width: '40px', height: '40px', borderRadius: '14px', background: '#f8f7f2', border: '1px solid #e5e8df', color: '#13462f', display: 'grid', placeItems: 'center' }}>
+          <Package size={19} />
+        </span>
       </div>
 
       {allRefs.length > 0 && (
-        <section style={{ marginBottom: '14px', padding: '12px 14px', borderRadius: '16px', background: pushEnabled ? '#edf7f0' : '#174b36', color: pushEnabled ? '#174b36' : '#ffffff', border: pushEnabled ? '1px solid #b8dec6' : '1px solid #174b36', display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: '1 1 200px' }}>
-            <span style={{ width: '36px', height: '36px', borderRadius: '10px', background: pushEnabled ? '#174b36' : '#f1d897', color: pushEnabled ? '#f1d897' : '#113a28', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-              {pushEnabled ? <Check size={18} /> : <BellRing size={18} />}
+        <section style={{
+          marginBottom: '14px',
+          padding: '10px 12px',
+          borderRadius: '15px',
+          background: pushEnabled ? '#f2f8f4' : 'linear-gradient(135deg, #13462f 0%, #1c5b41 100%)',
+          color: pushEnabled ? '#13462f' : '#ffffff',
+          border: pushEnabled ? '1px solid #cde3d5' : '1px solid #13462f',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '10px',
+          boxShadow: pushEnabled ? 'none' : '0 6px 16px rgba(19, 70, 47, 0.14)',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '9px', minWidth: 0, flex: 1 }}>
+            <span style={{
+              width: '32px', height: '32px', borderRadius: '10px', flexShrink: 0,
+              background: pushEnabled ? '#13462f' : 'rgba(241, 216, 151, 0.18)',
+              color: '#f1d897', display: 'grid', placeItems: 'center',
+              border: pushEnabled ? 'none' : '1px solid rgba(241, 216, 151, 0.35)',
+            }}>
+              {pushEnabled ? <Check size={16} /> : <BellRing size={16} />}
             </span>
-            <div>
-              <strong style={{ display: 'block', fontSize: '13px', color: pushEnabled ? '#174b36' : '#f9e8b8' }}>
-                {pushEnabled ? 'إشعارات تتبع الطلب مفعّلة ✓' : (justOrdered ? 'تم تأكيد طلبك! فعّل الإشعارات لمتابعته' : 'فعّل إشعارات تتبع حالة طلبك')}
+            <div style={{ minWidth: 0 }}>
+              <strong style={{ display: 'block', fontSize: '12.5px', fontWeight: 800, color: pushEnabled ? '#13462f' : '#fdf1cf', lineHeight: 1.3 }}>
+                {pushEnabled ? 'تنبيهات الطلبات مفعّلة ✓' : (justOrdered ? 'تم تأكيد طلبك! فعّل التنبيهات' : 'فعّل تنبيهات تتبع طلبك')}
               </strong>
-              <small style={{ fontSize: '11px', opacity: 0.9 }}>يصلك تنبيه فوري عند تجهيز طلبك أو خروجه للتوصيل.</small>
+              <small style={{ display: 'block', fontSize: '10.5px', opacity: pushEnabled ? 0.78 : 0.85, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                إشعار فوري عند التجهيز وخروج المندوب
+              </small>
             </div>
           </div>
-          <button type='button' onClick={() => void enableNotifications()} disabled={pushPending || permission === 'denied' || permission === 'unsupported'} className='small-button' style={{ background: pushEnabled ? '#ffffff' : '#f1d897', color: '#113a28', fontWeight: 800, border: 'none' }}>
-            <BellRing size={14} /> {pushPending ? 'جارٍ التفعيل...' : pushEnabled ? 'تحديث' : 'تفعيل الإشعارات'}
+          <button
+            type='button'
+            onClick={() => void enableNotifications()}
+            disabled={pushPending || permission === 'denied' || permission === 'unsupported'}
+            style={{
+              flexShrink: 0,
+              padding: '7px 12px',
+              borderRadius: '10px',
+              background: pushEnabled ? '#ffffff' : '#f1d897',
+              color: '#113a28',
+              fontWeight: 800,
+              fontSize: '11.5px',
+              border: pushEnabled ? '1px solid #cfe2d6' : 'none',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '5px',
+              cursor: 'pointer',
+            }}
+          >
+            <BellRing size={13} />
+            <span>{pushPending ? 'لحظة...' : pushEnabled ? 'تحديث' : 'تفعيل'}</span>
           </button>
         </section>
       )}
@@ -3574,43 +3629,69 @@ function OrdersPage() {
       {(query.isLoading && !orders.length) ? <Loading /> : !orders.length ? (
         <EmptyState icon={Package} title={allRefs.length ? 'لا توجد طلبات نشطة حالياً' : 'لا توجد طلبات سابقة'} description='بعد إتمام طلب من هذا المتصفح، ستظهر حالته وتفاصيل فاتورته هنا مباشرة.' action='تسوق الآن' href='/products' />
       ) : (
-        <div style={{ display: 'grid', gap: '12px' }}>
+        <div style={{ display: 'grid', gap: '11px' }}>
           {orders.map((order: any, idx: number) => {
             const isLatest = idx === 0;
+            const itemCount = expandOrderItemsV110(order.items).length;
+            const prog = getOrderProgress(order.status);
+            const dateStr = new Date(order.createdAt).toLocaleDateString('ar-YE', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
             return (
               <article
                 key={order.orderNumber}
+                className='orig-order-card'
                 onClick={() => setSelectedOrderNumber(order.orderNumber)}
                 style={{
-                  padding: '15px 16px',
+                  padding: '14px',
                   borderRadius: '18px',
                   background: '#ffffff',
-                  border: isLatest ? '2px solid #174b36' : '1px solid #dbe6df',
-                  boxShadow: '0 4px 12px rgba(15, 42, 28, 0.04)',
+                  border: isLatest ? '1.5px solid #174b36' : '1px solid #e6ece7',
+                  boxShadow: isLatest ? '0 8px 22px rgba(19, 70, 47, 0.08)' : '0 2px 8px rgba(15, 42, 28, 0.03)',
                   display: 'grid',
                   gap: '10px',
                   cursor: 'pointer',
                 }}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', flexWrap: 'wrap' }}>
-                  <div style={{ display: 'grid', gap: '3px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '7px', flexWrap: 'wrap' }}>
-                      <strong style={{ fontSize: '14.5px', color: '#123826', fontWeight: 900 }} dir='ltr'>{order.orderNumber}</strong>
-                      {isLatest && <span style={{ fontSize: '10px', fontWeight: 800, padding: '2px 8px', borderRadius: '99px', background: '#174b36', color: '#f1d897' }}>أحدث طلب</span>}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                  <div style={{ display: 'grid', gap: '4px', minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                      <strong style={{ fontSize: '13.5px', color: '#123826', fontWeight: 900, letterSpacing: '0.2px' }} dir='ltr'>#{order.orderNumber}</strong>
+                      {isLatest && (
+                        <span style={{ fontSize: '10px', fontWeight: 800, padding: '2px 8px', borderRadius: '999px', background: '#13462f', color: '#f1d897' }}>أحدث طلب</span>
+                      )}
                     </div>
-                    <small style={{ color: '#6c7d72', fontSize: '11px' }}>{new Date(order.createdAt).toLocaleString('ar-YE')} · {order.city} - {order.district}</small>
+                    <small style={{ color: '#708277', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
+                      <span>{dateStr}</span>
+                      <span style={{ opacity: 0.45 }}>•</span>
+                      <span>{[order.city, order.district].filter(Boolean).join(' - ')}</span>
+                    </small>
                   </div>
-                  <span className={'status-pill status-' + order.status} style={{ fontSize: '11.5px', fontWeight: 800 }}>
+                  <span className={'status-pill status-' + order.status} style={{ fontSize: '11px', fontWeight: 800, padding: '4px 10px', borderRadius: '999px', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: prog.color, display: 'inline-block' }} />
                     {orderStatusLabels[order.status] || order.status}
                   </span>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '10px', borderTop: '1px solid #edf2ee' }}>
+
+                <div style={{ height: '4px', width: '100%', borderRadius: '999px', background: '#eef2ef', overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: prog.pct + '%', background: prog.color, borderRadius: '999px', transition: 'width 0.35s ease' }} />
+                </div>
+
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '8px 10px',
+                  borderRadius: '12px',
+                  background: '#f8f7f2',
+                  border: '1px solid #eceee7',
+                }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontSize: '12px', color: '#5c6f63', fontWeight: 700 }}>{expandOrderItemsV110(order.items).length} أصناف</span>
-                    <strong style={{ fontSize: '16px', color: '#174b36', fontWeight: 900 }}>{formatPrice(extractOrderTotalV107(order, order?.total))}</strong>
+                    <strong style={{ fontSize: '15.5px', color: '#13462f', fontWeight: 900 }}>{formatPrice(extractOrderTotalV107(order, order?.total))}</strong>
+                    <span style={{ fontSize: '11px', color: '#5f7266', fontWeight: 700, background: '#ffffff', padding: '2px 8px', borderRadius: '8px', border: '1px solid #e4e8e1' }}>
+                      {itemCount} {itemCount === 1 ? 'صنف' : 'أصناف'}
+                    </span>
                   </div>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '12px', fontWeight: 800, color: '#174b36', background: '#f0f7f3', padding: '6px 12px', borderRadius: '10px' }}>
-                    <span>تفاصيل الطلب</span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11.5px', fontWeight: 800, color: '#13462f' }}>
+                    <span>الفاتورة</span>
                     <ChevronLeft size={14} />
                   </span>
                 </div>

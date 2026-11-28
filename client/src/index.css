@@ -3114,3 +3114,7 @@ body.orig-on-product-detail .whatsapp-float,
 body.orig-on-product-detail .floating-whatsapp {
   display: none !important;
 }
+
+/* v201: Smooth native tap feel on OrdersPage cards */
+.orig-order-card { transition: transform 0.14s ease, border-color 0.14s ease; will-change: transform; }
+.orig-order-card:active { transform: scale(0.985); }
