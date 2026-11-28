@@ -1594,8 +1594,8 @@ export async function sendCustomPushBroadcastV140(payload: {
     const pushJson = JSON.stringify({
       title: payload.title || "متجر أورجنال",
       body: payload.body || "",
-      icon: "/icon-orig-v139.png",
-      badge: "/icon-orig-v139.png",
+      icon: '/icon-192.png?v=199',
+      badge: '/badge-96.png?v=199',
       url: payload.url || "/",
       tag: "orig-bcast-" + Date.now()
     });
